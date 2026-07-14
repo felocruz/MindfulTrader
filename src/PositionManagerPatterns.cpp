@@ -262,7 +262,9 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
             // Triple Screen System - breakout above yesterday's high after pullback
             if (idx < 1) [[unlikely]] return false;
 
-            constexpr float ELDER_TARGET_R_MULTIPLE = 2.0f;
+            // 1.5R initial target — parity with tbe::kElderTargetR (Triple-Barrier engine,
+            // triple_barrier_exit_engine_spec.md Reading B). Trail with 13-EMA + MACD-H later.
+            constexpr float ELDER_TARGET_R_MULTIPLE = 1.5f;
             const float prevHigh = sc.High[idx - 1];
 
             // Determine entry: use close if already broken out, else breakout level
@@ -271,7 +273,7 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
             // Stop: Below low of past 2 bars (tight per Elder methodology)
             stopPrice = std::min(low, sc.Low[idx - 1]) - sc.TickSize;
 
-            // Target: 2R initial (trail with 13-EMA + MACD-H later)
+            // Target: 1.5R initial (trail with 13-EMA + MACD-H later)
             const float riskAmount = entryPrice - stopPrice;
             targetPrice = entryPrice + (ELDER_TARGET_R_MULTIPLE * riskAmount);
 
@@ -282,7 +284,9 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
         {
             if (idx < 1) [[unlikely]] return false;
 
-            constexpr float ELDER_TARGET_R_MULTIPLE = 2.0f;
+            // 1.5R initial target — parity with tbe::kElderTargetR (Triple-Barrier engine,
+            // triple_barrier_exit_engine_spec.md Reading B).
+            constexpr float ELDER_TARGET_R_MULTIPLE = 1.5f;
             const float prevLow = sc.Low[idx - 1];
 
             entryPrice = (low < prevLow) ? close : prevLow - sc.TickSize;
@@ -290,7 +294,7 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
             // Stop: Above high of past 2 bars
             stopPrice = std::max(high, sc.High[idx - 1]) + sc.TickSize;
 
-            // Target: 2R initial
+            // Target: 1.5R initial
             const float riskAmount = stopPrice - entryPrice;
             targetPrice = entryPrice - (ELDER_TARGET_R_MULTIPLE * riskAmount);
 
