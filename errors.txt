@@ -1,0 +1,56 @@
+[0;34m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+
+[0;34m[  2%][0m Building CXX object CMakeFiles/MindfulTrader.dir/cmake_pch.cxx.obj[0;34m[  5%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/transport/TransportLink....[0;34m[  8%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/transport/TransportListe...[0;34m[ 10%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/AIConnectionMonitor.cpp.obj[0;34m[ 13%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/transport/AIHeartbeatMon...[0;34m[ 16%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/transport/TransportStrea...[0;34m[ 18%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/messaging/HMMSerializer....[0;34m[ 21%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/messaging/EliteFlatBuffe...[0;34m[ 24%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/messaging/EventSerialize...[0;34m[ 27%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/ChandelierStopManager.cp...[0;34m[ 29%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/CrossMarketStudies.cpp.obj[0;34m[ 32%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/ContextManager.cpp.obj[0;34m[ 35%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/EventDataCollectorStudy....[0;34m[ 37%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/DailyHighLowLoader.cpp.obj[0;34m[ 40%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/IndicatorManager.cpp.obj[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(535,32): error: missing field 'entropyScore' initializer [-Werror,-Wmissing-field-initializers][0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(634,32): error: missing field 'entropyScore' initializer [-Werror,-Wmissing-field-initializers][0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(814,19): error: redefinition of 'MAX_LOOKBACK_DAYS'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(840,17): error: redefinition of 'loader'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(888,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(889,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(890,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(891,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(892,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(893,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(894,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(895,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(896,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(897,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(898,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(899,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(900,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(901,10): error: expected '<' after 'template'[0m
+[0;31mERROR: /home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(902,10): error: expected '<' after 'template'[0m
+[0;31mERROR: fatal error: too many errors emitted, stopping now [-ferror-limit=][0m
+[0;34m[ 43%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/HMMClient.cpp.obj[0;34m[ 45%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/Indicator.cpp.obj[0;34m[ 48%][0m Building CXX object CMakeFiles/MindfulTrader.dir/src/BackTesterStudy.cpp.obj[0;31m✗ Build stopped: ninja: build stopped: subcommand failed.[0m
+
+
+[0;31m✗ Build failed (exit code: 1)[0m
+
+--
+[1;33mErrors and Warnings:[0m
+[1;33m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[0m
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(535,32): error: missing field 'entropyScore' initializer [-Werror,-Wmissing-field-initializers]
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(634,32): error: missing field 'entropyScore' initializer [-Werror,-Wmissing-field-initializers]
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(814,19): error: redefinition of 'MAX_LOOKBACK_DAYS'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(787,23): note: previous definition is here
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(840,17): error: redefinition of 'loader'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(783,21): note: previous definition is here
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(888,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(889,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(890,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(891,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(892,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(893,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(894,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(895,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(896,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(897,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(898,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(899,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(900,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(901,10): error: expected '<' after 'template'
+/home/rcruz/devel/VSCode/MindfulTrader/src/IndicatorManager.cpp(902,10): error: expected '<' after 'template'
+fatal error: too many errors emitted, stopping now [-ferror-limit=]
+
+[1;33mFull Build Log:[0m
+[1;33mcat build-windows/build_output.log[0m
+

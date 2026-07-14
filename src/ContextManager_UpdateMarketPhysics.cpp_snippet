@@ -1,0 +1,12 @@
+// Phase 2/3 Engines: Feed raw market returns
+void ContextManager::UpdateMarketPhysics(float logReturn) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+
+    // Update Information Engine (Shannon Entropy, KL-Divergence)
+    m_infoEngine.AddObservation(logReturn);
+
+    // Update Tail Risk Engine (Hill Estimator)
+    m_tailRiskEngine.AddObservation(logReturn);
+
+    // Compressor is updated in CheckAndTriggerHMM with the canonical 16D vector
+}

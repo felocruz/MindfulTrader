@@ -1,0 +1,1132 @@
+	  
+	  
+Two	  Roads	  Diverged:	  Trading	  Divergences	  
+	  
+Elder.com	  e-­‐book	  Series	  
+Dr.	  Alexander	  Elder	  
+	  
+	  
+Copyright	  2012-­‐2014	  by	  Dr.	  Alexander	  Elder	  
+ISBN: 978-1-4524-7698-8	  	  
+Published	  by	  elder.com	  
+	  
+	  
+Two roads diverged in a wood, and I— 
+I took the one less traveled by, 
+And that has made all the difference. 
+Robert Frost (1874	  –	  1963) 
+	  
+	  
+DEAR	  READER:	  electronic	  publishing	  is	  at	  an	  early	  stage	  of	  development.	  	  If	  the	  fonts	  do	  not	  to	  look	  right	  
+on	  your	  screen,	  try	  printing	  out	  this	  ebook	  –	  it	  will	  look	  fine	  on	  paper.	  The	  lords	  of	  Amazon	  disable	  
+printing	  of	  digital	  books,	  and	  if	  you	  run	  into	  this	  problem,	  return	  your	  book	  to	  them	  and	  buy	  directly	  
+from	  us.	  	  If	  you	  have	  any	  suggestions	  on	  improving	  or	  updating	  this	  book,	  please	  write	  to	  us	  at	  
+book@elder.com	  
+	  
+LEGAL:	  No	  part	  of	  this	  publication	  may	  be	  reproduced,	  stored	  in	  a	  retrieval	  system,	  or	  transmitted	  in	  any	  
+form	  or	  by	  any	  means	  without	  the	  prior	  written	  permission	  of	  the	  copyright	  owner.	  
+	  
+Disclaimer	  of	  warranty:	  while	  the	  author	  has	  used	  his	  best	  efforts	  in	  preparing	  this	  book,	  he	  makes	  no	  
+representations	  or	  warranties	  in	  respect	  to	  the	  accuracy	  or	  completeness	  of	  the	  contents.	  	  The	  advice	  
+and	  strategies	  contained	  herein	  may	  not	  be	  appropriate	  for	  your	  situation.	  	  You	  should	  consult	  with	  a	  
+professional	  where	  appropriate.	  	  The	  author	  shall	  not	  be	  responsible	  for	  any	  loss.	  
+	  
+First	  edition:	  January	  2012	  
+Second	  edition:	  June	  2014	  
+	  
+Books	  by	  Dr.	  Alexander	  Elder	  
+Trading	  for	  a	  Living	  
+Study	  Guide	  for	  Trading	  for	  a	  Living	  
+Rubles	  to	  Dollars	  
+Come	  into	  My	  Trading	  Room	  
+Study	  Guide	  for	  Come	  into	  My	  Trading	  Room	  
+Straying	  from	  the	  Flock	  
+Entries	  &	  Exits:	  Visits	  to	  16	  Trading	  Rooms	  
+Study	  Guide	  for	  Entries	  &	  Exits	  
+The	  New	  Sell	  &	  Sell	  Short	  (with	  Study	  Guide)	  
+To	  Trade	  or	  Not	  to	  Trade:	  A	  Beginner’s	  Guide	  (e-­‐book)	  
+The	  New	  High	  –	  New	  Low	  Index	  (with	  Kerry	  Lovvorn;	  e-­‐book)	  
+Additive	  Manufacturing,	  3D	  Printing,	  and	  the	  Coming	  Stock	  Market	  Boom	  (e-­‐book)	  
+	  
+	  
+Table	  of	  Contents	  
+How	  to	  Work	  with	  This	  Book	  
+Free	  Updates	  &	  the	  Honor	  Code	  
+Review	  of	  Tools	  
+A	  Bullish	  Divergence:	  A	  Basic	  Definition	  
+What	  is	  NOT	  a	  Bullish	  Divergence	  
+A	  Bearish	  Divergence:	  A	  Basic	  Definition	  
+What	  is	  NOT	  a	  Bearish	  Divergence	  
+Reader	  Exercises	  
+Entries,	  Stops,	  and	  Profit	  Targets	  
+Additional	  Points	  on	  Divergences	  
+Divergences	  in	  Other	  Indicators	  
+Divergences	  in	  Multiple	  Timeframes	  
+Scanning	  for	  Divergences	  
+The	  Next	  Step:	  MACD	  Semi-­‐Automatic	  
+Conclusion	  
+Thanks	  
+Sources	  
+About	  the	  Author	  
+	  
+To	  find	  the	  truth,	  look	  below	  the	  surface!	  
+	  
+What	  you	  see	  on	  the	  surface	  is	  often	  deceptive	  –	  in	  trading,	  as	  well	  as	  in	  life.	  	  A	  trend	  may	  appear	  
+strong,	  while	  below	  the	  surface	  it	  may	  be	  weak	  and	  ready	  to	  reverse.	  
+	  
+We	  have	  indicators	  that	  measure	  the	  internal	  power	  of	  a	  trend.	  	  At	  times	  they	  confirm	  an	  uptrend	  and	  
+tell	  you	  it’s	  OK	  to	  hold	  or	  add	  to	  your	  positions.	  	  At	  other	  times	  they	  signal	  that	  the	  trend	  is	  suspect:	  it	  is	  
+better	  to	  exit,	  take	  profits,	  and	  even	  consider	  switching	  from	  long	  to	  short	  or	  vice	  versa.	  
+	  
+A	  divergence	  is	  a	  disagreement	  between	  the	  patterns	  of	  indicators	  and	  prices.	  	  We	  find	  bullish	  
+divergences	  near	  market	  bottoms	  and	  bearish	  divergences	  near	  market	  tops.	  	  Many	  traders	  use	  these	  
+words	  very	  loosely,	  but	  I	  want	  to	  clearly	  define	  these	  important	  terms.	  	  The	  purpose	  of	  this	  book	  is	  to	  
+help	  you	  ride	  price	  trends	  with	  greater	  confidence	  and	  recognize	  upcoming	  reversals	  before	  they	  hit	  the	  
+crowd.	  
+	  
+Needless	  to	  say,	  I	  hold	  no	  monopoly	  on	  wisdom.	  	  I’ve	  learned	  my	  craft	  from	  those	  who	  went	  before	  me	  
+and	  still	  consider	  myself	  a	  student	  in	  the	  graduate	  school	  of	  hard	  knocks.	  	  If	  you	  think	  you	  see	  an	  error	  in	  
+this	  book,	  please	  write	  to	  me	  and	  let	  me	  know.	  
+	  
+How	  to	  Work	  with	  This	  Book	  
+	  
+We’ll	  begin	  by	  reviewing	  basic	  definitions	  and	  then	  look	  at	  many	  examples.	  	  I’ll	  invite	  you	  to	  take	  several	  
+reader	  exercises.	  	  We’ll	  review	  divergences	  in	  different	  indicators.	  	  We’ll	  explore	  divergences	  in	  different	  
+timeframes	  –	  from	  investing	  to	  day-­‐trading.	  
+	  
+Keeping	  good	  records	  is	  the	  keystone	  of	  successful	  trading	  (I	  keep	  mine	  online,	  in	  a	  Trade	  Journal	  at	  
+www.SpikeTrade.com).	  	  Please	  stop	  for	  a	  moment	  before	  you	  do	  any	  exercises	  in	  this	  book.	  	  Open	  your	  
+word	  processor	  and	  create	  a	  file	  “Working	  with	  divergences.”	  	  Write	  down	  the	  number	  and	  the	  name	  of	  
+each	  exercise	  and	  your	  reasons	  for	  answering	  Yes	  or	  No.	  	  By	  the	  time	  you	  get	  to	  the	  end	  of	  this	  e-­‐book	  
+you	  will	  have	  a	  nice	  learning	  file.	  	  It	  will	  help	  you	  master	  the	  topic	  and	  trade	  divergences	  with	  greater	  
+confidence.	  
+	  
+An	  important	  reminder:	  successful	  trading	  is	  based	  on	  three	  M’s:	  Mind,	  Method,	  and	  Money	  
+(psychology,	  tactics,	  and	  risk	  management.)	  	  All	  three	  are	  essential	  for	  your	  success.	  	  This	  book	  focuses	  
+on	  only	  one	  M	  –	  Method.	  	  You	  may	  use	  this	  book	  as	  a	  guide	  to	  market	  analysis	  and	  tactics,	  but	  
+remember	  to	  implement	  the	  other	  two	  Ms,	  discussed	  in	  my	  previous	  books.	  
+	  
+	  
+Free	  Updates	  &	  the	  Honor	  Code	  
+	  
+I	  plan	  to	  update	  this	  book	  in	  the	  future	  and	  send	  those	  updates	  to	  all	  purchasers	  at	  no	  charge.	  	  If	  you	  
+bought	  this	  book	  from	  Elder.com,	  we’ll	  automatically	  place	  the	  updated	  versions	  into	  your	  account.	  	  If	  
+you	  bought	  it	  elsewhere,	  you	  can	  receive	  free	  updates	  in	  two	  steps.	  	  First,	  go	  to	  elder.com	  and	  create	  an	  
+account	  –	  it	  is	  free,	  and	  we	  hold	  all	  names	  in	  strictest	  confidence.	  	  Next,	  send	  us	  an	  email	  with	  your	  
+proof	  of	  purchase.	  	  We	  will	  put	  the	  latest	  update	  into	  your	  account	  with	  us	  and	  will	  continue	  giving	  you	  
+all	  future	  updates.	  
+	  
+Please	  do	  not	  forward	  this	  book	  to	  your	  friends	  (i.e.	  commit	  piracy).	  	  Instead,	  email	  your	  friends	  this	  link	  
+to	  make	  sure	  they	  receive	  the	  latest	  update.	  
+	  
+Please	  do	  not	  copy	  this	  book	  
+	  
+I	  put	  several	  hundred	  hours	  of	  work	  into	  creating	  this	  book.	  	  Please	  reciprocate	  my	  trust	  in	  you	  by	  
+sending	  your	  friends	  the	  above	  link	  rather	  than	  pirating	  the	  book.	  
+	  
+And	  now,	  let’s	  embark	  on	  our	  journey.	  
+	  
+Dr.	  Alexander	  Elder	  	  
+Vermont	  
+June	  2014	  
+Return	  to	  the	  Top	  
+	  
+Review	  of	  Tools	  
+	  
+To	  profit	  from	  divergences	  you	  must	  have	  a	  basic	  understanding	  of	  technical	  analysis.	  	  There	  are	  many	  
+sources,	  including	  John	  Murphy’s	  magisterial	  Technical	  Analysis	  of	  Financial	  Markets	  as	  well	  as	  my	  own	  
+Trading	  for	  a	  Living.	  
+	  
+Here	  we’ll	  glance	  at	  few	  key	  definitions,	  but	  if	  anything	  is	  unclear,	  please	  refer	  to	  the	  above	  books.	  
+	  
+PRICES,	  MOVING	  AVERAGES,	  SUPPORT	  &	  RESISTANCE	  
+• 
+Each	  price	  is	  a	  momentary	  consensus	  of	  value	  among	  the	  mass	  of	  market	  participants.	  
+• 
+If	  each	  price	  is	  a	  snapshot	  of	  current	  consensus,	  then	  a	  moving	  average	  is	  a	  composite	  
+photograph,	  reflecting	  an	  average	  consensus	  of	  value	  during	  its	  time	  window.	  	  A	  rising	  moving	  average	  
+shows	  that	  the	  market	  is	  optimistic	  –	  bullish;	  a	  falling	  moving	  average	  shows	  that	  the	  market	  is	  
+pessimistic	  –	  bearish.	  
+• 
+We	  draw	  support	  and	  resistance	  lines	  across	  the	  edges	  of	  congestion	  zones.	  	  The	  extreme	  highs	  
+and	  lows	  reflect	  only	  the	  panic	  among	  the	  weakest	  market	  participants,	  while	  the	  edges	  of	  congestion	  
+zones	  show	  where	  the	  mass	  of	  traders	  changed	  direction.	  
+• 
+I	  use	  bar	  charts	  because	  I	  learned	  to	  trade	  using	  them.	  	  I	  have	  nothing	  against	  candlesticks,	  
+which	  came	  later;	  all	  examples	  in	  this	  book	  could	  have	  been	  rendered	  using	  candles.	  
+	  
+MACD	  
+• 
+Moving	  Average	  Convergence-­‐Divergence	  (MACD),	  invented	  by	  Gerald	  Appel,	  is	  a	  popular	  
+market	  indicator.	  	  It	  combines	  trend-­‐following	  features	  (MACD	  Lines)	  with	  those	  of	  an	  oscillator	  (MACD-­‐
+Histogram).	  	  MACD-­‐Histogram	  tracks	  the	  difference	  between	  MACD	  Lines.	  	  
+• 
+In	  this	  book	  I’ll	  use	  standard	  MACD	  values	  of	  12-­‐26-­‐9,	  but	  I	  encourage	  you	  to	  experiment	  with	  
+these	  numbers,	  making	  each	  of	  them	  slightly	  larger	  or	  smaller.	  	  It	  is	  a	  good	  idea	  to	  use	  your	  personal	  and	  
+individual	  indicator	  settings.	  	  There	  are	  no	  magic	  numbers	  –	  only	  the	  numbers	  you’ve	  tested	  and	  come	  
+to	  trust.	  
+• 
+We	  will	  look	  at	  a	  few	  examples	  of	  divergences	  using	  other	  indicators.	  	  Please	  feel	  free	  to	  apply	  
+the	  concepts	  of	  this	  book	  to	  other	  indicators	  you	  like.	  
+	  
+TIME	  
+• 
+Remember	  that	  markets	  move	  in	  multiple	  timeframes	  simultaneously.	  	  We	  all	  have	  our	  
+preferred	  periods,	  for	  example	  the	  daily	  or	  a	  5-­‐minute	  chart,	  but	  one	  timeframe	  is	  not	  enough.	  
+• 
+The	  Triple	  Screen	  trading	  system	  requires	  you	  to	  begin	  your	  analysis	  by	  examining	  the	  
+timeframe	  one	  order	  of	  magnitude	  longer	  than	  the	  one	  you	  like	  to	  trade.	  	  	  If	  your	  favorite	  is	  the	  daily	  
+chart,	  begin	  by	  looking	  at	  the	  weeklies.	  	  Make	  your	  strategic	  decision	  there	  to	  be	  a	  bull	  or	  a	  bear	  and	  
+then	  return	  to	  the	  daily	  chart	  to	  make	  tactical	  decisions	  on	  entries	  and	  exits.	  	  
+	  
+Chart	  parameters	  in	  this	  book:	  
+Weekly:	  26-­‐	  and	  13-­‐week	  exponential	  moving	  averages	  (EMAs).	  
+Daily:	  22-­‐	  and	  13-­‐day	  EMAs,	  some	  include	  Autoenvelopes	  centered	  around	  the	  slower	  EMA.	  
+Intraday:	  same	  as	  above,	  only	  22-­‐bar	  and	  13-­‐bar	  EMAs.	  
+MACD	  is	  12-­‐26-­‐9	  on	  all	  charts.	  
+Return	  to	  the	  Top	  
+	  
+A	  Bullish	  Divergence:	  a	  Basic	  Definition	  
+	  
+I	  want	  to	  begin	  by	  showing	  you	  my	  favorite	  example	  of	  a	  bullish	  divergence.	  	  The	  chart	  you’re	  about	  to	  
+see	  has	  two	  great	  features:	  first,	  it	  is	  technically	  flawless,	  and	  second,	  it	  was	  hugely	  timely.	  	  It	  gave	  a	  
+major	  buy	  signal	  within	  a	  week	  of	  the	  historic	  2009	  bear	  market	  bottom,	  auguring	  in	  a	  new	  bull	  market.	  	  
+Not	  all	  patterns	  are	  this	  perfect,	  and	  we	  will	  deal	  with	  more	  difficult	  cases	  later	  in	  this	  book.	  	  Remember	  
+this	  rule:	  when	  trying	  to	  find	  a	  divergence,	  first	  look	  at	  the	  pattern	  of	  an	  indicator	  and	  later	  at	  the	  
+pattern	  of	  prices.	  
+	  
+Trading	  for	  a	  Living	  offers	  this	  definition:	  “A	  bullish	  divergence	  occurs	  when	  prices	  trace	  a	  bottom,	  rally,	  
+and	  then	  sink	  to	  a	  new	  low.	  	  At	  the	  same	  time,	  MACD-­‐Histogram	  traces	  a	  different	  pattern.	  	  When	  it	  
+rallies	  from	  its	  first	  bottom,	  that	  rally	  lifts	  it	  above	  the	  zero	  line,	  ‘breaking	  the	  back	  of	  the	  bear.’	  	  When	  
+prices	  sink	  to	  a	  new	  low,	  MACD-­‐Histogram	  declines	  to	  a	  more	  shallow	  bottom.	  	  At	  that	  point,	  prices	  are	  
+lower,	  but	  the	  bottom	  of	  MACD-­‐Histogram	  is	  higher,	  showing	  that	  bears	  are	  weaker	  and	  the	  downtrend	  
+is	  ready	  for	  a	  reversal.	  	  MACD-­‐Histogram	  gives	  a	  buy	  signal	  when	  it	  ticks	  up	  from	  its	  second	  bottom.”	  
+	  
+	  
+	  
+Figure	  01	  DJIA	  weekly,	  bullish	  divergence	  (chart	  by	  TC2000.com)	  
+	  
+In	  area	  A	  the	  Dow	  appeared	  in	  a	  free	  fall,	  as	  Lehman	  Brothers	  went	  bust	  and	  waves	  of	  selling	  hit	  the	  
+market.	  	  The	  record	  low	  A	  of	  MACD-­‐H	  indicated	  that	  bears	  were	  extremely	  strong	  and	  that	  the	  price	  
+bottom	  A	  was	  likely	  to	  be	  retested	  or	  exceeded.	  
+	  
+In	  area	  B	  MACD-­‐H	  rallied	  above	  its	  centerline,	  ‘breaking	  the	  back	  of	  the	  bear.’	  	  Notice	  that	  the	  brief	  price	  
+rally	  reached	  the	  ‘value	  zone’	  between	  the	  two	  moving	  averages.	  	  This	  is	  a	  fairly	  common	  target	  for	  bear	  
+market	  rallies.	  	  The	  concept	  of	  the	  value	  zone	  is	  explained	  in	  all	  of	  my	  books,	  including	  To	  Trade	  or	  Not	  
+to	  Trade:	  A	  Beginner’s	  Guide.	  
+	  
+In	  area	  C	  the	  Dow	  slid	  to	  a	  new	  bear	  market	  low,	  but	  MACD-­‐H	  traced	  a	  much	  more	  shallow	  low.	  	  Its	  
+uptick	  completed	  a	  bullish	  divergence,	  giving	  a	  strong	  buy	  signal.	  
+	  
+Notice	  that	  breaking	  of	  the	  centerline	  between	  two	  indicator	  bottoms	  is	  an	  absolute	  must	  for	  a	  true	  
+divergence.	  	  MACD-­‐Histogram	  has	  to	  cross	  above	  the	  zero	  line	  before	  sinking	  to	  its	  second	  bottom.	  	  If	  
+there	  is	  no	  crossover,	  then	  there	  is	  no	  divergence.	  
+	  
+Another	  key	  point:	  MACD-­‐H	  gives	  a	  buy	  signal	  when	  it	  ticks	  up	  from	  the	  second	  bottom.	  	  It	  doesn’t	  
+have	  to	  cross	  above	  the	  centerline	  for	  the	  second	  time.	  	  The	  buy	  signal	  occurs	  when	  MACD-­‐H,	  still	  below	  
+zero,	  stops	  declining	  and	  traces	  out	  a	  bar	  that	  is	  less	  negative	  than	  its	  preceding	  bar.	  
+	  
+	  
+This	  MACD-­‐Histogram	  divergence	  signal	  was	  reinforced	  when	  MACD	  Lines	  traced	  a	  bullish	  pattern	  
+between	  the	  bottoms	  A	  and	  C,	  with	  the	  second	  bottom	  of	  MACD-­‐Lines	  more	  shallow	  than	  the	  first.	  	  We	  
+rarely	  see	  such	  patterns	  of	  MACD	  Lines.	  	  They	  indicate	  that	  the	  coming	  uptrend	  is	  likely	  to	  be	  especially	  
+strong,	  even	  though	  we	  cannot	  call	  them	  divergences	  because	  there	  is	  no	  zero	  line.	  	  The	  rally	  that	  began	  
+in	  2009	  lasted	  almost	  a	  year	  before	  the	  first	  meaningful	  correction.	  
+	  
+Let’s	  review	  another	  example	  of	  a	  bullish	  divergence,	  this	  one	  on	  a	  daily	  chart.	  
+	  
+	  
+	  
+Figure	  02	  GE	  daily,	  bullish	  divergence	  (chart	  by	  TradeStation).	  
+	  
+I	  began	  tracking	  GE	  after	  reading	  news	  reports	  that	  Warren	  Buffett	  invested	  in	  it	  in	  October	  2008,	  when	  
+its	  price	  was	  near	  $18.	  	  In	  area	  A	  MACD-­‐Histogram	  fell	  to	  a	  new	  low	  A,	  marking	  a	  new	  extreme	  of	  
+bearish	  power.	  	  In	  area	  B	  MACD-­‐H	  rallied	  above	  its	  centerline,	  ‘breaking	  the	  back	  of	  the	  bear.’	  	  Notice	  
+that	  the	  brief	  rally	  ended	  in	  the	  value	  zone	  between	  the	  two	  moving	  averages.	  	  In	  area	  C1	  GE	  slid	  to	  a	  
+new	  bear	  market	  low,	  but	  MACD-­‐H	  traced	  a	  much	  more	  shallow	  low.	  	  When	  it	  ticked	  up,	  it	  completed	  a	  
+bullish	  divergence	  and	  gave	  a	  buy	  signal.	  	  GE	  rallied	  for	  a	  day,	  but	  then	  reversed	  and	  hit	  a	  stop.	  
+	  
+In	  area	  c2	  MACD-­‐Histogram	  ticked	  up	  again,	  renewing	  its	  buy	  signal.	  	  This	  one	  worked	  out	  perfectly,	  
+with	  the	  stock	  price	  doubling	  in	  the	  next	  few	  months.	  
+	  
+One	  of	  the	  key	  differences	  between	  amateurs	  and	  pros	  is	  that	  when	  a	  beginner	  gets	  stopped	  out,	  he	  
+feels	  disgusted	  and	  moves	  on	  to	  other	  stocks.	  	  Professionals,	  on	  the	  other	  hand,	  often	  attempt	  multiple	  
+entries,	  using	  fairly	  tight	  stops.	  	  One	  big	  success,	  such	  as	  the	  second	  purchase	  of	  GE,	  will	  more	  than	  
+offset	  several	  small	  losses.	  
+	  
+Notice	  that	  there	  was	  no	  bullish	  pattern	  of	  MACD	  Lines.	  	  Those	  occur	  infrequently,	  and	  many	  good	  
+trades	  start	  out	  without	  them.	  
+	  
+We	  live	  in	  an	  imperfect	  world,	  where	  even	  the	  best	  signals	  occasionally	  fail.	  	  All	  we	  can	  do	  is	  bet	  on	  
+probabilities	  and	  use	  protective	  stops.	  	  Placing	  stops	  is	  a	  challenge	  that	  deserves	  its	  own	  book.	  	  A	  
+general	  idea	  is	  when	  you	  buy	  place	  your	  stop	  in	  the	  vicinity	  of	  the	  latest	  low.	  	  Expect	  to	  take	  an	  
+occasional	  small	  hit	  –	  and	  have	  the	  confidence	  to	  act	  when	  the	  signal	  you	  are	  trying	  to	  trade	  repeats	  
+itself.	  
+Return	  to	  the	  Top	  
+	  
+What	  Is	  NOT	  a	  Bullish	  Divergence	  
+	  
+Readers	  occasionally	  send	  me	  charts	  of	  potential	  trades	  based	  on	  divergence,	  but	  when	  I	  look,	  I	  see	  no	  
+divergence.	  
+	  
+Remember	  that	  for	  a	  bullish	  divergence	  to	  occur,	  prices	  need	  to	  have	  a	  sequence	  of	  two	  discreet	  price	  
+bottoms,	  separated	  by	  a	  rally,	  with	  the	  second	  bottom	  lower	  than	  the	  first.	  	  At	  the	  same	  time,	  the	  
+indicator	  must	  have	  two	  bottoms	  separated	  by	  a	  rally	  above	  the	  zero	  line,	  with	  the	  second	  more	  shallow	  
+than	  the	  first.	  	  If	  any	  one	  of	  those	  conditions	  is	  missing,	  there	  is	  no	  divergence.	  	  A	  simple	  drift	  of	  prices	  
+doesn’t	  create	  a	  divergence.	  	  Let’s	  review	  an	  example.	  	  	  
+	  
+	  
+	  
+Figure	  03	  GU	  daily,	  no	  bullish	  divergence	  (chart	  by	  TradeStation).	  
+	  
+Gushan	  Environment	  Energy	  Ltd	  (GU)	  was	  one	  of	  many	  US-­‐listed	  Chinese	  stocks	  whose	  prices	  dropped	  in	  
+2011,	  following	  revelations	  of	  massive	  accounting	  misconduct	  in	  that	  country.	  	  People	  who	  remembered	  
+them	  as	  recent	  high-­‐flyers	  kept	  stepping	  up	  and	  buying,	  hoping	  for	  a	  renewed	  upswing.	  	  Several	  
+imagined	  that	  they	  saw	  bullish	  divergences	  –	  do	  you	  see	  one	  in	  this	  picture?	  
+	  
+In	  area	  A	  MACD-­‐Histogram	  fell	  below	  zero,	  marking	  a	  new	  extreme	  of	  bearish	  power	  for	  the	  latest	  
+downmove.	  	  The	  subsequent	  bottoms	  were	  more	  shallow	  –	  but	  at	  no	  point	  did	  MACD-­‐H	  cross	  above	  its	  
+centerline.	  	  The	  bear	  was	  getting	  older	  and	  weaker	  –	  but	  the	  bear	  was	  still	  in	  charge!	  	  Only	  in	  area	  B	  did	  
+MACD-­‐Histogram	  cross	  above	  zero,	  signaling	  that	  the	  back	  of	  the	  bear	  was	  broken.	  	  Now	  and	  only	  now	  
+may	  we	  begin	  looking	  for	  a	  bottom	  C	  of	  this	  indicator.	  	  If	  that	  bottom	  turns	  out	  to	  be	  more	  shallow	  than	  
+the	  bottom	  A,	  it’ll	  create	  a	  bullish	  divergence	  and	  give	  a	  buy	  signal.	  
+	  
+When	  MACD-­‐Histogram	  grows	  more	  shallow	  during	  a	  price	  slide,	  it	  simply	  indicates	  that	  the	  downtrend	  
+is	  becoming	  less	  intense	  –	  but	  it	  is	  not	  a	  true	  divergence.	  	  Remember	  that	  trends	  have	  a	  lot	  of	  inertia.	  	  As	  
+Peter	  Lynch	  aptly	  put	  it	  in	  his	  book	  One	  Up	  on	  Wall	  Street,	  “Trying	  to	  catch	  a	  bottom	  is	  like	  trying	  to	  
+catch	  a	  falling	  knife:	  you	  invariably	  grab	  it	  in	  the	  wrong	  place.”	  	  I	  want	  to	  see	  a	  real	  bullish	  divergence,	  
+with	  a	  positive	  crossover	  between	  the	  two	  bottoms	  before	  I	  lay	  my	  money	  on	  a	  long	  trade	  near	  the	  
+lows.	  
+Return	  to	  the	  Top	  
+	  
+A	  Bearish	  Divergence:	  a	  Basic	  Definition	  
+	  
+The	  first	  chart	  in	  this	  book	  featured	  a	  striking	  bullish	  divergence	  at	  the	  2009	  stock	  market	  bottom.	  	  Now,	  
+for	  a	  similarly	  striking	  illustration	  of	  a	  massive	  bearish	  divergence,	  let’s	  roll	  back	  the	  clock	  and	  examine	  
+the	  2007	  bull	  market	  top.	  
+	  
+Bearish	  divergences	  occur	  near	  market	  tops,	  where	  they	  identify	  dangerous	  cracks	  in	  seemingly	  happy	  
+uptrends.	  	  Trading	  for	  a	  Living	  offered	  this	  definition:	  “A	  bearish	  divergence	  occurs	  when	  prices	  rise	  to	  a	  
+new	  high,	  decline,	  then	  rise	  to	  a	  higher	  peak.	  	  MACD-­‐Histogram	  gives	  the	  first	  sign	  of	  trouble	  when	  it	  
+breaks	  below	  its	  zero	  line	  during	  the	  decline	  from	  its	  first	  peak.	  	  When	  prices	  reach	  a	  higher	  high,	  MACD-­‐
+Histogram	  rises	  to	  a	  much	  lower	  high.	  	  It	  shows	  that	  bulls	  are	  weaker,	  prices	  are	  rising	  simply	  out	  of	  
+inertia	  and	  are	  ready	  to	  reverse.”	  
+	  
+	  
+	  
+Figure	  04	  DJIA	  weekly,	  bearish	  divergence	  (chart	  by	  TC2000.com).	  
+	  
+Remember	  that	  to	  trace	  a	  divergence	  we	  first	  look	  at	  the	  pattern	  of	  MACD	  and	  then	  at	  the	  pattern	  of	  
+prices.	  	  The	  indicator	  must	  cross	  and	  re-­‐cross	  its	  centerline	  in	  order	  to	  mark	  a	  valid	  divergence.	  
+	  
+In	  area	  X	  the	  Dow	  rallied	  to	  a	  new	  bull	  market	  high	  and	  MACD-­‐Histogram	  rallied	  with	  it,	  rising	  above	  its	  
+previous	  peak	  and	  showing	  that	  bulls	  were	  extremely	  strong.	  	  This	  indicated	  that	  the	  price	  peak	  X	  was	  
+likely	  to	  be	  retested	  or	  exceeded.	  	  In	  area	  Y,	  MACD-­‐H	  fell	  below	  its	  centerline,	  ‘breaking	  the	  back	  of	  the	  
+bull.’	  	  Notice	  that	  prices	  punched	  below	  their	  value	  zone	  between	  the	  two	  moving	  averages.	  	  This	  is	  a	  
+fairly	  common	  target	  for	  bull	  market	  breaks.	  	  In	  area	  Z,	  the	  Dow	  rallied	  to	  a	  new	  bull	  market	  high,	  but	  
+the	  rally	  of	  MACD-­‐H	  was	  feeble,	  reflecting	  the	  bulls’	  weakness.	  	  Its	  downtick	  from	  peak	  Z	  completed	  a	  
+bearish	  divergence,	  giving	  a	  strong	  sell	  signal	  which	  augured	  in	  the	  nastiest	  bear	  market	  in	  a	  generation.	  
+	  
+Remember	  that	  breaking	  of	  the	  centerline	  between	  two	  indicator	  tops	  is	  an	  absolute	  must	  for	  a	  true	  
+divergence.	  	  MACD-­‐Histogram	  has	  to	  drop	  below	  its	  zero	  line	  before	  rising	  to	  the	  second	  top.	  	  If	  there	  is	  
+no	  crossover,	  then	  there	  is	  no	  divergence.	  
+	  
+Another	  key	  point:	  MACD-­‐H	  gives	  a	  sell	  signal	  when	  it	  ticks	  down	  from	  the	  second	  top.	  	  We	  don’t	  need	  
+to	  wait	  for	  it	  to	  cross	  below	  the	  centerline	  again.	  	  The	  sell	  signal	  occurs	  when	  MACD-­‐H,	  still	  above	  zero,	  
+simply	  stops	  rising	  and	  traces	  out	  a	  bar	  that	  is	  shorter	  than	  the	  preceding	  bar.	  
+	  
+The	  message	  of	  this	  bearish	  divergence	  was	  reinforced	  by	  MACD	  Lines	  tracing	  a	  bearish	  pattern	  
+between	  the	  tops	  A	  and	  C.	  	  The	  second	  top	  of	  MACD	  Lines	  was	  more	  shallow	  than	  the	  first,	  confirming	  
+the	  bearish	  divergence	  of	  MACD-­‐H.	  	  Such	  patterns	  of	  MACD	  Lines	  tell	  us	  that	  the	  coming	  downtrend	  is	  
+likely	  to	  be	  especially	  strong.	  
+Return	  to	  the	  Top	  
+	  
+What	  Is	  NOT	  a	  Bearish	  Divergence	  
+	  
+A	  true	  divergence	  follows	  a	  classical	  pattern,	  described	  above.	  	  If	  a	  pattern	  deviates	  from	  the	  norm,	  it	  
+may	  be	  bullish	  or	  bearish	  –	  but	  not	  a	  true	  divergence.	  	  When	  we	  aim	  to	  trade	  true	  divergences,	  we	  must	  
+be	  very	  clear	  about	  our	  definitions.	  	  You	  can	  see	  a	  good	  example	  of	  what	  looks	  like	  a	  divergence	  but	  in	  
+fact	  is	  not	  in	  the	  following	  example.	  	  It	  came	  up	  in	  a	  webinar	  I	  taught,	  where	  several	  participants	  asked	  
+whether	  there	  was	  a	  bearish	  divergence	  in	  the	  area	  marked	  by	  a	  red	  arrow.	  
+	  
+	  
+	  
+Figure	  05	  S&P	  daily,	  no	  bearish	  divergence	  (chart	  by	  TC2000.com).	  
+	  
+The	  peak	  of	  MACD-­‐Histogram	  which	  is	  marked	  by	  a	  diagonal	  red	  arrow	  was	  about	  equal	  in	  height	  but	  
+more	  massive	  than	  peak	  X.	  	  An	  equal	  or	  nearly	  equal	  peak	  of	  the	  indicator	  confirms	  price	  rally	  –	  there	  is	  
+no	  divergence.	  	  A	  higher	  peak	  of	  MACD-­‐H	  says	  that	  the	  latest	  price	  peak	  is	  likely	  to	  be	  retested	  or	  
+exceeded.	  	  Remember	  that	  for	  a	  bearish	  divergence	  to	  occur	  you	  must	  see	  both	  of	  these	  patterns:	  
+	  
+• 
+A	  higher	  price	  at	  the	  second	  peak	  with	  a	  lower	  indicator	  peak	  
+• 
+A	  	  break	  below	  the	  centerline	  between	  the	  two	  indicator	  peaks	  
+	  
+And	  now	  a	  question	  for	  you:	  is	  there	  any	  divergence	  in	  Figure	  05?	  	  Please	  scroll	  up	  to	  it	  and	  study	  the	  
+chart	  above	  before	  looking	  below	  for	  an	  answer…	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+…	  look	  up	  first	  …	  
+	  
+…	  look	  up	  first	  …	  
+	  
+…	  look	  up	  first	  …	  
+	  
+	  
+	  
+Figure	  06	  S&P	  daily,	  bullish	  divergence	  (chart	  by	  TC2000.com).	  
+	  
+In	  area	  A	  MACD-­‐Histogram	  fell	  to	  a	  new	  low,	  confirming	  the	  power	  of	  bears.	  	  It	  suggested	  that	  the	  price	  
+bottom	  A	  was	  likely	  to	  be	  retested	  or	  exceeded.	  	  In	  area	  B,	  MACD-­‐H	  rallied	  above	  its	  zero	  line,	  ‘breaking	  
+the	  back	  of	  the	  bear.’	  	  In	  area	  C,	  MACD-­‐H	  fell	  below	  zero,	  traced	  a	  shallow	  bottom	  and	  then	  ticked	  up,	  
+completing	  a	  bullish	  divergence.	  	  It	  was	  confirmed	  by	  a	  bullish	  pattern	  of	  MACD	  Lines	  as	  well	  as	  a	  false	  
+downside	  breakout	  of	  prices	  in	  area	  C.	  	  This	  bullish	  trifecta	  preceded	  a	  very	  sprightly	  rally.	  
+Return	  to	  the	  Top	  
+	  
+Reader	  Exercises	  
+	  
+Whenever	  you	  examine	  a	  chart,	  begin	  by	  focusing	  on	  its	  left	  edge,	  then	  let	  your	  eyes	  glide	  slowly	  from	  
+left	  to	  right,	  tracing	  the	  development	  of	  chart	  patterns.	  	  Each	  stock	  has	  a	  personality,	  and	  knowing	  your	  
+stock’s	  history	  will	  help	  you	  understand	  it	  and	  make	  a	  better	  decision	  at	  the	  right	  edge.	  	  Many	  traders	  
+make	  the	  mistake	  of	  immediately	  jumping	  to	  the	  right	  edge,	  and	  they	  deprive	  themselves	  of	  an	  
+opportunity	  to	  learn	  how	  their	  stock	  got	  to	  where	  it	  is	  today	  and	  how	  it	  moves.	  
+	  
+Each	  exercise	  will	  show	  you	  a	  chart	  and	  ask	  you	  to	  make	  a	  decision	  at	  its	  right	  edge.	  	  Afterwards	  click	  
+on	  the	  Answer	  link,	  and	  the	  system	  will	  take	  you	  down	  into	  the	  Answers	  area.	  	  Examine	  the	  chart	  
+illustrating	  your	  answer,	  read	  any	  comments,	  and	  then	  click	  on	  a	  Return	  link	  to	  come	  back	  to	  the	  main	  
+text.	  
+	  
+Do	  not	  linger	  in	  the	  Answers	  area	  because	  if	  you	  do,	  you’ll	  see	  other	  charts	  and	  answers	  to	  other	  
+questions,	  and	  that	  will	  spoil	  your	  educational	  experience.	  	  Remember:	  just	  look	  up	  your	  answer,	  and	  
+then	  click	  to	  return	  and	  proceed	  to	  the	  next	  question.	  
+	  
+	  
+	  
+The	  current	  e-­‐book	  format	  does	  not	  allow	  me	  to	  include	  a	  table	  for	  you	  to	  fill	  out	  on-­‐screen.	  	  This	  is	  why	  
+I	  suggest	  you	  print	  out	  the	  form	  above	  and	  fill	  it	  in	  by	  hand.	  	  Write	  down	  your	  answer	  to	  every	  question,	  
+grade	  your	  answer,	  and	  jot	  down	  any	  comments	  you	  may	  have	  about	  each	  choice.	  	  Keeping	  good	  
+records	  is	  a	  hallmark	  of	  a	  successful	  trader.	  
+	  
+Exercise	  A	  –	  is	  this	  a	  bullish	  divergence?	  
+	  
+	  
+Figure	  07	  AMP	  daily.	  	  Question:	  is	  there	  a	  bullish	  divergence	  at	  the	  right	  edge	  of	  the	  chart?	  
+See	  AMP	  answer	  
+	  
+Exercise	  B	  –	  is	  this	  a	  bearish	  divergence?	  
+	  
+	  
+	  
+Figure	  08	  AMZN	  daily.	  	  Question:	  is	  there	  a	  bearish	  divergence	  at	  the	  right	  edge	  of	  the	  chart?	  
+Go	  to	  AMZN	  answer	  
+	  
+Exercise	  C	  –	  is	  this	  a	  bearish	  divergence?	  
+	  
+	  
+	  
+Figure	  09	  BBBY	  daily.	  	  Question:	  is	  there	  a	  bearish	  divergence	  at	  the	  right	  edge	  of	  the	  chart?	  
+Go	  to	  BBBY	  answer	  
+	  
+Exercise	  D	  –	  is	  this	  a	  bullish	  divergence?	  
+	  
+	  
+	  
+Figure	  10	  GOOG	  daily.	  	  Question:	  is	  there	  a	  bullish	  divergence	  at	  the	  right	  edge	  of	  the	  chart?	  
+Go	  to	  GOOG	  answer	  
+	  
+Return	  to	  the	  Top	  
+	  
+Entries,	  Stops	  &	  Profit	  Targets	  
+	  
+You	  must	  remember	  that	  the	  markets	  often	  move	  in	  the	  opposite	  directions	  in	  different	  timeframes.	  	  A	  
+stock	  may	  be	  flat	  on	  the	  weekly	  chart,	  falling	  on	  the	  daily,	  but	  rising	  on	  an	  hourly	  chart.	  	  You	  need	  to	  
+take	  more	  than	  one	  timeframe	  into	  account	  when	  planning	  to	  buy	  or	  sell	  because	  a	  move	  in	  a	  
+neighboring	  timeframe	  can	  impact	  your	  trade.	  
+	  
+An	  in-­‐depth	  discussion	  of	  multiple	  timeframes	  is	  outside	  the	  scope	  of	  this	  book.	  	  My	  approach,	  called	  
+the	  Triple	  Screen,	  is	  described	  in	  all	  of	  my	  books,	  starting	  with	  Trading	  for	  a	  Living.	  	  	  In	  a	  nutshell,	  when	  
+swing-­‐trading,	  I	  make	  my	  strategic	  decisions	  to	  go	  long,	  short,	  or	  stand	  aside	  on	  the	  weekly	  charts;	  
+afterwards	  I	  turn	  to	  the	  daily	  charts	  for	  tactical	  decisions	  about	  entries	  and	  exits.	  	  In	  day-­‐trading,	  I	  make	  
+my	  strategic	  decisions	  to	  go	  long,	  short,	  or	  stand	  aside	  on	  a	  25-­‐minute	  chart	  but	  then	  look	  for	  my	  entry	  
+and	  exit	  points	  on	  a	  five-­‐minute	  chart.	  	  You	  may	  use	  different	  timeframes,	  but	  the	  principle	  stays	  the	  
+same:	  make	  your	  strategic	  decisions	  on	  long-­‐term	  charts	  and	  tactical	  decisions	  on	  a	  shorter-­‐term	  chart;	  
+their	  ratio	  of	  the	  periods	  should	  be	  about	  five	  to	  one.	  
+	  
+Divergences	  produce	  very	  powerful	  signals	  –	  so	  strong	  in	  fact	  that	  a	  divergence	  on	  a	  daily	  chart	  may	  
+override	  the	  message	  of	  a	  weekly	  chart.	  	  Still,	  you	  get	  the	  best	  result	  when	  the	  two	  timeframes	  are	  not	  
+in	  conflict:	  for	  example,	  a	  neutral	  weekly	  and	  a	  bullish	  daily	  or	  a	  neutral	  25-­‐minute	  chart	  and	  a	  bearish	  5-­‐
+minute	  chart.	  
+	  
+Whenever	  you	  plan	  a	  trade,	  remember	  to	  write	  down	  three	  essential	  numbers:	  your	  entry,	  profit	  target,	  
+and	  the	  protective	  stop.	  	  These	  three	  numbers	  create	  a	  realistic	  framework	  for	  every	  trade;	  without	  
+them,	  it	  is	  not	  a	  trade	  but	  merely	  a	  gamble.	  	  You	  are	  allowed	  to	  finesse	  and	  change	  these	  numbers	  while	  
+in	  a	  trade,	  with	  one	  exception:	  you	  may	  never	  move	  your	  stop	  to	  increase	  your	  risk.	  	  You	  may	  move	  it	  
+only	  to	  reduce	  risk	  or	  protect	  a	  bigger	  slice	  of	  your	  profit.	  
+	  
+With	  these	  principles	  in	  mind,	  let’s	  review	  the	  basic	  rules	  for	  setting	  entries,	  profit	  targets	  and	  stops	  
+when	  trading	  divergences:	  
+	  
+Bullish	  divergences:	  
+	  
+• 
+Buy	  when	  MACD-­‐H	  ticks	  up	  from	  its	  second	  bottom.	  	  Bullish	  divergences	  work	  best	  when	  the	  
+distance	  between	  two	  bottoms	  is	  between	  20	  and	  50	  bars	  –	  the	  closer	  to	  20	  the	  better.	  	  Another	  good	  
+sign	  for	  a	  bullish	  divergence	  is	  when	  the	  second	  bottom	  is	  less	  than	  half	  the	  depth	  of	  the	  first	  one.	  
+• 
+Place	  your	  profit	  target	  in	  the	  vicinity	  of	  the	  upper	  channel	  line	  in	  the	  same	  timeframe	  as	  the	  
+divergence.	  	  Keep	  in	  mind	  that	  divergences	  tend	  to	  give	  very	  strong	  signals,	  and	  such	  targets	  are	  often	  
+exceeded.	  	  Still,	  the	  quickest	  and	  most	  reliable	  gains	  tend	  to	  occur	  during	  the	  initial	  explosion	  from	  the	  
+second	  bottom	  of	  MACD-­‐Histogram.	  
+• 
+Place	  your	  protective	  stop	  in	  the	  vicinity	  of	  the	  latest	  low.	  	  You	  may	  give	  your	  trade	  some	  extra	  
+room	  by	  placing	  this	  stop	  a	  few	  ticks	  below	  that	  low,	  unless	  the	  bottom	  was	  a	  ‘kangaroo	  tail’	  in	  which	  
+case	  place	  your	  stop	  about	  two	  thirds	  of	  the	  way	  down	  from	  the	  top	  of	  the	  tail	  bar.	  
+	  
+Bearish	  divergences:	  
+	  
+• 
+Sell	  short	  when	  MACD-­‐Histogram	  ticks	  down	  from	  its	  second	  top.	  	  Bearish	  divergences	  work	  
+best	  when	  the	  distance	  between	  two	  tops	  is	  between	  20	  and	  50	  bars	  –	  the	  closer	  to	  20	  the	  better.	  	  
+Another	  good	  sign	  for	  a	  bearish	  divergence	  is	  when	  the	  second	  top	  is	  less	  than	  half	  the	  height	  of	  the	  first	  
+one.	  
+• 
+Place	  your	  profit	  target	  in	  the	  vicinity	  of	  the	  lower	  channel	  line	  in	  the	  same	  timeframe	  as	  the	  
+divergence.	  
+• 
+Place	  your	  protective	  stop	  either	  with	  a	  wide	  margin	  above	  the	  latest	  high	  or	  slightly	  below	  that	  
+high,	  in	  which	  case	  you	  must	  be	  prepared	  to	  re-­‐enter	  if	  stopped	  out.	  	  Shorting	  tops	  is	  harder	  than	  buying	  
+bottoms	  because	  of	  their	  higher	  volatility.	  
+	  
+Let’s	  review	  several	  examples	  of	  entries	  and	  exits	  following	  bullish	  and	  bearish	  divergences.	  
+	  
+	  
+	  
+Figure	  11	  SIRI	  daily.	  	  Entry,	  stop	  and	  target	  following	  a	  bullish	  divergence	  (chart	  by	  Metastock).	  
+	  
+SIRI	  declined	  to	  a	  new	  low	  in	  area	  A,	  and	  MACD-­‐Histogram	  also	  hit	  a	  new	  low,	  confirming	  the	  power	  of	  
+bears.	  	  MACD-­‐H	  rallied	  above	  its	  zero	  line	  in	  area	  B,	  breaking	  the	  back	  of	  the	  bear,	  and	  then	  sank	  below	  
+zero	  again.	  	  That’s	  where	  an	  attentive	  trader	  would	  start	  closely	  watching	  that	  stock.	  	  MACD-­‐Histogram	  
+ticked	  up	  from	  below	  zero	  in	  area	  C,	  at	  a	  point	  marked	  by	  a	  slanted	  green	  arrow,	  giving	  a	  buy	  signal.	  
+	  
+If	  you	  saw	  that	  signal	  in	  the	  evening,	  after	  the	  close,	  you’d	  have	  to	  buy	  the	  following	  day	  and	  place	  a	  
+protective	  stop	  in	  the	  vicinity	  of	  the	  latest	  low.	  	  That	  low	  was	  a	  ‘kangaroo	  tail,’	  and	  I	  usually	  put	  my	  stop	  
+half-­‐way	  or	  two	  thirds	  down	  the	  tail.	  	  If	  a	  bear	  starts	  chewing	  the	  tail,	  I	  do	  not	  want	  to	  hang	  around	  until	  
+the	  last	  bite.	  	  A	  reasonable	  placement	  of	  a	  profit	  target	  is	  near	  the	  upper	  channel	  line.	  	  Channels	  are	  
+described	  in	  all	  of	  my	  books,	  including	  the	  most	  recent	  e-­‐book	  To	  Trade	  Or	  Not	  to	  Trade.	  
+	  
+	  
+	  
+Figure	  12	  CTXS	  daily.	  	  Entry,	  stop	  and	  target	  following	  a	  bearish	  divergence	  (chart	  by	  StockFinder).	  
+	  
+The	  rally	  of	  CTXS	  in	  area	  X	  was	  confirmed	  by	  MACD-­‐Histogram	  rallying	  to	  a	  new	  high.	  	  This	  indicator	  fell	  
+below	  zero	  in	  area	  Y,	  breaking	  the	  back	  of	  the	  bull.	  	  It	  staged	  a	  feeble	  rally	  in	  area	  Z,	  where	  it	  topped	  out	  
+considerably	  below	  the	  peak	  X,	  even	  though	  prices	  marched	  higher.	  	  When	  the	  histogram	  ticked	  down	  
+from	  the	  second	  top,	  it	  gave	  a	  signal	  to	  sell	  short	  (marked	  with	  a	  vertical	  red	  arrow).	  	  One	  could	  enter	  
+short	  the	  following	  day,	  with	  a	  profit	  target	  near	  the	  lower	  channel	  line	  (a	  green	  arrow).	  	  	  
+	  
+There	  is	  one	  major	  difference	  in	  stop	  placement	  at	  tops	  and	  bottoms.	  	  Bottoms	  tend	  to	  be	  fairly	  sharp	  
+affairs:	  when	  buying	  a	  bullish	  divergence	  it	  makes	  sense	  to	  place	  your	  stop	  fairly	  close	  to	  the	  latest	  low.	  	  
+Tops,	  on	  the	  contrary,	  tend	  to	  be	  much	  more	  volatile.	  	  We	  often	  see	  false	  upside	  breakouts	  which	  set	  off	  
+tight	  stops.	  	  You	  have	  a	  choice:	  either	  use	  a	  wider	  stop	  or	  place	  a	  tight	  stop	  but	  be	  prepared	  to	  keep	  re-­‐
+entering	  if	  stopped	  out	  prematurely.	  	  Let’s	  review	  the	  example	  of	  XLNX.	  
+	  
+	  
+	  
+Figure	  13	  XLNX	  daily.	  	  A	  bearish	  divergence	  and	  a	  false	  upside	  breakout	  (chart	  by	  StockFinder).	  
+	  
+The	  rally	  of	  XLNX	  was	  fully	  confirmed	  in	  area	  X,	  where	  MACD-­‐Histogram	  rallied	  to	  a	  new	  high.	  	  In	  area	  Y	  
+he	  back	  of	  the	  bull	  was	  broken	  when	  the	  indicator	  fell	  below	  zero.	  	  The	  stock	  rallied	  again	  in	  area	  Z,	  but	  
+MACD-­‐H	  rose	  to	  a	  lower	  high.	  	  Its	  first	  downtick,	  marked	  by	  a	  vertical	  red	  arrow,	  completed	  a	  bearish	  
+divergence.	  	  Had	  you	  gone	  short	  the	  next	  day,	  you’d	  have	  to	  deal	  with	  the	  price	  breakout	  to	  a	  new	  high	  
+two	  days	  later.	  	  Had	  you	  placed	  a	  tight	  stop,	  you’d	  be	  taken	  out	  just	  before	  the	  bear	  reasserted	  itself	  and	  
+prices	  collapsed.	  
+	  
+This	  volatility,	  so	  common	  at	  market	  tops,	  forces	  you	  to	  choose	  between	  two	  methods	  of	  placing	  stops:	  
+make	  them	  wide	  and	  risk	  more	  money	  or	  make	  them	  tight	  and	  be	  prepared	  to	  re-­‐enter	  of	  you	  get	  
+stopped	  out.	  	  Your	  decision	  will	  depend	  on	  your	  trading	  style.	  
+Return	  to	  the	  Top	  
+	  
+Additional	  Points	  on	  Divergences	  
+	  
+Several	  questions	  tend	  to	  come	  up	  when	  dealing	  with	  divergences:	  
+	  
+• 
+Should	  I	  wait	  to	  enter	  during	  the	  next	  bar	  or	  enter	  intra-­‐bar?	  
+• 
+How	  to	  trade	  triple	  divergences?	  
+• 
+What	  is	  a	  ‘missing	  right	  shoulder’?	  
+• 
+How	  to	  match	  divergences	  with	  one’s	  trading	  style?	  
+	  
+	  
+ENTER	  DURING	  THE	  DIVERGENCE	  BAR	  OR	  WAIT	  FOR	  THE	  NEXT	  BAR?	  
+	  
+This	  question	  comes	  up	  especially	  often	  among	  day-­‐traders.	  	  Imagine	  hovering	  in	  front	  of	  a	  live	  screen:	  
+as	  prices	  tick	  up	  and	  down	  on	  a	  five-­‐minute	  chart,	  MACD-­‐Histogram	  keeps	  changing	  direction,	  only	  to	  
+reverse	  again	  a	  few	  minutes	  later.	  	  Should	  you	  wait	  until	  the	  end	  of	  that	  5-­‐minute	  bar	  to	  confirm	  a	  
+divergence	  and	  enter	  during	  the	  next	  bar	  –	  or	  jump	  in	  as	  soon	  as	  MACD	  changes	  direction?	  
+	  
+Entering	  during	  the	  current	  bar	  allows	  you	  to	  capture	  a	  better	  price,	  but	  you	  run	  the	  risk	  of	  that	  change	  
+reversing	  a	  few	  moments	  later,	  cancelling	  the	  signal.	  	  Waiting	  for	  the	  next	  bar	  provides	  a	  more	  reliable	  
+signal,	  but	  the	  entry	  price	  is	  likely	  to	  be	  not	  quite	  as	  good.	  
+	  
+Your	  choice	  depends	  on	  your	  risk	  tolerance.	  
+	  
+I	  use	  Triple	  Screen,	  and	  make	  strategic	  decisions	  in	  a	  longer	  timeframe,	  in	  this	  case	  a	  25-­‐minute	  chart.	  	  If	  
+the	  25-­‐minute	  chart	  allows	  me	  to	  go	  long,	  and	  all	  I	  need	  before	  buying	  is	  an	  uptick	  of	  MACD	  on	  a	  5-­‐
+minute	  chart,	  I	  will	  enter	  as	  soon	  as	  a	  signal	  flashes	  during	  a	  bar.	  	  If	  the	  longer	  timeframe	  looks	  good,	  I’ll	  
+enter	  intra-­‐bar	  on	  a	  shorter	  timeframe,	  otherwise	  I’ll	  wait	  for	  the	  next	  bar.	  
+	  
+Less	  experienced	  traders	  should	  wait	  for	  the	  bar	  to	  close.	  	  While	  this	  may	  reduce	  your	  gain,	  it	  is	  a	  
+cleaner	  signal.	  	  As	  you	  gain	  experience,	  you	  will	  know	  when	  to	  loosen	  this	  rule.	  
+	  
+HOW	  TO	  TRADE	  TRIPLE	  DIVERGENCES?	  
+	  
+There	  are	  good	  and	  not	  so	  good	  signals,	  but	  a	  perfect	  signal	  doesn’t	  exist	  in	  technical	  analysis.	  	  Even	  
+normally	  reliable	  divergences	  can	  fail.	  
+	  
+For	  example,	  prices	  may	  fail	  to	  rally	  following	  a	  bullish	  divergence,	  but	  sink	  instead,	  hitting	  our	  
+protective	  stop.	  	  Whenever	  that	  happens,	  I	  continue	  to	  watch	  MACD-­‐Histogram;	  as	  long	  as	  it	  does	  not	  
+fall	  below	  the	  level	  of	  its	  first	  bottom,	  I	  consider	  a	  divergence	  intact	  and	  will	  aim	  to	  buy	  again	  when	  
+MACD-­‐H	  ticks	  up	  from	  its	  next	  bottom.	  
+	  
+I	  wrote	  in	  Trading	  for	  a	  Living:	  “Occasionally,	  the	  second	  bottom	  is	  followed	  by	  a	  third.	  	  This	  is	  why	  
+traders	  must	  use	  stops	  and	  proper	  money	  management.	  	  There	  are	  no	  certainties	  in	  the	  markets,	  only	  
+probabilities.	  	  Even	  a	  reliable	  pattern,	  such	  as	  a	  divergence	  of	  MACD-­‐Histogram,	  may	  fail	  occasionally,	  
+which	  is	  why	  we	  must	  exit	  if	  prices	  fall	  below	  their	  second	  bottom.	  	  We	  must	  preserve	  our	  trading	  
+capital	  and	  re-­‐enter	  when	  MACD-­‐Histogram	  ticks	  up	  from	  its	  third	  bottom,	  as	  long	  as	  it	  is	  higher	  than	  
+the	  first.”	  
+	  
+Triple	  bearish	  divergences	  occur	  when	  prices	  start	  falling	  from	  a	  bearish	  divergence	  but	  the	  en	  turn	  up	  
+again.	  	  We	  saw	  this	  pattern	  on	  Figure	  08.	  	  As	  long	  as	  the	  latest	  top	  of	  MACD-­‐H	  is	  below	  the	  original	  first	  
+top,	  I	  will	  short	  a	  downtick	  from	  the	  latest	  top	  –	  as	  I	  did	  in	  the	  trade	  shown	  in	  Fig.	  08.	  
+	  
+If	  you	  trust	  your	  signals	  and	  use	  good	  risk	  management,	  you’ll	  have	  the	  courage	  to	  re-­‐enter.	  
+	  
+	  
+“MISSING	  RIGHT	  SHOULDER”	  
+	  
+This	  is	  a	  rare	  version	  of	  a	  divergence,	  first	  described	  in	  The	  New	  Sell	  &	  Sell	  Short.	  	  It	  occurs	  when	  the	  
+second	  top	  Z	  of	  MACD-­‐H	  fails	  to	  clear	  the	  zero	  line	  while	  building	  a	  bearish	  divergence.	  	  It	  often	  
+precedes	  vicious	  declines.	  
+	  
+	  
+	  
+Figure	  14	  ISRG	  daily.	  	  A	  ‘missing	  right	  shoulder’	  bearish	  divergence	  (chart	  by	  MetaStock).	  
+	  
+Here	  you	  can	  see	  how	  ISRG,	  a	  leading	  medical	  technology	  company,	  rallied	  in	  area	  X.	  	  MACD-­‐Histogram	  
+rallied	  to	  a	  new	  peak,	  while	  prices	  blew	  out	  of	  their	  channel.	  	  They	  pulled	  back	  to	  value	  in	  area	  Y	  and	  
+rallied	  again	  at	  Z,	  breaking	  out	  to	  a	  new	  high	  but	  unable	  to	  reach	  the	  upper	  channel	  line.	  	  MACD-­‐
+Histogram	  ‘broke	  the	  back	  of	  the	  bull’	  in	  area	  Y,	  but	  its	  rally	  in	  area	  Z	  could	  not	  rise	  above	  the	  zero	  line.	  	  
+When	  it	  ticked	  down	  (marked	  by	  a	  vertical	  dashed	  arrow),	  it	  completed	  a	  bearish	  divergence	  of	  a	  
+missing	  right	  shoulder	  type.	  
+	  
+The	  mirror	  images	  of	  such	  divergences	  may	  occur	  at	  market	  bottoms.	  	  Beginning	  traders	  should	  not	  
+trade	  such	  ‘missing	  right	  shoulder’	  divergences.	  	  Beginners	  are	  better	  off	  trading	  classical	  patterns	  and	  
+leaving	  more	  unusual	  patterns	  for	  more	  experienced	  traders.	  
+	  
+DIVERGENCES	  AND	  YOUR	  TRADING	  STYLE	  
+	  
+Some	  of	  us	  like	  to	  trade	  trends,	  others	  prefer	  looking	  for	  reversals.	  	  Some	  people	  like	  to	  “go	  with	  the	  
+flow,”	  while	  others	  look	  for	  a	  change.	  	  This	  is	  seldom	  a	  conscious	  choice,	  as	  we	  tend	  to	  follow	  our	  
+instincts.	  	  	  
+	  
+Divergences	  are	  especially	  useful	  for	  reversal	  traders.	  	  You	  can	  build	  your	  entire	  trading	  method	  on	  
+divergences.	  	  Just	  be	  sure	  to	  have	  risk	  management	  down	  cold.	  	  Reversal	  trading	  is	  a	  fascinating	  but	  risky	  
+business.	  	  Be	  sure	  to	  use	  protective	  stops.	  
+	  
+Trend	  traders	  can	  also	  benefit	  from	  divergences.	  	  Remember	  that	  divergences	  are	  among	  the	  strongest	  
+signals	  in	  technical	  analysis.	  	  If	  you	  recognize	  a	  bullish	  divergence	  on	  a	  weekly	  chart,	  you	  should	  have	  
+greater	  confidence	  to	  ride	  the	  uptrend	  on	  the	  daily	  chart.	  	  You	  can	  see	  a	  good	  example	  of	  this	  in	  Figure	  
+01	  at	  the	  start	  of	  this	  book.	  	  Additionally,	  the	  appearance	  of	  a	  divergence	  against	  a	  position	  is	  a	  sign	  to	  
+exit	  or	  at	  the	  very	  least	  to	  tighten	  your	  stop.	  
+	  
+Any	  trading	  method	  is	  only	  as	  good	  as	  the	  person	  who	  uses	  it.	  	  Become	  aware	  of	  your	  style	  and	  build	  
+your	  method	  around	  it.	  	  To	  quote	  Shakespeare,	  ‘To	  thine	  own	  self	  be	  true.’	  
+Return	  to	  the	  Top	  
+	  
+Divergences	  in	  Other	  Indicators	  
+	  
+All	  charts	  we’ve	  reviewed	  so	  far	  featured	  MACD-­‐Histogram,	  but	  divergences	  occur	  in	  many	  other	  
+indicators.	  	  The	  only	  requirement	  is	  that	  those	  indicators	  must	  oscillate	  around	  a	  zero	  line.	  	  This	  is	  why	  
+MACD-­‐Histogram	  can	  have	  divergences	  while	  MACD	  Lines	  cannot	  because	  MACD	  Lines	  do	  not	  oscillate	  
+around	  a	  zero	  line.	  
+	  
+In	  order	  for	  a	  classic	  divergence	  to	  emerge,	  an	  indicator	  has	  to	  cross	  its	  zero	  line	  between	  the	  two	  
+bottoms	  or	  tops.	  	  If	  there	  is	  no	  crossover,	  there	  is	  no	  divergence.	  	  This	  is	  why	  we	  called	  the	  patterns	  of	  
+MACD	  Lines	  in	  Figures	  1	  and	  7A	  bullish,	  but	  we	  couldn’t	  call	  them	  divergences,	  as	  MACD	  Lines	  have	  no	  
+zero	  line.	  	  Neither	  could	  we	  call	  the	  patterns	  of	  MACD	  Lines	  in	  Figures	  4	  and	  8B	  bearish	  divergences.	  	  
+Since	  the	  construction	  of	  MACD	  Lines	  doesn’t	  include	  a	  zero	  line,	  it	  may	  have	  a	  bullish	  or	  a	  bearish	  
+pattern,	  but	  not	  a	  classical	  divergence.	  
+	  
+Because	  of	  this	  rule,	  the	  concept	  of	  a	  bullish	  or	  a	  bearish	  divergence	  cannot	  be	  applied	  to	  many	  popular	  
+indicators,	  such	  as	  RSI	  or	  Stochastic.	  	  Sure	  enough,	  there	  are	  instances	  when	  higher	  prices	  are	  
+accompanied	  by	  a	  series	  of	  lower	  tops	  in	  RSI	  or	  Stochastic,	  indicating	  a	  weakening	  trend.	  	  You	  may	  well	  
+pay	  attention	  to	  such	  developments	  and	  use	  them	  in	  trading	  but	  you	  can’t	  call	  them	  divergences.	  
+	  
+For	  a	  bullish	  divergence	  to	  occur,	  there	  have	  two	  indicator	  bottoms	  with	  a	  bullish	  upswing	  across	  the	  
+zero	  line	  between	  them.	  	  For	  a	  bearish	  divergence,	  an	  indicator	  must	  have	  two	  upswings,	  and	  between	  
+them	  a	  break	  below	  the	  centerline.	  	  This	  is	  why	  we	  can	  apply	  the	  concept	  of	  a	  divergence	  only	  to	  those	  
+indicators	  that	  oscillate	  around	  a	  zero	  line.	  
+	  
+It	  pays	  to	  keep	  our	  concepts	  clear.	  	  The	  market	  is	  muddled	  enough	  as	  it	  is,	  and	  we	  must	  think	  clearly	  and	  
+be	  disciplined	  in	  order	  to	  succeed.	  	  There	  is	  no	  room	  for	  fuzzy	  definitions	  in	  market	  analysis.	  	  
+	  
+To	  apply	  the	  concept	  of	  divergences	  to	  other	  indicators,	  let’s	  review	  two	  examples.	  	  One	  of	  them	  is	  the	  
+Force	  Index	  and	  the	  other	  is	  the	  New	  High	  –	  New	  Low	  Index,	  both	  of	  which	  oscillate	  around	  their	  zero	  
+lines.	  
+	  
+Force	  Index	  is	  described	  in	  all	  of	  my	  books,	  starting	  with	  its	  first	  public	  introduction	  in	  Trading	  for	  a	  
+Living.	  	  I	  consider	  it	  the	  best	  tool	  for	  tracking	  volume	  in	  the	  markets.	  	  Volume	  serves	  as	  the	  essential	  
+engine	  of	  price	  trends,	  and	  Force	  Index	  tracks	  its	  changes	  much	  more	  clearly	  than	  any	  volume	  chart.	  
+	  
+Working	  with	  Force	  Index,	  I	  never	  use	  its	  raw	  values	  but	  smooth	  it	  with	  a	  moving	  average.	  	  I	  use	  a	  2-­‐day	  
+EMA	  for	  catching	  very	  short-­‐term	  trends	  and	  a	  13-­‐day	  EMA	  for	  intermediate	  trends,	  such	  as	  the	  ones	  
+shown	  above.	  	  Divergences	  in	  the	  13-­‐bar	  EMA	  of	  Force	  Index	  are	  especially	  valuable.	  
+	  
+	  
+	  
+Figure	  15	  AAPL	  daily	  with	  a	  13-­‐day	  EMA	  of	  Force	  Index	  with	  bullish	  and	  bearish	  divergences	  (chart	  by	  
+MetaStock).	  
+	  
+In	  area	  A	  Apple	  Computer	  (AAPL)	  fell	  to	  a	  new	  low	  and	  Force	  Index	  fell	  to	  a	  new	  low	  as	  well,	  confirming	  
+the	  power	  of	  bears.	  	  Prices	  dropped	  even	  lower,	  but	  the	  Force	  Index	  trended	  higher,	  crossing	  above	  its	  
+zero	  line	  in	  area	  B,	  ‘breaking	  the	  back	  of	  the	  bear.’	  	  Prices	  dropped	  to	  a	  new	  low	  in	  area	  C,	  but	  Force	  
+Index	  traced	  out	  a	  much	  more	  shallow	  low,	  completing	  a	  bullish	  divergence.	  	  It	  gave	  a	  buy	  signal	  by	  
+crossing	  above	  the	  zero	  line	  (marked	  with	  a	  green	  arrow),	  and	  AAPL	  was	  off	  to	  the	  races.	  
+	  
+Force	  Index	  reached	  a	  new	  high	  in	  area	  X,	  dropped	  below	  zero	  in	  area	  Y,	  breaking	  the	  back	  of	  the	  bull,	  
+then	  rallied	  again	  in	  area	  Z,	  tracing	  a	  bearish	  divergence.	  	  That	  signal	  was	  reinforced	  by	  the	  stock’s	  false	  
+upside	  breakout,	  and	  that	  combination	  of	  a	  false	  breakout	  and	  a	  divergence	  preceded	  a	  sharp	  
+downmove.	  
+	  
+Another	  important	  indicator	  that	  oscillates	  around	  its	  zero	  line	  is	  the	  New	  High	  –	  New	  Low	  Index	  
+(NHNL).	  	  I	  consider	  it	  the	  best	  leading	  indicator	  of	  the	  stock	  market.	  	  There	  is	  a	  chapter	  dedicated	  to	  it	  in	  
+Trading	  for	  a	  Living	  and	  I	  wrote	  an	  e-­‐book	  about	  it	  together	  with	  Kerry	  Lovvorn.	  
+	  
+	  
+	  
+Figure	  16	  S&P500	  weekly	  with	  a	  weekly	  NHNL.	  	  A	  bearish	  and	  a	  bullish	  divergences	  (chart	  by	  
+TradeStation).	  
+In	  March	  2011	  the	  stock	  market	  rallied	  to	  its	  new	  post-­‐2009	  peak.	  	  NHNL	  confirmed	  the	  power	  of	  bulls	  
+by	  rising	  to	  a	  new	  high	  in	  area	  X,	  telling	  us	  to	  expect	  even	  higher	  prices	  ahead.	  	  When	  prices	  dropped	  
+into	  their	  value	  zone,	  NHNL	  briefly	  dipped	  below	  zero	  in	  area	  Y,	  ‘breaking	  the	  back	  of	  the	  bull.’	  	  When	  
+the	  stock	  market	  rallied	  to	  a	  new	  bull	  market	  high	  in	  May	  in	  area	  Z,	  NHNL	  traced	  out	  a	  much	  lower	  peak,	  
+completing	  a	  bearish	  divergence	  and	  giving	  a	  sell	  signal.	  
+	  
+After	  the	  market	  had	  a	  nasty	  decline,	  mass	  bullishness	  evaporated	  and	  the	  public	  turned	  bearish.	  	  That’s	  
+when	  NHNL	  traced	  out	  a	  bullish	  divergence	  A-­‐B-­‐C,	  telling	  savvy	  traders	  not	  to	  panic	  and	  get	  positioned	  
+for	  a	  rally.	  	  The	  value	  of	  NHNL	  is	  so	  great	  that	  Kerry	  and	  I	  publish	  nightly	  updates	  and	  comments	  on	  this	  
+indicator	  at	  www.spiketrade.com	  (take	  a	  trial	  and	  see	  for	  yourself).	  
+	  
+We	  can	  find	  divergences	  in	  many	  indicators	  –	  as	  long	  as	  they	  include	  a	  zero	  line.	  	  Just	  remember	  these	  
+sequences:	  
+	  
+For	  a	  bullish	  divergence	  (bullish	  divergences	  occur	  at	  market	  bottoms):	  
+	  
+• 
+Prices	  fall	  to	  a	  new	  low,	  attempt	  to	  rally,	  but	  then	  drop	  to	  a	  lower	  low.	  
+• 
+An	  indicator	  falls	  to	  a	  new	  low,	  rallies	  above	  zero,	  then	  falls	  again,	  but	  to	  a	  more	  shallow	  low,	  
+and	  then	  ticks	  up.	  
+	  
+For	  a	  bearish	  divergence	  (bearish	  divergences	  occur	  at	  market	  peaks):	  
+	  
+• 
+Prices	  rally	  to	  a	  peak,	  decline,	  then	  rally	  to	  a	  higher	  peak.	  
+• 
+An	  indicator	  rallies	  to	  a	  peak,	  drops	  below	  zero,	  rallies	  to	  a	  lower	  peak,	  and	  then	  ticks	  down.	  
+	  
+Keeping	  these	  rules	  in	  mind	  will	  help	  you	  find	  bullish	  and	  bearish	  divergences	  in	  many	  markets,	  using	  
+many	  indicators.	  
+Return	  to	  the	  Top	  
+	  
+Divergences	  in	  Multiple	  Timeframes	  
+	  
+While	  writing	  the	  first	  draft	  of	  this	  chapter,	  I	  kept	  an	  eye	  on	  the	  quote	  screen	  where	  my	  day-­‐trade	  was	  
+going	  on,	  driven	  by	  bearish	  divergences.	  	  They	  occur	  on	  intraday	  charts	  much	  more	  often	  than	  on	  the	  
+dailies.	  	  The	  moves	  are	  not	  as	  large	  as	  on	  the	  dailies,	  but	  the	  opportunities	  are	  more	  frequent	  while	  risk	  
+control	  is	  much	  tighter.	  
+	  
+Keep	  in	  mind	  that	  the	  extent	  of	  any	  price	  move	  is	  in	  direct	  proportion	  to	  its	  timeframe.	  	  For	  example,	  
+looking	  at	  the	  S&P500	  and	  its	  trading	  vehicle,	  the	  e-­‐mini	  futures,	  a	  divergence	  on	  the	  weekly	  chart	  may	  
+lead	  to	  a	  move	  of	  over	  a	  hundred	  points,	  a	  divergence	  on	  a	  daily	  chart	  may	  precede	  a	  move	  of	  a	  couple	  
+of	  dozen	  points,	  while	  a	  divergence	  on	  a	  five-­‐minute	  chart	  may	  result	  in	  a	  move	  of	  only	  a	  few	  points.	  	  A	  
+divergence	  on	  a	  weekly	  chart	  of	  a	  stock	  tends	  to	  occur	  once	  every	  few	  years,	  while	  on	  the	  daily	  chart	  it	  
+may	  occur	  a	  few	  times	  per	  year,	  but	  on	  intraday	  charts	  you	  can	  catch	  it	  several	  times	  a	  week.	  
+	  
+You	  must	  remember	  that	  markets	  move	  at	  the	  same	  time	  in	  multiple	  timeframes.	  	  I	  keep	  running	  into	  
+day-­‐traders	  who	  keep	  staring	  at	  a	  five-­‐	  or	  ten-­‐minute	  chart	  to	  the	  exclusion	  of	  everything	  else.	  	  
+Invariably,	  they	  get	  sideswiped	  by	  moves	  that	  erupt	  from	  slightly	  longer	  timeframes.	  	  A	  serious	  day-­‐
+trader	  must	  follow	  the	  principles	  of	  Triple	  Screen,	  discussed	  above.	  	  With	  this	  caveat,	  let’s	  review	  several	  
+examples	  of	  divergences	  on	  intraday	  charts.	  
+	  
+	  
+	  
+Figure	  17	  S&P	  e-­‐mini	  futures,	  5-­‐minutes,	  with	  MACD-­‐Histogram	  and	  MACD	  Lines.	  	  A	  bearish	  divergence	  
+(chart	  by	  TradeStation).	  
+	  
+S&P	  rallied	  into	  top	  X,	  retreated,	  they	  rallied	  to	  a	  higher	  high	  in	  area	  Z.	  	  MACD-­‐Histogram	  traced	  a	  
+massive	  top	  X,	  and	  then	  broke	  the	  back	  of	  the	  bull	  in	  area	  Y,	  by	  falling	  below	  its	  zero	  line.	  	  It	  then	  rallied	  
+to	  a	  much	  lower	  top	  Z.	  	  When	  MACD-­‐H	  ticked	  down,	  it	  completed	  a	  bearish	  divergence	  and	  shoved	  
+prices	  down	  into	  a	  steepening	  decline.	  	  
+	  
+An	  intraday	  chart	  behaves	  just	  like	  a	  daily	  chart	  –	  they	  even	  look	  alike	  if	  you	  remove	  their	  price	  and	  time	  
+markings.	  	  Once	  you	  learn	  to	  trade	  divergences,	  you	  can	  trade	  them	  in	  any	  timeframe.	  	  Just	  remember	  
+that	  day-­‐trading	  gives	  you	  no	  time	  to	  think	  –	  your	  actions	  must	  be	  nearly	  automatic.	  	  This	  demand	  
+makes	  day-­‐trading	  unsuitable	  for	  beginners.	  
+	  
+	  
+	  
+Figure	  18	  BIDU,	  5-­‐minutes,	  with	  MACD-­‐Histogram	  and	  MACD	  Lines.	  	  Bearish	  and	  bullish	  divergences	  
+(chart	  by	  TradeStation).	  
+	  
+At	  the	  time	  of	  this	  writing,	  Baidu,	  Inc,	  (BIDU)	  is	  one	  of	  the	  day-­‐traders’	  favorites.	  	  Its	  wide	  swings	  provide	  
+many	  opportunities	  for	  nimble	  operators.	  	  In	  this	  example,	  BIDU	  rallied	  to	  a	  new	  peak,	  creating	  a	  bearish	  
+divergence	  X-­‐Y-­‐Z	  shortly	  before	  the	  close	  (a	  vertical	  grey	  line).	  	  The	  next	  day	  it	  slid	  down	  from	  the	  
+opening	  bell,	  carving	  out	  a	  bottom	  before	  noon	  in	  area	  A,	  with	  the	  new	  low	  of	  MACD-­‐Histogram	  
+confirming	  the	  power	  of	  bears.	  	  BIDU	  went	  flat	  around	  lunchtime,	  with	  MACD-­‐Histogram	  rising	  above	  
+zero	  in	  area	  B,	  breaking	  the	  back	  of	  the	  bear.	  	  The	  stock	  broke	  to	  a	  new	  low	  in	  area	  C	  –	  but	  MACD-­‐
+Histogram	  refused	  to	  confirm	  that	  decline.	  	  Markets	  run	  on	  a	  two-­‐party	  system	  –	  when	  bears	  become	  
+weak,	  it	  is	  time	  to	  bet	  on	  the	  bulls.	  	  This	  bullish	  divergence	  gave	  a	  buy	  signal	  just	  before	  an	  explosive	  
+upmove.	  	  Profits	  could	  be	  taken	  near	  the	  upper	  channel	  line.	  	  They	  absolutely	  should	  be	  taken	  when	  
+prices	  stall	  above	  their	  upper	  channel	  line.	  
+	  
+This	  chart	  has	  several	  other	  important	  features.	  	  Notice	  a	  bullish	  pattern	  of	  MACD	  Lines	  in	  area	  C	  and	  of	  
+course	  the	  false	  downside	  breakout	  at	  bottom	  C.	  	  A	  false	  breakout	  occurs	  when	  prices	  break	  below	  
+support	  but	  cannot	  follow	  through	  and	  rally	  above	  the	  line	  of	  support,	  giving	  a	  buy	  signal.	  
+	  
+We	  could	  have	  filled	  hundreds	  pages	  with	  examples	  of	  bullish	  and	  bearish	  divergences	  on	  intraday	  
+charts	  –	  hourly,	  half-­‐hourly,	  10-­‐minute,	  5-­‐minute,	  you	  name	  it.	  	  Perhaps	  you	  can	  do	  that	  in	  your	  own	  
+trading	  diary.	  	  Just	  keep	  in	  mind	  that	  the	  concept	  of	  divergences	  applies	  to	  all	  timeframes.	  
+Return	  to	  the	  Top	  
+	  
+Scanning	  for	  Divergences	  
+	  
+There	  is	  a	  huge	  universe	  of	  stocks	  available	  to	  traders,	  tempting	  many	  to	  create	  an	  automated	  scan	  for	  
+finding	  divergences.	  	  The	  problem	  is	  that	  while	  divergences	  often	  leap	  at	  you	  when	  you	  look	  at	  a	  chart,	  
+they	  are	  surprisingly	  difficult	  to	  pick	  up	  with	  a	  scan.	  
+	  
+Several	  expert	  programmers	  have	  told	  me	  that	  writing	  a	  divergence	  scan	  was	  their	  hardest	  challenge.	  	  
+None	  of	  them	  was	  completely	  happy	  with	  the	  result.	  	  All	  automatic	  scans	  I’ve	  seen	  had	  massive	  numbers	  
+of	  false	  positives	  and	  negatives.	  	  False	  negatives	  miss	  perfectly	  good	  divergences,	  while	  false	  positives	  
+flag	  charts	  that	  have	  no	  divergences.	  	  False	  negatives	  result	  in	  missed	  opportunities,	  while	  false	  positives	  
+lead	  to	  a	  colossal	  waste	  of	  time.	  
+	  
+Why	  a	  divergence	  pattern,	  so	  easily	  recognized	  by	  an	  experienced	  trader,	  becomes	  so	  hard	  to	  catch	  with	  
+an	  automatic	  scan?	  	  My	  programmer	  offered	  a	  technical	  answer:	  a	  divergence	  is	  an	  analog	  pattern;	  
+computerized	  scans	  don’t	  perform	  well	  when	  trying	  to	  solve	  analog	  puzzles	  with	  digital	  approaches.	  
+	  
+Speaking	  of	  scans,	  keep	  in	  mind	  that	  a	  scan	  should	  have	  not	  only	  positive	  but	  also	  negative	  parameters	  
+in	  order	  to	  eliminate	  stocks	  that	  are	  more	  likely	  to	  create	  problems.	  	  For	  example:	  
+	  
+• 
+omit	  stocks	  that	  trade	  fewer	  than	  a	  million	  or	  at	  least	  half	  a	  million	  shares	  a	  day	  
+• 
+do	  not	  look	  for	  bullish	  divergences	  in	  stocks	  cheaper	  than	  $3	  
+• 
+do	  not	  look	  for	  bearish	  divergences	  in	  stocks	  cheaper	  than	  $10	  
+	  
+It	  pays	  to	  eliminate	  low-­‐volume	  stocks	  from	  a	  scan	  because	  low	  volume	  reflects	  low	  public	  participation.	  	  
+This	  undermines	  the	  entire	  principle	  of	  technical	  analysis	  –	  reading	  mass	  psychology	  of	  the	  markets.	  	  If	  
+the	  volume	  is	  low,	  there	  is	  not	  enough	  to	  read.	  	  Low-­‐priced	  stock	  can	  experience	  greater	  volatility.	  	  This	  
+is	  good	  when	  it	  goes	  your	  way	  but	  can	  be	  bone-­‐crushing	  when	  it	  swings	  against	  you	  –	  I	  tend	  to	  avoid	  this	  
+risk.	  
+Return	  to	  the	  Top	  
+	  
+The	  Next	  Step:	  MACD	  Semi-­‐automatic	  
+	  
+While	  writing	  this	  e-­‐book,	  I	  found	  a	  new	  solution	  for	  the	  challenge	  of	  scanning	  for	  divergences.	  	  As	  an	  
+aside,	  this	  is	  why	  I	  like	  to	  teach	  and	  write	  –	  it	  challenges	  me	  to	  think	  deeper	  and	  harder.	  	  I	  named	  my	  
+method	  “MACD-­‐Histogram	  Semiautomatic	  divergence	  scanner.”	  
+	  
+We	  saw	  that	  a	  bullish	  divergence	  consists	  of	  two	  bottoms,	  A	  and	  C,	  with	  a	  top	  B	  between	  them.	  	  This	  
+scan	  detects	  when	  the	  bottom	  A	  and	  top	  B	  have	  been	  traced	  and	  the	  bottom	  C	  just	  begins	  to	  form.	  	  At	  
+that	  point	  the	  automatic	  mode	  ends	  and	  the	  manual	  begins.	  	  It	  now	  becomes	  a	  trader’s	  job	  to	  identify	  
+the	  bottom	  C	  and	  trade	  it.	  
+	  
+A	  scan	  for	  bullish	  divergences	  performs	  the	  following	  steps,	  in	  this	  sequence:	  
+	  
+1. 
+MACD-­‐Histogram	  drops	  to	  the	  lowest	  low	  of	  100	  bars	  (this	  number	  can	  be	  changed).	  	  This	  
+identifies	  bottom	  A	  of	  the	  potential	  A-­‐B-­‐C	  bullish	  divergence.	  
+2. 
+MACD-­‐Histogram	  crosses	  above	  the	  zero	  line,	  ‘breaking	  the	  back	  of	  the	  bear.’	  	  This	  identifies	  top	  
+B	  of	  a	  potential	  bullish	  divergence	  pattern.	  
+3. 
+With	  the	  stock	  hitting	  new	  100-­‐day	  lows,	  MACD-­‐Histogram	  crosses	  below	  its	  zero	  line	  again	  –	  
+and	  at	  this	  point	  the	  scan	  flags	  the	  stock.	  	  Now	  it	  is	  the	  time	  to	  switch	  from	  using	  a	  computer	  to	  relying	  
+on	  your	  eyes,	  as	  you	  hunt	  for	  the	  potential	  bottom	  C,	  completing	  the	  bullish	  divergence	  and	  giving	  a	  buy	  
+signal.	  
+	  
+	  
+	  
+Figure	  19	  ALLT	  daily	  with	  MACD-­‐Histogram	  and	  MACD	  Lines.	  	  MACD	  Semi-­‐automatic	  alerts	  (chart	  by	  
+TC2000).	  
+	  
+Bullish	  and	  bearish	  patterns	  here	  tend	  to	  mirror	  one	  another.	  	  In	  area	  A	  both	  the	  Allott	  Communications	  
+(ALLT)	  and	  MACD-­‐Histogram	  fall	  to	  a	  new	  low.	  	  The	  stock	  works	  its	  way	  down	  even	  lower,	  while	  MACD-­‐H	  
+remains	  below	  zero,	  tracing	  out	  a	  broad	  bottom.	  	  A	  rally	  in	  area	  B	  breaks	  the	  back	  of	  the	  bear.	  	  When	  
+the	  indicator	  sinks	  below	  zero	  following	  the	  top	  B,	  the	  semi-­‐automatic	  scan	  flags	  this	  trading	  vehicle.	  	  At	  
+this	  point	  a	  trader	  can	  start	  following	  it	  visually	  on	  a	  daily	  basis.	  
+	  
+In	  area	  X,	  the	  stock	  and	  the	  indicator	  both	  rally	  to	  a	  new	  peak.	  	  The	  stock	  continues	  even	  higher,	  while	  
+the	  indicator	  traces	  a	  broad	  top.	  	  MACD-­‐H	  cracks	  in	  area	  Y,	  breaking	  the	  back	  of	  the	  bull.	  	  When	  MACD-­‐
+Histogram	  rallies	  above	  its	  zero	  line	  again,	  the	  semi-­‐automatic	  scan	  flags	  the	  stock	  as	  a	  potential	  short	  in	  
+the	  near	  future.	  	  It	  is	  time	  to	  begin	  watching	  it	  on	  a	  daily	  basis,	  ready	  to	  trade	  a	  more	  severe	  price	  break.	  
+	  
+A	  scan	  for	  bearish	  divergences	  helps	  catch	  market	  tops.	  	  A	  bearish	  divergence	  consists	  of	  two	  tops,	  X	  
+and	  Z,	  with	  a	  break	  Y	  between	  them.	  	  This	  scan	  detects	  when	  the	  top	  X	  and	  bottom	  Y	  have	  been	  traced	  
+and	  the	  top	  Z	  begins	  to	  form.	  	  At	  that	  point	  the	  automatic	  mode	  ends	  and	  the	  manual	  begins.	  	  It	  now	  
+becomes	  a	  trader’s	  job	  to	  identify	  the	  top	  Z	  and	  trade	  it.	  	  These	  are	  the	  steps:	  
+	  
+1. 
+MACD-­‐Histogram	  rises	  to	  the	  highest	  high	  of	  100	  bars	  (you	  may	  change	  this	  number).	  	  This	  
+identifies	  top	  X	  of	  a	  potential	  bearish	  divergence	  pattern.	  
+2. 
+MACD-­‐Histogram	  crosses	  below	  its	  zero	  line.	  	  This	  identifies	  bottom	  Y,	  ‘breaking	  the	  back	  of	  the	  
+bull.’	  
+3. 
+With	  the	  stock	  rising	  to	  new	  100-­‐day	  highs,	  MACD-­‐Histogram	  crosses	  above	  its	  zero	  line	  –	  at	  this	  
+point	  the	  scanner	  flags	  the	  stock.	  	  Now	  is	  the	  time	  to	  switch	  from	  using	  the	  computer	  to	  using	  your	  eyes,	  
+hunting	  for	  the	  potential	  top	  Z.	  
+	  
+	  
+	  
+Figure	  20	  HPQ	  daily	  with	  MACD	  Semi-­‐automatic	  (chart	  by	  TradeStation).	  
+	  
+In	  zones	  1	  and	  3,	  potential	  bearish	  divergences	  are	  signaled	  by	  red	  dots	  as	  the	  top	  Z	  is	  starting	  to	  
+emerge.	  	  When	  the	  scan	  detects	  a	  higher	  price	  peak	  accompanied	  by	  a	  lower	  MACD-­‐Histogram,	  it	  starts	  
+putting	  red	  dots	  above	  the	  plot,	  warning	  of	  the	  possibility	  of	  a	  bearish	  divergence.	  	  In	  zone	  2	  this	  scan	  
+warns	  of	  an	  approaching	  bullish	  divergence	  by	  flashing	  a	  green	  dot	  when	  prices	  sink	  to	  a	  new	  low	  C,	  
+while	  MACD-­‐H,	  while	  falling,	  is	  still	  above	  its	  bottom	  A.	  
+	  
+I	  use	  this	  semiautomatic	  scan	  when	  looking	  for	  stocks	  to	  trade	  during	  the	  coming	  week.	  	  In	  the	  chart	  
+above	  (Figure	  20)	  red	  dots	  identify	  developing	  bearish	  and	  green	  dot	  developing	  bullish	  divergences.	  
+	  
+At	  the	  time	  of	  the	  publication	  of	  this	  2nd	  edition	  we	  offer	  the	  trading	  public	  two	  options	  of	  accessing	  this	  
+tool.	  	  You	  may	  purchase	  our	  semiautomatic	  scanner	  for	  TradeStation	  from	  elder.com.	  	  Also,	  regardless	  
+of	  what	  software	  you	  use,	  you	  can	  receive	  a	  spreadsheet	  each	  weekend	  with	  my	  scan	  results	  of	  the	  
+weekly	  and	  daily	  charts	  of	  all	  500	  component	  stocks	  of	  the	  S&P500.	  	  We	  send	  this	  scan	  each	  weekend	  at	  
+no	  charge	  to	  all	  who	  subscribers	  to	  our	  webinars.	  
+Return	  to	  the	  Top	  
+	  
+Conclusion	  
+	  
+Bullish	  and	  bearish	  divergences	  are	  among	  the	  most	  powerful	  trading	  signals.	  	  Use	  these	  sharp	  tools	  
+carefully,	  keeping	  in	  mind	  several	  principles	  and	  rules:	  
+	  
+1. 
+A	  bullish	  divergence	  consists	  of	  two	  price	  bottoms	  separated	  by	  a	  rally,	  with	  the	  second	  price	  
+bottom	  lower	  than	  the	  first.	  	  At	  the	  same	  time	  an	  indicator	  traces	  a	  similar	  pattern,	  crossing	  above	  the	  
+zero	  line	  between	  two	  bottoms,	  only	  its	  second	  bottom	  is	  higher	  than	  the	  first.	  
+2. 
+A	  bearish	  divergence	  consists	  of	  two	  price	  tops	  separated	  by	  a	  break,	  with	  the	  second	  top	  higher	  
+than	  the	  first.	  	  At	  the	  same	  time	  an	  indicator	  traces	  a	  similar	  pattern,	  breaking	  below	  its	  zero	  line	  
+between	  two	  tops,	  and	  its	  second	  top	  is	  lower	  than	  the	  first.	  
+3. 
+Bullish	  as	  well	  as	  bearish	  divergences	  follow	  well-­‐defined	  patterns.	  	  If	  you	  see	  a	  pattern	  that	  
+deviates	  from	  the	  norm,	  the	  safest	  thing	  to	  do	  is	  to	  skip	  that	  stock	  and	  move	  on	  to	  another	  one.	  	  Do	  not	  
+bend	  the	  rules	  and	  force	  yourself	  to	  trade.	  	  Markets	  provide	  a	  wealth	  of	  opportunities.	  	  Private	  traders	  
+have	  the	  luxury	  of	  freedom.	  	  An	  institutional	  trader	  must	  trade	  every	  day,	  but	  as	  a	  private	  trader	  you	  can	  
+trade	  only	  when	  everything	  lines	  up	  correctly.	  	  Do	  not	  throw	  away	  this	  advantage,	  wait	  for	  those	  
+patterns	  to	  emerge.	  
+4. 
+Remember	  that	  markets	  live	  in	  multiple	  timeframes.	  	  If	  you	  see	  a	  bullish	  divergence	  on	  a	  daily	  
+chart,	  it	  is	  important	  to	  know	  what	  the	  weekly	  is	  doing.	  	  It’s	  good	  if	  it	  is	  hitting	  support,	  reinforcing	  the	  
+bullish	  case.	  	  If,	  on	  the	  other	  hand,	  it	  is	  falling	  like	  a	  knife,	  one	  must	  be	  doubly	  cautious	  trading	  a	  bullish	  
+divergence	  on	  the	  daily	  chart	  –	  skip	  it	  or	  trade	  a	  smaller	  size.	  
+	  
+Thank	  you	  for	  having	  joined	  me	  on	  this	  journey	  into	  a	  fascinating	  and	  rewarding	  area	  of	  technical	  
+analysis.	  	  Do	  your	  homework,	  keep	  good	  records,	  and	  apply	  risk	  management	  rules	  to	  become	  a	  winner.	  
+	  
+Best	  wishes	  for	  successful	  trading,	  
+	  
+Dr.	  Alexander	  Elder	  
+Vermont	  
+June	  2014	  
+Return	  to	  the	  Top	  
+	  
+Thanks	  
+	  
+I	  feel	  grateful	  to	  a	  group	  of	  loyal	  friends	  who	  kindly	  contributed	  to	  this	  book.	  	  In	  drawing	  my	  charts	  I	  
+relied	  on	  technical	  tools	  implemented	  by	  a	  brilliant	  programmer	  named	  John	  Bruns.	  	  Since	  graduating	  
+from	  my	  Traders’	  Camp	  years	  ago,	  he	  has	  developed	  a	  set	  of	  Elder-­‐disks	  which	  add	  my	  favorite	  tools	  to	  
+several	  popular	  charting	  programs.	  	  All	  charts	  in	  this	  e-­‐book	  were	  drawn	  using	  Elder-­‐disks.	  
+	  
+Jeff	  Parker,	  an	  elite	  member	  of	  SpikeTrade,	  gave	  the	  manuscript	  a	  serious	  reading	  and	  made	  suggestions	  
+and	  corrections.	  	  Kelly	  Clement	  of	  Equis.com	  drew	  several	  charts	  using	  MetaStock,	  while	  Patricia	  Liu	  
+drew	  several	  charts	  using	  StockFinder.	  	  Kerry	  Lovvorn	  helped	  with	  the	  jacked	  design.	  
+	  
+My	  thanks	  to	  all	  of	  you.	  
+Return	  to	  the	  Top	  
+	  
+Sources	  
+	  
+Elder,	  Dr.	  Alexander.	  	  The New Sell and Sell Short:	  How	  to	  Take	  Profits,	  Cut	  Losses,	  and	  Benefit	  from	  
+Price	  Declines.	  	  John	  Wiley	  &	  Sons,	  2011	  
+Elder,	  Dr.	  Alexander.	  	  To	  Trade	  or	  Not	  to	  Trade:	  A	  Beginner’s	  Guide.	  	  elder.com	  2011	  
+Elder,	  Dr.	  Alexander.	  	  Trading	  for	  a	  Living:	  Psychology,	  Tactics,	  Money	  Management.	  	  John	  Wiley	  &	  Sons,	  
+1993	  
+Elder,	  Dr.	  Alexander	  &	  Kerry	  Lovvorn.	  The	  New	  High	  –	  New	  Low	  Index	  (Alabama:	  SpikeTrade,	  2012).	  
+Lovvorn,	  Kerry.	  	  Personal	  communication,	  2014.	  
+Lynch,	  Peter.	  	  One	  Up	  on	  Wall	  Street.	  	  Simon	  &	  Schuster,	  2000	  
+Murphy,	  John	  J.	  	  Technical	  Analysis	  of	  the	  Financial	  Markets	  .	  	  New	  York	  Institute	  of	  Finance,	  1999	  
+Return	  to	  the	  Top	  
+	  
+About	  the	  Author	  
+	  
+Alexander	  Elder,	  M.D.,	  is	  a	  professional	  trader	  and	  a	  teacher	  of	  traders.	  He	  is	  the	  author	  of	  Trading	  for	  a	  
+Living,	  considered	  a	  modern	  classic	  among	  traders.	  First	  published	  in	  1993,	  this	  international	  best-­‐seller	  
+has	  been	  translated	  into	  more	  than	  a	  dozen	  languages	  and	  is	  being	  used	  to	  educate	  traders	  around	  the	  
+world.	  His	  Come	  into	  My	  Trading	  Room:	  A	  Complete	  Guide	  to	  Trading	  was	  named	  a	  2002	  Barron’s	  Book	  
+of	  the	  Year.	  His	  Entries	  &	  Exits:	  Visits	  to	  16	  Trading	  Rooms	  was	  named	  a	  2007	  SFO	  Magazine	  Book	  of	  the	  
+Year.	  His	  latest	  book	  is	  The	  New	  Sell	  &	  Sell	  Short:	  How	  to	  Take	  Profits,	  Cut	  Losses,	  and	  Benefit	  from	  Price	  
+Declines	  (2011).	  
+	  
+Dr.	  Elder	  was	  born	  in	  Leningrad	  and	  grew	  up	  in	  Estonia,	  where	  he	  entered	  medical	  school	  at	  the	  age	  of	  
+16.	  At	  23,	  while	  working	  as	  a	  ship’s	  doctor,	  he	  jumped	  a	  Soviet	  ship	  in	  Africa	  and	  received	  political	  
+asylum	  in	  the	  United	  States.	  He	  worked	  as	  a	  psychiatrist	  in	  New	  York	  City	  and	  taught	  at	  Columbia	  
+University.	  His	  experience	  as	  a	  psychiatrist	  provided	  him	  with	  unique	  insight	  into	  the	  psychology	  of	  
+trading.	  Dr.	  Elder’s	  books,	  articles,	  and	  reviews	  helped	  make	  one	  of	  today’s	  leading	  teachers	  of	  trading.	  
+	  
+Dr.	  Elder	  is	  the	  originator	  of	  Traders’	  Camps—week-­‐long	  classes	  for	  traders.	  He	  is	  the	  founder	  of	  the	  
+SpikeTrade	  group,	  whose	  members	  are	  professional	  and	  semi-­‐professional	  traders.	  They	  share	  their	  best	  
+stock	  picks	  each	  week	  in	  competition	  for	  prizes.	  Dr.	  Elder	  continues	  to	  trade	  and	  is	  a	  sought-­‐after	  
+speaker	  at	  conferences	  worldwide.	  	  
+	  
+Readers	  of	  this	  book	  are	  welcome	  to	  request	  a	  free	  subscription	  to	  his	  electronic	  newsletter	  by	  
+contacting	  his	  office:	  
+	  
+	  
+	  
+PO	  Box	  20555,	  Columbus	  Circle	  Station	  
+New	  York,	  NY	  10023,	  USA	  
+Tel.	  718.507.1033	  
+e-­‐mail:	  info@elder.com	  
+website:	  www.elder.com	  
+Return	  to	  the	  Top	  
+	  
+	  
+	  
+	  
+	  
+Answers	  to	  Questions	  (The	  Engine	  Room)	  
+	  
+Read	  the	  answer	  to	  your	  question	  and	  return	  to	  Reader	  Exercises.	  	  Do	  not	  read	  other	  answers!	  
+	  
+Exercise	  A	  –	  AMP	  Answer	  
+	  
+	  
+	  
+Figure	  07a	  AMP	  daily.	  	  Answer:	  yes,	  a	  bullish	  divergence	  signals	  a	  rally	  (chart	  by	  TradeStation).	  
+	  
+When	  prices	  dropped	  in	  area	  A,	  the	  new	  low	  of	  MACD-­‐Histogram	  confirmed	  the	  downtrend.	  
+A	  rally	  in	  area	  B	  lifted	  MACD-­‐H	  above	  its	  zero	  line,	  ‘breaking	  the	  back	  of	  the	  bear.”	  	  That’s	  where	  a	  
+serious	  trader	  should	  begin	  closely	  watching	  his	  stock,	  to	  see	  whether	  a	  bullish	  divergence	  will	  form.	  	  
+Notice	  that	  in	  area	  B	  prices	  rallied	  slightly	  above	  their	  value	  zone,	  showing	  that	  bulls	  were	  getting	  
+stronger.	  	  Prices	  fell	  to	  a	  new	  low	  in	  area	  C,	  but	  MACD-­‐H	  traced	  out	  a	  much	  more	  shallow	  low.	  	  It	  
+completed	  a	  bullish	  divergence	  and	  gave	  a	  buy	  signal	  when	  it	  ticked	  up	  from	  that	  bottom.	  	  Notice	  two	  
+additional	  bullish	  signals	  in	  area	  C	  –	  a	  bullish	  pattern	  of	  MACD	  Lines	  and	  a	  ‘kangaroo	  tail’	  –	  a	  price	  bar	  
+that	  protruded	  down	  from	  a	  tight	  weave	  of	  prices.	  	  It	  showed	  that	  AMP	  tested	  lower	  prices	  but	  rejected	  
+them.	  
+Return	  to	  AMP	  question	  
+	  
+Exercise	  B	  –	  answer	  AMZN	  
+	  
+	  
+	  
+Figure	  08a	  AMZN	  daily.	  	  Answer:	  yes,	  a	  bearish	  divergence	  calls	  for	  a	  decline	  (chart	  by	  TradeStation).	  
+	  
+In	  April	  2010	  I	  flew	  for	  a	  long	  weekend	  in	  the	  Caribbean.	  	  I	  wasn’t	  paying	  much	  attention	  to	  the	  market	  
+during	  that	  trip,	  but	  on	  Friday	  morning,	  while	  reading	  my	  emails	  under	  a	  poolside	  umbrella	  I	  received	  a	  
+message	  from	  Kerry	  Lovvorn,	  my	  friend	  and	  partner	  in	  SpikeTrade.	  	  He	  sent	  me	  a	  chart	  of	  AMZN	  with	  a	  
+few	  arrows	  and	  a	  question	  mark.	  	  A	  bearish	  divergence	  X	  –	  Y2	  –	  Z2	  leapt	  at	  me	  from	  the	  chart.	  	  I	  had	  
+missed	  previous	  divergences	  in	  AMZN,	  but	  I	  was	  not	  going	  to	  miss	  this	  one!	  	  I	  immediately	  shorted	  this	  
+stock,	  placing	  a	  stop	  near	  its	  recent	  peak,	  then	  closed	  my	  laptop	  and	  took	  my	  wife	  for	  a	  walk	  on	  the	  
+beach.	  	  The	  trade	  was	  profitable	  from	  day	  one.	  	  I	  cashed	  out	  the	  following	  week,	  when	  prices	  appeared	  
+to	  stall	  below	  their	  value	  zone.	  
+	  
+I	  had	  not	  taken	  full	  advantage	  of	  that	  decline,	  but	  the	  power	  word	  in	  trading	  is	  ‘Enough.’	  	  I	  got	  enough	  
+and	  was	  happy	  with	  it.	  
+	  
+Let	  us	  stay	  with	  this	  chart	  for	  a	  little	  longer.	  	  You	  can	  see	  a	  deep	  bottom	  A,	  where	  MACD-­‐H	  marked	  the	  
+point	  of	  the	  maximum	  power	  of	  the	  bears.	  	  At	  point	  B	  the	  back	  of	  the	  bear	  was	  broken.	  	  Now,	  at	  the	  
+right	  edge	  of	  the	  chart,	  you	  should	  be	  watching	  AMZN	  with	  your	  index	  finger	  on	  the	  trigger.	  	  As	  soon	  as	  
+MACD-­‐H,	  currently	  below	  zero,	  ticks	  up,	  it’ll	  complete	  a	  bullish	  divergence	  and	  give	  a	  buy	  signal.	  
+	  
+Stocks	  have	  personalities,	  which	  is	  why	  their	  patterns	  tend	  to	  repeat.	  	  Some	  stocks	  have	  frequent	  
+divergences	  often,	  others	  have	  them	  rarely	  or	  never.	  	  AMZN	  likes	  having	  divergences,	  and	  another	  
+striking	  bearish	  divergence	  is	  marked	  on	  the	  chart	  8b,	  below.	  	  Examine	  it,	  moving	  slowly	  from	  left	  to	  
+right	  –	  and	  see	  whether	  you	  can	  find	  one	  more,	  unmarked	  bearish	  divergence.	  
+	  
+	  
+	  
+Figure	  08b	  AMZN	  daily	  follow-­‐up.	  	  Two	  more	  bearish	  divergences	  in	  2011.	  
+	  
+The	  divergence	  X-­‐Y-­‐Z	  was	  accompanied	  by	  a	  false	  upside	  breakout.	  
+Hint:	  the	  unmarked	  bearish	  divergence	  is	  near	  the	  left	  edge	  of	  the	  chart.	  
+Return	  to	  AMZN	  question	  
+	  
+Exercise	  C	  –	  answer	  BBBY	  
+	  
+	  
+	  
+Figure	  09a	  BBBY	  daily	  (chart	  by	  TC2000.com).	  
+	  
+Answer:	  no,	  since	  the	  second	  peak	  of	  MACD-­‐H	  is	  higher	  than	  the	  previous	  one,	  meaning	  there	  is	  no	  
+bearish	  divergence.	  
+	  
+BBBY	  is	  rising,	  and	  the	  peak	  of	  MACD-­‐Histogram	  near	  the	  right	  edge	  is	  higher	  than	  its	  previous	  peak	  in	  
+the	  middle	  of	  the	  chart.	  	  In	  area	  X	  MACD-­‐Histogram	  rallied	  above	  zero,	  confirming	  price	  rally.	  	  In	  area	  Y	  
+MACD-­‐H	  fell	  below	  zero,	  breaking	  the	  back	  of	  the	  bull.	  	  It	  rallied	  near	  the	  right	  edge	  of	  the	  ‘Question’	  
+chart	  (marked	  here	  by	  a	  vertical	  line)	  and	  appeared	  to	  stall.	  	  Notice	  that	  the	  latest	  peak	  of	  MACD-­‐H	  was	  
+higher	  than	  peak	  X	  –	  meaning	  there	  was	  no	  divergence.	  	  For	  a	  valid	  bearish	  divergence	  to	  occur,	  the	  
+second	  peak	  of	  the	  indicator	  must	  be	  lower	  than	  the	  first.	  
+Return	  to	  BBBY	  question	  
+	  
+Exercise	  D	  –	  answer	  GOOG	  
+	  
+	  
+	  
+Figure	  10a	  GOOG	  daily	  (chart	  by	  TC2000.com).	  
+	  
+Answer:	  no,	  the	  second	  bottom	  of	  MACD-­‐H	  is	  lower	  than	  the	  previous	  one,	  meaning	  there	  is	  no	  bullish	  
+divergence.	  
+	  
+In	  area	  A	  MACD-­‐Histogram	  fell	  to	  a	  new	  low,	  confirming	  the	  decline.	  	  In	  area	  B	  it	  rallied	  above	  zero,	  
+breaking	  the	  back	  of	  the	  bear.	  	  Near	  the	  right	  edge	  of	  the	  ‘Question’	  chart	  (marked	  here	  by	  a	  vertical	  
+line)	  MACD-­‐H	  fell	  to	  a	  lower	  low	  –	  and	  that	  meant	  there	  was	  no	  bullish	  divergence.	  	  For	  a	  valid	  bullish	  
+divergence	  to	  occur,	  the	  second	  bottom	  of	  MACD-­‐H	  must	  be	  shallower	  than	  the	  first.	  
+	  
+A	  trader	  who	  bought	  near	  the	  right	  edge	  of	  the	  Question	  chart	  could	  have	  avoided	  a	  loss	  or	  even	  taken	  a	  
+bit	  of	  profit	  by	  quickly	  moving	  his	  or	  her	  protective	  stop	  slightly	  above	  the	  breakeven	  level.	  	  But	  this	  sort	  
+of	  fancy	  dancing	  is	  a	  hard	  game.	  	  Professional	  traders	  do	  not	  look	  for	  challenges	  in	  the	  markets	  –	  we	  
+look	  for	  reliable	  setups.	  	  Markets	  are	  harsh	  and	  unforgiving,	  and	  it	  is	  safer	  to	  wait	  until	  a	  clear	  signal	  
+emerges	  on	  your	  screen.	  
+	  
+PS:	  watch	  GOOG	  like	  a	  hawk	  at	  the	  right	  edge	  of	  the	  screen.	  	  MACD-­‐Histogram	  fell	  to	  a	  new	  low	  A2,	  then	  
+rallied	  to	  a	  top	  B2,	  breaking	  the	  back	  of	  the	  bear.	  	  It	  lingered	  above	  zero	  for	  several	  weeks	  before	  sinking	  
+near	  the	  right	  edge	  of	  the	  chart.	  	  If	  it	  ticks	  up	  from	  a	  more	  shallow	  level	  than	  A2,	  it	  will	  create	  a	  bullish	  
+divergence	  and	  give	  a	  buy	  signal.	  
+Return	  to	  GOOG	  question	  
+	  

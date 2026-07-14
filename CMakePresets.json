@@ -1,0 +1,18 @@
+{
+  "version": 4,
+  "configurePresets": [
+    {
+      "name": "wsl-clang-cl-release",
+      "displayName": "WSL Clang-cl (Windows DLL)",
+      "description": "Cross-compile Windows DLL using clang-cl-22 with a custom toolchain file.",
+      "generator": "Ninja", 
+      "binaryDir": "${sourceDir}/build-windows",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/toolchain-clang-cl.cmake",
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "toolchainFile": "${sourceDir}/toolchain-clang-cl.cmake"
+    }
+  ]
+}

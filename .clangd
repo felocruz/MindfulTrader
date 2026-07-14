@@ -1,0 +1,4 @@
+CompileFlags:
+  Compiler: clang-cl-22
+  CompilationDatabase: build-windows
+  

@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir -p /home/rcruz/devel/VSCode/MindfulTrader/knowledge/global/sierra_chart)",
+      "Bash(mkdir -p /home/rcruz/devel/VSCode/MindfulTrader/knowledge/global/architecture)",
+      "Bash(mkdir -p /home/rcruz/devel/VSCode/MindfulTrader/knowledge/global/zmq)",
+      "Bash(mkdir -p /home/rcruz/devel/VSCode/MindfulTrader/knowledge/global/cpp)",
+      "WebFetch(domain:www.sierrachart.com)",
+      "WebSearch",
+      "Bash(awk 'NR>=2460 && NR<=2480' /home/rcruz/devel/VSCode/MindfulTrader/sierra_chart_dependencies/sierrachart.h)",
+      "Bash(awk 'NR>=2770 && NR<=2790' /home/rcruz/devel/VSCode/MindfulTrader/sierra_chart_dependencies/sierrachart.h)",
+      "Skill(deep-research)"
+    ]
+  }
+}

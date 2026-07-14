@@ -1,0 +1,16 @@
+LIBRARY MindfulTrader.dll
+EXPORTS
+scdll_DLLVersion
+scdll_DLLName
+scsf_MindfulTrader
+scsf_Screen1_Impulse
+scsf_Screen1_MACD
+scsf_Screen1_ForceIndexAverage
+scsf_Screen2_Impulse
+scsf_Screen2_MACD
+scsf_Screen2_KeltnerChannel
+scsf_Screen2_ForceIndex
+scsf_Screen2_StochasticCrossover
+scsf_Screen3_KeltnerChannel
+scsf_Screen3_TurtleSoup
+scsf_Screen3_TripleScreen

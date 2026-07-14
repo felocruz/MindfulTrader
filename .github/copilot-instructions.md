@@ -1,0 +1,161 @@
+# MindfulTrader - Copilot Instructions
+
+**Doc Sync Contract**: Update this file, `../README-AI.md`, `../CLAUDE.md`, and `../GEMINI.md` in the same change when guidance changes.
+
+## AI Context Pointer
+- Primary project context: `../README-AI.md`
+- Workspace integration map: `../../docs/README-AI-WORKSPACE.md`
+
+**Last Updated**: May 10, 2026
+
+## Purpose
+MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).
+
+## Chart Timeframes (CRITICAL — Do Not Confuse)
+- **TS1 (Screen 1)**: 240-minute bars (daily trend)
+- **TS2 (Screen 2)**: 60-minute bars (intermediate momentum)
+- **TS3 (Screen 3)**: 15-minute bars (short-term entry timing)
+- These are **MINUTES**, never seconds. The system is event-driven (intra-bar updates on every tick/trade), but the bar period is 15 minutes for the shortest timeframe.
+
+## Tick Update Model (CRITICAL — Do Not Get Wrong)
+- **ALL charts across ALL THREE timeframes are called on EVERY tick.** `AutoLoop=1` means Sierra Chart invokes each study function on every incoming tick/trade, regardless of the chart's bar period.
+- The bar period (240m, 60m, 15m) only controls how bars are aggregated — it does NOT reduce the tick update frequency.
+- **TS1, TS2, and TS3 are equally hot paths.** Do not assume TS1 or TS2 receive fewer ticks or are less performance-critical than TS3.
+- When auditing for performance, treat all three screens with the same urgency.
+
+## Hard Requirements (Must Follow)
+1. **Schema regeneration**: `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`
+2. **C++ build**: `cd /home/rcruz/devel/VSCode/MindfulTrader && ./build_dll.sh`
+3. **Do not** use ad-hoc `flatc` or manual cmake/ninja flows for normal work.
+4. If the project/workspace is not a Git repo (no `.git` metadata), skip Git-based validation (`git status`, `git diff`, changed-file queries) and use file-level reads plus runtime command exits as the validation source of truth.
+
+## Scope
+- Owns indicator processing, event production, and execution-side protocol handling.
+- Produces FlatBuffer payloads consumed by `lbrnet` and `MTS`.
+- Keeps hot paths allocation-light and deterministic.
+
+## Boundaries
+- No GUI logic (belongs in `MTS`).
+- No ML training logic (belongs in `lbrnet`).
+- No schema source edits outside `../schema/mts_schema.fbs` ownership rules.
+
+## Code Safety Rules
+- Before removing code, search the full repo for usages (`.h`, `.cpp`, PCH-related usage).
+- Fix root causes; do not remove symbols to silence compile errors.
+- If unsure whether code is used cross-project, preserve it and document concern.
+
+## ZMQ Ports
+
+| Port | Type | Purpose |
+|------|------|---------|
+| 5555 | PUB  | Main event stream (indicators, signals, positions) |
+| 5556 | REP  | Trade execution validation (request/reply) |
+| 5558 | REP  | BacktestLiveAgent trade execution (REQ/REP during replay) |
+| 5559 | PUB  | Heartbeat monitor (~1s interval) |
+| 5560 | REP  | Control-plane handshake (CONFIG_REQ/ACK) |
+| 5561 | ROUTER/DEALER | HMM regime inference (backtest + live) |
+
+## Key Singletons
+
+| Class | File | Role |
+|-------|------|------|
+| `IndicatorManager` | `src/IndicatorManager.cpp` | Lifecycle & caching for 30+ indicators (DOD) |
+| `PositionManager` | `src/PositionManager.cpp` | Trade state machine, fills, P&L |
+| `RiskManager` | `src/RiskManager.cpp` | Daily loss limits, Kelly sizing |
+| `ContextManager` | `src/ContextManager.cpp` | Volatility, efficiency, regime detection |
+| `SystemOrchestrator` | `src/SystemOrchestrator.cpp` | CONFIG_REQ/ACK handshake |
+| `TransportStream` | `src/transport/TransportStream.cpp` | ZMQ PUB socket |
+| `HMMClient` | `src/HMMClient.cpp` | DEALER socket to Python HMM ROUTER on 5561 |
+| `TradeExecutionServer` | `src/TradeExecutionServer.cpp` | REP socket on 5558 (backtest) |
+
+## FlatBuffers Version State (as of 2026-05-10)
+
+- Headers (`include/flatbuffers/base.h`): **25.1.24**
+- System `flatc` binary (mamba mts env): **24.3.25** — mismatch
+- `mts_schema_generated.h`: asserts 25.1.24 ✓
+- `backtest_schema_generated.h`: asserts 25.1.24 ✓ (updated from stale 24.3.25)
+- Long-term fix: upgrade `flatc` to 25.1.24 and run `regenerate_schema.sh`
+
+## Performance & Runtime
+- Avoid heavy allocations in recurring ACSIL update paths.
+- Keep ZMQ interactions non-blocking on UI-sensitive paths.
+- Preserve microsecond timing conventions where latency is tracked.
+- `IndicatorManager` architecture is DOD (Data-Oriented Design). Always use `std::array` with `IndicatorKey` lookups instead of string hashes/heap allocations.
+
+## Trap Detection Ownership (Native-First)
+1. C++ must implement and run a native trap-risk detector in the live execution path, independent of Python availability.
+2. Native trap detection is a safety-critical first-response layer and may gate entries or tighten risk immediately.
+3. Python trap outputs are a refinement/calibration layer for precision and threshold tuning, not a prerequisite for trap handling.
+4. If Python inference is delayed, unavailable, stale, or disagrees, C++ safety behavior remains authoritative for immediate risk control.
+5. Trap handling should be conservative and precision-first: reduce catastrophic-loss exposure without introducing reversal churn.
+6. Native trap score design should fuse Elder/Raschke setup failure structure with Shannon/Mandelbrot/Taleb/Pareto evidence and consume HMM-derived context only as an optional refinement input.
+7. Canonical default weighting, reliability-adjusted scoring, thresholds, and governance gates for TRAP are defined in `../../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md` under `TRAP weighting policy table (normative default)`.
+8. `StatisticalContext` (volatility, efficiency, relRange, velocity, regimeTenure) is the canonical mechanics backbone for trap decisions and must remain wired through TS2/TS3 -> ContextManager -> TrainingEvent.
+9. Implementation status: policy/spec is ready; directional `TRAP_*` emission is a planned next slice and must pass replay calibration gates before production sign-off.
+
+## Cross-Project Model Artifact Convention
+- Canonical HMM artifact naming used by downstream Python consumers is `models/hmm_model.pkl`.
+
+## Backtesting Pipeline
+
+`BackTesterStudy.cpp` drives the full live pipeline during Sierra Chart replay (same managers, ZMQ, HMM as production). Three phases: data export → pure neural network → risk-managed.
+
+### .btst Binary File Format
+
+Size-prefixed FlatBuffer records: `RunManifest` → `DecisionEvent`(s) → `PredictionAck`(s) → `TradeRecord`(s) → `RunSummary`.
+
+### Join Keys
+
+- `decision_id` → links `DecisionEvent` ↔ `PredictionAck`
+- `execution_key` = `run_id + "::" + str(parent_internal_order_id)` → links `PredictionAck` ↔ `TradeRecord`
+
+**Note:** `DecisionEvent.model_action` is always 0 in C++ — `WriteDecisionEventFb()` fires before Python responds. Join `decisions ← acks` on `decision_id` to get model outputs. `bt_reader.py` `to_dataframes()` does this automatically.
+
+### Python Counterparts (in `lbrnet/backtest/`)
+
+| File | Role |
+|------|------|
+| `backtest_server.py` | ZMQ inference server; `BacktestLiveAgent` (REQ to 5558); HMM ROUTER on 5561 |
+| `bt_reader.py` | Reads `.btst` files into DataFrames; performs decision←ack backfill join |
+
+## Backtesting Governance Contract (Mandatory)
+1. Canonical backtesting source of truth is `../../docs/BACKTESTING_FRAMEWORK.md`.
+2. For backtesting implementations, reuse the existing live message protocol and lifecycle semantics.
+3. Treat backtesting as a mode over live architecture; do not create parallel business logic paths outside explicit backtesting surfaces.
+4. Except for explicit backtesting code in C++/Python, preserve live behavior for all other runtime components.
+5. Do not mark backtesting work production-ready unless acceptance gates in `../../docs/BACKTESTING_FRAMEWORK.md` are explicitly reported as met/unmet.
+
+## Key Documentation
+
+### Wire Protocol
+- `../../schema/FLATBUFFER_MASTER_SPECIFICATION.md` — envelope structure, full message catalog, serialization patterns, field conventions
+
+### Trade Lifecycle
+- `../../docs/TRADE_EXECUTION_SYSTEM.md` — canonical governance: trade open/close flow, C++→Python→Firestore lifecycle
+- `../../docs/TRADE_EXECUTION_MESSAGE_PROTOCOL.md` — `TradeRequest/Response/Close` message specs and code examples
+
+### Risk & Strategy
+- `../../docs/RISK_MANAGEMENT_SYSTEM.md` — daily limits, Kelly sizing, regime scaling, consecutive-loss gates
+- `../../docs/TRADING_STRATEGIES_COMPLETE_REFERENCE.md` — complete catalog: all Elder Triple Screen setups, Raschke patterns, entry/exit tactics
+
+### HMM Integration
+- `../../docs/HMM_RUNTIME_REFERENCE.md` — `RiskStateUpdate` field contract, C++↔Python message flow, 16D observation vector
+- `../../docs/architecture/STUDENT_T_HMM_EVENT_TRANSFORMER_ARCHITECTURE.md` — HMM↔Transformer authority order, train/live parity rules
+
+### Labeling & Trap Policy
+- `../../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md` — TRAP weighting policy table (normative default)
+
+### Active Roadmaps
+- `../../docs/ROADMAP_EXECUTION_ENGINE.md` — `PositionManager`/`RiskManager` refactor spec
+- `../../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` — `ContextManager` architecture baseline and remaining hardening
+- `../../docs/SCHEMA_DRIVEN_SERIALIZATION_PARITY_INITIATIVE.md` — eliminating train/live serialization drift
+- `../docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit); Finding 1 (`UpdateContext()` never called) is highest priority; Finding 12 is a Python-port parity gap, not a C++ fix
+
+### Operator Guides
+- `../../docs/VISUAL_REGIME_TUNING_GUIDE.md` — Triple Screen chart observations → specific parameter changes
+
+## Done Checklist
+- Build succeeds via `./build_dll.sh`.
+- If schema touched, regeneration script was run first.
+- Any contract-impacting changes are documented and compatibility considered.
+- Native trap-risk behavior remains available and actionable without Python confirmation.

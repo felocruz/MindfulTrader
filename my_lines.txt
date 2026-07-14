@@ -1,0 +1,26 @@
+
+    // Get current regime context for filtering
+    ClimateMetrics metrics{};
+    if (auto* climate = MarketClimate()) {
+        metrics = climate->GetMetrics();
+    }
+
+    for (const auto& [key, indicator] : m_indicators) {
+        // Skip primary triggers (already checked above)
+        if (primaryTriggers.count(key) > 0) {
+            continue;
+        }
+
+        // Check if this indicator changed from previous bar
+        if (indicator->IsDirty()) {
+            // NEW FILTER LOGIC:
+            // Use Scoring engine to determine if this indicator change is significant
+            // enough to warrant a full event publish given the current regime entropy.
+            if (Scoring::Instance().IsIndicatorEventSignificant(key, metrics)) {
+                return true; // Significant change detected -> PUBLISH
+            }
+            // else: Suppressed noise (Scoring engine ruled it insignificant/noisy for this regime)
+        }
+    }
+
+    return false;  // No significant changes on this bar
