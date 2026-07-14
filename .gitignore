@@ -32,6 +32,10 @@ __pycache__/
 *.btst
 *.lbr
 
+# Agent worktrees (git worktree add .claude/worktrees/<name>) — isolated
+# per-agent checkouts sharing this repo's object store; not part of the tree.
+.claude/worktrees/
+
 # --------------------------------
 # 2. VS Code Files
 # --------------------------------

@@ -15,7 +15,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 1. **Schema regeneration**: `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`
 2. **C++ build**: `cd /home/rcruz/devel/VSCode/MindfulTrader && ./build_dll.sh`
 3. **Do not** use ad-hoc `flatc` or manual cmake/ninja flows for normal work.
-4. If the project/workspace is not a Git repo (no `.git` metadata), skip Git-based validation (`git status`, `git diff`, changed-file queries) and use file-level reads plus runtime command exits as the validation source of truth.
+4. This project is now a **local Git repo** (`master` branch, no remote by default). Use Git-based validation (`git status`, `git diff`, changed-file queries) as a source of truth alongside file reads and runtime command exits. Git-ignored: `build-windows/`, generated `*.bak_*` backups, `__pycache__/`, `.btst`/`.lbr` artifacts.
 
 ## Scope
 - Owns indicator processing, event production, and execution-side protocol handling.

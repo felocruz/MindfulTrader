@@ -35,9 +35,12 @@ The output artifact is `build-windows/bin/MindfulTrader.dll`. This is a Windows 
 - Any contract-impacting changes are documented and compatibility considered
 - Native trap-risk behavior remains available and actionable without Python confirmation
 
-## No Git Repository
+## Local Git Repository
 
-This project has no `.git` directory. Skip all Git-based validation (`git status`, `git diff`, changed-file queries) and use file-level reads plus runtime command exits as the source of truth.
+This project is a **local Git repo** (initialized 2026-07-14, `master` branch, no remote by default). Use Git-based validation (`git status`, `git diff`, changed-file queries) as a source of truth alongside file reads and runtime command exits.
+
+- Git-ignored (regenerable): `build-windows/`, generated `include/generated/*.bak_*` backups, `__pycache__/`, `.btst`/`.lbr` binary artifacts. Generated schema headers **are** tracked.
+- A `pre-commit` hook enforces the Documentation Sync Contract: if you stage one of the four mirror docs (`README-AI.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md`) without the others, the commit is blocked. Bypass with `git commit --no-verify`.
 
 ## Chart Timeframes (Critical — Do Not Confuse)
 
