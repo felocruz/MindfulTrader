@@ -182,6 +182,14 @@ void PositionManager::Reset(SCStudyInterfaceRef sc) {
 void PositionManager::Update(SCStudyInterfaceRef sc) {
     CachePreviousState(sc);
 
+    // === Finding 1 fix (regime_state_wiring_fix_spec.md) ===
+    // Refresh regime state every tick BEFORE any in-position consumer
+    // (UpdateTradeGradeProtection, EvaluateRegimeDefense). The HMM/climate
+    // indicators are already refreshed by ContextManager::CheckAndTriggerHMM(),
+    // which precedes Update() in both SCStudies and BackTesterStudy. Pure sync —
+    // EvaluateRegimeDefense remains the single per-tick defense call below.
+    SyncRegimeState();
+
     // === ELITE v3.2: UNIFIED HARD GATE — first thing on every tick ===
     // Checks LocalRiskContext physics gates and dispatches:
     //   FLAT, no orders  → silent block (entries rejected below)

@@ -93,7 +93,9 @@ public:
     void PublishPositionSync(SCStudyInterfaceRef sc);  // Elite REFINEMENT 2: Position sync on reconnect
 
     // Elite v2.5: Context-Aware Position Management (Scoring.cpp integration)
-    // Called by SystemOrchestrator when regime changes or by Update() on tick
+    // Event-driven entry point (SystemOrchestrator on regime change): refresh +
+    // immediate defense. The per-tick refresh is done by SyncRegimeState() inside
+    // Update() to avoid a double EvaluateRegimeDefense.
     void UpdateContext(SCStudyInterfaceRef sc);
     void EvaluateRegimeDefense(SCStudyInterfaceRef sc); // Analyzes scoring multipliers to tighten stops or exit
 
@@ -175,6 +177,11 @@ private:
 
     bool IsDirty(SCStudyInterfaceRef sc) const;
     void CachePreviousState(SCStudyInterfaceRef sc);
+    // Copies live HMM + MarketClimate indicator values into m_previous*/m_current*.
+    // Pure state sync (no side effects). Called at the top of Update() every tick so
+    // in-position consumers (UpdateTradeGradeProtection, EvaluateRegimeDefense) read
+    // fresh regime. See docs/ADR/regime_state_wiring_fix_spec.md (Finding 1).
+    void SyncRegimeState();
     void EmitGateEventTelemetry(ReasonCode reasonCode, TradeActionEnum action);
     void LogOrderFailure(
         const char* source,

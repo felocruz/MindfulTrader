@@ -51,21 +51,28 @@ bool PositionManager::EnforceHardGates(SCStudyInterfaceRef sc) {
 // Elite v2.5: Context-Aware Position Management Helpers
 // ====================================================================
 
-// Called by SystemOrchestrator when regime changes or by Update() on tick
-void PositionManager::UpdateContext(SCStudyInterfaceRef sc) {
-    auto* hmmInd = InferenceManager::Instance().HmmState();
-    if (hmmInd) {
+// Copies the live HMM + MarketClimate indicator values into m_previous*/m_current*.
+// Pure state sync — no side effects. Called at the top of Update() every tick so
+// all in-position consumers (UpdateTradeGradeProtection, EvaluateRegimeDefense) read
+// fresh regime. Indicators are refreshed by ContextManager::CheckAndTriggerHMM(),
+// which precedes Update() in both SCStudies and BackTesterStudy.
+void PositionManager::SyncRegimeState() {
+    if (auto* hmmInd = InferenceManager::Instance().HmmState()) {
         m_previousHMMState = m_currentHMMState;
-        m_currentHMMState = hmmInd->Value();
+        m_currentHMMState  = hmmInd->Value();
     }
-
-    auto* climateInd = InferenceManager::Instance().MarketClimate();
-    if (climateInd) {
+    if (auto* climateInd = InferenceManager::Instance().MarketClimate()) {
         m_previousClimate = m_currentClimate;
-        m_currentClimate = climateInd->Value();
+        m_currentClimate  = climateInd->Value();
     }
+}
 
-    // Trigger defense evaluation immediately on context change
+// Event-driven entry point (SystemOrchestrator on regime change). Retained so an
+// out-of-band regime event can force an immediate defense pass; shares the one
+// refresh implementation. NOT called from the per-tick Update() path (that uses
+// SyncRegimeState() directly to avoid a double EvaluateRegimeDefense).
+void PositionManager::UpdateContext(SCStudyInterfaceRef sc) {
+    SyncRegimeState();
     if (!IsFlat()) {
         EvaluateRegimeDefense(sc);
     }
