@@ -188,3 +188,21 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 - **R3 (time-exit correctness):** `barsHeld` must use the same bar index base as entry (`m_openTrade.GetEntryIndex()`); verify across session boundaries.
 - **R4 (regime double-exit):** ensure `EvaluateRegimeDefense` flatten and the (future Phase 2) `REGIME_INVALIDATION` don't both fire — Phase 1 keeps only the former.
 - **R5 (schema):** none — Phase 1 is schema-free; the coordinated `REGIME_INVALIDATION` `ExitReason` bump is deferred to the Phase 2 both-sides change.
+
+---
+
+## 7. Deferred follow-ups (revisit soon)
+
+Landed so far (context): Step C single-stage first-touch cutover (`2eb658e`); stale-fish removal + Step D `ChandelierStopManager` deletion (`9ee5326`); TRAP doctrine across the 4 mirror docs + this plan (`0d674ef`, `0ac8a01`); **native TRAP floor** (`711e7cf`, priority-#1 completed-bar `StructureTest` reversal exit — the reactive layer). The items below are the paired co-evolution / enhancement slices, in rough priority order.
+
+1. **Schema — `ExitReason_TRAP` (+ `ExitReason_REGIME_INVALIDATION`).** Add to `../schema/backtest_schema.fbs`, run `regenerate_schema.sh`, and update `BackTesterStudy.cpp::MapExitReason` (currently maps `"TRAP"` → `MANUAL`). **Prerequisite** for attributing native-floor TRAP exits in `.btst` replay — without it we can't measure TRAP behavior for the `F_0.25` deploy gate. Cheap, self-contained; do first.
+
+2. **Labeler Q0 split (co-evolution parity).** In `lbrnet/lbrnet/labeling/triple_barrier_scanner.py`: remove `DECISIVE_BREAKDOWN_LOW` (id 6) from `_T1_LONG_IDS` and `DECISIVE_BREAKOUT_HIGH` (id 5) from `_T1_SHORT_IDS`, and route an adverse decisive counter-break to a **new `REGIME_INVALIDATION`** scan outcome (distinct from `TRAP_CANDIDATE`). Makes the label the model trains on match the native floor's reversal-only definition (`FAILED_*`). **Needs a fresh `.context` regen to validate.** Governing rationale: `triple_barrier_trap_definition_ruling.md` (Q0).
+
+3. **Anticipatory τ\* model exit (the second observer).** Requires wiring **in-position TRAP inference** — today `TRAP_LONG/SHORT` predictions arrive in `PredictionSlot` but are logged-only (no exit action). Add: (a) request/consume a model TRAP probability `p` for the open position; (b) compute `τ* = C_FP/(C_FP+C_FN)` each tick from the entry-latched bracket (`C_FP=|target−price|`, `C_FN=|price−stop|`); (c) additive exit when `fresh ∧ p ≥ τ* ∧ adverse`, never suppressing the native floor. **Ships DISABLED behind the deploy gate `out-of-sample F_0.25 > 0.65`.** Governing: `triple_barrier_trap_definition_ruling.md` (Q1 τ*, Elkan 2001).
+
+4. **Option B — intra-bar TRAP re-inference (full ECTS edge).** Refresh the TRAP-relevant fast features + re-run inference intra-bar so `p` itself updates within the bar (not just per-tick τ* over a bar-gated `p`). Blocked on **ECTS-style training on intra-bar prefixes** (train on partial bars labeled with the eventual completed-bar outcome) to avoid train/live OOD. Governing: the intra-bar timing ruling (§5 of the Trap doctrine; Dachraoui 2015 / Mori 2017 / Shiryaev).
+
+5. **`CalculateScaleOutTargets` cleanup.** Now dead (no caller after Step C; no `Chandelier` dependency) — left in place to keep Step D surgical. Delete decl+def (`PositionManager.h` / `.cpp`) in a standalone cleanup commit.
+
+6. **Regime-invalidation FLATTEN escalation (optional).** The `EvaluateRegimeDefense` climate-shift / hostile-env branches were demoted to telemetry when trailing was removed (Step D). Decide whether an adverse `DECISIVE_*` / hostile-regime mid-trade should escalate to a `REGIME_INVALIDATION` market flatten (a sibling of TRAP) rather than only telemetry. Pairs naturally with items 1–2.
