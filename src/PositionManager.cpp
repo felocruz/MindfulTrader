@@ -1,6 +1,7 @@
 #include "MindfulTrader_Precompiled.h"
 #include "Scoring.h"
 #include "ChandelierStopManager.h"
+#include "TripleBarrierExitManager.h"
 #include "TradeExecutionServer.h"
 #include "execution/ExecutionGate.h"
 #include "messaging/EliteFlatBufferHelper.h"
@@ -345,6 +346,72 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
 
         // Notify RiskManager that position opened (cache unrealized P&L tracking)
         RiskManager::Instance().OnPositionOpened(sc);
+
+        // === Triple-Barrier shadow (Phase 1, step 1a — NON-DESTRUCTIVE A/B) ===
+        // Compute engine barriers alongside the live pattern/Chandelier stop+target
+        // and log the comparison. Drives NO orders (Chandelier remains authoritative);
+        // validates the D1 live-source mapping numerically on replay data before the
+        // engine-driven cutover. See docs/ADR/triple_barrier_cutover_phase1_plan.md.
+        try {
+            const int tbRawPattern = m_openTrade.GetPatternId();
+            const bool tbValid = (tbRawPattern >= 1 &&
+                                  tbRawPattern < static_cast<int>(tbe::kPatternTable.size()));
+            const int tbPattern = tbValid ? tbRawPattern : 0;  // D2 fail-closed: safe LOW-tier default
+            const tbe::Tier tbTier = tbe::kPatternTable[static_cast<std::size_t>(tbPattern)].tier;
+            const bool tbLong = (pos.PositionQuantity > 0);
+
+            const auto* tbHmm = InferenceManager::Instance().HmmState();
+            const tbe::Regime tbRegime = tbHmm
+                ? TripleBarrierExitManager::ToRegime(tbHmm->Value())
+                : tbe::Regime::GAUSSIAN_STABLE;
+            const double tbDofScale = tbHmm ? tbHmm->DofStopScale() : 1.5;
+
+            float tbSwingHigh = 0.0f, tbSwingLow = 0.0f;
+            if (auto tbIma = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION)) {
+                tbSwingHigh = tbIma->swingHigh();
+                tbSwingLow  = tbIma->swingLow();
+            }
+
+            // For HIGH-tier patterns the pattern target IS the N-bar structural extreme
+            // (Turtle Soup 4-bar high / Momentum Pinball swing); absent for other tiers.
+            const double tbStructTarget = m_openTrade.GetTarget();
+            const double tbNbarHigh = (tbTier == tbe::Tier::HIGH_DEDICATED &&  tbLong) ? tbStructTarget : 0.0;
+            const double tbNbarLow  = (tbTier == tbe::Tier::HIGH_DEDICATED && !tbLong) ? tbStructTarget : 0.0;
+
+            tbe::BarrierInputs tbIn{};
+            tbIn.pattern_id              = tbPattern;
+            tbIn.is_long                 = tbLong;
+            tbIn.entry                   = static_cast<double>(latestFill.FillPrice);
+            tbIn.bar_high                = static_cast<double>(sc.High[sc.Index]);
+            tbIn.bar_low                 = static_cast<double>(sc.Low[sc.Index]);
+            tbIn.prev_high               = (sc.Index >= 1) ? static_cast<double>(sc.High[sc.Index - 1]) : tbIn.bar_high;
+            tbIn.prev_low                = (sc.Index >= 1) ? static_cast<double>(sc.Low[sc.Index - 1]) : tbIn.bar_low;
+            tbIn.atr10                   = static_cast<double>(m_cachedATR10);
+            tbIn.dof_stop_scale          = tbDofScale;
+            tbIn.regime_stop_width_scale = 1.0;   // Phase 1 identity
+            tbIn.nbar_extreme_high       = tbNbarHigh;
+            tbIn.nbar_extreme_low        = tbNbarLow;
+            tbIn.swing_high              = static_cast<double>(tbSwingHigh);
+            tbIn.swing_low               = static_cast<double>(tbSwingLow);
+            tbIn.regime                  = tbRegime;
+            tbIn.tick_size               = sc.TickSize;
+
+            const tbe::Barriers tbB = tbe::ComputeBarriers(tbIn);
+            const double tbRR = (tbB.risk > 0.0) ? (tbB.reward_at_target / tbB.risk) : 0.0;
+
+            SCString tbLog;
+            tbLog.Format(
+                "[TB-SHADOW] pat=%d%s tier=%d long=%d entry=%.2f | ENGINE stop=%.2f tgt=%.2f maxBars=%d rr=%.2f%s%s"
+                " || LIVE stop=%.2f tgt=%.2f | dStop=%.2f dTgt=%.2f",
+                tbRawPattern, (tbValid ? "" : "!INVALID->LOW"), static_cast<int>(tbTier), tbLong ? 1 : 0,
+                tbIn.entry, tbB.stop, tbB.target, tbB.max_bars, tbRR,
+                tbB.structural_stop_bound ? " capS" : "", tbB.structural_target_bound ? " capT" : "",
+                m_openTrade.GetStop(), m_openTrade.GetTarget(),
+                tbB.stop - m_openTrade.GetStop(), tbB.target - m_openTrade.GetTarget());
+            Logger::getInstance().log(tbLog.GetChars());
+        } catch (const std::exception& tbEx) {
+            Logger::getInstance().log(std::string("[TB-SHADOW] exception: ") + tbEx.what());
+        }
 
         if (m_requestQueue) {
         	m_requestQueue->push({TradeRequest::Type::ENTER_LONG, m_openTrade.CreateTradeRequestFlatBuffer()});

@@ -92,9 +92,9 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 
 ## 4. Implementation steps (each = own commit + green build)
 
-1. **Wire barrier computation at entry** (additive, behind the existing path):
-   - In `HandleFills` entry branch, build `tbe::BarrierInputs` (D1 mapping) and call `TripleBarrierExitManager::getInstance().OpenBracket(orderID, sc.Index, inputs)`.
-   - Place the SC attached stop/target from `bracket.stop`/`bracket.target` (replacing the `InitializeStop` stop wiring). Keep Chandelier temporarily to A/B compare in logs.
+1. **Wire barrier computation at entry** (additive, behind the existing path). Split into two increments for safety:
+   - **1a — Shadow (DONE, non-destructive).** In the `HandleFills` entry-fill branch, build `tbe::BarrierInputs` (D1 mapping) and call `tbe::ComputeBarriers()`; log `[TB-SHADOW]` comparing engine `stop/target/maxBars/rr` against the live `Trade` stop/target. Drives **no orders**, latches no state, exception-guarded. Purpose: validate the D1 mapping + barrier math numerically on replay (acceptance §5.2) with zero behavior risk. D2 fail-closed default (`NONE`/OOR → LOW-tier) is exercised here.
+   - **1b — Engine-driven (pending 1a log review).** Switch to `TripleBarrierExitManager::getInstance().OpenBracket(orderID, sc.Index, inputs)` and place the SC attached stop/target from `bracket.stop`/`bracket.target` (replacing the `InitializeStop` stop wiring). Keep Chandelier temporarily to A/B compare in logs.
 2. **Add the vertical (time) barrier**: per-tick `Evaluate(sc.Index, close, regimeInvalidated=false)`; on `TIME_EXIT` → `ClosePositionAtMarket(TIME_STOP)` (D4).
 3. **Finding 17 fail-closed routing** (D2) at entry seeding.
 4. **Remove scale-out ladder** (single-stage): delete the `newQty < oldQty` trailing-activation branch (`PositionManager.cpp:353-383`); keep pure size bookkeeping. Full-size stop + target.
