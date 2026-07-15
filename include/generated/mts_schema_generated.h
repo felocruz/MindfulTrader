@@ -3181,6 +3181,7 @@ struct RiskGateContextT : public ::flatbuffers::NativeTable {
   int32_t regime_duration = 0;
   bool is_valid = false;
   int64_t snapshot_timestamp_us = 0;
+  float amihud_percentile = 0.5f;
 };
 
 struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -3202,7 +3203,8 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_FISHER_INFO = 28,
     VT_REGIME_DURATION = 30,
     VT_IS_VALID = 32,
-    VT_SNAPSHOT_TIMESTAMP_US = 34
+    VT_SNAPSHOT_TIMESTAMP_US = 34,
+    VT_AMIHUD_PERCENTILE = 36
   };
   float shannon_flow_entropy() const {
     return GetField<float>(VT_SHANNON_FLOW_ENTROPY, 0.0f);
@@ -3300,6 +3302,12 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool mutate_snapshot_timestamp_us(int64_t _snapshot_timestamp_us = 0) {
     return SetField<int64_t>(VT_SNAPSHOT_TIMESTAMP_US, _snapshot_timestamp_us, 0);
   }
+  float amihud_percentile() const {
+    return GetField<float>(VT_AMIHUD_PERCENTILE, 0.5f);
+  }
+  bool mutate_amihud_percentile(float _amihud_percentile = 0.5f) {
+    return SetField<float>(VT_AMIHUD_PERCENTILE, _amihud_percentile, 0.5f);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<float>(verifier, VT_SHANNON_FLOW_ENTROPY, 4) &&
@@ -3318,6 +3326,7 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<int32_t>(verifier, VT_REGIME_DURATION, 4) &&
            VerifyField<uint8_t>(verifier, VT_IS_VALID, 1) &&
            VerifyField<int64_t>(verifier, VT_SNAPSHOT_TIMESTAMP_US, 8) &&
+           VerifyField<float>(verifier, VT_AMIHUD_PERCENTILE, 4) &&
            verifier.EndTable();
   }
   RiskGateContextT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -3377,6 +3386,9 @@ struct RiskGateContextBuilder {
   void add_snapshot_timestamp_us(int64_t snapshot_timestamp_us) {
     fbb_.AddElement<int64_t>(RiskGateContext::VT_SNAPSHOT_TIMESTAMP_US, snapshot_timestamp_us, 0);
   }
+  void add_amihud_percentile(float amihud_percentile) {
+    fbb_.AddElement<float>(RiskGateContext::VT_AMIHUD_PERCENTILE, amihud_percentile, 0.5f);
+  }
   explicit RiskGateContextBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -3405,9 +3417,11 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(
     float fisher_info = 0.0f,
     int32_t regime_duration = 0,
     bool is_valid = false,
-    int64_t snapshot_timestamp_us = 0) {
+    int64_t snapshot_timestamp_us = 0,
+    float amihud_percentile = 0.5f) {
   RiskGateContextBuilder builder_(_fbb);
   builder_.add_snapshot_timestamp_us(snapshot_timestamp_us);
+  builder_.add_amihud_percentile(amihud_percentile);
   builder_.add_regime_duration(regime_duration);
   builder_.add_fisher_info(fisher_info);
   builder_.add_raschke_burst(raschke_burst);
@@ -10297,6 +10311,7 @@ inline void RiskGateContext::UnPackTo(RiskGateContextT *_o, const ::flatbuffers:
   { auto _e = regime_duration(); _o->regime_duration = _e; }
   { auto _e = is_valid(); _o->is_valid = _e; }
   { auto _e = snapshot_timestamp_us(); _o->snapshot_timestamp_us = _e; }
+  { auto _e = amihud_percentile(); _o->amihud_percentile = _e; }
 }
 
 inline ::flatbuffers::Offset<RiskGateContext> RiskGateContext::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const RiskGateContextT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -10323,6 +10338,7 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffer
   auto _regime_duration = _o->regime_duration;
   auto _is_valid = _o->is_valid;
   auto _snapshot_timestamp_us = _o->snapshot_timestamp_us;
+  auto _amihud_percentile = _o->amihud_percentile;
   return MTS::Schema::CreateRiskGateContext(
       _fbb,
       _shannon_flow_entropy,
@@ -10340,7 +10356,8 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffer
       _fisher_info,
       _regime_duration,
       _is_valid,
-      _snapshot_timestamp_us);
+      _snapshot_timestamp_us,
+      _amihud_percentile);
 }
 
 inline MarketObservationT::MarketObservationT(const MarketObservationT &o)

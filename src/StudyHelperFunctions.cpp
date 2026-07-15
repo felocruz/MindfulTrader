@@ -3782,7 +3782,7 @@ void UpdateObservationVectorSubgraphs(
         float volSma = Subgraph_VolumeSMA[sc.Index];
         float atrRef = Subgraph_ATR[sc.Index];
 
-        Subgraph_AmihudIlliquidity[sc.Index] = CalculateAmihudIlliquidity(sc, adaptive_window_n, volSma);
+        Subgraph_AmihudIlliquidity[sc.Index] = CalculateAmihudIlliquidity(sc, adaptive_window_n);
         Subgraph_LiqFragility[sc.Index] = CalculateLiquidityFragility(sc, atrRef, volSma, Subgraph_LiqFragility[sc.Index - 1]);
     }
 }
@@ -3957,27 +3957,37 @@ float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n) {
     return static_cast<float>(std::log(std::max(rv_recent_rate, kFloor) / rv_full_rate));
 }
 
-float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n, float volumeAvg) {
-    // Amihud illiquidity: mean(|r_t| / V_t) over lookback window.
-    // High values = illiquid (large price impact per unit volume).
-    if (sc.Index < lookback_n || volumeAvg < 1.0f) return 0.0f;
+float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
+    // Canonical Amihud (2002) illiquidity: mean( |r_t| / DollarVolume_t ) over the
+    // lookback, with r_t = log return ln(P_t / P_{t-1}) and DollarVolume_t = P_t * V_t.
+    // Log returns + dollar volume make the measure price-level STATIONARY: a $2 move
+    // at ES=6000 is not the same event as a $2 move at ES=2000, and a fixed threshold
+    // is meaningless without this normalization (root cause of the old 0.80/0.40 bug).
+    // Amihud is the canonical low-frequency proxy for Kyle (1985) lambda (price impact
+    // per unit dollar flow). High values = illiquid (large impact per dollar traded).
+    if (sc.Index < lookback_n) return 0.0f;
 
     double sum = 0.0;
     int count = 0;
     for (int i = 0; i < lookback_n; ++i) {
         int idx = sc.Index - i;
         if (idx < 1) break;
-        float vol = sc.Volume[idx];
-        if (vol < 1.0f) continue;
-        float ret = std::abs(sc.Close[idx] - sc.Close[idx - 1]);
-        sum += static_cast<double>(ret) / vol;
+        const double price = static_cast<double>(sc.Close[idx]);
+        const double prevPrice = static_cast<double>(sc.Close[idx - 1]);
+        const double vol = static_cast<double>(sc.Volume[idx]);
+        if (vol < 1.0 || price <= 0.0 || prevPrice <= 0.0) continue;
+        const double dollarVol = price * vol;
+        if (dollarVol < 1.0) continue;
+        const double logRet = std::abs(std::log(price / prevPrice));
+        sum += logRet / dollarVol;
         ++count;
     }
     if (count < 2) return 0.0f;
 
-    // Normalize by volume average to make dimensionless.
-    float raw = static_cast<float>((sum / count) * volumeAvg);
-    return raw;  // Scaler handles normalization downstream.
+    // Mean |log-return| per dollar of volume. PHASE-2A FeatureScaler handles the
+    // model-input scaling; the risk gate uses a session-aware rolling percentile
+    // of this raw value (scale-invariant), so absolute units are irrelevant here.
+    return static_cast<float>(sum / count);
 }
 
 float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n) {

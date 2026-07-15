@@ -744,6 +744,25 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         obs->mutate_vol_convexity(volConvexity);       // Also Q1 for safety
         obs->mutate_micro_asymmetry(microAsymmetry);
     }
+
+    // === Layer B: session-aware Amihud percentile sampling (once per closed 15-min bar) ===
+    // Route the raw Amihud into the RTH or overnight pool so thin-session illiquidity
+    // (structurally higher) does not contaminate the RTH gate. Guarded to once per new
+    // bar; during a full recalc this backfills the trailing pools from history.
+    {
+        int& lastAmihudBar = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::LAST_AMIHUD_SAMPLE_INDEX);
+        if (sc.Index != lastAmihudBar && sc.Index >= 100) {  // 100 = subgraph warmup
+            lastAmihudBar = sc.Index;
+            const TimeOfDayEnum sess = timeOfDayIndicator ? timeOfDayIndicator->Value()
+                                                          : TimeOfDayEnum::OVERNIGHT_HOLD;
+            const int8_t s = static_cast<int8_t>(sess);
+            // RTH cash session 09:30-16:00 ET = OPENING_HOUR(5)..PM_RUN_ENTRY(10);
+            // pre-open, after-hours, and globex route to the overnight pool.
+            const bool isRTH = (s >= static_cast<int8_t>(TimeOfDayEnum::OPENING_HOUR) &&
+                                s <= static_cast<int8_t>(TimeOfDayEnum::PM_RUN_ENTRY));
+            ContextManager::Instance().PushAmihudSample(vpin, isRTH);
+        }
+    }
     if (climateIndicator) {
         currentClimate = climateIndicator->Value();
     }

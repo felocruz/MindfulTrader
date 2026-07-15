@@ -547,7 +547,7 @@ float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Amihud Illiquidity: mean(|r_t| / V_t) — price impact per unit volume.
 /// Lookback: ~20-40 bars (Ripple)
-float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n, float volumeAvg);
+float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Burstiness: Inter-arrival time variance (clustering)
 /// Lookback: ~20-100 bars (Wave)

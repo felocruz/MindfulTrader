@@ -1,9 +1,24 @@
 # Spec — Amihud Gate: Percentile Normalization + Honest Rename (Layer B)
 
-**Status:** SPEC — DRAFT FOR REVIEW (2026-07-14). Schema-touching (rename) + live-gate logic change.
+**Status:** SPEC — DECISIONS LOCKED (2026-07-15), C++ implementation in progress. Schema-touching (rename + `amihud_percentile` field) + live-gate logic change + Amihud formula correctness fix.
 **Decision of record:** `docs/ADR/liquidity_toxicity_gate_decision.md` (Gemini ruling, reconciled against code).
-**Resolves:** PC-03 (rename) + a genuine live-gating calibration bug + reclassifies lbrnet PC-17.
+**Resolves:** PC-03 (rename) + a genuine live-gating calibration bug + a non-canonical Amihud formula + reclassifies lbrnet PC-17.
 **Depends on / pairs with:** `risk_gate_context_wire_spec.md` (the raw signal on the wire). Best executed as one verified pass since both touch the same gate code.
+
+> **Strategy note (2026-07-15):** Finish the C++ side and **freeze the `.context` instrument once**, then hand off to Python. The Python co-evolution (§5/§6) is deliberately deferred until C++ is complete, because the Python gate-parity work can only be validated against a **freshly regenerated `.context`** that carries the final raw values, the canonical Amihud formula, and the serialized percentile. Regenerating mid-way produces a baseline Python would have to discard.
+
+---
+
+## 0. Locked decisions (2026-07-15)
+
+| # | Decision | Resolution |
+|---|----------|-----------|
+| Timeframe | Which Triple Screen frame computes Amihud | **TS3 / Ripple / 15-min — KEEP.** Institutionally correct: Amihud is a low-frequency proxy for Kyle (1985) λ (Goyenko-Holden-Trzcinka 2009); 15-min tames bid-ask-bounce noise that corrupts tick/1-min Amihud while staying at the entry-decision timeframe. Finer = rejected VPIN; coarser (TS2/TS1) = laggy for entry protection. |
+| Formula | Canonical correctness | **FIX.** Current `CalculateAmihudIlliquidity` uses `|ΔP|` (absolute price change, not a return), raw contract volume (not dollar volume), and a non-standard `* volumeAvg` re-multiplication → price-level **non-stationary** (root cause of the fixed-threshold failure). Rewrite to canonical: `mean(|r_t| / DollarVolume_t)`, `r_t = ln(P_t / P_{t-1})` (**log return** — additive, symmetric, standard for fat-tailed/Student-t modeling and consistent with the system's Taleb kurtosis/skewness estimators), `DollarVolume_t = P_t · V_t`. Drop `* volumeAvg`. |
+| O1 | Rolling-percentile window | **21 trading days, SESSION-AWARE (separate RTH vs overnight percentile pools), continuous ring (no daily reset).** Sample one raw Amihud per closed 15-min bar. 24h/globex data → overnight thin-volume Amihud must not contaminate the RTH pool. Amihud's native aggregation is monthly; liquidity-risk/TCA practice converges on a ~1-month recent-normal window. RTH pool ≈ 546 samples, overnight ≈ 1470 over 21d — both resolve p90/p75. |
+| O2 | Percentile parity mechanism | **Ship the C++-computed `amihud_percentile` on the wire** (new `RiskGateContext` field). Exact bar-for-bar veto parity; Python reads it directly rather than re-deriving (no window-drift risk). |
+| O3 | Threshold values | **p90 normal / p75 fat-tail** (fat-tail = Student-t DOF ≤ 4 **or** realized kurtosis > 8). Validate firing rate against the 200k-event `.alpha` sample before sign-off (not 0%, not ~100%). |
+| O4 | `vpin_toxicity` obs-field rename | **DEFER** to next retrain cycle (obs index 11 unchanged, name only is stale — renaming ripples into training/inference feature maps). |
 
 ---
 
@@ -37,21 +52,34 @@ Two representations, two blast radii:
 - Python name-based readers (`schema_contract` field map, `calibrate_context_thresholds.py`, `backtest_runner.py` obs[11])
 - **Rationale for deferral:** renaming a model-input dimension name ripples into training/inference feature maps; per PC-03's original rationale, bundle with a retrain. Index 11 is unchanged; only the *name* is stale — low risk to defer.
 
-## 3. Implementation steps
+## 3. Implementation steps (C++)
 
-1. **Rename (a)** across the C++ raw-gate path (use LSP rename per struct where the language server is functional; otherwise careful per-file edits + build). Keep `RejectionLedger`/`RiskPolicy`/`NormalizedAnchors` mirrors consistent. Build green.
-2. **Rolling-percentile estimator** in `ContextManager` (or `RiskManager`): maintain a trailing window of raw Amihud values (window ≈ 21 trading days' worth of bars; O(1) ring buffer + rolling rank, no hot-path alloc). Expose `AmihudPercentile()`.
-3. **Rewrite the gate** in `EvaluateHardGates`: replace `ctx.vpin > 0.80/0.40` with `amihud_pct > pL/pT` where `pL=0.90`, `pT=0.75` (fat-tail: DOF ≤ 4 or kurtosis > 8). Keep it a hard veto.
-4. **Serialize** both the raw value (`RiskGateContext.amihud_illiquidity` — already speced) and, if useful for parity/audit, the computed percentile. Python reads the raw value and computes the *same* percentile (shared window definition) OR reads the C++-computed percentile directly (simpler parity — recommended).
-5. **Python co-evolution:** reclassify PC-17 — the p90/p75 constants become the canonical thresholds; delete the "TEMPORARY stopgap" framing; read `amihud_illiquidity` (raw) or the serialized percentile from `RiskGateContext`.
-6. **Regenerate** (after the flatc-version decision) + build both repos.
+0. **Fix the Amihud formula** (`CalculateAmihudIlliquidity`, `StudyHelperFunctions.cpp:3960`): compute `mean(|ln(P_t/P_{t-1})| / (P_t·V_t))` over the adaptive lookback; drop the `* volumeAvg` re-multiplication. Canonical, price-level-stationary. This changes the raw `.context` values (intended — done while freezing the instrument).
+1. **Rename (a)** across the C++ raw-gate path (`vpin` → `amihudIlliquidity`; use LSP rename per struct where the language server is functional; otherwise careful per-file edits + build). Keep `RejectionLedger`/`RiskPolicy`/`NormalizedAnchors` mirrors + the field-map string consistent. Build green.
+2. **Session-aware rolling-percentile estimator** in `ContextManager`: maintain **two** trailing windows of raw Amihud values (RTH pool + overnight pool), each ≈ 21 trading days, sampled **once per closed 15-min bar** (not per tick). O(1) ring buffer + rolling rank, no hot-path alloc, continuous (no daily reset). Route each sample to the pool by `TimeOfDayIndicator` session. Expose `AmihudPercentile()` (percentile of the current raw value within its session's pool).
+3. **Rewrite the gate** in `EvaluateHardGates`: replace `ctx.vpin > 0.80/0.40` with `amihud_pct > pL/pT` where `pL=0.90`, `pT=0.75` (fat-tail: DOF ≤ 4 or kurtosis > 8). Keep it a hard veto. Apply the same percentile logic to the `PositionManager` toxic-flow checks (currently fixed `> 0.75 / > 0.40`).
+4. **Serialize** both the raw value (`RiskGateContext.amihud_illiquidity`) **and** the computed `amihud_percentile` (new `RiskGateContext` field, O2) — Python reads the percentile directly for exact parity.
+5. **Python co-evolution:** deferred — see §4b (execute after `.context` regen).
+6. **Regenerate** (`regenerate_schema.sh` from base env) + build both repos + commit all three (schema, MindfulTrader, lbrnet).
 
-## 4. Open decisions
+## 4. Open decisions — RESOLVED
 
-- **O1 — Window definition:** trailing bar-count for the rolling percentile (21 trading days on 15-min bars ≈ 21×26 ≈ 546 bars). Confirm the exact window + whether it resets on session/day boundaries.
-- **O2 — Percentile parity mechanism:** ship C++-computed `amihud_percentile` on the wire (simplest exact parity), vs. ship only raw and have both sides compute the percentile from a shared window spec (risk of drift). Recommend **shipping the percentile**.
-- **O3 — Threshold values:** p90/p75 (Gemini's example, matches PC-17's empirical rebase) vs. re-derive from the real `.alpha` Amihud distribution. Recommend validating against the 200k-event sample.
-- **O4 — Observation-field rename timing:** confirm deferral of `vpin_toxicity` → `amihud_illiquidity` to the next retrain cycle.
+All four resolved 2026-07-15; see §0. Summary: O1 = 21-day session-aware continuous window; O2 = ship `amihud_percentile` on the wire; O3 = p90/p75 (validate vs sample); O4 = defer the obs-field rename. Plus the newly-discovered **formula fix** (log return + dollar volume, drop `* volumeAvg`).
+
+## 4b. Python handoff (execute AFTER C++ complete + `.context` regenerated)
+
+The Python co-evolution cannot be validated until a fresh `.context` is regenerated by the completed C++ side. Once that exists, lbrnet steps in:
+
+1. **Read from `RiskGateContext`** on the `.context` `MarketObservation` (via `iter_context_stream` / `context_stream.py`):
+   - `amihud_illiquidity` (raw, canonical log-return/dollar-volume value) — for audit/analysis.
+   - `amihud_percentile` (0–1) — **the gate input**; compare directly to the thresholds. No Python-side window computation (parity by construction).
+2. **Rewrite the toxicity gate** to `amihud_percentile > 0.90` (normal) / `> 0.75` (fat-tail: DOF ≤ 4 or kurtosis > 8), matching C++ `EvaluateHardGates` bar-for-bar.
+3. **Reclassify PC-17:** the p90/p75 constants become canonical — delete the "TEMPORARY stopgap / rebase once C++ ships" framing.
+4. **Delete PC-15/16/17 scaled-proxy stopgaps** and restore the real thresholds for the sibling gates: `spread_stress > 0.85` (Finding 19), raw Hill-α Pareto breach (Finding 20), Amihud percentile (Finding 21). Read all three from `RiskGateContext.*`, not `observation[9/11/12]`.
+5. **Runtime contract test:** add `test_risk_gate_context_contract.py` mirroring `test_observation_contract.py` — assert the `RiskGateContext` binding fields match the C++ `LocalRiskContext` field set (+ `amihud_percentile`), so future schema drift is caught at test time.
+6. **Close** Findings 19/20/21 = PC-15/16/17; PC-03 CLOSED.
+
+**Backward-compat:** treat an absent `risk_gate_context` (old `.context`) as "legacy → keep stopgap path" until re-collection, or gate the switch on field presence.
 
 ## 5. Acceptance
 

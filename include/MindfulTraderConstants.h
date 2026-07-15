@@ -82,6 +82,7 @@ namespace PersistentVar_AdaptiveCalculators {
     const int FISHER_WINDOW_STATE_PTR = 23;  // Independent AdaptiveWindowParams for Fisher Information
     const int HURST_LAST_VALID_VALUE = 24;   // Last finite Hurst value for graceful degradation
     const int HURST_HAS_LAST_VALID = 25;     // 1 when HURST_LAST_VALID_VALUE has been initialized
+    const int LAST_AMIHUD_SAMPLE_INDEX = 26; // Last bar index pushed into the Amihud percentile pool (once per 15-min bar)
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

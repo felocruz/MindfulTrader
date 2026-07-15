@@ -876,6 +876,7 @@ bool ContextManager::EmitTrainingContext(
         rgc.regime_duration       = lrc.regimeDuration;
         rgc.is_valid              = lrc.isValid;
         rgc.snapshot_timestamp_us = static_cast<int64_t>(lrc.snapshotTimestampUs);
+        rgc.amihud_percentile     = lrc.amihudPercentile;   // Layer B: session-aware rolling percentile (the gate input)
 
         // Log both Physics (16D) and Asymmetry (8D) + raw gate context.
         lbr_mgr.LogContext(obs_data, asymContext, now_us, bars_since_last_update, &rgc);
@@ -887,6 +888,44 @@ bool ContextManager::EmitTrainingContext(
         );
         return false;
     }
+}
+
+void ContextManager::PushAmihudSample(float rawAmihud, bool isRTH) {
+    // Skip warmup / degenerate values — keep the last trusted percentile rather than
+    // polluting the pool with zeros/NaNs (canonical Amihud is strictly positive).
+    if (!std::isfinite(rawAmihud) || rawAmihud <= 0.0f) {
+        return;
+    }
+
+    // Route into the session pool (deep-liquidity RTH vs thin overnight/globex).
+    if (isRTH) {
+        m_amihudRthPool[static_cast<size_t>(m_amihudRthHead)] = rawAmihud;
+        m_amihudRthHead = (m_amihudRthHead + 1) % kAmihudRthWindow;
+        if (m_amihudRthCount < kAmihudRthWindow) ++m_amihudRthCount;
+    } else {
+        m_amihudOvernightPool[static_cast<size_t>(m_amihudOvernightHead)] = rawAmihud;
+        m_amihudOvernightHead = (m_amihudOvernightHead + 1) % kAmihudOvernightWindow;
+        if (m_amihudOvernightCount < kAmihudOvernightWindow) ++m_amihudOvernightCount;
+    }
+
+    const float* pool = isRTH ? m_amihudRthPool.data() : m_amihudOvernightPool.data();
+    const int n = isRTH ? m_amihudRthCount : m_amihudOvernightCount;
+
+    // Until the pool holds enough samples for a meaningful tail estimate, report a
+    // neutral 0.5 so the p90/p75 gate cannot fire on thin history (fail-open on data,
+    // not on risk — the fixed sibling gates still apply).
+    if (n < kAmihudMinSamples) {
+        m_localRiskContext.amihudPercentile = 0.5f;
+        return;
+    }
+
+    // Empirical percentile of the current value within its session pool:
+    // fraction of samples <= rawAmihud. O(n) once per 15-min bar (negligible).
+    int leq = 0;
+    for (int i = 0; i < n; ++i) {
+        if (pool[i] <= rawAmihud) ++leq;
+    }
+    m_localRiskContext.amihudPercentile = static_cast<float>(leq) / static_cast<float>(n);
 }
 
 float ContextManager::ComputeL1DistanceFromBaseline(

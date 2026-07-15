@@ -77,6 +77,7 @@ struct LocalRiskContext {
 
     // Pareto (Structure/Flow) — from StructureEngine + ObservationData
     float vpin = 0.0f;                 // Amihud illiquidity (legacy field name)
+    float amihudPercentile = 0.5f;     // Layer B: session-aware rolling percentile [0,1] of vpin(Amihud) — the actual gate input (p90 normal / p75 fat-tail)
     float spreadStress = 0.0f;         // spread-stress fragility
     float hurstExponent = 0.5f;        // persistence (>0.5 trending, <0.5 mean-reverting)
     float fractalDim = 1.5f;           // roughness 1.0-2.0
@@ -731,6 +732,15 @@ public:
     /// Update regime duration from MarketClimateIndicator
     void SetRegimeDuration(int bars) { m_localRiskContext.regimeDuration = bars; }
 
+    /// Layer B: push one raw Amihud sample (once per closed 15-min bar) into its
+    /// session pool (RTH vs overnight) and refresh the cached percentile stored on
+    /// m_localRiskContext.amihudPercentile. isRTH routes the sample; the thin
+    /// overnight distribution is kept separate so it does not contaminate the RTH gate.
+    void PushAmihudSample(float rawAmihud, bool isRTH);
+
+    /// Layer B: current session-aware Amihud percentile [0,1] (the risk-gate input).
+    float GetAmihudPercentile() const { return m_localRiskContext.amihudPercentile; }
+
 private:
     // === Institutional-Grade Physics Engines (Elite v2.5 / v3.0) ===
     MindfulTrader::TailRiskEngine m_tailRiskEngine;       ///< Hill Estimator (Fat Tail detection)
@@ -763,6 +773,22 @@ private:
 
     // Elite v3.2: Unified local risk context (public via GetLocalRiskContext())
     LocalRiskContext m_localRiskContext;
+
+    // === Layer B: session-aware Amihud rolling-percentile estimator ===
+    // Two trailing pools so the structurally-higher thin-session (overnight/globex)
+    // Amihud does not contaminate the deep-liquidity RTH gate. Sampled once per
+    // closed 15-min bar; percentile recomputed on each push and cached on
+    // m_localRiskContext.amihudPercentile (gate reads O(1)). Continuous ring
+    // (no daily reset). Windows ≈ 21 trading days per session type.
+    static constexpr int kAmihudRthWindow = 546;         ///< ~21 RTH days @ 26 15-min bars
+    static constexpr int kAmihudOvernightWindow = 1600;  ///< ~21 globex days (thin-session bars)
+    static constexpr int kAmihudMinSamples = 30;         ///< min pool size before the gate trusts the percentile
+    std::array<float, kAmihudRthWindow> m_amihudRthPool{};
+    std::array<float, kAmihudOvernightWindow> m_amihudOvernightPool{};
+    int m_amihudRthCount = 0;
+    int m_amihudRthHead = 0;
+    int m_amihudOvernightCount = 0;
+    int m_amihudOvernightHead = 0;
 
     StatisticalContext m_waveContext;                   ///< Wave context (TS2)
     StatisticalContext m_rippleContext;                 ///< Ripple context (TS3)

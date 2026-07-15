@@ -2332,10 +2332,10 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // === GAP 24 v2: REGIME-AWARE STOP TYPE + SC SERVER-SIDE TRAILING (Taleb — crash resilience) ===
     //
     // Three tiers:
-    //   1. CRASH REGIME (DOF ≤ 4 / kurtosis > 10 / VPIN > 0.75):
+    //   1. CRASH REGIME (DOF ≤ 4 / kurtosis > 10 / Amihud pctile > p90):
     //      → Pure market stop (STOP_WITH_BID_ASK_TRIGGERING).  Guaranteed fill.
     //        In a flash crash, limit stops can gap through.  Exit certainty > price control.
-    //   2. ORDERLY-BUT-TOXIC (VPIN 0.40–0.75 in non-crash regime):
+    //   2. ORDERLY-BUT-TOXIC (Amihud pctile p75–p90 in non-crash regime):
     //      → Stop-limit with 2-tick offset.  Protective fill control in wide-quote flow.
     //   3. NORMAL / DEFAULT:
     //      → SC server-side triggered trailing stop (TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS).
@@ -2349,8 +2349,8 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 3.0f;
 
         const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
-                                 (lrc.isValid && lrc.vpin > 0.75f);
-        const bool toxicFlow = lrc.isValid && lrc.vpin > 0.40f;
+                                 (lrc.isValid && lrc.amihudPercentile > 0.90f);
+        const bool toxicFlow = lrc.isValid && lrc.amihudPercentile > 0.75f;
 
         if (crashRegime) {
             // Tier 1: guaranteed exit — market stop fires immediately at trigger price
@@ -2837,8 +2837,8 @@ void PositionManager::ProcessManualTradeCommand(
         const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 3.0f;
 
         const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
-                                 (lrc.isValid && lrc.vpin > 0.75f);
-        const bool toxicFlow = lrc.isValid && lrc.vpin > 0.40f;
+                                 (lrc.isValid && lrc.amihudPercentile > 0.90f);
+        const bool toxicFlow = lrc.isValid && lrc.amihudPercentile > 0.75f;
 
         if (crashRegime) {
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_WITH_BID_ASK_TRIGGERING;

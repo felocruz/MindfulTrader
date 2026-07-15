@@ -794,19 +794,22 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | liq_fragility=" + std::to_string(ctx.spreadStress)
         );
     }
-    // === GAP 26: REGIME-AWARE VPIN HARD GATE (Taleb — fat-tail tightening) ===
-    // In crash regimes (DOF ≤ 4 / kurtosis > 8), even moderate VPIN is dangerous
-    // because the tail risk amplifies adverse selection.  Tighten from 0.80 → 0.40.
+    // === GAP 26: REGIME-AWARE AMIHUD HARD GATE (Taleb — fat-tail tightening) ===
+    // Layer B: gate on a SESSION-AWARE ROLLING PERCENTILE of raw Amihud illiquidity,
+    // not the raw value against a fixed constant (the raw value is non-stationary in
+    // price/volume regime, so a fixed 0.80/0.40 was meaningless across regimes).
+    // In crash regimes (DOF ≤ 4 / kurtosis > 8) tighten the veto from p90 → p75.
     {
         const auto* hmmGate = InferenceManager::Instance().HmmState();
         const float gateDof = hmmGate ? hmmGate->Dof() : 30.0f;
         const bool fatTail = (gateDof <= 4.0f) || (ctx.talebKurtosis > 8.0f);
-        const float vpinThreshold = fatTail ? 0.40f : 0.80f;
-        if (ctx.vpin > vpinThreshold) {
+        const float amihudPctThreshold = fatTail ? 0.75f : 0.90f;
+        if (ctx.amihudPercentile > amihudPctThreshold) {
             return Result<void>::Failure(
-                "HARD_GATE: VPIN toxicity critical"
-                " | vpin=" + std::to_string(ctx.vpin) +
-                " threshold=" + std::to_string(vpinThreshold) +
+                "HARD_GATE: Amihud illiquidity toxicity critical"
+                " | amihud_pct=" + std::to_string(ctx.amihudPercentile) +
+                " threshold=" + std::to_string(amihudPctThreshold) +
+                " | amihud_raw=" + std::to_string(ctx.vpin) +
                 " | dof=" + std::to_string(gateDof) +
                 " | fat_tail=" + std::string(fatTail ? "true" : "false"));
         }
