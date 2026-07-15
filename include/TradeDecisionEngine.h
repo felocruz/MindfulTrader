@@ -264,7 +264,10 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
     {
         const double amihudStress = std::clamp(static_cast<double>(in.amihudPercentile), 0.0, 1.0);
         const double spreadFactor = std::clamp(static_cast<double>(in.spreadStress) / 0.85, 0.0, 1.0);
-        const double entropyFactor = std::clamp(static_cast<double>(in.shannonFlowEntropy) / 0.90, 0.0, 1.0);
+        // shannonFlowEntropy is in BITS; 0.90 is a normalized H/Hmax ratio, so scale by
+        // Hmax = log2(10) ≈ 3.321928 to normalize the bits value (Finding 18).
+        constexpr double kShannonMaxEntropyBitsD = 3.321928;
+        const double entropyFactor = std::clamp(static_cast<double>(in.shannonFlowEntropy) / (0.90 * kShannonMaxEntropyBitsD), 0.0, 1.0);
         const double worstMicro = std::max({amihudStress, spreadFactor, entropyFactor});
         r.microstructurePremium = 1.0 + worstMicro;
     }

@@ -757,7 +757,7 @@ void MarketClimateIndicator::UpdateContext(const LocalRiskContext& ctx, HMMState
     // Shannon: Entropy > 0.6 = Random Walk. Stop trend following.
 
     bool isFragile = (kurtosis > 4.0f);
-    bool isChaos = (entropy > 0.6f);
+    bool isChaos = (entropy > 0.6f * kShannonMaxEntropyBits);
 
     if (isFragile) {
         newClimate = MarketClimate::TALEBIAN_FRAGILE; // Fat Tails -> Risk Off (Hard Override)
@@ -768,19 +768,19 @@ void MarketClimateIndicator::UpdateContext(const LocalRiskContext& ctx, HMMState
         // --- STEP 2: PHYSICS+HMM HYBRID CLASSIFICATION ---
         // If Physics isn't screaming "Danger", we look for structural opportunities.
 
-        bool isPhysicsMomentum = (hurst > 0.6f && entropy < 0.45f); // Tighter entropy for trend
-        bool isPhysicsCoil = (hurst < 0.4f && entropy < 0.4f);
+        bool isPhysicsMomentum = (hurst > 0.6f && entropy < 0.45f * kShannonMaxEntropyBits); // Tighter entropy for trend
+        bool isPhysicsCoil = (hurst < 0.4f && entropy < 0.4f * kShannonMaxEntropyBits);
 
         bool isHmmMomentum = (hmmState == HMMStateEnum::PARETO_MOMENTUM || hmmState == HMMStateEnum::GAUSSIAN_STABLE);
         bool isHmmMeanRev  = (hmmState == HMMStateEnum::COILED_SPRING || hmmState == HMMStateEnum::GAUSSIAN_FRAGILE);
 
         // HYBRID DECISION MATRIX:
         // 1. Pareto Momentum: Requires Physics OR (HMM + decent Physics)
-        if (isPhysicsMomentum || (isHmmMomentum && entropy < 0.5f && hurst > 0.55f)) {
+        if (isPhysicsMomentum || (isHmmMomentum && entropy < 0.5f * kShannonMaxEntropyBits && hurst > 0.55f)) {
             newClimate = MarketClimate::PARETO_MOMENTUM;
         }
         // 2. Coiled Spring: Requires Physics OR (HMM + decent Physics)
-        else if (isPhysicsCoil || (isHmmMeanRev && entropy < 0.5f)) {
+        else if (isPhysicsCoil || (isHmmMeanRev && entropy < 0.5f * kShannonMaxEntropyBits)) {
             newClimate = MarketClimate::COILED_SPRING;
         }
     }

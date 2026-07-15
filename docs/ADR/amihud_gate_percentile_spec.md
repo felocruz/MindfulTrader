@@ -181,10 +181,17 @@ Taleb cliff proximity (`elderChandelierATR`, dimensionless), regime-latency, por
 limits. (Nuance: overnight gaps fatten tails, but that's arguably signal.)
 
 ### Separate correctness bug (not a session issue)
-- **Finding 18 — Shannon-entropy gate units.** `RiskManager` compares
-  `shannonFlowEntropy > 0.90` where 0.90 looks like a normalized ratio but the quantity may
-  be raw bits → fires ~always. Fix independently of session-awareness (verify units vs the
-  Python/schema source of truth).
+- **[DONE] Finding 18 — Shannon-entropy gate units.** `GetShannonEntropy()` returns **bits**
+  (0..log2(NUM_BINS=10) ≈ 3.322), but gates compared it against `[0.45–0.90]` thresholds
+  authored as normalized `H/Hmax` ratios → the hard veto (`>0.90`) and the climate "chaos"
+  gate fired ~always, and the Scoring/TDE entropy factors saturated. Fixed by scaling every
+  normalized-intent threshold by `kShannonMaxEntropyBits = log2(10)` (new shared constant in
+  `ContextManager.h`, guarded by a `static_assert` on `NUM_BINS`). `shannonFlowEntropy` stays
+  raw bits (honest to the schema, unchanged model feature → no regen/wire change); only the
+  gate comparisons were corrected. Sites: `RiskManager` (hard veto + chaos block), `Scoring`
+  (entropy adjustment ×3 + noise gating), `TradeDecisionEngine` (entropy premium factor),
+  `Indicator.cpp MarketClimateIndicator` (chaos/momentum/coil ×5). Build green. `actionEntropy`
+  (model action-distribution entropy) is a different quantity and correctly untouched.
 
 ### Bigger opportunity (later)
 The U-shape is continuous → a **time-of-day diurnal profile** would be strictly more

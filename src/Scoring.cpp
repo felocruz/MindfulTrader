@@ -251,16 +251,18 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     }
 
     // --- 2. ENTROPY ADJUSTMENT (Shannon) ---
+    // shannonFlowEntropy is in BITS; thresholds below are normalized H/Hmax ratios
+    // scaled by kShannonMaxEntropyBits = log2(10) (Finding 18).
     bool isMeanReversionPattern = (pattern == PatternType::TurtleSoup || pattern == PatternType::KangarooTail);
     bool isTrendPattern = (pattern == PatternType::ElderBreakout || pattern == PatternType::MomentumPinball);
 
-    if (ctx.shannonFlowEntropy > 0.80f) {
+    if (ctx.shannonFlowEntropy > 0.80f * kShannonMaxEntropyBits) {
         if (isMeanReversionPattern) multiplier *= 1.25;
         else if (isTrendPattern) multiplier *= 0.70;
         else multiplier *= 0.0;
-    } else if (ctx.shannonFlowEntropy > 0.60f) {
+    } else if (ctx.shannonFlowEntropy > 0.60f * kShannonMaxEntropyBits) {
         if (!isMeanReversionPattern) multiplier *= 0.50;
-    } else if (ctx.shannonFlowEntropy < 0.45f) {
+    } else if (ctx.shannonFlowEntropy < 0.45f * kShannonMaxEntropyBits) {
         if (isTrendPattern) multiplier *= 1.20;
         else if (isMeanReversionPattern) multiplier *= 0.80;
         else multiplier *= 1.10;
@@ -317,7 +319,7 @@ bool Scoring::IsIndicatorEventSignificant(IndicatorKey indicatorKey, const Local
     // ELITE v3.2: NOISE GATING via LocalRiskContext
     // In high-entropy regimes (Chaos), suppress events from noisy/lagging indicators.
 
-    if (ctx.shannonFlowEntropy > 0.85f) {
+    if (ctx.shannonFlowEntropy > 0.85f * kShannonMaxEntropyBits) {
         // Chaos Mode: Only allow VITAL structural updates
         if (indicatorKey == IndicatorKey::HMM_STATE || 
             indicatorKey == IndicatorKey::MARKET_CLIMATE || // Recursive safety

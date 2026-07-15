@@ -13,6 +13,14 @@
 #include "TailRiskEngine.h"
 #include "StructureEngine.h"
 
+// Shannon flow entropy is measured in BITS (range 0 .. log2(NUM_BINS)). Several gates
+// were authored with thresholds that read like normalized [0,1] ratios of H/Hmax but
+// compared the RAW bits value (Finding 18) — mis-firing. Multiply a normalized threshold
+// by this constant to compare it correctly against the bits value. Hmax = log2(10).
+inline constexpr float kShannonMaxEntropyBits = 3.321928f;
+static_assert(MindfulTrader::InformationEngine::NUM_BINS == 10,
+              "kShannonMaxEntropyBits must equal log2(InformationEngine::NUM_BINS)");
+
 struct StatisticalContext {
     float volatility = 0.0f;              ///< Std dev of log returns (volatility measure)
     float efficiency = 0.0f;              ///< Efficiency ratio [0-1] (trending vs ranging)

@@ -820,11 +820,11 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | taleb_cliff=" + std::to_string(ctx.elderChandelierATR) +
             " threshold=0.50");
     }
-    if (ctx.shannonFlowEntropy > 0.90f) {
+    if (ctx.shannonFlowEntropy > 0.90f * kShannonMaxEntropyBits) {
         return Result<void>::Failure(
             "HARD_GATE: Shannon entropy critical"
             " | shannon_entropy=" + std::to_string(ctx.shannonFlowEntropy) +
-            " threshold=0.90");
+            " threshold=" + std::to_string(0.90f * kShannonMaxEntropyBits));
     }
     if (ctx.talebKurtosis > 15.0f) {
         return Result<void>::Failure(
@@ -2450,7 +2450,7 @@ bool RiskManager::IsTradeAllowed(SCStudyInterfaceRef sc, const TradeValidationPa
         }
 
         // 2. SHANNON (Entropy): Chaos Block
-        if (regimeCtx.shannonFlowEntropy > 0.9f) {
+        if (regimeCtx.shannonFlowEntropy > 0.9f * kShannonMaxEntropyBits) {
             result.allowed = false;
             result.reason = "MARKET ENTROPY CRITICAL (Shannon Chaos)";
             return false;
