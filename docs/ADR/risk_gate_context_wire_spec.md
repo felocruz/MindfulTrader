@@ -62,7 +62,7 @@ table RiskGateContext {
   taleb_skewness       : float = 0.0;
   elder_chandelier_atr : float = 0.0;
   pareto_tail_alpha    : float = 4.0;   // Finding 20 — raw Hill-α
-  vpin                 : float = 0.0;   // Finding 21 — raw Amihud (legacy name kept; see PC-03)
+  vpin                  : float = 0.0;   // Finding 21 — raw Amihud (renamed to amihud_illiquidity; PC-03 resolved — see liquidity_toxicity_gate_decision.md)
   spread_stress        : float = 0.0;   // Finding 19 — raw [0,1] fragility
   hurst_exponent       : float = 0.5;
   fractal_dim          : float = 1.5;
@@ -80,7 +80,7 @@ table RiskGateContext {
 
 Rationale for the single home (vs. the earlier `Event`+`TrainingEvent` draft): `MarketObservation` is the same table live+offline, is where the sim already reads gates, and co-locates the raw twin with the scaled obs. `Event`/`TrainingEvent` are **not** changed — the offline sim does not read gate inputs from `.alpha`, and live gating is enforced C++-side (the live agent does not replicate gates). Adding it to `TrainingEvent` later is a separate, optional decision *only* if training wants the raw signals as model features.
 
-Legacy-name note: keep `vpin` (documented as Amihud, PC-03) to avoid a rename's cross-repo blast radius; PC-03's rename is a separate deferred decision.
+Legacy-name note: PC-03 (the `vpin`-is-actually-Amihud mislabel) is **resolved** — the field ships as `amihud_illiquidity` (per `liquidity_toxicity_gate_decision.md`, Gemini's ruling: reject VPIN, rename honestly). The existing C++ `LocalRiskContext.vpin` + the `ObservationData.vpin_toxicity` model-input field are renamed under the Layer B gate-rework pass (`amihud_gate_percentile_spec.md`).
 
 ## 5. C++ wiring
 
@@ -93,7 +93,7 @@ Legacy-name note: keep `vpin` (documented as Amihud, PC-03) to avoid a rename's 
 ## 6. Python co-evolution (lbrnet)
 
 1. Regenerate FlatBuffer bindings (both repos, same `flatc`).
-2. In the `.context` reader (`context_stream.py` / `iter_context_stream`), expose `MarketObservation.RiskGateContext()`; switch every gate check to read `RiskGateContext.*` (`spread_stress`, `vpin`, `pareto_tail_alpha`, …) instead of the scaled `observation[9/11/12]`. Same record the sim already iterates — no new stream.
+2. In the `.context` reader (`context_stream.py` / `iter_context_stream`), expose `MarketObservation.RiskGateContext()`; switch every gate check to read `RiskGateContext.*` (`spread_stress`, `amihud_illiquidity`, `pareto_tail_alpha`, …) instead of the scaled `observation[9/11/12]`. Same record the sim already iterates — no new stream.
 3. **Delete the stopgaps** — `_LIQ_FRAGILITY_TAIL_THRESHOLD`, `_VPIN_TOXICITY_TAIL_THRESHOLD_*`, the PC-16 removal, and the PC-15/16/17 comment blocks — restoring the real thresholds (`0.85`, `0.80/0.40`, raw Hill-α gate).
 4. The 16-D `observation` vector reverts to being *purely* the model/HMM input — no longer double-duty as a gate proxy.
 5. Close Findings 19/20/21 / PC-15/16/17.
