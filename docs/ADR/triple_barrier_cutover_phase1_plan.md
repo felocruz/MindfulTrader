@@ -104,6 +104,8 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 
 ## 3. Open decisions (resolve before coding)
 
+> **STATUS (2026-07-15): D1–D5 all RESOLVED and IMPLEMENTED** — the text below is the as-built record, not open questions. D1 live-source mapping is realized in `BuildBarrierInputs()`; D2 Finding-17 fail-closed lives in that same helper (invalid/out-of-range pattern → LOW-tier default); D3 the `PARETO→4.0` trailing hook was dropped (engine is the single regime authority); D4 `ClosePositionAtMarket()` + explicit `TIME_STOP` tag + `MapExitReason` case shipped; D5 hostile-regime flatten retained as a wide catastrophic override (climate-shift/hostile-env demoted to telemetry when trailing was deleted), Chandelier stop-tightening removed. Commits: Step C `2eb658e`, stale-fish + Step D `9ee5326`, native TRAP floor `711e7cf`.
+
 **D1 — Barrier source: does `ComputeBarriers()` replace `CalculatePatternPrices()`?**
 `CalculatePatternPrices()` (`PositionManagerPatterns.cpp`) computes per-pattern stop/target (Turtle Soup bar-low anchor, Pinball, Elder 1.5R, …). `tbe::ComputeBarriers()` also computes stop/target (per-tier seed → regime scale [0.5,2.0] → structural cap, tightening-only).
 *Recommendation:* `ComputeBarriers()` becomes the **single authority** for the final stop/target/max_bars. `CalculatePatternPrices()`'s structural outputs (e.g., N-bar swing levels, bar low/high anchors) feed `BarrierInputs` as the **structural cap / seed**, not as the final bracket. This is exactly what the golden-vector `*_caps_binding/*_nonbinding` cases model. **Action:** map every field of `tbe::BarrierInputs` to a concrete live source (entry, ATR14, dof from `HmmState()`, regime via `ToRegime`, tier + pattern params from `kPatternTable[patternId]`, structural levels from the existing pattern math). Reconcile numerically against the 7 golden vectors on real replay data.
@@ -159,15 +161,19 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 
 ## 4. Implementation steps (each = own commit + green build)
 
-1. **Wire barrier computation at entry** (additive, behind the existing path). Split into two increments for safety:
-   - **1a — Shadow (DONE, non-destructive).** In the `HandleFills` entry-fill branch, build `tbe::BarrierInputs` (D1 mapping) and call `tbe::ComputeBarriers()`; log `[TB-SHADOW]` comparing engine `stop/target/maxBars/rr` against the live `Trade` stop/target. Drives **no orders**, latches no state, exception-guarded. Purpose: validate the D1 mapping + barrier math numerically on replay (acceptance §5.2) with zero behavior risk. D2 fail-closed default (`NONE`/OOR → LOW-tier) is exercised here.
-   - **1b — Engine-driven (pending 1a log review).** Switch to `TripleBarrierExitManager::getInstance().OpenBracket(orderID, sc.Index, inputs)` and place the SC attached stop/target from `bracket.stop`/`bracket.target` (replacing the `InitializeStop` stop wiring). Keep Chandelier temporarily to A/B compare in logs.
-2. **Add the vertical (time) barrier**: per-tick `Evaluate(sc.Index, close, regimeInvalidated=false)`; on `TIME_EXIT` → `ClosePositionAtMarket(TIME_STOP)` (D4).
-3. **Finding 17 fail-closed routing** (D2) at entry seeding.
-4. **Remove scale-out ladder** (single-stage): delete the `newQty < oldQty` trailing-activation branch (`PositionManager.cpp:353-383`); keep pure size bookkeeping. Full-size stop + target.
-5. **Remove trailing machinery**: delete `UpdateChandelierStops()` body + its call at `:247`; delete the `EvaluateRegimeDefense` Chandelier stop-tightening calls (D5), keep hostile-regime flatten.
-6. **Delete `ChandelierStopManager`**: remove `.h`/`.cpp`, the `#include` at `PositionManager.cpp:3`, the `InitializeStop`/`ActivateTrailing`/`RemoveStop` calls, and the `CMakeLists.txt` `SOURCE_FILES` entry. Confirm zero references (`grep`).
-7. **Build green** (`./build_dll.sh`), then acceptance.
+> **STATUS (2026-07-15): steps 1–6 LANDED; step 7 build green, acceptance (§5) pending a replay pass.**
+
+1. **Wire barrier computation at entry** — **DONE.**
+   - **1a — Shadow (DONE, `5d52f23`).** `[TB-SHADOW]` A/B logging in the `HandleFills` entry-fill branch; validated the D1 mapping numerically, zero behavior risk.
+   - **1b — Engine-driven (DONE, `2eb658e`).** `tbe::ComputeBarriers()` (via `BuildBarrierInputs()`) is now the single authority: barriers are computed right after Phase 3 and overwrite `stopPrice`/`targetPrice` so both sizing and the SC attached bracket use engine barriers. `OpenBracket` latches the bracket for the time barrier.
+2. **Vertical (time) barrier — DONE (`7b40437`).** Per-tick check in `Update()` against the entry-latched `maxBars` → `ClosePositionAtMarket("TIME_STOP")` (D4), guarded by `m_exitSubmittedThisTick`.
+3. **Finding 17 fail-closed routing (D2) — DONE (`2eb658e`).** `BuildBarrierInputs()` validates `pattern_id` in `kPatternTable` range and falls back to the LOW-tier default otherwise.
+4. **Remove scale-out ladder — DONE (`2eb658e`).** Single full-size target; the `HandleFills` scale-out branch is size-bookkeeping only.
+5. **Remove trailing machinery — DONE (`9ee5326`).** `UpdateChandelierStops()` + its `Update()` call deleted; `EvaluateRegimeDefense` Chandelier tightening removed (climate/hostile → telemetry); hostile/toxic **flatten** retained (D5).
+6. **Delete `ChandelierStopManager` — DONE (`9ee5326`).** `.h`/`.cpp`, includes, all call sites, and the `CMakeLists.txt` entry removed; `grep` clean (only doc comments remain).
+7. **Build green — DONE; acceptance (§5) pending replay.** `./build_dll.sh --no-clean` green across all slices.
+
+**Added beyond the original plan:** native **TRAP floor** (`711e7cf`) — priority-#1 completed-bar `StructureTest` reversal exit (the reactive layer of the two-observer TRAP doctrine). Remaining TRAP work tracked in §7.
 
 ---
 
