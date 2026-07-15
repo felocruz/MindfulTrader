@@ -1,9 +1,11 @@
 # Plan — Phase 1 Cutover: PositionManager → TripleBarrierExitManager
 
-**Status:** PLAN — DRAFT FOR REVIEW (2026-07-14). Not yet implementing.
+**Status:** PLAN — D1–D5 resolved; step 1a (shadow) implemented (`5d52f23`). Steps 1b–7 pending sign-off.
 **Canonical spec:** `docs/ADR/triple_barrier_exit_engine_spec.md` (this plan is the execution sequencing for its Phase 1 static cutover).
 **Scope:** C++ execution layer. **Schema-free** (reuses existing `PositionUpdate`/`TradeClose`/`TradeRecord.exit_reason`; see the schema-deferral analysis).
 **Depends on:** Finding 1 fix (landed `097e11b`) and Elder 1.5R (landed `65d3f66`).
+
+> **Deployment context (2026-07-15):** the system is **not in production yet — this version is the first production deploy.** There is no production incumbent to preserve. Consequences for this plan: (a) the end state ships **engine-only** — do **not** deploy a dual Chandelier+engine system; the A/B shadow (step 1a) is a **dev validation** tool, time-boxed, not a production hedge; (b) acceptance is measured against **absolute** institutional gates (`../docs/BACKTESTING_FRAMEWORK.md`), not "better than Chandelier" (Chandelier was never in production); (c) once the shadow logs validate the D1 mapping on replay, proceed decisively through 1b→7 to the clean end-state before first deploy.
 
 ---
 
@@ -110,13 +112,13 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 2. Golden-vector parity: entry barriers produced live match `tbe::ComputeBarriers` for representative patterns (spot-check against the 7 fixtures on replay).
 3. Replay a session: confirm exits resolve as stop / target / **time** (new) and `.btst` `TradeRecord.exit_reason` is populated correctly (`STOP_LOSS`/`PROFIT_TARGET`/`TIME_STOP`).
 4. First-hit-wins ordering holds (time before stop/target on the same tick if both would trigger — per §4.4).
-5. **Phase 1 `omega_net` baseline** vs. the Chandelier baseline — **requires the Python daily-bias short-arm restoration first** for a trustworthy comparison (cross-repo dependency). Do not sign off Phase 1 production-ready until this is measured against the acceptance gates in `../docs/BACKTESTING_FRAMEWORK.md`.
+5. **Absolute acceptance (pre-production).** The Triple-Barrier system must meet the acceptance gates in `../docs/BACKTESTING_FRAMEWORK.md` **in absolute terms** on replay — this is the first production deploy, so the bar is "institutionally sound," not "better than the never-shipped Chandelier." The Chandelier A/B log (step 1a shadow) is used only to sanity-check that the engine barriers are reasonable and to catch gross regressions during dev; it is **not** a production gate and the dual system is not shipped. The lbrnet daily-bias short-arm restoration is still required for a trustworthy `omega_net` reading, but as an input to the absolute gate, not an A/B baseline.
 
 ---
 
 ## 6. Risk register
 
-- **R1 (behavioral):** removing trailing/scale-out changes the P&L distribution materially. Mitigated by A/B logging (step 1) + the omega_net gate (§5.5).
+- **R1 (behavioral):** removing trailing/scale-out changes the P&L distribution materially. **Pre-production, this is not a regression risk** (no incumbent) but a design-correctness one — validated by the shadow log (step 1a) + absolute acceptance gate (§5.5), not by A/B superiority over Chandelier.
 - **R2 (parity):** `ComputeBarriers` vs. `CalculatePatternPrices` divergence on untested patterns. Mitigated by D1 field-mapping + fixture spot-check; fail-closed (D2) prevents silent mis-seed.
 - **R3 (time-exit correctness):** `barsHeld` must use the same bar index base as entry (`m_openTrade.GetEntryIndex()`); verify across session boundaries.
 - **R4 (regime double-exit):** ensure `EvaluateRegimeDefense` flatten and the (future Phase 2) `REGIME_INVALIDATION` don't both fire — Phase 1 keeps only the former.

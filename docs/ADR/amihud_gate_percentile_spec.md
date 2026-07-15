@@ -18,7 +18,7 @@
 | O1 | Rolling-percentile window | **21 trading days, SESSION-AWARE (separate RTH vs overnight percentile pools), continuous ring (no daily reset).** Sample one raw Amihud per closed 15-min bar. 24h/globex data → overnight thin-volume Amihud must not contaminate the RTH pool. Amihud's native aggregation is monthly; liquidity-risk/TCA practice converges on a ~1-month recent-normal window. RTH pool ≈ 546 samples, overnight ≈ 1470 over 21d — both resolve p90/p75. |
 | O2 | Percentile parity mechanism | **Ship the C++-computed `amihud_percentile` on the wire** (new `RiskGateContext` field). Exact bar-for-bar veto parity; Python reads it directly rather than re-deriving (no window-drift risk). |
 | O3 | Threshold values | **p90 normal / p75 fat-tail** (fat-tail = Student-t DOF ≤ 4 **or** realized kurtosis > 8). Validate firing rate against the 200k-event `.alpha` sample before sign-off (not 0%, not ~100%). |
-| O4 | `vpin_toxicity` obs-field rename | **DEFER** to next retrain cycle (obs index 11 unchanged, name only is stale — renaming ripples into training/inference feature maps). |
+| O4 | `vpin_toxicity` obs-field rename | **DEFER** to next retrain cycle (obs index 11 unchanged, name only is stale — renaming ripples into training/inference feature maps). **Pre-production update (2026-07-15):** the system is not in production yet, so the first prod model will be trained fresh anyway — **pull this rename forward before that canonical training run** so no mislabel ships to production. It is name-only (index 11 and trained weights unaffected), so the risk is low; the only reason to defer within dev is to batch it with the training-side field-map edit. |
 
 ---
 
@@ -47,6 +47,7 @@ Three representations, three blast radii:
 - `RiskPolicy` input `.vpin` (`TradeDecisionEngine.h`) + its own `ToJson` `{"vpin", …}` key + the `in.vpin / 0.80` sizing normalization.
 - `NormalizedAnchors.vpin` (written from the subgraph at `TripleScreen3.cpp`).
 - **Rationale for deferral:** these DTO field names double as JSON/serialization keys read downstream; renaming them in isolation breaks the consumer contract. Rename them together with the Python readers (same discipline as (c)). The C++ source now assigns from `lrc.amihudIlliquidity`, so the value is correct; only the mirror *name* is legacy.
+- **Pre-production update (2026-07-15):** no production consumer exists yet, so there is no live contract to preserve — do the C++-and-Python rename together **before first deploy** rather than carrying `vpin` mislabels into production. This is a coordinated (not deferred-indefinitely) task; sequence it with the Python co-evolution pass (§4b).
 - **Also converted to the percentile (done):** `Scoring.cpp` (was `> 0.80/0.60` raw → now `amihudPercentile > 0.90/0.75`, kill/halve) and `RiskPolicy`/`ComputeRiskPrice` microstructure premium (was `in.vpin / 0.80` raw → now `in.amihudPercentile` directly; the `RiskPriceInputs.vpin` field became `amihudPercentile`). The entire raw-gate path now uses the stationary session-aware percentile; no fixed-threshold-on-raw-Amihud site remains.
 
 **(c) Scaled observation field — MODEL INPUT, retrain blast radius (DEFER to next HPO/training cycle):**
