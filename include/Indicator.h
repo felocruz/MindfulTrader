@@ -1718,6 +1718,10 @@ public:
 
     float GetVolumeRatio() const { return m_volumeZScore; }
     float GetVolumeImbalance() const { return m_volumeImbalance; }
+    // Total traded contracts (bid+ask) behind the current imbalance. The imbalance is a
+    // sample proportion (noise ~ 1/sqrt(N)); callers gate on this so a thin book can't
+    // produce a spurious ±band breach (min-volume guard).
+    float GetLastTotalVolume() const { return m_lastTotalVolume; }
 
     void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
         Indicator<VolumeEnum>::AddToTrainingEventFB(event);
@@ -1741,6 +1745,7 @@ private:
     int   m_logVolOvnIdx{0};
     float m_volumeZScore = 0.0f;
     float m_volumeImbalance = 0.0f;  // (askVol - bidVol) / totalVol, bounded [-1, +1]
+    float m_lastTotalVolume = 0.0f;  // bid+ask contracts behind the current imbalance
 };
 
 // Session VWAP: cumulative Σ(TP×Vol)/Σ(Vol) with daily reset.

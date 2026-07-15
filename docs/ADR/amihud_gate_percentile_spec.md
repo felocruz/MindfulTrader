@@ -167,9 +167,13 @@ Fisher info, kurtosis-as-moment, entropy-as-ratio) — scale/session-invariant.
    inflation (self-healing, benign — momentary extra caution at open/close). Optional low-value fix
    if ever needed = drop cross-session IATs / reset the event buffer at session transitions (NOT
    percentile pooling).
-4. **Volume imbalance (±0.35).** Dimensionless (not a pooling problem) but thin overnight
-   books make the ratio noisier → better fixed with a **min-volume guard / wider overnight
-   band** than session pooling. MED-LOW.
+4. **[DONE] Volume imbalance (±0.35) — min-volume (sample-size) guard.** Not a pooling
+   problem: the imbalance `(ask−bid)/(ask+bid)` is a sample proportion with noise `~1/√N`,
+   so a thin book (overnight) can spuriously breach ±0.35 → false toxic-flow rejections.
+   Fix: `VolumeIndicator::GetLastTotalVolume()` exposes the bid+ask contracts behind the
+   ratio; the `PositionManager` toxic-flow gate now only fires when that sample ≥ 50 contracts
+   (proportion-SE floor: ±0.35 ≈ 2 SE at N≈33). Thin-book illiquidity is the spread/Amihud
+   gates' job, not this directional gate. Build green.
 
 ### Not worth it (session-invariant)
 Kurtosis, Shannon entropy, Hurst, fractal dim, Fisher info, cross-market correlation, DOF,

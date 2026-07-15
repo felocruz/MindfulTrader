@@ -2037,9 +2037,20 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     const auto* volInd = IndicatorManager::Instance().GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
     const double imbalance = volInd ? static_cast<double>(volInd->GetVolumeImbalance()) : 0.0;
 
-    if ((isLong && imbalance < -0.35) || (!isLong && imbalance > 0.35)) {
+    // Min-volume guard (#4, gate session-awareness audit): the imbalance (ask-bid)/(ask+bid)
+    // is a sample proportion whose noise ~ 1/sqrt(N_contracts). In a thin book (overnight
+    // especially) a handful of contracts can push it past ±0.35 spuriously, causing FALSE
+    // toxic-flow rejections. For the ±0.35 band to sit ~2 SE from zero we need N ≳ 33
+    // contracts (0.35 > 2/sqrt(N)); use a modest floor so the gate only acts on a
+    // statistically meaningful sample. Thin-book illiquidity itself is covered by the
+    // spread / Amihud gates — not this directional-toxicity gate.
+    constexpr double kMinImbalanceVolume = 50.0;  // contracts; proportion-SE sample floor
+    const double imbalanceSampleVol = volInd ? static_cast<double>(volInd->GetLastTotalVolume()) : 0.0;
+    const bool imbalanceReliable = (imbalanceSampleVol >= kMinImbalanceVolume);
+
+    if (imbalanceReliable && ((isLong && imbalance < -0.35) || (!isLong && imbalance > 0.35))) {
         SCString logMsg;
-        logMsg.Format("Order rejected [TOXIC_FLOW_BREACH]: imbalance=%.3f", imbalance);
+        logMsg.Format("Order rejected [TOXIC_FLOW_BREACH]: imbalance=%.3f (vol=%.0f)", imbalance, imbalanceSampleVol);
         Logger::getInstance().log(logMsg.GetChars());
         LogOrderFailure(
             "AUTOMATIC",

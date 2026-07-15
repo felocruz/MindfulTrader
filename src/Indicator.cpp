@@ -458,6 +458,7 @@ void VolumeIndicator::UpdateVolume(float bidVolume, float askVolume)
     // 2. Order-flow imbalance: pure directional signal, orthogonal to magnitude
     //    Bounded [-1, +1] by construction — no normalization needed
     const float totalVol = bidVolume + askVolume;
+    m_lastTotalVolume = totalVol;  // sample size behind the ratio (min-volume guard)
     m_volumeImbalance = (totalVol > 0.0f)
         ? (askVolume - bidVolume) / totalVol
         : 0.0f;
