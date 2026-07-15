@@ -112,3 +112,55 @@ Amihud + session-aware percentile) over 61,078 15-min bars aggregated from
 
 Caveat: proxy only (epoch-aligned buckets, fixed lookback 20, continuous contract) —
 de-risks formula/threshold calibration; does **not** replace acceptance item 3.
+
+## 6. Session-awareness audit — other gates (2026-07-15)
+
+**Principle:** make a gate session-aware only when the RTH↔overnight difference is
+**nuisance variance in the measure** (contaminates "is this unusual *for its session*"),
+not when the session gap is itself the signal. Applies to **raw microstructure
+quantities** (spread, quote rate, volume, illiquidity, event rate — strongly diurnal,
+the intraday U-shape: Admati–Pfleiderer 1988, Harris 1986). Does **not** help
+**dimensionless/topological regime measures** (Hurst, fractal dim, efficiency, DOF,
+Fisher info, kurtosis-as-moment, entropy-as-ratio) — scale/session-invariant.
+
+### Already session-aware (DONE)
+- **Amihud percentile** — RTH/overnight pools (this spec). ✓
+- **Entry spread limit** — `GetSessionSpreadLimit()` time-of-day (2.0 / 1.5 / 1.0 ticks). ✓
+- **Quote-churn** — `IsQuoteChurnBreached()` (8/sec RTH vs 6/sec off). ✓
+- **Pattern-quality floors** — time-of-day (opening 0.70 / lunch 0.80 / afternoon 0.65). ✓
+
+### Candidates (prioritized) — REMAINS
+
+1. **[TOP] Volume z-score baseline (`VolumeIndicator::GetVolumeRatio`).** 50-bar rolling
+   MAD **pooled across all sessions** → bimodal baseline (overnight bars read
+   artificially low-vol, RTH high). Direct Amihud-contamination analog. **Highest blast
+   radius:** the z-score feeds `raschkeBurst`, volume-surge logic, **and the model
+   observation vector** — so the fix improves gating *and* train/live feature quality.
+   Fix = separate RTH/overnight rolling baselines (mirror `PushAmihudSample` /
+   `GetAmihudPercentile`). *Recommended next.*
+2. **`spreadStress`** (hard veto `>0.85`; Scoring penalty `>0.70`). Spread is diurnal →
+   if normalized against a session-pooled baseline it's contaminated like Amihud.
+   **Verify its exact normalization first.** Design = **session-relative percentile + an
+   absolute floor** (wide overnight spreads are *also* genuine execution risk, not pure
+   nuisance).
+3. **`raschkeBurst`** (event-clustering CV). Event arrival rate is diurnal; normalize the
+   baseline rate by session. MED.
+4. **Volume imbalance (±0.35).** Dimensionless (not a pooling problem) but thin overnight
+   books make the ratio noisier → better fixed with a **min-volume guard / wider overnight
+   band** than session pooling. MED-LOW.
+
+### Not worth it (session-invariant)
+Kurtosis, Shannon entropy, Hurst, fractal dim, Fisher info, cross-market correlation, DOF,
+Taleb cliff proximity (`elderChandelierATR`, dimensionless), regime-latency, portfolio P&L
+limits. (Nuance: overnight gaps fatten tails, but that's arguably signal.)
+
+### Separate correctness bug (not a session issue)
+- **Finding 18 — Shannon-entropy gate units.** `RiskManager` compares
+  `shannonFlowEntropy > 0.90` where 0.90 looks like a normalized ratio but the quantity may
+  be raw bits → fires ~always. Fix independently of session-awareness (verify units vs the
+  Python/schema source of truth).
+
+### Bigger opportunity (later)
+The U-shape is continuous → a **time-of-day diurnal profile** would be strictly more
+accurate than binary RTH/overnight. Binary session is the pragmatic 80/20 and keeps parity
+with the Amihud approach; stay binary for now.
