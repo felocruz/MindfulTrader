@@ -24,6 +24,27 @@ The live exit system is **SC-native, bracket-order-driven + trailing**:
 
 `ChandelierStopManager` is included at `PositionManager.cpp:3` and compiled via `CMakeLists.txt` (`src/ChandelierStopManager.cpp`).
 
+### 1.1 Correction (2026-07-15) — the live exit is richer than §1 stated; a doctrine decision is implied
+
+A full surface map (order-assembly block `PositionManager.cpp:2418-2507`) shows §1 **understated** the current system. It is not "bracket + advisory Chandelier" — it is a deliberate multi-stage **"let winners run"** exit (GAP 18 v2, Elder/Raschke):
+
+- **3-level scale-out ladder** — `CalculateScaleOutTargets()` splits T1 (50%) / T2 (30%) / T3 runner (20%) [size≥3; size=2 → T1+runner; size=1 → pure runner]. Targets set **once** at entry (no re-sizing on partial fills).
+- **SC server-side trailing** — the **normal-regime stop** is `SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS` (trails autonomously server-side), and the **last (runner) target** is *also* a server-side trailing type. Trail distance = `ATR14 × DofStopScale`.
+- **Regime-aware stop TYPE** (`2418-2438`): crash → `STOP_WITH_BID_ASK_TRIGGERING` (market), toxic → `STOP_LIMIT` (2-tick), normal → server trailing. (Now consumes the Phase-A `amihudPercentile`.)
+- **Server-side move-to-breakeven** on T1 fill (`MoveToBreakEven`, OCO-triggered, BE+1 tick).
+- **Chandelier = advisory overlay** — `ModifyOrder`s the stop every tick on top of the server-side trailing.
+
+**Two consequences:**
+
+1. **DOCTRINE DECISION (blocks the cutover; needs sign-off).** Triple-Barrier is **single-stage, immutable, first-touch** (no scale-out, no runner, no trailing, no move-to-BE). Cutover therefore **abandons the "every trade gets a runner / let winners run" doctrine** for a fixed-target first-touch doctrine. This is a strategy change, not a mechanical refactor — decide explicitly:
+   - **(A) Full single-stage immutable** (spec as written): one full-size target at `ComputeBarriers().target`, one immutable stop, time barrier. Simplest, matches the label-consistency argument with the Python triple-barrier labeler, but drops the runner alpha.
+   - **(B) Hybrid**: immutable **stop** + **time** barrier from the engine, but **retain the scale-out ladder / runner target** on the upside. Keeps "let winners run"; the engine owns the downside + horizon only. Diverges from the pure spec and from the Python labeler's single-target assumption.
+   - Recommendation: decide against the **Python triple-barrier labeler's** target definition — if training labels are single-target first-touch, live must match (A) for train/live parity; if the labeler supports a runner/ladder, (B) is viable.
+
+2. **Latent double-control bug (today).** The normal-regime stop is a SC server-side trailing order **and** Chandelier `ModifyOrder`s that same stop each tick — two controllers, two different trail formulas (`ATR14×DofStopScale` server vs `trailingMult 3.0/4.0` Chandelier). Whichever cutover option is chosen removes the Chandelier controller and resolves this.
+
+Remaining §2-§6 below assume **option (A)** (the spec's single-stage design); revise if (B) is chosen.
+
 ## 2. Target architecture (Triple-Barrier, Phase 1 static)
 
 Per the canonical spec's standing directives: **single-stage** (no scale-out), **immutable barriers** (no trailing), first-hit-wins `regime-invalidation → vertical(time) → lower(stop) → upper(target)`.
