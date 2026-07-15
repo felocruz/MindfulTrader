@@ -278,11 +278,13 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
         multiplier *= 0.95;
     }
 
-    // --- 5. VPIN TOXICITY GATE (new: order-flow poison detection) ---
-    // vpin ∈ [0,1]; >0.8 = market-maker withdrawal imminent
-    if (ctx.vpin > 0.80f) {
+    // --- 5. AMIHUD TOXICITY GATE (order-flow poison detection) ---
+    // NOTE: still a fixed-threshold gate on the raw (non-stationary) Amihud value —
+    // the same calibration weakness Layer B fixed in the hard gate. Percentile
+    // conversion pending (see amihud_gate_percentile_spec.md).
+    if (ctx.amihudIlliquidity > 0.80f) {
         multiplier = 0.0; // hard kill — toxic flow
-    } else if (ctx.vpin > 0.60f) {
+    } else if (ctx.amihudIlliquidity > 0.60f) {
         multiplier *= 0.50; // halve exposure
     }
 

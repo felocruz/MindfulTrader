@@ -34,19 +34,22 @@
 
 ## 2. Rename inventory (`vpin` → `amihud_illiquidity`)
 
-Two representations, two blast radii:
+Three representations, three blast radii:
 
-**(a) Raw gate value — C++-internal, no model impact (rename in this pass):**
-- `LocalRiskContext.vpin` (`ContextManager.h:74`) → `amihudIlliquidity`
-- populate: `ContextManager.cpp:535` (`m_localRiskContext.vpin = obs[OBS_VPIN_TOXICITY]`)
-- gate: `RiskManager.cpp:791,805,808` (`ctx.vpin` + error strings — change "VPIN toxicity critical")
-- mirrors: `RiskManager.cpp:1202` (`baseRec.context.vpin`), `:1345` (`rpIn.vpin`), `:1834` (`rec.context.vpin`)
-- `Scoring.cpp:283,285` (`ctx.vpin`)
-- `PositionManager.cpp:2352-2353, 2840-2841` (`lrc.vpin` toxic-flow)
-- mirror structs each with their own `vpin`: `RejectionLedger.h:87` + field-map string `:146` (`{"vpin", …}`), the `RiskPolicy` input type (`rpIn`), `NormalizedAnchors` (`anchors.vpin`, `TripleScreen3.cpp:727,1327`)
-- **Already done:** the new `RiskGateContext.amihud_illiquidity` schema field (born correct).
+**(a) Raw single-source-of-truth field — C++-internal, no model/contract impact (DONE, Phase B):**
+- `LocalRiskContext.vpin` → `amihudIlliquidity` (`ContextManager.h`), populate at `ContextManager.cpp` and the `RiskGateContext` wire mapping.
+- All reads updated: `RiskManager::EvaluateHardGates` log strings, the three mirror-assignment RHS (`baseRec.context.vpin = lrc.amihudIlliquidity`, `rpIn.vpin = lrc.amihudIlliquidity`, `rec.context.vpin = localCtx.amihudIlliquidity`), and `Scoring.cpp` gate reads.
+- `PositionManager` toxic-flow now reads `lrc.amihudPercentile` (Phase A) — no raw read remains.
+- **Already done earlier:** the `RiskGateContext.amihud_illiquidity` schema field (born correct).
 
-**(b) Scaled observation field — MODEL INPUT, retrain blast radius (DEFER to next HPO/training cycle):**
+**(b) Serialized DTO mirror fields + JSON keys — CONTRACT-coupled (DEFER to a Python-coordinated pass):**
+- `RejectionLedger::ContextSnapshot.vpin` + JSON key `{"vpin", …}` (consumed by the Python PAER).
+- `RiskPolicy` input `.vpin` (`TradeDecisionEngine.h`) + its own `ToJson` `{"vpin", …}` key + the `in.vpin / 0.80` sizing normalization.
+- `NormalizedAnchors.vpin` (written from the subgraph at `TripleScreen3.cpp`).
+- **Rationale for deferral:** these DTO field names double as JSON/serialization keys read downstream; renaming them in isolation breaks the consumer contract. Rename them together with the Python readers (same discipline as (c)). The C++ source now assigns from `lrc.amihudIlliquidity`, so the value is correct; only the mirror *name* is legacy.
+- **Also flagged (separate calibration follow-up):** `Scoring.cpp` (`> 0.80/0.60`) and `RiskPolicy` (`in.vpin / 0.80`) still gate/normalize on the raw, non-stationary Amihud against fixed constants — the same weakness Layer B fixed in the hard gate. Percentile conversion of these two sites is a pending behavior-change decision (not part of the cosmetic Phase B rename).
+
+**(c) Scaled observation field — MODEL INPUT, retrain blast radius (DEFER to next HPO/training cycle):**
 - schema `ObservationData.vpin_toxicity` (`mts_schema.fbs:395`, obs index 11)
 - `OBS_VPIN_TOXICITY` enum (`ContextManager.cpp:39,58,791`) + generated `kObsVpinToxicity` (`mts_schema_contract_generated.h:33`)
 - Python name-based readers (`schema_contract` field map, `calibrate_context_thresholds.py`, `backtest_runner.py` obs[11])

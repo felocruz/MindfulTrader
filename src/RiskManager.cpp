@@ -788,7 +788,7 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | isValid=0"
             " | snapshot_us=" + std::to_string(ctx.snapshotTimestampUs) +
             " | shannon_entropy=" + std::to_string(ctx.shannonFlowEntropy) +
-            " | vpin=" + std::to_string(ctx.vpin) +
+            " | amihud=" + std::to_string(ctx.amihudIlliquidity) +
             " | taleb_cliff=" + std::to_string(ctx.elderChandelierATR) +
             " | taleb_kurtosis=" + std::to_string(ctx.talebKurtosis) +
             " | liq_fragility=" + std::to_string(ctx.spreadStress)
@@ -809,7 +809,7 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
                 "HARD_GATE: Amihud illiquidity toxicity critical"
                 " | amihud_pct=" + std::to_string(ctx.amihudPercentile) +
                 " threshold=" + std::to_string(amihudPctThreshold) +
-                " | amihud_raw=" + std::to_string(ctx.vpin) +
+                " | amihud_raw=" + std::to_string(ctx.amihudIlliquidity) +
                 " | dof=" + std::to_string(gateDof) +
                 " | fat_tail=" + std::string(fatTail ? "true" : "false"));
         }
@@ -1202,7 +1202,7 @@ Result<void> RiskManager::ValidateOrder(
 
     // Market snapshot from LocalRiskContext
     const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
-    baseRec.context.vpin               = lrc.vpin;
+    baseRec.context.vpin               = lrc.amihudIlliquidity;
     baseRec.context.spreadStress       = lrc.spreadStress;
     baseRec.context.shannonFlowEntropy = lrc.shannonFlowEntropy;
     baseRec.context.shannonEfficiency  = lrc.shannonEfficiency;
@@ -1345,7 +1345,7 @@ Result<void> RiskManager::ValidateOrder(
         rpIn.stopDistanceTicks  = fabs(entryPrice - stopPrice) / sc.TickSize;
         rpIn.currencyPerTick    = sc.CurrencyValuePerTick;
         rpIn.atrRatio           = (m_atr14Avg > 0.0f) ? (m_atr14 / m_atr14Avg) : 1.0f;
-        rpIn.vpin               = lrc.vpin;
+        rpIn.vpin               = lrc.amihudIlliquidity;
         rpIn.spreadStress       = lrc.spreadStress;
         rpIn.shannonFlowEntropy = lrc.shannonFlowEntropy;
         rpIn.talebKurtosis      = lrc.talebKurtosis;
@@ -1834,7 +1834,7 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
             rec.margin          = riskMultiplier;
             rec.sizingBuckets   = buckets;
 
-            rec.context.vpin               = localCtx.vpin;
+            rec.context.vpin               = localCtx.amihudIlliquidity;
             rec.context.spreadStress       = localCtx.spreadStress;
             rec.context.shannonFlowEntropy = localCtx.shannonFlowEntropy;
             rec.context.shannonEfficiency  = localCtx.shannonEfficiency;

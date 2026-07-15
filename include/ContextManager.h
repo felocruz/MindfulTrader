@@ -76,8 +76,8 @@ struct LocalRiskContext {
     float paretoTailAlpha = 4.0f;      // Pareto tail index via Hill estimator (4.0 = safe default)
 
     // Pareto (Structure/Flow) — from StructureEngine + ObservationData
-    float vpin = 0.0f;                 // Amihud illiquidity (legacy field name)
-    float amihudPercentile = 0.5f;     // Layer B: session-aware rolling percentile [0,1] of vpin(Amihud) — the actual gate input (p90 normal / p75 fat-tail)
+    float amihudIlliquidity = 0.0f;    // Amihud illiquidity (canonical: mean |log-ret| / dollar-volume; formerly 'vpin')
+    float amihudPercentile = 0.5f;     // Layer B: session-aware rolling percentile [0,1] of amihudIlliquidity — the actual gate input (p90 normal / p75 fat-tail)
     float spreadStress = 0.0f;         // spread-stress fragility
     float hurstExponent = 0.5f;        // persistence (>0.5 trending, <0.5 mean-reverting)
     float fractalDim = 1.5f;           // roughness 1.0-2.0

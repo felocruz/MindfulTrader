@@ -532,7 +532,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     m_localRiskContext.talebSkewness = m_latestInstitutionalMetrics.talebSkewness;
     m_localRiskContext.elderChandelierATR = m_latestInstitutionalMetrics.elderChandelierATR;
     m_localRiskContext.paretoTailAlpha = m_cachedHillAlpha.load(std::memory_order_relaxed);
-    m_localRiskContext.vpin = obs[OBS_VPIN_TOXICITY];
+    m_localRiskContext.amihudIlliquidity = obs[OBS_VPIN_TOXICITY];
     m_localRiskContext.spreadStress = obs[OBS_LIQ_FRAGILITY];
     m_localRiskContext.hurstExponent = obs[OBS_HURST_EXPONENT];
     m_localRiskContext.fractalDim = obs[OBS_FRACTAL_DIM];
@@ -866,7 +866,7 @@ bool ContextManager::EmitTrainingContext(
         rgc.taleb_skewness        = lrc.talebSkewness;
         rgc.elder_chandelier_atr  = lrc.elderChandelierATR;
         rgc.pareto_tail_alpha     = lrc.paretoTailAlpha;
-        rgc.amihud_illiquidity    = lrc.vpin;   // PC-03: legacy 'vpin' field carries Amihud illiquidity
+        rgc.amihud_illiquidity    = lrc.amihudIlliquidity;   // raw canonical Amihud (log-ret / dollar-volume)
         rgc.spread_stress         = lrc.spreadStress;
         rgc.hurst_exponent        = lrc.hurstExponent;
         rgc.fractal_dim           = lrc.fractalDim;
