@@ -68,6 +68,14 @@ A full surface map (order-assembly block `PositionManager.cpp:2418-2507`) shows 
 
 Remaining §2-§6 below assume **option (A)** (the spec's single-stage design); revise if (B) is chosen.
 
+4. **Winner give-back / profit protection — GEMINI-RULED (2026-07-15, `triple_barrier_profit_protection_ruling.md`).** A profitable winner *can* revert to a full loss under first-touch (smooth reversal, no structural break, within `max_bars`). Rulings, decided on merits (labeler is refactored to follow, so it is NOT a constraint; the only enduring constraint is the rule be labeler-reproducible — a deterministic path-function barrier or a trained meta-model):
+   - **Exit objective is PATTERN-CLASS-DIFFERENTIATED:** **fades (Turtle Soup, Momentum Pinball) → fixed-target first-touch** (mean-reverting; trend-scanning them is a category error); **breakouts (Elder) → trend-scanning (LdP MLAM Ch. 5)** eventually (a static 1.5R cap truncates the trend right tail). Phase 1 ships **pure first-touch for all** as the control group; the breakout→trend-scan differentiation is a **data-gated Phase 3/4 upgrade**.
+   - **Naive breakeven / trailing profit-lock → PERMANENTLY REJECTED** (Rank 5): on 0.4–0.5·ATR fade stops, a BE move after ~+1R sits in the max-noise density → whipsaw; destroys expectancy. Profit protection only helps at **MFE ≥ ~2.0–2.5R** (beyond 1·ATR) *and* in fragile/coiled regimes.
+   - **Protection order (if the data justifies it):** ① differentiated objectives (breakout trend-scan) → ② meta-label exit model (conditional on MFE≥1.0R) → ③ accept give-back (control) → ④ deterministic time-decay barrier. Never ⑤ (BE/trailing).
+   - **Sequencing:** ship pure first-touch → **measure** → upgrade only on statistically-significant evidence.
+   - **Q5 gating metrics (added to §5 acceptance):** `W_LR` (winner→loser reversal rate; <0.20 ⇒ ignore give-back), `W_SR` (whipsaw ratio; >0.30 ⇒ reject any BE), `MFE_CR` (MFE capture ratio), `ΔΩ` (Omega/Sharpe delta; must be significant at 95% or reject the added complexity). `.btst` already records MAE/MFE.
+   - Citation caveat: the time-decay barrier is loosely attributed to Bertram 2010 (Rank 4, not decision-critical).
+
 ## 2. Target architecture (Triple-Barrier, Phase 1 static)
 
 Per the canonical spec's standing directives: **single-stage** (no scale-out), **immutable barriers** (no trailing), first-hit-wins `regime-invalidation → vertical(time) → lower(stop) → upper(target)`.
