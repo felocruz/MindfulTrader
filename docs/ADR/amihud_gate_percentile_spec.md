@@ -131,13 +131,17 @@ Fisher info, kurtosis-as-moment, entropy-as-ratio) — scale/session-invariant.
 
 ### Candidates (prioritized) — REMAINS
 
-1. **[TOP] Volume z-score baseline (`VolumeIndicator::GetVolumeRatio`).** 50-bar rolling
-   MAD **pooled across all sessions** → bimodal baseline (overnight bars read
-   artificially low-vol, RTH high). Direct Amihud-contamination analog. **Highest blast
-   radius:** the z-score feeds `raschkeBurst`, volume-surge logic, **and the model
-   observation vector** — so the fix improves gating *and* train/live feature quality.
-   Fix = separate RTH/overnight rolling baselines (mirror `PushAmihudSample` /
-   `GetAmihudPercentile`). *Recommended next.*
+1. **[DONE] Volume z-score baseline (`VolumeIndicator`) — session-aware + per-bar cadence fix.**
+   Was a single 50-slot ring pushed **every tick** with the *accumulating* `sc.Volume[sc.Index]`
+   → the baseline was ~50 partial-bar tick snapshots (biased low), and pooled across sessions
+   (bimodal). Fixed to mirror Amihud: **two session pools** (`m_logVolRth`/`m_logVolOvn`, 50 bars
+   each) sampled **once per closed bar** via `SampleBarVolume(completedBarVolume, isRTH)` from the
+   TS3 once-per-bar guard (same `isRTH` routing as Amihud). Robust log-vol z (median/MAD ×1.4826)
+   preserved — already fat-tail-correct (log = MDH/lognormal; MAD = 50% breakdown). `UpdateVolume`
+   keeps per-tick order-flow imbalance + VolumeEnum classification against the per-bar z. Done
+   pre-regen so the canonical training run ingests the corrected `volume_ratio_percent` feature.
+   Literature: Clark 1973 / Tauchen–Pitts 1983 (MDH, lognormal volume); Easley–LdP–O'Hara 2012
+   (volume clock); Admati–Pfleiderer 1988 (intraday U-shape → deseasonalize). Build green.
 2. **`spreadStress`** (hard veto `>0.85`; Scoring penalty `>0.70`). Spread is diurnal →
    if normalized against a session-pooled baseline it's contaminated like Amihud.
    **Verify its exact normalization first.** Design = **session-relative percentile + an

@@ -386,40 +386,56 @@ void VwapIndicator::UpdateVwap(float typicalPrice, float barVolume, float atr, b
 // VolumeIndicator — v5.7: Log-volume robust z-score + self-classification + order-flow imbalance
 //
 
-void VolumeIndicator::UpdateVolume(float rawVolume, float bidVolume, float askVolume)
+namespace {
+// Robust z-score of a value's log within a session pool: median/MAD in log-space.
+// MAD (50% breakdown) + log transform are the fat-tail-appropriate treatment for
+// volume (lognormal under the Mixture-of-Distributions Hypothesis).
+float RobustLogZ(const double* buf, int count, double logVol)
 {
-    if (rawVolume <= 0.0f) return;  // Guard against zero/negative volume
+    if (count < 5) return 0.0f;  // need ≥5 samples for a stable MAD
+    std::array<double, 64> scratch;  // >= VolumeIndicator::kLookback (50)
+    std::copy_n(buf, count, scratch.begin());
+    const int mid = count / 2;
 
-    const double logVol = std::log(static_cast<double>(rawVolume));
+    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
+    const double median = scratch[mid];
 
-    // Store in circular buffer
-    m_logVolHistory[m_logVolIdx] = logVol;
-    m_logVolIdx = (m_logVolIdx + 1) % kLookback;
-    if (m_logVolCount < kLookback) ++m_logVolCount;
+    for (int i = 0; i < count; ++i) scratch[i] = std::abs(buf[i] - median);
+    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
+    const double mad = scratch[mid];
 
-    // 1. Compute robust z-score (need ≥5 samples for stable MAD)
-    if (m_logVolCount >= 5) {
-        std::array<double, kLookback> scratch;
-        std::copy_n(m_logVolHistory.begin(), m_logVolCount, scratch.begin());
-        const int n = m_logVolCount;
-        const int mid = n / 2;
+    const double denom = mad * 1.4826;  // MAD -> σ consistency under normality
+    return (denom > 1e-12) ? static_cast<float>((logVol - median) / denom) : 0.0f;
+}
+}  // namespace
 
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        double median = scratch[mid];
+void VolumeIndicator::SampleBarVolume(float completedBarVolume, bool isRTH)
+{
+    if (completedBarVolume <= 0.0f) return;  // guard log of zero/negative
+    const double logVol = std::log(static_cast<double>(completedBarVolume));
 
-        for (int i = 0; i < n; ++i)
-            scratch[i] = std::abs(m_logVolHistory[i] - median);
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        double mad = scratch[mid];
+    // Route the completed bar into its session pool (deseasonalization).
+    double* buf = isRTH ? m_logVolRth.data()  : m_logVolOvn.data();
+    int&    cnt = isRTH ? m_logVolRthCount     : m_logVolOvnCount;
+    int&    idx = isRTH ? m_logVolRthIdx        : m_logVolOvnIdx;
 
-        double denom = mad * kMADConsistency;
-        m_volumeZScore = (denom > 1e-12)
-            ? static_cast<float>((logVol - median) / denom)
-            : 0.0f;
-    }
+    buf[idx] = logVol;
+    idx = (idx + 1) % kLookback;
+    if (cnt < kLookback) ++cnt;
 
-    // 2. Self-classify VolumeEnum using robust z-score thresholds
-    //    Replaces Gaussian GetVolumeEnum() — thresholds are stable under fat tails
+    // Robust log-vol z-score of the completed bar within its own session baseline.
+    m_volumeZScore = RobustLogZ(buf, cnt, logVol);
+}
+
+void VolumeIndicator::UpdateVolume(float bidVolume, float askVolume)
+{
+    // Per-tick: the magnitude z-score baseline is maintained once per closed bar in
+    // SampleBarVolume (session-aware). Here we (a) self-classify VolumeEnum against the
+    // current z-score, folding in the live order-flow imbalance for the buy/sell split,
+    // and (b) refresh the imbalance itself.
+
+    // 1. Self-classify VolumeEnum using robust z-score thresholds
+    //    (thresholds are stable under fat tails — log/MAD z-score)
     VolumeEnum classified = VolumeEnum::NORMAL;
     if (m_volumeZScore < -2.0f) {
         classified = VolumeEnum::VERY_LOW;
@@ -439,7 +455,7 @@ void VolumeIndicator::UpdateVolume(float rawVolume, float bidVolume, float askVo
     }
     Update(classified);
 
-    // 3. Order-flow imbalance: pure directional signal, orthogonal to magnitude
+    // 2. Order-flow imbalance: pure directional signal, orthogonal to magnitude
     //    Bounded [-1, +1] by construction — no normalization needed
     const float totalVol = bidVolume + askVolume;
     m_volumeImbalance = (totalVol > 0.0f)

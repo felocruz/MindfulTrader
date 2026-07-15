@@ -1704,7 +1704,18 @@ public:
     // v5.7: Log-volume robust z-score (Taleb-consistent, Mandelbrot log-domain)
     // + self-classification using robust thresholds (replaces Gaussian GetVolumeEnum)
     // + order-flow imbalance: (askVol - bidVol) / totalVol — orthogonal to magnitude
-    void UpdateVolume(float rawVolume, float bidVolume, float askVolume);
+    //
+    // Per-tick: refresh order-flow imbalance + self-classify against the current
+    // (per-bar, session-aware) z-score baseline.
+    void UpdateVolume(float bidVolume, float askVolume);
+
+    // Per closed 15-min bar: push the completed bar's total volume into its SESSION
+    // pool (RTH vs overnight) and recompute the robust log-vol z-score. RTH and
+    // overnight volume distributions differ materially (intraday U-shape / MDH), so a
+    // pooled baseline is bimodal and miscalibrates the z. Deseasonalized, once-per-bar
+    // (mirrors the Amihud session-pool design). Call from the TS3 once-per-bar guard.
+    void SampleBarVolume(float completedBarVolume, bool isRTH);
+
     float GetVolumeRatio() const { return m_volumeZScore; }
     float GetVolumeImbalance() const { return m_volumeImbalance; }
 
@@ -1715,14 +1726,19 @@ public:
     }
 
 private:
-    // Robust z-score of log(volume): median/MAD in log-space
-    // 50-bar lookback for 15-min TS3 ≈ 2 trading days
+    // Robust z-score of log(volume): median/MAD in log-space, session-segregated.
+    // 50 same-session bars ≈ recent volume regime (fast-adaptive, unlike the 21-day
+    // Amihud window — volume regime shifts quickly).
     static constexpr int kLookback = 50;
     static constexpr double kMADConsistency = 1.4826;
 
-    std::array<double, kLookback> m_logVolHistory{};
-    int   m_logVolCount{0};
-    int   m_logVolIdx{0};
+    // Two deseasonalized baselines routed by session (RTH vs overnight).
+    std::array<double, kLookback> m_logVolRth{};
+    int   m_logVolRthCount{0};
+    int   m_logVolRthIdx{0};
+    std::array<double, kLookback> m_logVolOvn{};
+    int   m_logVolOvnCount{0};
+    int   m_logVolOvnIdx{0};
     float m_volumeZScore = 0.0f;
     float m_volumeImbalance = 0.0f;  // (askVol - bidVol) / totalVol, bounded [-1, +1]
 };

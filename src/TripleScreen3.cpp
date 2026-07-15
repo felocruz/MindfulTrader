@@ -618,9 +618,10 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     if (volumeIndicator) {
         // v5.7: VolumeIndicator self-classifies using robust z-score thresholds
         // + computes order-flow imbalance from bid/ask split
-        // (replaces Gaussian GetVolumeEnum — thresholds are now fat-tail stable)
-        volumeIndicator->UpdateVolume(static_cast<float>(sc.Volume[sc.Index]),
-                                      static_cast<float>(sc.BidVolume[sc.Index]),
+        // (replaces Gaussian GetVolumeEnum — thresholds are now fat-tail stable).
+        // Magnitude z-score baseline is sampled once per closed bar (SampleBarVolume,
+        // session-aware) in the Amihud guard block below.
+        volumeIndicator->UpdateVolume(static_cast<float>(sc.BidVolume[sc.Index]),
                                       static_cast<float>(sc.AskVolume[sc.Index]));
     }
 
@@ -774,6 +775,15 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             const bool isRTH = (s >= static_cast<int8_t>(TimeOfDayEnum::OPENING_HOUR) &&
                                 s <= static_cast<int8_t>(TimeOfDayEnum::PM_RUN_ENTRY));
             ContextManager::Instance().PushAmihudSample(vpin, isRTH);
+
+            // Session-aware volume z-score baseline (deseasonalized): sample the
+            // just-completed bar's total volume into its RTH/overnight pool. Same guard
+            // + session routing as Amihud (once per closed 15-min bar). Mirrors the
+            // Amihud pool design; fixes both the intraday-U-shape bias and the prior
+            // per-tick partial-volume contamination.
+            if (volumeIndicator && sc.Index >= 1) {
+                volumeIndicator->SampleBarVolume(static_cast<float>(sc.Volume[sc.Index - 1]), isRTH);
+            }
         }
     }
     if (climateIndicator) {
