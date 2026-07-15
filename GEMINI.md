@@ -180,7 +180,9 @@ Size-prefixed FlatBuffer records, one per event. Record ordering:
 
 ## Trap Detection (Native-First)
 
-C++ must implement and run a native trap-risk detector in the live execution path, **independent of Python availability**. Python trap outputs are a refinement layer — not a prerequisite.
+**TRAP = structural invalidation of the entry thesis** — a sprung-trap reversal (`FAILED_*`) that fires ahead of the money-stop; NOT the price stop and NOT a trend/regime shift (an adverse `DECISIVE_*` counter-break is a separate `REGIME_INVALIDATION`, never TRAP — ruling 2026-07-15, `docs/ADR/triple_barrier_trap_definition_ruling.md`).
+
+Two observers of one truth: (a) native REACTIVE floor = completed-bar `StructureTest` reversal set, deterministic, model-independent, the parity anchor with the labeler; (b) the model's ANTICIPATORY `TRAP_*` (first-class input) gated by the dynamic Bayesian threshold τ* = C_FP/(C_FP+C_FN) (Elkan 2001; C_FP=|target−price|, C_FN=|price−stop|). Native is always-on and authoritative; the model exit is additive, acting only when fresh ∧ p≥τ* ∧ adverse — if Python is stale/down/disagreeing, native governs (the model may LEAD but never SUPPRESS the floor). Phase 1 = EXIT/risk only; enable the anticipatory override only when out-of-sample F_0.25 > 0.65. Co-evolution: the native `StructureTest` TRAP definition must equal the labeler's, which routes `DECISIVE_*` into `REGIME_INVALIDATION`.
 
 ## Key Documentation
 

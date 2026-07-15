@@ -130,7 +130,9 @@ Regenerate via the script above; never call `flatc` directly.
 
 ## Trap Detection (Native-First)
 
-C++ must implement and run a native trap-risk detector in the live execution path, **independent of Python availability**. Python trap outputs are a refinement/calibration layer — not a prerequisite. If Python inference is delayed, unavailable, stale, or disagrees, C++ safety behavior is authoritative.
+**TRAP = structural invalidation of the entry thesis** — a sprung-trap reversal (`FAILED_*`) that fires ahead of the money-stop; it is NOT the price stop and NOT a trend/regime shift (an adverse `DECISIVE_*` counter-break is a separate `REGIME_INVALIDATION`, never TRAP — ruling 2026-07-15, `docs/ADR/triple_barrier_trap_definition_ruling.md`).
+
+Two observers of one truth: (a) a native REACTIVE floor = completed-bar `StructureTest` reversal set, deterministic, model-independent, the parity anchor with the labeler; (b) the model's ANTICIPATORY `TRAP_*`, now a first-class input, gated by the dynamic Bayesian threshold τ* = C_FP/(C_FP+C_FN) (Elkan 2001; C_FP=|target−price|, C_FN=|price−stop|). Native is always-on and authoritative; the model exit is additive, acting only when fresh ∧ p≥τ* ∧ adverse — if Python is stale/down/disagreeing, native governs and the model may LEAD but never SUPPRESS the floor. Phase 1 = EXIT/risk only (TRAP-as-entry deferred); enable the anticipatory override only when out-of-sample F_0.25 > 0.65. TRAP ranks priority #1 ahead of stop/target/time. Co-evolution: the native `StructureTest` TRAP definition must equal the labeler's (`triple_barrier_scanner.py`), which routes `DECISIVE_*` out of TRAP into `REGIME_INVALIDATION`.
 
 `StatisticalContext` (volatility, efficiency, relRange, velocity, regimeTenure) is the canonical mechanics backbone and must remain wired through TS2/TS3 → `ContextManager` → `TrainingEvent`.
 

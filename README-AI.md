@@ -93,15 +93,17 @@ Size-prefixed FlatBuffer records: `RunManifest` → `DecisionEvent`(s) → `Pred
 - `IndicatorManager` architecture is DOD (Data-Oriented Design). Always use `std::array` with `IndicatorKey` lookups instead of string hashes/heap allocations.
 
 ## Trap Detection Ownership (Native-First)
-1. C++ must implement and run a native trap-risk detector in the live execution path, independent of Python availability.
-2. Native trap detection is a safety-critical first-response layer and may gate entries or tighten risk immediately.
-3. Python trap outputs are a refinement/calibration layer for precision and threshold tuning, not a prerequisite for trap handling.
-4. If Python inference is delayed, unavailable, stale, or disagrees, C++ safety behavior remains authoritative for immediate risk control.
-5. Trap handling should be conservative and precision-first: reduce catastrophic-loss exposure without introducing reversal churn.
-6. Native trap score design should fuse Elder/Raschke setup failure structure with Shannon/Mandelbrot/Taleb/Pareto evidence and consume HMM-derived context only as an optional refinement input.
-7. Canonical default weighting, reliability-adjusted scoring, thresholds, and governance gates for TRAP are defined in `../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md` under `TRAP weighting policy table (normative default)`.
-8. `StatisticalContext` (volatility, efficiency, relRange, velocity, regimeTenure) is the canonical mechanics backbone for trap decisions and must remain wired through TS2/TS3 -> ContextManager -> TrainingEvent.
-9. Implementation status: policy/spec is ready; directional `TRAP_*` emission is a planned next slice and must pass replay calibration gates before production sign-off.
+1. **TRAP = structural invalidation of the entry thesis** — a sprung-trap reversal (probe-and-fail) that fires ahead of the money-stop. It is neither the price stop nor a trend/regime shift.
+2. C++ must implement and run a native trap-risk detector in the live execution path, independent of Python availability — a safety-critical first-response layer that may exit immediately.
+3. **Two observers of one truth:** (a) native REACTIVE floor = completed-bar `StructureTest` reversal set (`FAILED_*`), deterministic/model-independent — the parity anchor with the labeler; (b) model ANTICIPATORY = Transformer `TRAP_*` emitted earlier from training. The model is now a first-class anticipatory input (no longer merely a future refinement).
+4. **Scope SPLIT (ruling 2026-07-15):** TRAP = `FAILED_*` reversal tests ONLY. An adverse `DECISIVE_*` counter-break is a separate `REGIME_INVALIDATION` resolution, never TRAP — lumping them yields a multimodal target that degrades the anticipatory model.
+5. **Anticipatory gate = dynamic Bayesian threshold τ\*** (Elkan 2001): act on model `TRAP_*` iff `p ≥ τ* = C_FP/(C_FP+C_FN)` with `C_FP=|target−price|`, `C_FN=|price−stop|`, computed from the entry-latched barriers + current price (reproducible). For tight-stop fades τ* sits at ~0.68–0.92, preventing noise exits.
+6. **Arbitration:** native floor is always-on and authoritative; the model exit is ADDITIVE, acting only when fresh ∧ `p ≥ τ*` ∧ adverse to the open position. If Python is delayed/unavailable/stale/low-confidence/disagreeing, native governs. The model may LEAD (earlier) but never SUPPRESS the floor.
+7. **Phase 1 = EXIT/risk only.** TRAP-as-entry (fading into the trap) is deferred to a later, separately-validated slice.
+8. **Deploy gate for the anticipatory override:** out-of-sample `F_0.25 > 0.65` (precision-weighted). The native floor ships unconditionally.
+9. **Priority #1:** the TRAP resolution ranks ahead of stop/target/time (matches the labeler first-hit ordering). Conservative, precision-first — reduce catastrophic loss without reversal churn.
+10. **Co-evolution:** the native `StructureTest` TRAP definition must equal the labeler's (`triple_barrier_scanner.py`); the labeler routes `DECISIVE_*` out of TRAP into `REGIME_INVALIDATION`. `StatisticalContext` (volatility, efficiency, relRange, velocity, regimeTenure) remains the mechanics backbone (TS2/TS3 -> ContextManager -> TrainingEvent).
+11. Rulings: `docs/ADR/triple_barrier_trap_definition_ruling.md` (Q0 split + Q1 τ*). Canonical default weighting/reliability-adjusted scoring still in `../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md`.
 
 ## Cross-Project Model Artifact Convention
 - Canonical HMM artifact naming used by downstream Python consumers is `models/hmm_model.pkl`.
