@@ -278,13 +278,12 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
         multiplier *= 0.95;
     }
 
-    // --- 5. AMIHUD TOXICITY GATE (order-flow poison detection) ---
-    // NOTE: still a fixed-threshold gate on the raw (non-stationary) Amihud value —
-    // the same calibration weakness Layer B fixed in the hard gate. Percentile
-    // conversion pending (see amihud_gate_percentile_spec.md).
-    if (ctx.amihudIlliquidity > 0.80f) {
+    // --- 5. AMIHUD TOXICITY GATE (session-aware rolling percentile; Layer B) ---
+    // Gate on the stationary rolling percentile of Amihud illiquidity (not the raw,
+    // non-stationary value). Mirrors the hard-gate canon: kill at p90, halve at p75.
+    if (ctx.amihudPercentile > 0.90f) {
         multiplier = 0.0; // hard kill — toxic flow
-    } else if (ctx.amihudIlliquidity > 0.60f) {
+    } else if (ctx.amihudPercentile > 0.75f) {
         multiplier *= 0.50; // halve exposure
     }
 

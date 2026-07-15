@@ -205,7 +205,7 @@ struct RiskPriceInputs {
 
     // Premium drivers
     float  atrRatio           = 1.0f;   // current_ATR / historical_ATR
-    float  vpin               = 0.0f;
+    float  amihudPercentile   = 0.5f;   // session-aware Amihud rolling percentile [0,1] (Layer B; stationary toxicity)
     float  spreadStress       = 0.0f;
     float  shannonFlowEntropy = 0.0f;
     float  talebKurtosis      = 0.0f;
@@ -259,13 +259,13 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
     //    ratio 1.0 → 1.0×; ratio 2.0 → 1.5×; ratio 3.0 → 2.0×
     r.volatilityPremium = std::max(1.0, 1.0 + 0.5 * (static_cast<double>(in.atrRatio) - 1.0));
 
-    // 2. Microstructure premium: max of VPIN, spread stress, entropy signals
+    // 2. Microstructure premium: max of Amihud toxicity, spread stress, entropy signals
     //    Each normalized to [0,1] → premium [1.0, 2.0]
     {
-        const double vpinStress   = std::clamp(static_cast<double>(in.vpin) / 0.80, 0.0, 1.0);
+        const double amihudStress = std::clamp(static_cast<double>(in.amihudPercentile), 0.0, 1.0);
         const double spreadFactor = std::clamp(static_cast<double>(in.spreadStress) / 0.85, 0.0, 1.0);
         const double entropyFactor = std::clamp(static_cast<double>(in.shannonFlowEntropy) / 0.90, 0.0, 1.0);
-        const double worstMicro = std::max({vpinStress, spreadFactor, entropyFactor});
+        const double worstMicro = std::max({amihudStress, spreadFactor, entropyFactor});
         r.microstructurePremium = 1.0 + worstMicro;
     }
 

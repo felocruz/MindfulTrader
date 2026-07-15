@@ -47,7 +47,7 @@ Three representations, three blast radii:
 - `RiskPolicy` input `.vpin` (`TradeDecisionEngine.h`) + its own `ToJson` `{"vpin", …}` key + the `in.vpin / 0.80` sizing normalization.
 - `NormalizedAnchors.vpin` (written from the subgraph at `TripleScreen3.cpp`).
 - **Rationale for deferral:** these DTO field names double as JSON/serialization keys read downstream; renaming them in isolation breaks the consumer contract. Rename them together with the Python readers (same discipline as (c)). The C++ source now assigns from `lrc.amihudIlliquidity`, so the value is correct; only the mirror *name* is legacy.
-- **Also flagged (separate calibration follow-up):** `Scoring.cpp` (`> 0.80/0.60`) and `RiskPolicy` (`in.vpin / 0.80`) still gate/normalize on the raw, non-stationary Amihud against fixed constants — the same weakness Layer B fixed in the hard gate. Percentile conversion of these two sites is a pending behavior-change decision (not part of the cosmetic Phase B rename).
+- **Also converted to the percentile (done):** `Scoring.cpp` (was `> 0.80/0.60` raw → now `amihudPercentile > 0.90/0.75`, kill/halve) and `RiskPolicy`/`ComputeRiskPrice` microstructure premium (was `in.vpin / 0.80` raw → now `in.amihudPercentile` directly; the `RiskPriceInputs.vpin` field became `amihudPercentile`). The entire raw-gate path now uses the stationary session-aware percentile; no fixed-threshold-on-raw-Amihud site remains.
 
 **(c) Scaled observation field — MODEL INPUT, retrain blast radius (DEFER to next HPO/training cycle):**
 - schema `ObservationData.vpin_toxicity` (`mts_schema.fbs:395`, obs index 11)

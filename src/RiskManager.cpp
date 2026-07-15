@@ -1345,7 +1345,7 @@ Result<void> RiskManager::ValidateOrder(
         rpIn.stopDistanceTicks  = fabs(entryPrice - stopPrice) / sc.TickSize;
         rpIn.currencyPerTick    = sc.CurrencyValuePerTick;
         rpIn.atrRatio           = (m_atr14Avg > 0.0f) ? (m_atr14 / m_atr14Avg) : 1.0f;
-        rpIn.vpin               = lrc.amihudIlliquidity;
+        rpIn.amihudPercentile   = lrc.amihudPercentile;
         rpIn.spreadStress       = lrc.spreadStress;
         rpIn.shannonFlowEntropy = lrc.shannonFlowEntropy;
         rpIn.talebKurtosis      = lrc.talebKurtosis;
