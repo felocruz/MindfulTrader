@@ -1618,6 +1618,61 @@ void PositionManager::ClearPendingPredictionAck() {
     m_pendingPredictionAck = {};
 }
 
+namespace {
+// Triple-Barrier input builder (Phase 1 cutover, Step C). Single source of truth
+// for the immutable first-touch bracket, shared by the prediction-path order
+// submission and the HandleFills shadow/latch. Resolves tier/regime/dof/swing
+// internally so callers only supply entry-time price context.
+// See docs/ADR/triple_barrier_cutover_phase1_plan.md.
+tbe::BarrierInputs BuildBarrierInputs(SCStudyInterfaceRef sc,
+                                      int patternId,
+                                      bool isLong,
+                                      double entry,
+                                      double structuralTarget,
+                                      double atr10) {
+    const bool valid = (patternId >= 1 &&
+                        patternId < static_cast<int>(tbe::kPatternTable.size()));
+    const int pat = valid ? patternId : 0;  // D2 fail-closed: safe LOW-tier default
+    const tbe::Tier tier = tbe::kPatternTable[static_cast<std::size_t>(pat)].tier;
+
+    const auto* hmm = InferenceManager::Instance().HmmState();
+    const tbe::Regime regime = hmm
+        ? TripleBarrierExitManager::ToRegime(hmm->Value())
+        : tbe::Regime::GAUSSIAN_STABLE;
+    const double dofScale = hmm ? hmm->DofStopScale() : 1.5;
+
+    float swingHigh = 0.0f, swingLow = 0.0f;
+    if (auto ima = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION)) {
+        swingHigh = ima->swingHigh();
+        swingLow  = ima->swingLow();
+    }
+
+    // HIGH-tier pattern target IS the N-bar structural extreme (Turtle Soup 4-bar
+    // high / Momentum Pinball swing); absent for other tiers.
+    const double nbarHigh = (tier == tbe::Tier::HIGH_DEDICATED &&  isLong) ? structuralTarget : 0.0;
+    const double nbarLow  = (tier == tbe::Tier::HIGH_DEDICATED && !isLong) ? structuralTarget : 0.0;
+
+    tbe::BarrierInputs in{};
+    in.pattern_id              = pat;
+    in.is_long                 = isLong;
+    in.entry                   = entry;
+    in.bar_high                = static_cast<double>(sc.High[sc.Index]);
+    in.bar_low                 = static_cast<double>(sc.Low[sc.Index]);
+    in.prev_high               = (sc.Index >= 1) ? static_cast<double>(sc.High[sc.Index - 1]) : in.bar_high;
+    in.prev_low                = (sc.Index >= 1) ? static_cast<double>(sc.Low[sc.Index - 1]) : in.bar_low;
+    in.atr10                   = atr10;
+    in.dof_stop_scale          = dofScale;
+    in.regime_stop_width_scale = 1.0;   // Phase 1 identity
+    in.nbar_extreme_high       = nbarHigh;
+    in.nbar_extreme_low        = nbarLow;
+    in.swing_high              = static_cast<double>(swingHigh);
+    in.swing_low               = static_cast<double>(swingLow);
+    in.regime                  = regime;
+    in.tick_size               = sc.TickSize;
+    return in;
+}
+}  // namespace
+
 void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // === SEMANTIC STALENESS: Pipeline Latency Budget ===
     // In an event-driven system, predictions arrive when indicators change — NOT on a clock.
@@ -2057,10 +2112,12 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         return;
     }
 
-    // === GAP B+C: STRUCTURAL ENTRY & STOP ANCHORING (Institutional) ===
-    // Elite desks anchor stops to higher-timeframe swing structure rather than
-    // arbitrary ATR multiples.  They also assess entry quality by proximity to
-    // 60-min supply/demand zones — entering into resistance is adverse selection.
+    // === GAP B/D: STRUCTURAL ENTRY-QUALITY ASSESSMENT (Institutional) ===
+    // Entry-quality flags only steer EXECUTION STYLE (passive vs aggressive) — they
+    // no longer mutate the stop.  Stop/target come solely from the Triple-Barrier
+    // engine (first-touch parity with the labeler).  The former GAP C 60-min swing
+    // stop-tightening was a live-only divergence from the labeler and has been
+    // removed (Phase 1 cutover, Step C).
     bool structEntryIntoResistance = false;
     bool structEntryAtSupport = false;
     {
@@ -2068,23 +2125,11 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         if (ima) {
             const float swHigh = ima->swingHigh();
             const float swLow  = ima->swingLow();
-            const float prevSwHigh = ima->prevSwingHigh();
-            const float prevSwLow  = ima->prevSwingLow();
 
             constexpr float STRUCT_PROXIMITY_ATR = 0.75f; // within 0.75 ATR = "near structural level"
-            constexpr float STRUCT_MIN_STOP_ATR  = 0.25f; // minimum stop distance (noise floor)
             const float proximityThreshold = STRUCT_PROXIMITY_ATR * atr;
-            const float minStopDistance = STRUCT_MIN_STOP_ATR * dofScaledAtr;
 
             if (isLong) {
-                // GAP C: Structural stop — use 60-min previous swing low as invalidation anchor.
-                // Take the TIGHTER of (ATR-based, structural), with noise floor.
-                if (prevSwLow > 0.0f && prevSwLow < entryPrice) {
-                    const float structuralStop = prevSwLow - sc.TickSize;
-                    if (structuralStop > stopPrice && (entryPrice - structuralStop) >= minStopDistance) {
-                        stopPrice = structuralStop;
-                    }
-                }
                 // GAP B: Entry quality — entering near 60-min swing high = resistance = poor quality
                 if (swHigh > 0.0f && swHigh > entryPrice && (swHigh - entryPrice) < proximityThreshold) {
                     structEntryIntoResistance = true;
@@ -2094,13 +2139,6 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
                     structEntryAtSupport = true;
                 }
             } else {
-                // GAP C (short): Structural stop at previous swing high
-                if (prevSwHigh > 0.0f && prevSwHigh > entryPrice) {
-                    const float structuralStop = prevSwHigh + sc.TickSize;
-                    if (structuralStop < stopPrice && (structuralStop - entryPrice) >= minStopDistance) {
-                        stopPrice = structuralStop;
-                    }
-                }
                 // GAP B (short): Entering near swing low (support) = into structure
                 if (swLow > 0.0f && swLow < entryPrice && (entryPrice - swLow) < proximityThreshold) {
                     structEntryIntoResistance = true;
@@ -2119,6 +2157,20 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
                 structEntryIntoResistance = true;
             }
         }
+    }
+
+    // === STEP C: TRIPLE-BARRIER ENGINE BARRIERS (single source of truth) ===
+    // Overwrite the pattern stop/target with the immutable first-touch engine
+    // barriers so position sizing (Phase 4) and the SC bracket (Phase 5) both use
+    // the exact levels the labeler reproduces.  targetPrice from Phase 3 is passed
+    // as the structural (N-bar) target for HIGH-tier patterns.
+    {
+        const tbe::BarrierInputs tbIn = BuildBarrierInputs(
+            sc, patternId, isLong, static_cast<double>(entryPrice),
+            static_cast<double>(targetPrice), static_cast<double>(m_cachedATR10));
+        const tbe::Barriers tbB = tbe::ComputeBarriers(tbIn);
+        stopPrice   = static_cast<float>(tbB.stop);
+        targetPrice = static_cast<float>(tbB.target);
     }
 
     // === PHASE 3b: MICROSTRUCTURE ADMISSION + EXECUTION STYLE MAPPING ===
@@ -2366,11 +2418,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         return;
     }
 
-    // === PHASE 5: ORDER SUBMISSION ===
-    float target1Price, target2Price, target3Price;
-    RaschkeTacticalTrigger patternTrigger = static_cast<RaschkeTacticalTrigger>(patternId);
-    CalculateScaleOutTargets(patternTrigger, entryPrice, stopPrice, isLong, target1Price, target2Price, target3Price);
-
+    // === PHASE 5: ORDER SUBMISSION (single-stage first-touch bracket) ===
     s_SCNewOrder order;
     order.OrderQuantity = adjustedQuantity;
     order.Price1 = entryPrice;
@@ -2420,20 +2468,18 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         order.TextTag = tag;
     }
 
-    // Bracket Stop — regime-aware stop type selection
-    // === GAP 24 v2: REGIME-AWARE STOP TYPE + SC SERVER-SIDE TRAILING (Taleb — crash resilience) ===
+    // Bracket Stop — regime-aware stop TYPE selection (STATIC — no trailing)
+    // === STEP C: REGIME-AWARE STATIC STOP TYPE (Taleb — crash resilience) ===
     //
-    // Three tiers:
+    // Phase 1 first-touch: the stop is IMMUTABLE at the engine barrier.  Regime only
+    // selects the stop ORDER TYPE for fill quality — never a trailing/breakeven
+    // adjustment (naive profit-protection permanently rejected; see
+    // triple_barrier_profit_protection_ruling.md):
     //   1. CRASH REGIME (DOF ≤ 4 / kurtosis > 10 / Amihud pctile > p90):
-    //      → Pure market stop (STOP_WITH_BID_ASK_TRIGGERING).  Guaranteed fill.
-    //        In a flash crash, limit stops can gap through.  Exit certainty > price control.
-    //   2. ORDERLY-BUT-TOXIC (Amihud pctile p75–p90 in non-crash regime):
-    //      → Stop-limit with 2-tick offset.  Protective fill control in wide-quote flow.
-    //   3. NORMAL / DEFAULT:
-    //      → SC server-side triggered trailing stop (TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS).
-    //        Starts static at initial stop level; triggers trail at breakeven distance;
-    //        trails by ATR × DOF stop scale.  Server-side = every tick, independent of DLL callback.
-    //        Chandelier callback becomes "advisory tightening" — can fail gracefully.
+    //      → market stop (STOP_WITH_BID_ASK_TRIGGERING).  Guaranteed fill; in a
+    //        flash crash a limit stop can gap through — exit certainty > price control.
+    //   2. NORMAL / ORDERLY-BUT-TOXIC:
+    //      → static stop-limit with 2-tick offset.  Protective fill control.
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmStop = InferenceManager::Instance().HmmState();
@@ -2442,92 +2488,27 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
 
         const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
                                  (lrc.isValid && lrc.amihudPercentile > 0.90f);
-        const bool toxicFlow = lrc.isValid && lrc.amihudPercentile > 0.75f;
 
         if (crashRegime) {
             // Tier 1: guaranteed exit — market stop fires immediately at trigger price
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_WITH_BID_ASK_TRIGGERING;
-        } else if (toxicFlow) {
-            // Tier 2: protective fill control — limit stop with 2-tick slippage budget
+        } else {
+            // Tier 2: static stop-limit — protective fill control, no trailing
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_LIMIT;
             order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * sc.TickSize;
-        } else {
-            // Tier 3: server-side trailing stop — autonomous protection independent of DLL
-            const float breakevenOffset = std::fabs(static_cast<float>(entryPrice - stopPrice));
-            float trailDistance = m_cachedATR14 * 2.0f;
-            if (hmmStop) {
-                trailDistance = m_cachedATR14 * static_cast<float>(hmmStop->DofStopScale());
-            }
-            order.AttachedOrderStop1Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-            order.AttachedOrderStop1_TriggeredTrailStopTriggerPriceOffset = static_cast<double>(breakevenOffset);
-            order.AttachedOrderStop1_TriggeredTrailStopTrailPriceOffset = static_cast<double>(trailDistance);
         }
     }
     order.Stop1Price = stopPrice;
 
-    // Bracket Targets (Scale-out Logic)
-    // === GAP 18 v2: EVERY TRADE GETS A RUNNER (Elder+Raschke — "let winners run") ===
-    //
-    // Design: the LAST target in every bracket is a SC server-side triggered trailing
-    // stop.  SC automatically splits quantity across OCO groups and reduces the stop
-    // when earlier targets fill.  The runner trails by ATR × DOF stop scale once its
-    // trigger distance is reached.  Chandelier provides advisory trailing guidance on
-    // the stop side; the runner target trails autonomously.
-    //
-    //   Size ≥ 3: T1 limit chase + T2 limit chase + T3 trailing runner
-    //   Size = 2: T1 limit chase + T2 trailing runner
-    //   Size = 1: T1 trailing runner (pure runner — Chandelier + trailing target)
-    //
-    // Shared trailing offset fields (TriggeredTrailStopTriggerPriceOffset etc.) are
-    // only used by the single runner target, so there is no conflict.
-
-    // Runner trailing parameters — computed once, used by the last target in every path
-    float runnerTriggerOffset = 0.0f;
-    float runnerTrailDistance = m_cachedATR14 * 2.0f;  // Default: 2×ATR trail
-    if (auto* hmmRunner = InferenceManager::Instance().HmmState()) {
-        runnerTrailDistance = m_cachedATR14 * static_cast<float>(hmmRunner->DofStopScale()) * 2.0f;
-    }
-
-    const double targetChaseAmount = 2.0 * sc.TickSize;
-    if (adjustedQuantity >= 3) {
-        order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
-        order.Target1Price = target1Price;
-        if (target2Price > 0.0f) {
-            order.AttachedOrderTarget2Type = SCT_ORDERTYPE_LIMIT_CHASE;
-            order.Target2Price = target2Price;
-        }
-        // T3 = trailing runner.  Trigger when price reaches T3 target distance.
-        const float t3RunnerPrice = (target3Price > 0.0f) ? target3Price : target2Price;
-        runnerTriggerOffset = std::fabs(t3RunnerPrice - entryPrice);
-        order.AttachedOrderTarget3Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-        order.Target3Price = t3RunnerPrice;
-        order.TriggeredTrailStopTriggerPriceOffset = static_cast<double>(runnerTriggerOffset);
-        order.TriggeredTrailStopTrailPriceOffset = static_cast<double>(runnerTrailDistance);
-    } else if (adjustedQuantity == 2) {
-        order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
-        order.Target1Price = target1Price;
-        // T2 = trailing runner.  Trigger when price reaches T2 target distance.
-        runnerTriggerOffset = std::fabs(target2Price - entryPrice);
-        order.AttachedOrderTarget2Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-        order.Target2Price = target2Price;
-        order.TriggeredTrailStopTriggerPriceOffset = static_cast<double>(runnerTriggerOffset);
-        order.TriggeredTrailStopTrailPriceOffset = static_cast<double>(runnerTrailDistance);
-    } else {
-        // Size=1: pure runner.  Use T2 price as trigger (better R:R than T1).
-        const float runnerPrice = (target2Price > 0.0f) ? target2Price : target1Price;
-        runnerTriggerOffset = std::fabs(runnerPrice - entryPrice);
-        order.AttachedOrderTarget1Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-        order.Target1Price = runnerPrice;
-        order.TriggeredTrailStopTriggerPriceOffset = static_cast<double>(runnerTriggerOffset);
-        order.TriggeredTrailStopTrailPriceOffset = static_cast<double>(runnerTrailDistance);
-    }
-    order.AttachedOrderMaximumChase = targetChaseAmount;
-
-    // Server-side move-to-breakeven: on T1 fill, SC moves stop to BE+1 tick instantly.
-    // ChandelierStop will trail tighter once active, but this eliminates the ACSIL-call latency window.
-    order.MoveToBreakEven.Type = MOVETO_BE_ACTION_TYPE_OCO_GROUP_TRIGGERED;
-    order.MoveToBreakEven.TriggerOCOGroup = OCO_GROUP_1;
-    order.MoveToBreakEven.BreakEvenLevelOffsetInTicks = 1;
+    // === STEP C: SINGLE FULL-SIZE FIRST-TOUCH TARGET ===
+    // One immutable target for the whole position at the engine barrier.  No
+    // scale-out, no runner, no trailing, no move-to-breakeven — all removed in the
+    // Phase 1 cutover (see triple_barrier_cutover_phase1_plan.md).  Winner give-back
+    // is accepted as the control-group baseline; differentiated exit objectives
+    // (breakout trend-scanning / meta-label exit) are a later, data-gated layer.
+    order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
+    order.Target1Price = targetPrice;
+    order.AttachedOrderMaximumChase = 2.0 * sc.TickSize;
 
     int orderResult = isLong ? static_cast<int>(sc.BuyOrder(order)) : static_cast<int>(sc.SellOrder(order));
 
@@ -2921,7 +2902,7 @@ void PositionManager::ProcessManualTradeCommand(
         order.TextTag = tag;
     }
 
-    // Bracket Stop — regime-aware stop type (mirrors automatic path GAP 24 v2)
+    // Bracket Stop — regime-aware STATIC stop type (mirrors automatic path Step C)
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmStop = InferenceManager::Instance().HmmState();
@@ -2930,46 +2911,21 @@ void PositionManager::ProcessManualTradeCommand(
 
         const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
                                  (lrc.isValid && lrc.amihudPercentile > 0.90f);
-        const bool toxicFlow = lrc.isValid && lrc.amihudPercentile > 0.75f;
 
         if (crashRegime) {
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_WITH_BID_ASK_TRIGGERING;
-        } else if (toxicFlow) {
+        } else {
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_LIMIT;
             order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * sc.TickSize;
-        } else {
-            const float breakevenOffset = std::fabs(static_cast<float>(entryPrice - stopPrice));
-            float trailDistance = m_cachedATR14 * 2.0f;
-            if (hmmStop) {
-                trailDistance = m_cachedATR14 * static_cast<float>(hmmStop->DofStopScale());
-            }
-            order.AttachedOrderStop1Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-            order.AttachedOrderStop1_TriggeredTrailStopTriggerPriceOffset = static_cast<double>(breakevenOffset);
-            order.AttachedOrderStop1_TriggeredTrailStopTrailPriceOffset = static_cast<double>(trailDistance);
         }
     }
     order.Stop1Price = stopPrice;
 
-    // Bracket Target — trailing runner (mirrors automatic path GAP 18 v2)
-    // Manual trades get a trailing runner target: trigger at target distance,
-    // then trail by ATR × DOF stop scale on the server side.
-    {
-        const float manualTriggerOffset = std::fabs(targetPrice - entryPrice);
-        float manualTrailDistance = m_cachedATR14 * 2.0f;
-        if (auto* hmmManual = InferenceManager::Instance().HmmState()) {
-            manualTrailDistance = m_cachedATR14 * static_cast<float>(hmmManual->DofStopScale()) * 2.0f;
-        }
-        order.AttachedOrderTarget1Type = SCT_ORDERTYPE_TRIGGERED_TRAILING_STOP_LIMIT_3_OFFSETS;
-        order.Target1Price = targetPrice;
-        order.TriggeredTrailStopTriggerPriceOffset = static_cast<double>(manualTriggerOffset);
-        order.TriggeredTrailStopTrailPriceOffset = static_cast<double>(manualTrailDistance);
-    }
+    // Bracket Target — single full-size first-touch (mirrors automatic path Step C).
+    // No trailing runner, no move-to-breakeven (removed in the Phase 1 cutover).
+    order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
+    order.Target1Price = targetPrice;
     order.AttachedOrderMaximumChase = 2.0 * sc.TickSize;
-
-    // Server-side move-to-breakeven on T1 fill
-    order.MoveToBreakEven.Type = MOVETO_BE_ACTION_TYPE_OCO_GROUP_TRIGGERED;
-    order.MoveToBreakEven.TriggerOCOGroup = OCO_GROUP_1;
-    order.MoveToBreakEven.BreakEvenLevelOffsetInTicks = 1;
 
     int orderResult = isLong ? static_cast<int>(sc.BuyOrder(order)) : static_cast<int>(sc.SellOrder(order));
 
@@ -3480,11 +3436,6 @@ void PositionManager::UpdateTradeGradeProtection(SCStudyInterfaceRef sc) {
         return;
     }
 
-    int positionID = m_openTrade.GetParentOrderId();
-    bool isLong = (m_openTrade.GetSide() == TradeSideEnum::LONG);
-    double entryPrice = m_openTrade.GetEntryPrice();
-    double currentStop = m_openTrade.GetStop();
-
     // === C3: REGIME-CONDITIONAL ELDER GRADE THRESHOLDS (Taleb+Elder) ===
     // Momentum regimes raise thresholds (patient holding, let winners run).
     // Fragile/chaos regimes lower them (exit faster, asymmetric cost of holding).
@@ -3514,43 +3465,16 @@ void PositionManager::UpdateTradeGradeProtection(SCStudyInterfaceRef sc) {
         m_lastTradeGradeAction = gt.gradeB;
     }
 
-    // === C-GRADE: Breakeven Backstop (RETAINED — lightweight safety net) ===
-    // This is the one grade action that doesn't conflict with brackets or Chandelier.
-    // Moving to breakeven at 10% channel capture is a universal floor that complements
-    // (not competes with) the R-multiple exit layers.
+    // === C-GRADE: Telemetry Only (breakeven stop-move REMOVED — Phase 1 cutover) ===
+    // Moving the stop to breakeven is a profit-lock heuristic permanently rejected by
+    // the profit-protection ruling (whipsaw trap on tight fade stops; see
+    // triple_barrier_profit_protection_ruling.md). The stop is immutable at the engine
+    // barrier; winner give-back is the accepted control-group baseline.
     else if (currentTradeGrade >= gt.gradeC && m_lastTradeGradeAction < gt.gradeC) {
         SCString logMsg;
-        logMsg.Format("TRADE GRADE C (%d%%): Captured %d%%+ of channel - securing breakeven",
+        logMsg.Format("TRADE GRADE C (%d%%): Captured %d%%+ of channel [telemetry]",
                       currentTradeGrade, gt.gradeC);
         Logger::getInstance().log(logMsg.GetChars());
-
-        // Move stop to breakeven
-        double newStopPrice = entryPrice;
-
-        // Only move stop if it's an improvement
-        bool shouldMove = isLong ?
-            (newStopPrice > currentStop) :
-            (newStopPrice < currentStop);
-
-        if (shouldMove) {
-            int stopId = 0, targetId = 0;
-            sc.GetAttachedOrderIDsForParentOrder(positionID, targetId, stopId);
-
-            if (stopId != 0) {
-                s_SCNewOrder modifyOrder;
-                modifyOrder.InternalOrderID = stopId;
-                modifyOrder.Price1 = newStopPrice;
-
-                int result = sc.ModifyOrder(modifyOrder);
-                if (result > 0) {
-                    m_openTrade.SetStop(newStopPrice);
-                    SCString logMsg2;
-                    logMsg2.Format("  └─ Stop moved to breakeven: %.2f", newStopPrice);
-                    Logger::getInstance().log(logMsg2.GetChars());
-                }
-            }
-        }
-
         m_lastTradeGradeAction = gt.gradeC;
     }
 }
