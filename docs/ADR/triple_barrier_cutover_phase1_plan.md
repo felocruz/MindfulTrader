@@ -43,6 +43,28 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 `CalculatePatternPrices()` (`PositionManagerPatterns.cpp`) computes per-pattern stop/target (Turtle Soup bar-low anchor, Pinball, Elder 1.5R, …). `tbe::ComputeBarriers()` also computes stop/target (per-tier seed → regime scale [0.5,2.0] → structural cap, tightening-only).
 *Recommendation:* `ComputeBarriers()` becomes the **single authority** for the final stop/target/max_bars. `CalculatePatternPrices()`'s structural outputs (e.g., N-bar swing levels, bar low/high anchors) feed `BarrierInputs` as the **structural cap / seed**, not as the final bracket. This is exactly what the golden-vector `*_caps_binding/*_nonbinding` cases model. **Action:** map every field of `tbe::BarrierInputs` to a concrete live source (entry, ATR14, dof from `HmmState()`, regime via `ToRegime`, tier + pattern params from `kPatternTable[patternId]`, structural levels from the existing pattern math). Reconcile numerically against the 7 golden vectors on real replay data.
 
+**D1 — resolved live-source mapping (2026-07-15).** Wiring point: the entry-fill branch of `PositionManager::HandleFills` (`sc`, the fill, and `pos` are all in scope). Core parity is verified green — `tbe::ComputeBarriers()` passes all 7 golden vectors natively (`g++ -std=c++17 -I include tests/cpp/test_triple_barrier_parity.cpp`). Field map:
+
+| `BarrierInputs` | Live source | Notes |
+|---|---|---|
+| `pattern_id` | `m_openTrade.GetPatternId()` → `ToPatternId()` | int; **Finding 17 fail-closed guard needed** (see below) |
+| `is_long` | `pos.PositionQuantity > 0` | |
+| `entry` | `latestFill.FillPrice` | |
+| `bar_high` / `bar_low` | `sc.High[sc.Index]` / `sc.Low[sc.Index]` | TS3 15-min current bar |
+| `prev_high` / `prev_low` | `sc.High[sc.Index-1]` / `sc.Low[sc.Index-1]` | Elder 2-bar stop; idx≥1 at entry |
+| `atr10` | `m_cachedATR10` (`GetCachedATR10`) | fed by TS3 `Subgraph_AtrTemp3`; **0.0 until TS3 warm** → engine treats as absent |
+| `dof_stop_scale` | `HmmState()->DofStopScale()` else `1.5` | DOF→scale already encapsulated |
+| `regime_stop_width_scale` | `1.0` | Phase 1 identity (Phase 3 bounds to [0.5,2.0]) |
+| `nbar_extreme_high` / `_low` | structural extreme from the per-pattern math (`std::max/min_element` over lookback, `PositionManagerPatterns.cpp`) | **PLUMBING GAP (see below)** |
+| `swing_high` / `swing_low` | `IntermediateMarketAction::swingHigh()/swingLow()` (TS2 60-min) | 0.0 if not ready → absent (non-fatal) |
+| `regime` | `ToRegime(HmmState()->Value())` | `HMM_NO_PRIOR` → `GAUSSIAN_STABLE` |
+| `tick_size` | `sc.TickSize` | |
+
+**Two items surfaced by the mapping (fold into D2 + the impl):**
+1. **`nbar_extreme_*` plumbing gap.** The N-bar structural extreme *is* computed at signal time (e.g. `TURTLE_SOUP_BUY` 4-bar high, `PositionManagerPatterns.cpp:214`), but only as the pattern's final `targetPrice`, at order **placement** — not captured for the fill-time barrier build. Fix: **cache the structural extreme (and the structural swing levels) on the `Trade`/order at entry** so they are available in `HandleFills` to seed `nbar_extreme_*`. Do NOT recompute at fill (different `sc.Index`).
+2. **`pattern_id` provenance (Finding 17).** `GetPatternId()` returns an int; the wiring must **fail-closed** — validate it is a live `RaschkeTacticalTrigger` in `kPatternTable`'s valid range (1..18); `0/NONE` or out-of-range → reject entry or safe default, never silent mis-seed.
+
+
 **D2 — Finding 17 (pattern-id routing).** Seed `patternId` from the §5.3 table by enum namespace; **fail-closed** (unknown/colliding id → reject entry or safe default, never silent mis-seed). `TripleBarrierExitManager::ToPatternId()` already maps `RaschkeTacticalTrigger`; verify all live entry patterns fall in `kPatternTable`'s valid range and add the fail-closed guard.
 
 **D3 — Regime scaling overlap.** Chandelier widened the trailing stop in `PARETO_MOMENTUM` (4.0×). The Triple-Barrier engine already applies regime scaling `[0.5,2.0]` inside `ComputeBarriers()`. *Recommendation:* drop the ad-hoc `PARETO→4.0` entry hook; regime effects come solely from the engine (single source of truth).
