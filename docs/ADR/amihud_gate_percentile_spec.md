@@ -142,11 +142,19 @@ Fisher info, kurtosis-as-moment, entropy-as-ratio) — scale/session-invariant.
    pre-regen so the canonical training run ingests the corrected `volume_ratio_percent` feature.
    Literature: Clark 1973 / Tauchen–Pitts 1983 (MDH, lognormal volume); Easley–LdP–O'Hara 2012
    (volume clock); Admati–Pfleiderer 1988 (intraday U-shape → deseasonalize). Build green.
-2. **`spreadStress`** (hard veto `>0.85`; Scoring penalty `>0.70`). Spread is diurnal →
-   if normalized against a session-pooled baseline it's contaminated like Amihud.
-   **Verify its exact normalization first.** Design = **session-relative percentile + an
-   absolute floor** (wide overnight spreads are *also* genuine execution risk, not pure
-   nuisance).
+2. **[VERIFIED — session-pooling NOT warranted] `spreadStress`** (hard veto `>0.85`;
+   Scoring penalty `>0.70`). Verified `CalculateLiquidityFragility` (`StudyHelperFunctions.cpp`):
+   it is **not** a raw spread measure but a **self-normalizing composite of ratios to diurnal
+   references** — Signal 1 (0.65 wt, dominant) = `sigmoid(2·log(barRange/ATR))` where ATR is
+   itself diurnal, so the seasonal component **cancels**; Signal 2 (0.35 wt, amplifier) =
+   `1.5 − volume/volumeSMA`, also a ratio. Adding session pools would *double-deseasonalize*.
+   And the residual RTH↔overnight difference is partly **signal** (overnight books genuinely
+   are more fragile — we *want* the gate readier overnight), not nuisance. Output is a bounded
+   `[0,1]` sigmoid → the fixed threshold doesn't suffer Amihud's non-stationarity. **Decision:
+   leave as-is.** Only mild residual: the secondary thinness term's `volumeSMA` is a 21-bar
+   session-pooled SMA (transient boundary distortion) — an *optional* micro-refinement is to
+   feed thinness from the now-session-aware volume baseline (`GetVolumeRatio`), but that
+   recalibrates a tuned formula for a secondary term → low value, deferred.
 3. **`raschkeBurst`** (event-clustering CV). Event arrival rate is diurnal; normalize the
    baseline rate by session. MED.
 4. **Volume imbalance (±0.35).** Dimensionless (not a pooling problem) but thin overnight
