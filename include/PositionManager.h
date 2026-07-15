@@ -143,6 +143,10 @@ public:
     bool IsShort() const;
     void CancelAllWorkingOrders(SCStudyInterfaceRef sc);   // AI disconnect fast-purge
     void EmergencyFlattenPosition(SCStudyInterfaceRef sc, const char* reason);  // Elite GAP 5: Emergency flatten
+    // Triple-Barrier: neutral deterministic market close (e.g. vertical/time barrier).
+    // No emergency semantics (no halt/alarm/force-exit); tags the trade's exit reason
+    // and lets the fill flow through HandleFills' normal close path.
+    void ClosePositionAtMarket(SCStudyInterfaceRef sc, const char* exitTag);
 
 private:
     PositionManager() = default;
@@ -296,6 +300,11 @@ private:
     // Gap 1: Cached ATR from TripleScreen producers (eliminates redundant per-tick TR loops)
     float m_cachedATR14 = 0.0f;
     float m_cachedATR10 = 0.0f;
+
+    // Triple-Barrier: set when a deterministic exit (regime flatten or time barrier)
+    // submits a close this tick, so the first-hit ordering (regime -> time -> stop/target)
+    // is honored and no double-exit fires. Reset each tick in the in-position block.
+    bool m_exitSubmittedThisTick = false;
 
     // Queues for communication
     std::shared_ptr<ThreadSafeQueue<TradeRequest>> m_requestQueue;

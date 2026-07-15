@@ -1157,6 +1157,12 @@ void SimulateReconnect(SCStudyInterfaceRef sc, int currentBar) {
 // Determine how a trade exited based on price proximity to stop/target.
 // 3-tick tolerance covers rounding, fill slippage, and gap-through on trailed stops.
 static std::string InferExitReason(const Trade& trade, double tickSize) {
+    // Deterministic exit paths (e.g. time barrier) tag the reason explicitly;
+    // honor it before falling back to price inference.
+    if (!trade.GetExitReasonTag().empty()) {
+        return trade.GetExitReasonTag();
+    }
+
     const double exitPrice  = trade.GetExitPrice();
     const double stopPrice  = trade.GetStop();
     const double targetPrice = trade.GetTarget();
@@ -1193,6 +1199,7 @@ static MTS::Backtest::ExitReason MapExitReason(const std::string& reason)
 {
     if (reason == "TARGET_HIT") return MTS::Backtest::ExitReason_PROFIT_TARGET;
     if (reason == "STOP_HIT")   return MTS::Backtest::ExitReason_STOP_LOSS;
+    if (reason == "TIME_STOP")  return MTS::Backtest::ExitReason_TIME_STOP;
     return MTS::Backtest::ExitReason_MANUAL;
 }
 

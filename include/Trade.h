@@ -37,6 +37,11 @@ public:
     void SetPattern(std::string&& patternEnum, int patternId, std::string&& patternName);  // Move overload
     void SetConfidence(float confidence);  // Store AI signal confidence at entry
 
+    // Triple-Barrier: explicit exit-reason tag (e.g. "TIME_STOP"), set by the
+    // deterministic close path so .btst reason is recorded directly rather than
+    // price-inferred. Empty => infer from exit price vs stop/target.
+    void SetExitReasonTag(const std::string& tag) { m_exitReasonTag = tag; }
+
     // GAP 27: Entry-time regime snapshot for mid-trade target tightening
     void SetEntryRegime(HMMStateEnum hmmState, MarketClimate climate);
     void SetOriginalTargets(float t1, float t2, float t3);
@@ -83,6 +88,7 @@ public:
     int GetEntryIndex() const { return m_entry_index; }
     int GetExitIndex() const { return m_exit_index; }
     int GetBarsHeld() const { return (m_exit_index >= 0 && m_entry_index >= 0) ? (m_exit_index - m_entry_index) : 0; }
+    const std::string& GetExitReasonTag() const { return m_exitReasonTag; }
 
 
 private:
@@ -96,6 +102,7 @@ private:
     int m_target_internal_order_id{ 0 };
     std::string m_symbol{ "" };
     std::string m_firestore_doc_id{ "" };
+    std::string m_exitReasonTag{ "" };  // Triple-Barrier deterministic exit reason (empty => price-inferred)
     TradeStatusEnum m_status{ TradeStatusEnum::NO_TRADE };
     TradeSideEnum m_side{ TradeSideEnum::FLAT };
     double m_size{ 0.0 };

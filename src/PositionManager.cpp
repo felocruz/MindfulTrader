@@ -229,6 +229,7 @@ void PositionManager::Update(SCStudyInterfaceRef sc) {
     HandleFills(sc);
 
     if (!IsFlat()) {
+        m_exitSubmittedThisTick = false;
         UpdateAttachedOrders(sc);
 
         auto intermPriceAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
@@ -243,6 +244,21 @@ void PositionManager::Update(SCStudyInterfaceRef sc) {
 
         // Elite v2.5: Context-Aware Defensive Management
         EvaluateRegimeDefense(sc);
+
+        // Triple-Barrier vertical (time) barrier — deterministic max-hold close.
+        // First-hit ordering: regime (EvaluateRegimeDefense, above) -> time -> stop/target
+        // (stop/target are handled by the SC bracket in this phase). Uses the entry-latched
+        // bracket so maxBars is fixed at the entry regime (train/live parity). Guarded by
+        // m_exitSubmittedThisTick so a regime flatten this tick wins (no double-exit).
+        if (!m_exitSubmittedThisTick) {
+            auto& tbMgr = TripleBarrierExitManager::getInstance();
+            const auto& tbBr = tbMgr.Current();
+            if (tbBr.active && (sc.Index - tbBr.entryBarIndex) >= tbBr.maxBars) {
+                Logger::getInstance().log("[TB] vertical/time barrier reached -> closing at market (TIME_STOP)");
+                ClosePositionAtMarket(sc, "TIME_STOP");
+                tbMgr.Close();
+            }
+        }
 
         // Update Chandelier trailing stops (if active)
         UpdateChandelierStops(sc);
@@ -409,6 +425,12 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
                 m_openTrade.GetStop(), m_openTrade.GetTarget(),
                 tbB.stop - m_openTrade.GetStop(), tbB.target - m_openTrade.GetTarget());
             Logger::getInstance().log(tbLog.GetChars());
+
+            // Latch the immutable bracket (fixes stop/target/maxBars at entry) so the
+            // per-tick vertical/time barrier in Update() uses entry-regime maxBars
+            // (train/live parity). Non-destructive: only the time barrier reads it;
+            // stop/target are still driven by the SC bracket in this phase.
+            TripleBarrierExitManager::getInstance().OpenBracket(order.InternalOrderID, sc.Index, tbIn);
         } catch (const std::exception& tbEx) {
             Logger::getInstance().log(std::string("[TB-SHADOW] exception: ") + tbEx.what());
         }
@@ -458,6 +480,9 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
 
         // Remove Chandelier stop tracking
         ChandelierStopManager::getInstance().RemoveStop(m_openTrade.GetParentOrderId());
+
+        // Triple-Barrier: release the latched bracket on position close.
+        TripleBarrierExitManager::getInstance().Close();
 
         // Reset grade tracking for next trade
         m_lastTradeGradeAction = 0;
@@ -3034,6 +3059,9 @@ void PositionManager::EmergencyFlattenPosition(SCStudyInterfaceRef sc, const cha
     // EMERGENCY PROTOCOL: Cancel all orders AND flatten any open position
     // This is the nuclear option for critical system failures (AI disconnect, model soft-lock)
 
+    // First-hit guard: a deterministic exit is being submitted this tick.
+    m_exitSubmittedThisTick = true;
+
     SCString logMsg;
     logMsg.Format("EMERGENCY FLATTEN TRIGGERED: %s", reason);
     Logger::getInstance().log(logMsg.GetChars());
@@ -3117,7 +3145,48 @@ void PositionManager::EmergencyFlattenPosition(SCStudyInterfaceRef sc, const cha
     }
 }
 
-// Scale-Out Target Calculation (50/30/20 Split)
+// Neutral deterministic market close for Triple-Barrier resolutions (e.g. the
+// vertical/time barrier). Unlike EmergencyFlattenPosition this carries NO emergency
+// semantics: no trading halt, no alarms, no prediction force-exit, and it does NOT
+// reset the trade — the resulting fill flows through HandleFills' normal close path
+// so the trade is recorded with the explicit exit-reason tag (not price-inferred).
+void PositionManager::ClosePositionAtMarket(SCStudyInterfaceRef sc, const char* exitTag) {
+    s_SCPositionData pos;
+    sc.GetTradePosition(pos);
+    if (pos.PositionQuantity == 0) {
+        return;  // already flat
+    }
+
+    m_exitSubmittedThisTick = true;
+
+    // Tag the reason BEFORE the exit fill is processed, so the .btst TradeRecord
+    // records it deterministically instead of inferring from exit price.
+    m_openTrade.SetExitReasonTag(exitTag ? exitTag : "");
+
+    SCString logMsg;
+    logMsg.Format("TRIPLE-BARRIER CLOSE [%s]: flatten %s position (%d contracts)",
+                  exitTag ? exitTag : "", pos.PositionQuantity > 0 ? "LONG" : "SHORT",
+                  abs(pos.PositionQuantity));
+    Logger::getInstance().log(logMsg.GetChars());
+
+    int flattenResult = sc.FlattenAndCancelAllOrders();
+    if (flattenResult <= 0) {
+        // Fallback: explicit market exit (mirrors EmergencyFlattenPosition's fallback).
+        s_SCNewOrder exitOrder;
+        exitOrder.OrderQuantity = abs(pos.PositionQuantity);
+        exitOrder.OrderType = SCT_ORDERTYPE_MARKET;
+        exitOrder.TimeInForce = SCT_TIF_GOOD_TILL_CANCELED;
+        int exitResult = (pos.PositionQuantity > 0)
+            ? static_cast<int>(sc.SellOrder(exitOrder))
+            : static_cast<int>(sc.BuyOrder(exitOrder));
+        if (exitResult <= 0) {
+            logMsg.Format("   +-- Triple-Barrier close FAILED (flatten=%d, market=%d) -- escalating to emergency",
+                          flattenResult, exitResult);
+            Logger::getInstance().log(logMsg.GetChars());
+            EmergencyFlattenPosition(sc, "TripleBarrierClose: exit methods failed");
+        }
+    }
+}
 // ============================================================
 
 void PositionManager::CalculateScaleOutTargets(RaschkeTacticalTrigger patternTrigger,

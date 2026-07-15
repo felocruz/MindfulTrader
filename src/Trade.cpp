@@ -52,6 +52,7 @@ void Trade::Reset(SCStudyInterfaceRef sc) {
     m_target = 0.0;
     m_entry_date = "";
     m_exit_date = "";
+    m_exitReasonTag = "";
     m_realized_pnl = 0.0;
     m_unrealized_pnl = 0.0;
     m_entry_grade = 0;
