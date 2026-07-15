@@ -155,8 +155,18 @@ Fisher info, kurtosis-as-moment, entropy-as-ratio) — scale/session-invariant.
    session-pooled SMA (transient boundary distortion) — an *optional* micro-refinement is to
    feed thinness from the now-session-aware volume baseline (`GetVolumeRatio`), but that
    recalibrates a tuned formula for a secondary term → low value, deferred.
-3. **`raschkeBurst`** (event-clustering CV). Event arrival rate is diurnal; normalize the
-   baseline rate by session. MED.
+3. **[VERIFIED — session-pooling NOT warranted] `raschkeBurst`** (spread-gate tighten `>2.0`;
+   defensive `>3.0`). Verified `CalculateBurstinessIndex` (`ContextManager.cpp`): it is the
+   **coefficient of variation of inter-arrival times** (`stdDev(IAT)/mean(IAT)`), which is
+   **scale/rate-invariant** — the diurnal arrival *rate* divides out entirely (the audit's
+   "arrival rate is diurnal" concern is already normalized by construction). Same self-normalizing
+   class as #2. Pooling would also **break interpretability**: the `2.0/3.0` thresholds are
+   theory-anchored absolute CV levels (Poisson=1.0; >1 clustered), so a session-relative
+   percentile would lose the Poisson anchor. **Decision: leave as-is.** Only residual: the ~100-event
+   IAT window can briefly **straddle a session boundary**, mixing two rate regimes → a transient CV
+   inflation (self-healing, benign — momentary extra caution at open/close). Optional low-value fix
+   if ever needed = drop cross-session IATs / reset the event buffer at session transitions (NOT
+   percentile pooling).
 4. **Volume imbalance (±0.35).** Dimensionless (not a pooling problem) but thin overnight
    books make the ratio noisier → better fixed with a **min-volume guard / wider overnight
    band** than session pooling. MED-LOW.
