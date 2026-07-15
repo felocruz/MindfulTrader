@@ -61,7 +61,6 @@ set(SOURCE_FILES
     src/messaging/EventSerializer.cpp
     src/execution/ExecutionGate.cpp
     src/BackTesterStudy.cpp
-    src/ChandelierStopManager.cpp
     src/TripleBarrierExitManager.cpp
     src/ContextManager.cpp
     src/CrossMarketStudies.cpp

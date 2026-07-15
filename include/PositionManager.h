@@ -155,7 +155,6 @@ private:
     void HandleFills(SCStudyInterfaceRef sc);
     void HandleReplies(void);
     void UpdateAttachedOrders(SCStudyInterfaceRef sc);
-    void UpdateChandelierStops(SCStudyInterfaceRef sc);
     void UpdateTradeGradeProtection(SCStudyInterfaceRef sc);  // NEW: Elder grade-based exits
     void ManageWorkingEntryOrder(SCStudyInterfaceRef sc);
 
@@ -175,9 +174,6 @@ private:
     // Scale-out target calculation (50/30/20 split) - uses pattern enum directly, no strings
     void CalculateScaleOutTargets(RaschkeTacticalTrigger patternTrigger, float entryPrice, float stopPrice,
                                   bool isLong, float& target1, float& target2, float& target3) const;
-
-    // Pattern categorization for Chandelier trailing activation - uses enum directly
-    bool ShouldPatternTrail(RaschkeTacticalTrigger patternTrigger) const;
 
     bool IsDirty(SCStudyInterfaceRef sc) const;
     void CachePreviousState(SCStudyInterfaceRef sc);

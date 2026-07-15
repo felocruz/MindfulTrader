@@ -1,6 +1,5 @@
 #include "MindfulTrader_Precompiled.h"
 #include "Scoring.h"
-#include "ChandelierStopManager.h"
 #include "TripleBarrierExitManager.h"
 #include "TradeExecutionServer.h"
 #include "execution/ExecutionGate.h"
@@ -259,9 +258,6 @@ void PositionManager::Update(SCStudyInterfaceRef sc) {
                 tbMgr.Close();
             }
         }
-
-        // Update Chandelier trailing stops (if active)
-        UpdateChandelierStops(sc);
     }
 
     // After all state changes, publish FlatBuffer position update
@@ -342,23 +338,6 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
 
         // === ELITE GAP 6: TCA METRICS ON FILL ===
         // TCA metrics exported via EventSerializer + TrainingEvent FlatBuffers via TransportStream
-
-        // Initialize Chandelier stop tracking (not active yet until T1 fills)
-        bool isLong = (pos.PositionQuantity > 0);
-        float stopPrice = m_openTrade.GetStop();
-        if (stopPrice > 0.0f) {
-            // P3.2: Asymmetric target architecture — During PARETO_MOMENTUM,
-            // widen trailing stop to 4×ATR to let big winners run.
-            double trailingMultiplier = 3.0;
-            if (auto* hmmInd = InferenceManager::Instance().HmmState()) {
-                if (hmmInd->Value() == HMMStateEnum::PARETO_MOMENTUM) {
-                    trailingMultiplier = 4.0;
-                }
-            }
-            ChandelierStopManager::getInstance().InitializeStop(
-                order.InternalOrderID, isLong, latestFill.FillPrice,
-                sc.Index, stopPrice, trailingMultiplier);
-        }
 
         // Notify RiskManager that position opened (cache unrealized P&L tracking)
         RiskManager::Instance().OnPositionOpened(sc);
@@ -447,27 +426,9 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
             // Scale-in: adding to position
             m_openTrade.ScaleIn(pos.AveragePrice, newQty);
         } else if (newQty < oldQty) {
-            // Scale-out: Target filled!
-            // Activate Chandelier trailing if not already active (T1 just filled)
-            int positionID = m_openTrade.GetParentOrderId();
-            if (!ChandelierStopManager::getInstance().IsTrailingActive(positionID)) {
-                // Check if this pattern should use trailing stops
-                // Use RaschkeTacticalTrigger enum for type-safe pattern classification
-                int patternId = m_openTrade.GetPatternId();
-                RaschkeTacticalTrigger patternTrigger = static_cast<RaschkeTacticalTrigger>(patternId);
-                bool shouldTrail = ShouldPatternTrail(patternTrigger);
-
-                if (shouldTrail) {
-                    ChandelierStopManager::getInstance().ActivateTrailing(positionID);
-
-                    SCString logMsg;
-                    logMsg.Format("T1 FILLED - Chandelier trailing ACTIVATED for position %d | Pattern: %s | Remaining contracts: %d",
-                        positionID, getRaschkeTacticalTriggerName(patternTrigger), newQty);
-                    Logger::getInstance().log(logMsg.GetChars());
-                }
-            }
-
-            // Update position size
+            // Partial target fill — update tracked size only. Single-stage first-touch
+            // has no trailing activation; the remaining size keeps the same static
+            // stop/target bracket (Phase 1 cutover).
             m_openTrade.ScaleIn(pos.AveragePrice, newQty);  // ScaleIn handles size updates
         }
     } else if (!wasFlat && isNowFlat) {
@@ -477,9 +438,6 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
         m_openTrade.Close(sc, latestFill.FillPrice, latestFill);
         m_pendingEntryOrder = {};
         ClearIntentTicket(ReasonCode::IntentClosed);
-
-        // Remove Chandelier stop tracking
-        ChandelierStopManager::getInstance().RemoveStop(m_openTrade.GetParentOrderId());
 
         // Triple-Barrier: release the latched bracket on position close.
         TripleBarrierExitManager::getInstance().Close();
@@ -712,157 +670,6 @@ void PositionManager::UpdateAttachedOrders(SCStudyInterfaceRef sc) {
     }
     if (targetId != 0 && sc.GetOrderByOrderID(targetId, attachedOrder) != SCTRADING_ORDER_ERROR) {
         m_openTrade.SetTarget(attachedOrder.Price1);
-    }
-}
-
-void PositionManager::UpdateChandelierStops(SCStudyInterfaceRef sc) {
-    if (IsFlat()) return;
-
-    int positionID = m_openTrade.GetParentOrderId();
-
-    // Only update if trailing is active (activated after T1 fills)
-    if (!ChandelierStopManager::getInstance().IsTrailingActive(positionID)) {
-        return;
-    }
-
-    // Get current bar data
-    double currentHigh = sc.High[sc.Index];
-    double currentLow = sc.Low[sc.Index];
-
-    // Gap 1: Use cached ATR from TripleScreen producers (eliminates redundant TR loops)
-    float atr = m_cachedATR14;
-    float atr10 = m_cachedATR10;
-    if (atr <= 0.0f || atr10 <= 0.0f) {
-        return;  // Can't update without valid ATR (TripleScreens haven't warmed up yet)
-    }
-
-    // Cache InferenceManager state once for all checks in this function
-    auto& infMgr = InferenceManager::Instance();
-    auto* hmmInd = infMgr.HmmState();
-
-    // Institutional transition-aware management:
-    // High transition risk => defensive posture (tighten stops faster).
-    const bool defensiveMode = infMgr.IsInDefensiveMode();
-
-    if (defensiveMode != m_lastDefensiveTransitionMode) {
-        SCString logMsg;
-        logMsg.Format("PositionManager: Transition management mode -> %s | transition_risk=%.3f",
-                      defensiveMode ? "DEFENSIVE" : "TREND",
-                      hmmInd ? hmmInd->TransitionRisk() : 0.0f);
-        Logger::getInstance().log(logMsg.GetChars());
-        m_lastDefensiveTransitionMode = defensiveMode;
-    }
-
-    // === ELITE: DOF-AWARE STOP GEOMETRY (Proposal 2 — Taleb) ===
-    // When Student-t DOF is low (fat tails), widen the ATR multiplier so stop
-    // accounts for heavier-than-Gaussian tails.  Logic lives in HmmStateIndicator::DofStopScale().
-    const double dofStopScale = hmmInd ? hmmInd->DofStopScale() : 1.5;
-
-    // === GAP 4: DURATION DECAY — proactive tightening near regime boundary (Pareto) ===
-    // As bars_held approaches expected_duration, the regime is aging.  Tighten the
-    // stop proactively so you don't overstay a regime that's about to flip.
-    // DurationDecayFactor: 1.0 (early) → 0.60 (overstayed).
-    const int barsHeld = sc.Index - m_openTrade.GetEntryIndex();
-    const double durationDecay = hmmInd ? hmmInd->DurationDecayFactor(barsHeld) : 1.0;
-
-    // === v5.7: VOLUME-AWARE STOP MODULATION (Taleb/Raschke) ===
-    // When volume surges (robust z > 2.0), the regime may be changing.
-    // Use order-flow imbalance to determine if the surge is WITH or AGAINST position:
-    //   Against → tighten (climax exhaustion, Raschke: "VERY_HIGH often precedes reversal")
-    //   With    → widen slightly (institutional continuation, let it run)
-    // At normal volume, this factor is 1.0 (no effect).
-    double volumeStopScale = 1.0;
-    const auto* volInd = IndicatorManager::Instance().GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
-    if (volInd) {
-        const float volZ = volInd->GetVolumeRatio();        // robust log-vol z-score
-        const float imbalance = volInd->GetVolumeImbalance(); // (ask-bid)/total, [-1,+1]
-        if (std::fabs(volZ) > 2.0f) {
-            const bool isLongPos = IsLong();
-            // Positive imbalance = buy pressure; negative = sell pressure
-            // directionalFlow: positive = flow WITH position, negative = AGAINST
-            const float directionalFlow = isLongPos ? imbalance : -imbalance;
-            if (directionalFlow < -0.15f) {
-                // Surge AGAINST position → tighten stop (0.70–1.0× based on imbalance severity)
-                volumeStopScale = std::max(0.70, 1.0 + 0.5 * static_cast<double>(directionalFlow));
-            } else if (directionalFlow > 0.15f) {
-                // Surge WITH position → widen slightly (1.0–1.15× to let winners run)
-                volumeStopScale = std::min(1.15, 1.0 + 0.15 * static_cast<double>(directionalFlow));
-            }
-        }
-    }
-
-    const double effectiveAtr = static_cast<double>(atr) * dofStopScale * durationDecay * volumeStopScale;
-    const double effectiveAtr10 = static_cast<double>(atr10) * dofStopScale * durationDecay * volumeStopScale;
-
-    // Update the Chandelier stop (with ATR10 for climax bar detection)
-    const bool barClosed = (sc.GetBarHasClosedStatus() == BHCS_BAR_HAS_CLOSED);
-    bool stopMoved = ChandelierStopManager::getInstance().UpdateStop(
-        positionID, currentHigh, currentLow, effectiveAtr, effectiveAtr10, sc.Close[sc.Index], barClosed);
-
-    // Defensive overlay: if regime likely to flip, tighten stop beyond normal Chandelier update.
-    if (defensiveMode) {
-        const bool isLong = IsLong();
-        const double currentPrice = sc.Close[sc.Index];
-        const double currentStop = ChandelierStopManager::getInstance().GetStopPrice(positionID);
-        const float defensiveDistanceAtrMultiplier = RiskManager::Instance().GetTransitionDefensiveDistanceAtrMultiplier();
-        const double defensiveDistance = static_cast<double>(atr) * static_cast<double>(defensiveDistanceAtrMultiplier);
-        const float defensiveForceTightenAtrProfile = RiskManager::Instance().GetTransitionDefensiveForceTightenAtrProfile();
-
-        double defensiveStop = currentStop;
-        if (isLong) {
-            defensiveStop = std::max(currentStop, currentPrice - defensiveDistance);
-        } else if (IsShort()) {
-            defensiveStop = std::min(currentStop, currentPrice + defensiveDistance);
-        }
-
-        const bool tightened = (isLong && defensiveStop > currentStop) || (!isLong && defensiveStop < currentStop);
-        if (tightened) {
-            stopMoved = ChandelierStopManager::getInstance().ForceTightenStop(
-                positionID,
-                defensiveStop,
-                static_cast<double>(defensiveForceTightenAtrProfile)
-            ) || stopMoved;
-
-            SCString logMsg;
-            logMsg.Format("PositionManager: Defensive transition tighten applied | order_id=%d | transition_risk=%.3f | stop=%.3f",
-                          positionID,
-                          hmmInd ? hmmInd->TransitionRisk() : 0.0f,
-                          defensiveStop);
-            Logger::getInstance().log(logMsg.GetChars());
-        }
-    }
-
-    if (stopMoved) {
-        // Get new stop price
-        double newStopPrice = ChandelierStopManager::getInstance().GetStopPrice(positionID);
-
-        // Update the Sierra Chart stop order
-        int stopId = 0, targetId = 0;
-        sc.GetAttachedOrderIDsForParentOrder(positionID, targetId, stopId);
-
-        if (stopId != 0) {
-            s_SCNewOrder modifyOrder;
-            modifyOrder.InternalOrderID = stopId;
-            modifyOrder.Price1 = newStopPrice;
-
-            int result = sc.ModifyOrder(modifyOrder);
-            if (result > 0) {
-                // Also update Trade object
-                m_openTrade.SetStop(newStopPrice);
-            }
-        }
-    }
-
-    // Check if position should be stopped out
-    double currentPrice = sc.Close[sc.Index];
-    if (ChandelierStopManager::getInstance().ShouldStopOut(positionID, currentPrice)) {
-        SCString logMsg;
-        logMsg.Format("Chandelier: Position %d hit trailing stop at %.2f",
-                      positionID, currentPrice);
-        Logger::getInstance().log(logMsg.GetChars());
-
-        // Sierra Chart will handle the stop-out automatically
-        // The HandleFills() function will detect the close and clean up
     }
 }
 
@@ -3314,11 +3121,6 @@ void PositionManager::CalculateScaleOutTargets(RaschkeTacticalTrigger patternTri
     }
 }
 
-bool PositionManager::ShouldPatternTrail(RaschkeTacticalTrigger patternTrigger) const {
-    // Delegate to ChandelierStopManager's enum-based pattern classification logic
-    return ChandelierStopManager::ShouldUseTrailingStop(patternTrigger);
-}
-
 // ============================================================
 // Elder Grade-Based Profit Protection
 // ============================================================
@@ -3372,61 +3174,14 @@ void PositionManager::UpdateTradeGradeProtection(SCStudyInterfaceRef sc) {
             }
         }
 
-        // === ELITE: REGIME-CONDITIONAL STALE FISH (Proposal 5 — Raschke+Shannon) ===
-        // Momentum regimes allow patient holding; mean-reversion/sweep regimes decay faster.
-        int staleFishBars = 24; // default (HMM_NO_PRIOR, GAUSSIAN_STABLE, PARETO_MOMENTUM)
-        if (hmmStateInd) {
-            const HMMStateEnum hmmState = hmmStateInd->Value();
-
-            // Compute early profit in ATR units for P3.3 momentum extension
-            float earlyProfitAtr = 0.0f;
-            if (hmmState == HMMStateEnum::PARETO_MOMENTUM && barsHeld > 4) {
-                const float earlyATR = m_cachedATR14;
-                if (earlyATR > 0.0f) {
-                    double entryPx = m_openTrade.GetEntryPrice();
-                    int earlyCheckIdx = m_openTrade.GetEntryIndex() + 4;
-                    if (earlyCheckIdx >= 0 && earlyCheckIdx < sc.ArraySize) {
-                        double earlyPrice = sc.Close[earlyCheckIdx];
-                        double earlyProfit = (m_openTrade.GetSide() == TradeSideEnum::LONG)
-                                             ? (earlyPrice - entryPx)
-                                             : (entryPx - earlyPrice);
-                        earlyProfitAtr = static_cast<float>(earlyProfit / earlyATR);
-                    }
-                }
-            }
-
-            staleFishBars = InferenceManager::GetStaleFishBarThreshold(hmmState, barsHeld, earlyProfitAtr);
-        }
-
-        if (barsHeld > staleFishBars) {
-             const float atr = m_cachedATR14;
-             if (atr > 0.0f) {
-                double currentStalePrice = sc.Close[sc.Index];
-                double entryStalePrice = m_openTrade.GetEntryPrice();
-                double unrealizedPoints = (m_openTrade.GetSide() == TradeSideEnum::LONG)
-                                        ? (currentStalePrice - entryStalePrice)
-                                        : (entryStalePrice - currentStalePrice);
-
-                // Requirement: Must be at least 0.5 ATR in profit to justify holding this stale trade
-                if (unrealizedPoints < (atr * 0.5)) {
-                    SCString logMsg;
-                    logMsg.Format("STALE FISH EXIT: Trade held %d bars without hitting 0.5 ATR profit (%.2f < %.2f)",
-                                  barsHeld, unrealizedPoints, atr * 0.5);
-                    Logger::getInstance().log(logMsg.GetChars());
-
-                    // Close position
-                    s_SCNewOrder order;
-                    order.OrderQuantity = abs(static_cast<int>(m_openTrade.GetSize()));
-                    order.OrderType = SCT_ORDERTYPE_MARKET;
-                    order.TimeInForce = SCT_TIF_GOOD_TILL_CANCELED;
-
-                    if (m_openTrade.GetSide() == TradeSideEnum::LONG) sc.SellOrder(order);
-                    else sc.BuyOrder(order);
-
-                    return; // Stop processing further protection rules for this update
-                }
-             }
-        }
+        // === STALE-FISH TIME EXIT — REMOVED (Phase 1 first-touch cutover) ===
+        // The Triple-Barrier VERTICAL barrier (maxBars, latched at entry via
+        // TripleBarrierExitManager::OpenBracket and enforced in Update()) is now the
+        // single, labeler-reproducible time exit. A second, differently-thresholded
+        // time exit here would race it and break train/live parity. The "cut trades
+        // going nowhere" intent belongs in the labeler's vertical-barrier definition
+        // (or a future meta-label feature), not as a live-only heuristic.
+        // The Mahalanobis + >3·ATR tail-risk flattens above are retained safety gates.
     }
 
     int currentTradeGrade = m_openTrade.GetTradeGrade();

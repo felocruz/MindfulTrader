@@ -5,7 +5,7 @@
 #include "IndicatorManager.h"
 #include "RiskManager.h"
 #include "Scoring.h"
-#include "ChandelierStopManager.h"
+#include "RiskManager.h"
 
 // ====================================================================
 // ELITE v3.2: UNIFIED HARD GATE ENFORCEMENT
@@ -102,18 +102,15 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
     }
 
     // === GAP 5: CLIMATE-SHIFT MID-TRADE HARD GATE (Taleb — phase transition) ===
-    // Climate shifts are rare binary events.  A transition to TALEBIAN_FRAGILE or
-    // SHANNON_CHAOS mid-trade is a phase transition — force immediate trailing stop
-    // activation, don't wait for composite < 0.85.
+    // Climate shifts are rare binary events. Previously this force-activated Chandelier
+    // trailing; that actuator was removed in the first-touch cutover. The static barrier
+    // now holds through the shift; escalation to a regime-invalidation FLATTEN is a
+    // flagged follow-up (tbe::Resolution::REGIME_INVALIDATION). Telemetry only.
     if (InferenceManager::IsCriticalClimateShift(m_currentClimate, m_previousClimate)) {
-        const int positionID = m_openTrade.GetParentOrderId();
-        if (!ChandelierStopManager::getInstance().IsTrailingActive(positionID)) {
-            ChandelierStopManager::getInstance().ActivateTrailing(positionID);
-            SCString logMsg;
-            logMsg.Format("CLIMATE-SHIFT DEFENSE: Forced trailing activation due to %s",
-                m_currentClimate == MarketClimate::TALEBIAN_FRAGILE ? "TALEBIAN_FRAGILE" : "SHANNON_CHAOS");
-            Logger::getInstance().log(logMsg.GetChars());
-        }
+        SCString logMsg;
+        logMsg.Format("CLIMATE-SHIFT [telemetry]: %s",
+            m_currentClimate == MarketClimate::TALEBIAN_FRAGILE ? "TALEBIAN_FRAGILE" : "SHANNON_CHAOS");
+        Logger::getInstance().log(logMsg.GetChars());
     }
 
     // Convert open trade pattern name string to PatternType enum
@@ -165,17 +162,14 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
         return;
     }
 
-    // Level 2: Hostile Environment -> FORCE TIGHT STOP
+    // Level 2: Hostile Environment -> TELEMETRY ONLY (was: force Chandelier trailing)
+    // First-touch cutover removed trailing; the static barrier holds. Escalation to a
+    // regime-invalidation flatten is a flagged follow-up (tbe::Resolution::REGIME_INVALIDATION).
     if (holdingScore < hostileThreshold) {
-        int positionID = m_openTrade.GetParentOrderId();
-
-        if (!ChandelierStopManager::getInstance().IsTrailingActive(positionID)) {
-             ChandelierStopManager::getInstance().ActivateTrailing(positionID);
-             SCString logMsg;
-             logMsg.Format("DEFENSE: Forcing Chandelier Trailing due to hostility | DeepContext=%.2fx | Score=%.4f | threshold=%.2f",
-                 deepContextMult, holdingScore, hostileThreshold);
-             Logger::getInstance().log(logMsg.GetChars());
-        }
+        SCString logMsg;
+        logMsg.Format("HOSTILE ENV [telemetry]: DeepContext=%.2fx | Score=%.4f | threshold=%.2f",
+            deepContextMult, holdingScore, hostileThreshold);
+        Logger::getInstance().log(logMsg.GetChars());
     }
 }
 

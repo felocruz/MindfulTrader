@@ -4,7 +4,6 @@
 #include "HMMClient.h"
 #include "Logger.h"
 #include "IndicatorManager.h"
-#include "ChandelierStopManager.h"
 #include "PositionManager.h"
 #include <cmath>
 #include <algorithm>
