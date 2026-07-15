@@ -86,7 +86,28 @@ The Python co-evolution cannot be validated until a fresh `.context` is regenera
 
 ## 5. Acceptance
 
-1. Build green (C++); rename complete (no residual raw-side `vpin` in the gate path); gate uses percentile.
-2. Gate firing rate on a replay is sane (not 0%, not ~100%) — the calibration bug's symptom (PC-17 noted the scaled proxy fired 31–46%) resolves.
-3. C++ and Python agree on the veto decision bar-for-bar on a shared replay (percentile parity).
-4. PC-03 CLOSED; PC-17 reclassified as canonical (stopgap framing removed).
+1. **[DONE]** Build green (C++); rename complete (no residual raw-side `vpin` in the gate path — all four consumers use the percentile); gate uses percentile. Commits: schema `8874418`, MindfulTrader `30b2f7c` (Layer B), `32389b3` (rename), `a482499` (Scoring/RiskPolicy), lbrnet `1963c14`.
+2. **[DONE, offline proxy]** Gate firing rate sane. See §5.1.
+3. **[PENDING replay]** C++ and Python agree on the veto decision bar-for-bar on a shared replay (percentile parity). Requires a Sierra replay with the new DLL to produce the frozen `.context`.
+4. **[PENDING Python pass]** PC-03 CLOSED (C++ source field renamed; serialized DTO/JSON mirrors deferred, §2b); PC-17 reclassified as canonical (stopgap framing removed in the lbrnet co-evolution pass).
+
+### 5.1 Offline validation (pre-replay proxy, 2026-07-15)
+
+`lbrnet/lbrnet/data/validate_amihud_gate.py` reimplements the C++ path (canonical
+Amihud + session-aware percentile) over 61,078 15-min bars aggregated from
+`mes_continuous_ticks.parquet`. **PASS** on all three sanity axes:
+
+- **Signal health:** 100% finite (61,076/61,078), zero degenerate zeros; raw Amihud
+  `min 1.6e-12 / median 2.1e-11 / p99 7.1e-10 / max 1.0e-8` — clean, positive,
+  heavy-tailed (as expected for illiquidity).
+- **Session differentiation (validates the O1 session-aware pools):** overnight
+  median Amihud is **2.89×** the RTH median (`2.58e-11` vs `8.91e-12`). A single
+  pool would miscalibrate the RTH gate; the two-pool design is empirically justified.
+  RTH share 27.9% (≈ 6.5h/23h) confirms correct ET session classification.
+- **Firing band (percentile self-calibrates to ~10% / ~25%):** p90 **13.26%**,
+  p75 **25.19%**, warmup-neutral 0.19%. Not stuck at 0% or ~100%; the mild excess
+  over 10% reflects illiquidity clustering. By-session firing balanced
+  (RTH 12.69% / OVN 13.49%) — neither session over/under-gated.
+
+Caveat: proxy only (epoch-aligned buckets, fixed lookback 20, continuous contract) —
+de-risks formula/threshold calibration; does **not** replace acceptance item 3.
