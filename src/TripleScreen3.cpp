@@ -596,6 +596,19 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     if (structureTest) {
         structureTest->Update(DetectStructure(sc, prevDayHigh, prevDayLow,
             Subgraph_AtrTemp3[sc.Index], Subgraph_HighestHigh20Period[sc.Index], Subgraph_LowestLow20Period[sc.Index]));
+
+        // Completed-bar structural test (sc.Index-1) — deterministic parity anchor for
+        // the native TRAP floor (Trap Detection doctrine: reactive floor is completed-bar).
+        // Stable intra-bar (all inputs are as-of the closed bar), so recomputing per tick
+        // is idempotent within the bar.
+        if (sc.Index >= 2) {
+            structureTest->SetCompletedValue(ClassifyStructure(
+                sc.High[sc.Index - 1], sc.Low[sc.Index - 1], sc.Close[sc.Index - 1],
+                prevDayHigh, prevDayLow,
+                Subgraph_AtrTemp3[sc.Index - 1],
+                Subgraph_HighestHigh20Period[sc.Index - 1],
+                Subgraph_LowestLow20Period[sc.Index - 1]));
+        }
     }
 
     sc.SimpleMovAvg(sc.Volume, Subgraph_VolumeSma, 21);

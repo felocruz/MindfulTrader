@@ -238,17 +238,27 @@ void PositionManager::Update(SCStudyInterfaceRef sc) {
         // Update trade object (calculates grades)
         m_openTrade.Update(sc);
 
+        // === TRAP — PRIORITY #1 native reactive floor (completed-bar StructureTest) ===
+        // Ranks ahead of stop/target/time (matches the labeler first-hit ordering).
+        // Deterministic, model-independent; may exit immediately. If it fires it sets
+        // m_exitSubmittedThisTick, so the defense/time layers below stand down (no double-exit).
+        EvaluateNativeTrapFloor(sc);
+
         // NEW: Check for Elder grade-based profit protection
-        UpdateTradeGradeProtection(sc);
+        if (!m_exitSubmittedThisTick) {
+            UpdateTradeGradeProtection(sc);
+        }
 
         // Elite v2.5: Context-Aware Defensive Management
-        EvaluateRegimeDefense(sc);
+        if (!m_exitSubmittedThisTick) {
+            EvaluateRegimeDefense(sc);
+        }
 
         // Triple-Barrier vertical (time) barrier — deterministic max-hold close.
-        // First-hit ordering: regime (EvaluateRegimeDefense, above) -> time -> stop/target
+        // First-hit ordering: TRAP -> regime (EvaluateRegimeDefense, above) -> time -> stop/target
         // (stop/target are handled by the SC bracket in this phase). Uses the entry-latched
         // bracket so maxBars is fixed at the entry regime (train/live parity). Guarded by
-        // m_exitSubmittedThisTick so a regime flatten this tick wins (no double-exit).
+        // m_exitSubmittedThisTick so an earlier deterministic exit this tick wins (no double-exit).
         if (!m_exitSubmittedThisTick) {
             auto& tbMgr = TripleBarrierExitManager::getInstance();
             const auto& tbBr = tbMgr.Current();
@@ -2908,13 +2918,60 @@ void PositionManager::EmergencyFlattenPosition(SCStudyInterfaceRef sc, const cha
     }
 }
 
+// Native TRAP floor (priority #1): completed-bar StructureTest reversal against the
+// open position -> immediate neutral market close. Deterministic, model-independent
+// (no Python/inference dependency), the parity anchor with the labeler's TRAP outcome.
+// TRAP = sprung-trap REVERSAL only (Q0 split, ruling 2026-07-15): FAILED_* against the
+// position side. An adverse DECISIVE_* counter-break is REGIME_INVALIDATION, NOT TRAP,
+// and is intentionally excluded here. Completed-bar (sc.Index-1) for train/live parity;
+// evaluated at most once per completed bar and only for bars strictly after entry.
+void PositionManager::EvaluateNativeTrapFloor(SCStudyInterfaceRef sc) {
+    if (IsFlat() || m_exitSubmittedThisTick) {
+        return;
+    }
+    // Fire at most once per completed bar.
+    if (sc.Index == m_lastTrapEvalBarIndex) {
+        return;
+    }
+    m_lastTrapEvalBarIndex = sc.Index;
+
+    // Only consider bars that completed strictly AFTER the entry bar (the labeler's
+    // lookahead scan starts forward from entry; the entry bar and earlier are excluded).
+    if ((sc.Index - 1) <= m_openTrade.GetEntryIndex()) {
+        return;
+    }
+
+    auto* stInd = IndicatorManager::Instance().StructureTest();
+    if (!stInd) {
+        return;
+    }
+    const StructureTest st = stInd->CompletedValue();
+    const bool isLong = IsLong();
+
+    const bool adverse =
+        isLong ? (st == StructureTest::FAILED_HIGH_CLOSE_INSIDE ||
+                  st == StructureTest::FAILED_HIGH_STRONG_REVERSAL)
+               : (st == StructureTest::FAILED_LOW_CLOSE_INSIDE ||
+                  st == StructureTest::FAILED_LOW_STRONG_REVERSAL);
+    if (!adverse) {
+        return;
+    }
+
+    SCString msg;
+    msg.Format("[TRAP] native floor: completed-bar StructureTest=%d adverse to %s position -> close at market (priority #1)",
+               static_cast<int>(st), isLong ? "LONG" : "SHORT");
+    Logger::getInstance().log(msg.GetChars());
+
+    ClosePositionAtMarket(sc, "TRAP");
+    TripleBarrierExitManager::getInstance().Close();
+}
+
 // Neutral deterministic market close for Triple-Barrier resolutions (e.g. the
 // vertical/time barrier). Unlike EmergencyFlattenPosition this carries NO emergency
 // semantics: no trading halt, no alarms, no prediction force-exit, and it does NOT
 // reset the trade — the resulting fill flows through HandleFills' normal close path
 // so the trade is recorded with the explicit exit-reason tag (not price-inferred).
-void PositionManager::ClosePositionAtMarket(SCStudyInterfaceRef sc, const char* exitTag) {
-    s_SCPositionData pos;
+void PositionManager::ClosePositionAtMarket(SCStudyInterfaceRef sc, const char* exitTag) {    s_SCPositionData pos;
     sc.GetTradePosition(pos);
     if (pos.PositionQuantity == 0) {
         return;  // already flat

@@ -1764,6 +1764,14 @@ class StructureTestIndicator : public Indicator<StructureTest>
 {
 public:
     StructureTestIndicator(IndicatorKey key_) : Indicator(key_, StructureTest::NONE) { }
+
+    // Completed-bar structural test (evaluated on sc.Index-1) — the deterministic,
+    // model-independent parity anchor for the native TRAP floor. Distinct from the
+    // intra-bar Value() that feeds the model's observation vector.
+    void SetCompletedValue(StructureTest v) { m_completedValue = v; }
+    StructureTest CompletedValue() const { return m_completedValue; }
+private:
+    StructureTest m_completedValue = StructureTest::NONE;
 };
 
 class ATRProximityIndicator : public Indicator<ATRProximityEnum>

@@ -1200,6 +1200,11 @@ static MTS::Backtest::ExitReason MapExitReason(const std::string& reason)
     if (reason == "TARGET_HIT") return MTS::Backtest::ExitReason_PROFIT_TARGET;
     if (reason == "STOP_HIT")   return MTS::Backtest::ExitReason_STOP_LOSS;
     if (reason == "TIME_STOP")  return MTS::Backtest::ExitReason_TIME_STOP;
+    // TODO(schema): add ExitReason_TRAP (+ REGIME_INVALIDATION) to backtest_schema.fbs
+    // and regenerate, so native TRAP exits are attributable in .btst for the F_0.25
+    // deploy-gate measurement. Until then TRAP maps to MANUAL (the explicit "TRAP"
+    // exit-reason tag is still preserved on the Trade object).
+    if (reason == "TRAP")       return MTS::Backtest::ExitReason_MANUAL;
     return MTS::Backtest::ExitReason_MANUAL;
 }
 

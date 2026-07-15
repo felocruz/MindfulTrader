@@ -1556,16 +1556,13 @@ DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevD
 // GetVolumeEnum() removed in v5.7 — VolumeIndicator self-classifies using
 // robust log-volume z-score thresholds (Taleb-consistent, replaces Gaussian mu/sigma).
 
-StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float prev_low, double atr, float lookbackHigh, float lookbackLow)
+// Pure structural classifier (no SC dependency) — single source of truth shared by the
+// intra-bar DetectStructure() and the completed-bar native TRAP floor. Keeping it pure
+// makes it unit-testable and the deterministic parity anchor with the Python labeler.
+StructureTest ClassifyStructure(float high, float low, float close,
+                                float prev_high, float prev_low, double atr,
+                                float lookbackHigh, float lookbackLow)
 {
-    if (sc.Index < 1) {
-        return StructureTest::NONE;
-    }
-
-    float high = sc.High[sc.Index];
-    float low = sc.Low[sc.Index];
-    float close = sc.Close[sc.Index];
-
     // ATR-based thresholds
     double breakout_threshold = 0.25 * atr;
     double reversal_threshold = 0.5 * atr;
@@ -1621,6 +1618,17 @@ StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float pre
     }
 
     return StructureTest::NONE;
+}
+
+StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float prev_low, double atr, float lookbackHigh, float lookbackLow)
+{
+    if (sc.Index < 1) {
+        return StructureTest::NONE;
+    }
+
+    // Intra-bar read of the current forming bar (feeds the model observation vector).
+    return ClassifyStructure(sc.High[sc.Index], sc.Low[sc.Index], sc.Close[sc.Index],
+                             prev_high, prev_low, atr, lookbackHigh, lookbackLow);
 }
 
 ATRProximityEnum DetectATRProximity(SCStudyInterfaceRef sc, double atr)

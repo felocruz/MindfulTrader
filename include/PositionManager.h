@@ -156,6 +156,9 @@ private:
     void HandleReplies(void);
     void UpdateAttachedOrders(SCStudyInterfaceRef sc);
     void UpdateTradeGradeProtection(SCStudyInterfaceRef sc);  // NEW: Elder grade-based exits
+    // Native TRAP floor (priority #1): completed-bar StructureTest reversal against the
+    // open position -> immediate market close. Deterministic, model-independent.
+    void EvaluateNativeTrapFloor(SCStudyInterfaceRef sc);
     void ManageWorkingEntryOrder(SCStudyInterfaceRef sc);
 
     // Elite v2.4+: FlatBuffer serialization for PositionUpdate (single-copy transport path)
@@ -301,6 +304,10 @@ private:
     // submits a close this tick, so the first-hit ordering (regime -> time -> stop/target)
     // is honored and no double-exit fires. Reset each tick in the in-position block.
     bool m_exitSubmittedThisTick = false;
+
+    // Native TRAP floor: last bar index at which the completed-bar StructureTest was
+    // evaluated, so the floor fires at most once per completed bar.
+    int m_lastTrapEvalBarIndex = -1;
 
     // Queues for communication
     std::shared_ptr<ThreadSafeQueue<TradeRequest>> m_requestQueue;
