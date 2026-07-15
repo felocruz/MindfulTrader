@@ -32,6 +32,10 @@ struct ObservationData;
 
 struct AsymmetryContext;
 
+struct RiskGateContext;
+struct RiskGateContextBuilder;
+struct RiskGateContextT;
+
 struct MarketObservation;
 struct MarketObservationBuilder;
 struct MarketObservationT;
@@ -151,10 +155,6 @@ namespace Training {
 struct TrainingEvent;
 struct TrainingEventBuilder;
 struct TrainingEventT;
-
-struct DeltaEvent;
-struct DeltaEventBuilder;
-struct DeltaEventT;
 
 struct TrainingFile;
 struct TrainingFileBuilder;
@@ -3163,6 +3163,271 @@ inline ::flatbuffers::Offset<Heartbeat> CreateHeartbeatDirect(
 
 ::flatbuffers::Offset<Heartbeat> CreateHeartbeat(::flatbuffers::FlatBufferBuilder &_fbb, const HeartbeatT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
+struct RiskGateContextT : public ::flatbuffers::NativeTable {
+  typedef RiskGateContext TableType;
+  float shannon_flow_entropy = 0.0f;
+  float shannon_efficiency = 0.5f;
+  float taleb_kurtosis = 0.0f;
+  float taleb_skewness = 0.0f;
+  float elder_chandelier_atr = 0.0f;
+  float pareto_tail_alpha = 4.0f;
+  float amihud_illiquidity = 0.0f;
+  float spread_stress = 0.0f;
+  float hurst_exponent = 0.5f;
+  float fractal_dim = 1.5f;
+  float mean_rev_z = 0.0f;
+  float raschke_burst = 1.0f;
+  float fisher_info = 0.0f;
+  int32_t regime_duration = 0;
+  bool is_valid = false;
+  int64_t snapshot_timestamp_us = 0;
+};
+
+struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef RiskGateContextT NativeTableType;
+  typedef RiskGateContextBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHANNON_FLOW_ENTROPY = 4,
+    VT_SHANNON_EFFICIENCY = 6,
+    VT_TALEB_KURTOSIS = 8,
+    VT_TALEB_SKEWNESS = 10,
+    VT_ELDER_CHANDELIER_ATR = 12,
+    VT_PARETO_TAIL_ALPHA = 14,
+    VT_AMIHUD_ILLIQUIDITY = 16,
+    VT_SPREAD_STRESS = 18,
+    VT_HURST_EXPONENT = 20,
+    VT_FRACTAL_DIM = 22,
+    VT_MEAN_REV_Z = 24,
+    VT_RASCHKE_BURST = 26,
+    VT_FISHER_INFO = 28,
+    VT_REGIME_DURATION = 30,
+    VT_IS_VALID = 32,
+    VT_SNAPSHOT_TIMESTAMP_US = 34
+  };
+  float shannon_flow_entropy() const {
+    return GetField<float>(VT_SHANNON_FLOW_ENTROPY, 0.0f);
+  }
+  bool mutate_shannon_flow_entropy(float _shannon_flow_entropy = 0.0f) {
+    return SetField<float>(VT_SHANNON_FLOW_ENTROPY, _shannon_flow_entropy, 0.0f);
+  }
+  float shannon_efficiency() const {
+    return GetField<float>(VT_SHANNON_EFFICIENCY, 0.5f);
+  }
+  bool mutate_shannon_efficiency(float _shannon_efficiency = 0.5f) {
+    return SetField<float>(VT_SHANNON_EFFICIENCY, _shannon_efficiency, 0.5f);
+  }
+  float taleb_kurtosis() const {
+    return GetField<float>(VT_TALEB_KURTOSIS, 0.0f);
+  }
+  bool mutate_taleb_kurtosis(float _taleb_kurtosis = 0.0f) {
+    return SetField<float>(VT_TALEB_KURTOSIS, _taleb_kurtosis, 0.0f);
+  }
+  float taleb_skewness() const {
+    return GetField<float>(VT_TALEB_SKEWNESS, 0.0f);
+  }
+  bool mutate_taleb_skewness(float _taleb_skewness = 0.0f) {
+    return SetField<float>(VT_TALEB_SKEWNESS, _taleb_skewness, 0.0f);
+  }
+  float elder_chandelier_atr() const {
+    return GetField<float>(VT_ELDER_CHANDELIER_ATR, 0.0f);
+  }
+  bool mutate_elder_chandelier_atr(float _elder_chandelier_atr = 0.0f) {
+    return SetField<float>(VT_ELDER_CHANDELIER_ATR, _elder_chandelier_atr, 0.0f);
+  }
+  float pareto_tail_alpha() const {
+    return GetField<float>(VT_PARETO_TAIL_ALPHA, 4.0f);
+  }
+  bool mutate_pareto_tail_alpha(float _pareto_tail_alpha = 4.0f) {
+    return SetField<float>(VT_PARETO_TAIL_ALPHA, _pareto_tail_alpha, 4.0f);
+  }
+  float amihud_illiquidity() const {
+    return GetField<float>(VT_AMIHUD_ILLIQUIDITY, 0.0f);
+  }
+  bool mutate_amihud_illiquidity(float _amihud_illiquidity = 0.0f) {
+    return SetField<float>(VT_AMIHUD_ILLIQUIDITY, _amihud_illiquidity, 0.0f);
+  }
+  float spread_stress() const {
+    return GetField<float>(VT_SPREAD_STRESS, 0.0f);
+  }
+  bool mutate_spread_stress(float _spread_stress = 0.0f) {
+    return SetField<float>(VT_SPREAD_STRESS, _spread_stress, 0.0f);
+  }
+  float hurst_exponent() const {
+    return GetField<float>(VT_HURST_EXPONENT, 0.5f);
+  }
+  bool mutate_hurst_exponent(float _hurst_exponent = 0.5f) {
+    return SetField<float>(VT_HURST_EXPONENT, _hurst_exponent, 0.5f);
+  }
+  float fractal_dim() const {
+    return GetField<float>(VT_FRACTAL_DIM, 1.5f);
+  }
+  bool mutate_fractal_dim(float _fractal_dim = 1.5f) {
+    return SetField<float>(VT_FRACTAL_DIM, _fractal_dim, 1.5f);
+  }
+  float mean_rev_z() const {
+    return GetField<float>(VT_MEAN_REV_Z, 0.0f);
+  }
+  bool mutate_mean_rev_z(float _mean_rev_z = 0.0f) {
+    return SetField<float>(VT_MEAN_REV_Z, _mean_rev_z, 0.0f);
+  }
+  float raschke_burst() const {
+    return GetField<float>(VT_RASCHKE_BURST, 1.0f);
+  }
+  bool mutate_raschke_burst(float _raschke_burst = 1.0f) {
+    return SetField<float>(VT_RASCHKE_BURST, _raschke_burst, 1.0f);
+  }
+  float fisher_info() const {
+    return GetField<float>(VT_FISHER_INFO, 0.0f);
+  }
+  bool mutate_fisher_info(float _fisher_info = 0.0f) {
+    return SetField<float>(VT_FISHER_INFO, _fisher_info, 0.0f);
+  }
+  int32_t regime_duration() const {
+    return GetField<int32_t>(VT_REGIME_DURATION, 0);
+  }
+  bool mutate_regime_duration(int32_t _regime_duration = 0) {
+    return SetField<int32_t>(VT_REGIME_DURATION, _regime_duration, 0);
+  }
+  bool is_valid() const {
+    return GetField<uint8_t>(VT_IS_VALID, 0) != 0;
+  }
+  bool mutate_is_valid(bool _is_valid = 0) {
+    return SetField<uint8_t>(VT_IS_VALID, static_cast<uint8_t>(_is_valid), 0);
+  }
+  int64_t snapshot_timestamp_us() const {
+    return GetField<int64_t>(VT_SNAPSHOT_TIMESTAMP_US, 0);
+  }
+  bool mutate_snapshot_timestamp_us(int64_t _snapshot_timestamp_us = 0) {
+    return SetField<int64_t>(VT_SNAPSHOT_TIMESTAMP_US, _snapshot_timestamp_us, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<float>(verifier, VT_SHANNON_FLOW_ENTROPY, 4) &&
+           VerifyField<float>(verifier, VT_SHANNON_EFFICIENCY, 4) &&
+           VerifyField<float>(verifier, VT_TALEB_KURTOSIS, 4) &&
+           VerifyField<float>(verifier, VT_TALEB_SKEWNESS, 4) &&
+           VerifyField<float>(verifier, VT_ELDER_CHANDELIER_ATR, 4) &&
+           VerifyField<float>(verifier, VT_PARETO_TAIL_ALPHA, 4) &&
+           VerifyField<float>(verifier, VT_AMIHUD_ILLIQUIDITY, 4) &&
+           VerifyField<float>(verifier, VT_SPREAD_STRESS, 4) &&
+           VerifyField<float>(verifier, VT_HURST_EXPONENT, 4) &&
+           VerifyField<float>(verifier, VT_FRACTAL_DIM, 4) &&
+           VerifyField<float>(verifier, VT_MEAN_REV_Z, 4) &&
+           VerifyField<float>(verifier, VT_RASCHKE_BURST, 4) &&
+           VerifyField<float>(verifier, VT_FISHER_INFO, 4) &&
+           VerifyField<int32_t>(verifier, VT_REGIME_DURATION, 4) &&
+           VerifyField<uint8_t>(verifier, VT_IS_VALID, 1) &&
+           VerifyField<int64_t>(verifier, VT_SNAPSHOT_TIMESTAMP_US, 8) &&
+           verifier.EndTable();
+  }
+  RiskGateContextT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(RiskGateContextT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<RiskGateContext> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const RiskGateContextT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct RiskGateContextBuilder {
+  typedef RiskGateContext Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shannon_flow_entropy(float shannon_flow_entropy) {
+    fbb_.AddElement<float>(RiskGateContext::VT_SHANNON_FLOW_ENTROPY, shannon_flow_entropy, 0.0f);
+  }
+  void add_shannon_efficiency(float shannon_efficiency) {
+    fbb_.AddElement<float>(RiskGateContext::VT_SHANNON_EFFICIENCY, shannon_efficiency, 0.5f);
+  }
+  void add_taleb_kurtosis(float taleb_kurtosis) {
+    fbb_.AddElement<float>(RiskGateContext::VT_TALEB_KURTOSIS, taleb_kurtosis, 0.0f);
+  }
+  void add_taleb_skewness(float taleb_skewness) {
+    fbb_.AddElement<float>(RiskGateContext::VT_TALEB_SKEWNESS, taleb_skewness, 0.0f);
+  }
+  void add_elder_chandelier_atr(float elder_chandelier_atr) {
+    fbb_.AddElement<float>(RiskGateContext::VT_ELDER_CHANDELIER_ATR, elder_chandelier_atr, 0.0f);
+  }
+  void add_pareto_tail_alpha(float pareto_tail_alpha) {
+    fbb_.AddElement<float>(RiskGateContext::VT_PARETO_TAIL_ALPHA, pareto_tail_alpha, 4.0f);
+  }
+  void add_amihud_illiquidity(float amihud_illiquidity) {
+    fbb_.AddElement<float>(RiskGateContext::VT_AMIHUD_ILLIQUIDITY, amihud_illiquidity, 0.0f);
+  }
+  void add_spread_stress(float spread_stress) {
+    fbb_.AddElement<float>(RiskGateContext::VT_SPREAD_STRESS, spread_stress, 0.0f);
+  }
+  void add_hurst_exponent(float hurst_exponent) {
+    fbb_.AddElement<float>(RiskGateContext::VT_HURST_EXPONENT, hurst_exponent, 0.5f);
+  }
+  void add_fractal_dim(float fractal_dim) {
+    fbb_.AddElement<float>(RiskGateContext::VT_FRACTAL_DIM, fractal_dim, 1.5f);
+  }
+  void add_mean_rev_z(float mean_rev_z) {
+    fbb_.AddElement<float>(RiskGateContext::VT_MEAN_REV_Z, mean_rev_z, 0.0f);
+  }
+  void add_raschke_burst(float raschke_burst) {
+    fbb_.AddElement<float>(RiskGateContext::VT_RASCHKE_BURST, raschke_burst, 1.0f);
+  }
+  void add_fisher_info(float fisher_info) {
+    fbb_.AddElement<float>(RiskGateContext::VT_FISHER_INFO, fisher_info, 0.0f);
+  }
+  void add_regime_duration(int32_t regime_duration) {
+    fbb_.AddElement<int32_t>(RiskGateContext::VT_REGIME_DURATION, regime_duration, 0);
+  }
+  void add_is_valid(bool is_valid) {
+    fbb_.AddElement<uint8_t>(RiskGateContext::VT_IS_VALID, static_cast<uint8_t>(is_valid), 0);
+  }
+  void add_snapshot_timestamp_us(int64_t snapshot_timestamp_us) {
+    fbb_.AddElement<int64_t>(RiskGateContext::VT_SNAPSHOT_TIMESTAMP_US, snapshot_timestamp_us, 0);
+  }
+  explicit RiskGateContextBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<RiskGateContext> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<RiskGateContext>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float shannon_flow_entropy = 0.0f,
+    float shannon_efficiency = 0.5f,
+    float taleb_kurtosis = 0.0f,
+    float taleb_skewness = 0.0f,
+    float elder_chandelier_atr = 0.0f,
+    float pareto_tail_alpha = 4.0f,
+    float amihud_illiquidity = 0.0f,
+    float spread_stress = 0.0f,
+    float hurst_exponent = 0.5f,
+    float fractal_dim = 1.5f,
+    float mean_rev_z = 0.0f,
+    float raschke_burst = 1.0f,
+    float fisher_info = 0.0f,
+    int32_t regime_duration = 0,
+    bool is_valid = false,
+    int64_t snapshot_timestamp_us = 0) {
+  RiskGateContextBuilder builder_(_fbb);
+  builder_.add_snapshot_timestamp_us(snapshot_timestamp_us);
+  builder_.add_regime_duration(regime_duration);
+  builder_.add_fisher_info(fisher_info);
+  builder_.add_raschke_burst(raschke_burst);
+  builder_.add_mean_rev_z(mean_rev_z);
+  builder_.add_fractal_dim(fractal_dim);
+  builder_.add_hurst_exponent(hurst_exponent);
+  builder_.add_spread_stress(spread_stress);
+  builder_.add_amihud_illiquidity(amihud_illiquidity);
+  builder_.add_pareto_tail_alpha(pareto_tail_alpha);
+  builder_.add_elder_chandelier_atr(elder_chandelier_atr);
+  builder_.add_taleb_skewness(taleb_skewness);
+  builder_.add_taleb_kurtosis(taleb_kurtosis);
+  builder_.add_shannon_efficiency(shannon_efficiency);
+  builder_.add_shannon_flow_entropy(shannon_flow_entropy);
+  builder_.add_is_valid(is_valid);
+  return builder_.Finish();
+}
+
+::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffers::FlatBufferBuilder &_fbb, const RiskGateContextT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
 struct MarketObservationT : public ::flatbuffers::NativeTable {
   typedef MarketObservation TableType;
   int64_t timestamp_us = 0;
@@ -3170,6 +3435,7 @@ struct MarketObservationT : public ::flatbuffers::NativeTable {
   std::unique_ptr<MTS::Schema::ObservationData> observation{};
   std::unique_ptr<MTS::Schema::AsymmetryContext> asymmetry_context{};
   int8_t daily_bias_enum = 0;
+  std::unique_ptr<MTS::Schema::RiskGateContextT> risk_gate_context{};
   MarketObservationT() = default;
   MarketObservationT(const MarketObservationT &o);
   MarketObservationT(MarketObservationT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -3184,7 +3450,8 @@ struct MarketObservation FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
     VT_SEQUENCE_ID = 6,
     VT_OBSERVATION = 8,
     VT_ASYMMETRY_CONTEXT = 10,
-    VT_DAILY_BIAS_ENUM = 12
+    VT_DAILY_BIAS_ENUM = 12,
+    VT_RISK_GATE_CONTEXT = 14
   };
   int64_t timestamp_us() const {
     return GetField<int64_t>(VT_TIMESTAMP_US, 0);
@@ -3216,6 +3483,12 @@ struct MarketObservation FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
   bool mutate_daily_bias_enum(int8_t _daily_bias_enum = 0) {
     return SetField<int8_t>(VT_DAILY_BIAS_ENUM, _daily_bias_enum, 0);
   }
+  const MTS::Schema::RiskGateContext *risk_gate_context() const {
+    return GetPointer<const MTS::Schema::RiskGateContext *>(VT_RISK_GATE_CONTEXT);
+  }
+  MTS::Schema::RiskGateContext *mutable_risk_gate_context() {
+    return GetPointer<MTS::Schema::RiskGateContext *>(VT_RISK_GATE_CONTEXT);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int64_t>(verifier, VT_TIMESTAMP_US, 8) &&
@@ -3223,6 +3496,8 @@ struct MarketObservation FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table 
            VerifyField<MTS::Schema::ObservationData>(verifier, VT_OBSERVATION, 4) &&
            VerifyField<MTS::Schema::AsymmetryContext>(verifier, VT_ASYMMETRY_CONTEXT, 4) &&
            VerifyField<int8_t>(verifier, VT_DAILY_BIAS_ENUM, 1) &&
+           VerifyOffset(verifier, VT_RISK_GATE_CONTEXT) &&
+           verifier.VerifyTable(risk_gate_context()) &&
            verifier.EndTable();
   }
   MarketObservationT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -3249,6 +3524,9 @@ struct MarketObservationBuilder {
   void add_daily_bias_enum(int8_t daily_bias_enum) {
     fbb_.AddElement<int8_t>(MarketObservation::VT_DAILY_BIAS_ENUM, daily_bias_enum, 0);
   }
+  void add_risk_gate_context(::flatbuffers::Offset<MTS::Schema::RiskGateContext> risk_gate_context) {
+    fbb_.AddOffset(MarketObservation::VT_RISK_GATE_CONTEXT, risk_gate_context);
+  }
   explicit MarketObservationBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -3266,10 +3544,12 @@ inline ::flatbuffers::Offset<MarketObservation> CreateMarketObservation(
     uint64_t sequence_id = 0,
     const MTS::Schema::ObservationData *observation = nullptr,
     const MTS::Schema::AsymmetryContext *asymmetry_context = nullptr,
-    int8_t daily_bias_enum = 0) {
+    int8_t daily_bias_enum = 0,
+    ::flatbuffers::Offset<MTS::Schema::RiskGateContext> risk_gate_context = 0) {
   MarketObservationBuilder builder_(_fbb);
   builder_.add_sequence_id(sequence_id);
   builder_.add_timestamp_us(timestamp_us);
+  builder_.add_risk_gate_context(risk_gate_context);
   builder_.add_asymmetry_context(asymmetry_context);
   builder_.add_observation(observation);
   builder_.add_daily_bias_enum(daily_bias_enum);
@@ -8172,6 +8452,10 @@ struct TrainingEventT : public ::flatbuffers::NativeTable {
   bool target_hit = false;
   MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown;
   int8_t trade_action = 0;
+  int16_t trap_horizon_bars = 0;
+  float trap_t1_bar_pct = 1.0f;
+  int16_t exit_horizon_bars = 0;
+  float exit_t1_bar_pct = 1.0f;
   TrainingEventT() = default;
   TrainingEventT(const TrainingEventT &o);
   TrainingEventT(TrainingEventT&&) FLATBUFFERS_NOEXCEPT = default;
@@ -8256,7 +8540,11 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_STOP_HIT = 146,
     VT_TARGET_HIT = 148,
     VT_EVENT_TYPE_CODE = 150,
-    VT_TRADE_ACTION = 152
+    VT_TRADE_ACTION = 152,
+    VT_TRAP_HORIZON_BARS = 154,
+    VT_TRAP_T1_BAR_PCT = 156,
+    VT_EXIT_HORIZON_BARS = 158,
+    VT_EXIT_T1_BAR_PCT = 160
   };
   uint64_t sequence_id() const {
     return GetField<uint64_t>(VT_SEQUENCE_ID, 0);
@@ -8708,6 +8996,30 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool mutate_trade_action(int8_t _trade_action = 0) {
     return SetField<int8_t>(VT_TRADE_ACTION, _trade_action, 0);
   }
+  int16_t trap_horizon_bars() const {
+    return GetField<int16_t>(VT_TRAP_HORIZON_BARS, 0);
+  }
+  bool mutate_trap_horizon_bars(int16_t _trap_horizon_bars = 0) {
+    return SetField<int16_t>(VT_TRAP_HORIZON_BARS, _trap_horizon_bars, 0);
+  }
+  float trap_t1_bar_pct() const {
+    return GetField<float>(VT_TRAP_T1_BAR_PCT, 1.0f);
+  }
+  bool mutate_trap_t1_bar_pct(float _trap_t1_bar_pct = 1.0f) {
+    return SetField<float>(VT_TRAP_T1_BAR_PCT, _trap_t1_bar_pct, 1.0f);
+  }
+  int16_t exit_horizon_bars() const {
+    return GetField<int16_t>(VT_EXIT_HORIZON_BARS, 0);
+  }
+  bool mutate_exit_horizon_bars(int16_t _exit_horizon_bars = 0) {
+    return SetField<int16_t>(VT_EXIT_HORIZON_BARS, _exit_horizon_bars, 0);
+  }
+  float exit_t1_bar_pct() const {
+    return GetField<float>(VT_EXIT_T1_BAR_PCT, 1.0f);
+  }
+  bool mutate_exit_t1_bar_pct(float _exit_t1_bar_pct = 1.0f) {
+    return SetField<float>(VT_EXIT_T1_BAR_PCT, _exit_t1_bar_pct, 1.0f);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<uint64_t>(verifier, VT_SEQUENCE_ID, 8) &&
@@ -8786,6 +9098,10 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<uint8_t>(verifier, VT_TARGET_HIT, 1) &&
            VerifyField<uint8_t>(verifier, VT_EVENT_TYPE_CODE, 1) &&
            VerifyField<int8_t>(verifier, VT_TRADE_ACTION, 1) &&
+           VerifyField<int16_t>(verifier, VT_TRAP_HORIZON_BARS, 2) &&
+           VerifyField<float>(verifier, VT_TRAP_T1_BAR_PCT, 4) &&
+           VerifyField<int16_t>(verifier, VT_EXIT_HORIZON_BARS, 2) &&
+           VerifyField<float>(verifier, VT_EXIT_T1_BAR_PCT, 4) &&
            verifier.EndTable();
   }
   TrainingEventT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -9022,6 +9338,18 @@ struct TrainingEventBuilder {
   void add_trade_action(int8_t trade_action) {
     fbb_.AddElement<int8_t>(TrainingEvent::VT_TRADE_ACTION, trade_action, 0);
   }
+  void add_trap_horizon_bars(int16_t trap_horizon_bars) {
+    fbb_.AddElement<int16_t>(TrainingEvent::VT_TRAP_HORIZON_BARS, trap_horizon_bars, 0);
+  }
+  void add_trap_t1_bar_pct(float trap_t1_bar_pct) {
+    fbb_.AddElement<float>(TrainingEvent::VT_TRAP_T1_BAR_PCT, trap_t1_bar_pct, 1.0f);
+  }
+  void add_exit_horizon_bars(int16_t exit_horizon_bars) {
+    fbb_.AddElement<int16_t>(TrainingEvent::VT_EXIT_HORIZON_BARS, exit_horizon_bars, 0);
+  }
+  void add_exit_t1_bar_pct(float exit_t1_bar_pct) {
+    fbb_.AddElement<float>(TrainingEvent::VT_EXIT_T1_BAR_PCT, exit_t1_bar_pct, 1.0f);
+  }
   explicit TrainingEventBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -9109,11 +9437,17 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(
     bool stop_hit = false,
     bool target_hit = false,
     MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown,
-    int8_t trade_action = 0) {
+    int8_t trade_action = 0,
+    int16_t trap_horizon_bars = 0,
+    float trap_t1_bar_pct = 1.0f,
+    int16_t exit_horizon_bars = 0,
+    float exit_t1_bar_pct = 1.0f) {
   TrainingEventBuilder builder_(_fbb);
   builder_.add_volume(volume);
   builder_.add_timestamp_us(timestamp_us);
   builder_.add_sequence_id(sequence_id);
+  builder_.add_exit_t1_bar_pct(exit_t1_bar_pct);
+  builder_.add_trap_t1_bar_pct(trap_t1_bar_pct);
   builder_.add_hold_bars(hold_bars);
   builder_.add_slippage_ticks(slippage_ticks);
   builder_.add_trade_quality(trade_quality);
@@ -9176,6 +9510,8 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(
   builder_.add_tau_100_log(tau_100_log);
   builder_.add_delta_t_log(delta_t_log);
   builder_.add_bar_index(bar_index);
+  builder_.add_exit_horizon_bars(exit_horizon_bars);
+  builder_.add_trap_horizon_bars(trap_horizon_bars);
   builder_.add_trade_action(trade_action);
   builder_.add_event_type_code(event_type_code);
   builder_.add_target_hit(target_hit);
@@ -9265,7 +9601,11 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEventDirect(
     bool stop_hit = false,
     bool target_hit = false,
     MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown,
-    int8_t trade_action = 0) {
+    int8_t trade_action = 0,
+    int16_t trap_horizon_bars = 0,
+    float trap_t1_bar_pct = 1.0f,
+    int16_t exit_horizon_bars = 0,
+    float exit_t1_bar_pct = 1.0f) {
   auto features__ = features ? _fbb.CreateVector<float>(*features) : 0;
   return MTS::Training::CreateTrainingEvent(
       _fbb,
@@ -9343,207 +9683,14 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEventDirect(
       stop_hit,
       target_hit,
       event_type_code,
-      trade_action);
+      trade_action,
+      trap_horizon_bars,
+      trap_t1_bar_pct,
+      exit_horizon_bars,
+      exit_t1_bar_pct);
 }
 
 ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(::flatbuffers::FlatBufferBuilder &_fbb, const TrainingEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
-
-struct DeltaEventT : public ::flatbuffers::NativeTable {
-  typedef DeltaEvent TableType;
-  uint64_t sequence_id = 0;
-  int32_t bar_index = 0;
-  int64_t timestamp_us = 0;
-  MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown;
-  std::vector<uint8_t> changed_field_ids{};
-  std::vector<int8_t> changed_values_int{};
-  std::vector<float> changed_values_float{};
-  bool is_snapshot = false;
-  uint8_t total_fields_changed = 0;
-};
-
-struct DeltaEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef DeltaEventT NativeTableType;
-  typedef DeltaEventBuilder Builder;
-  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
-    VT_SEQUENCE_ID = 4,
-    VT_BAR_INDEX = 6,
-    VT_TIMESTAMP_US = 8,
-    VT_EVENT_TYPE_CODE = 10,
-    VT_CHANGED_FIELD_IDS = 12,
-    VT_CHANGED_VALUES_INT = 14,
-    VT_CHANGED_VALUES_FLOAT = 16,
-    VT_IS_SNAPSHOT = 18,
-    VT_TOTAL_FIELDS_CHANGED = 20
-  };
-  uint64_t sequence_id() const {
-    return GetField<uint64_t>(VT_SEQUENCE_ID, 0);
-  }
-  bool mutate_sequence_id(uint64_t _sequence_id = 0) {
-    return SetField<uint64_t>(VT_SEQUENCE_ID, _sequence_id, 0);
-  }
-  int32_t bar_index() const {
-    return GetField<int32_t>(VT_BAR_INDEX, 0);
-  }
-  bool mutate_bar_index(int32_t _bar_index = 0) {
-    return SetField<int32_t>(VT_BAR_INDEX, _bar_index, 0);
-  }
-  int64_t timestamp_us() const {
-    return GetField<int64_t>(VT_TIMESTAMP_US, 0);
-  }
-  bool mutate_timestamp_us(int64_t _timestamp_us = 0) {
-    return SetField<int64_t>(VT_TIMESTAMP_US, _timestamp_us, 0);
-  }
-  MTS::Training::EventTypeCode event_type_code() const {
-    return static_cast<MTS::Training::EventTypeCode>(GetField<uint8_t>(VT_EVENT_TYPE_CODE, 0));
-  }
-  bool mutate_event_type_code(MTS::Training::EventTypeCode _event_type_code = static_cast<MTS::Training::EventTypeCode>(0)) {
-    return SetField<uint8_t>(VT_EVENT_TYPE_CODE, static_cast<uint8_t>(_event_type_code), 0);
-  }
-  const ::flatbuffers::Vector<uint8_t> *changed_field_ids() const {
-    return GetPointer<const ::flatbuffers::Vector<uint8_t> *>(VT_CHANGED_FIELD_IDS);
-  }
-  ::flatbuffers::Vector<uint8_t> *mutable_changed_field_ids() {
-    return GetPointer<::flatbuffers::Vector<uint8_t> *>(VT_CHANGED_FIELD_IDS);
-  }
-  const ::flatbuffers::Vector<int8_t> *changed_values_int() const {
-    return GetPointer<const ::flatbuffers::Vector<int8_t> *>(VT_CHANGED_VALUES_INT);
-  }
-  ::flatbuffers::Vector<int8_t> *mutable_changed_values_int() {
-    return GetPointer<::flatbuffers::Vector<int8_t> *>(VT_CHANGED_VALUES_INT);
-  }
-  const ::flatbuffers::Vector<float> *changed_values_float() const {
-    return GetPointer<const ::flatbuffers::Vector<float> *>(VT_CHANGED_VALUES_FLOAT);
-  }
-  ::flatbuffers::Vector<float> *mutable_changed_values_float() {
-    return GetPointer<::flatbuffers::Vector<float> *>(VT_CHANGED_VALUES_FLOAT);
-  }
-  bool is_snapshot() const {
-    return GetField<uint8_t>(VT_IS_SNAPSHOT, 0) != 0;
-  }
-  bool mutate_is_snapshot(bool _is_snapshot = 0) {
-    return SetField<uint8_t>(VT_IS_SNAPSHOT, static_cast<uint8_t>(_is_snapshot), 0);
-  }
-  uint8_t total_fields_changed() const {
-    return GetField<uint8_t>(VT_TOTAL_FIELDS_CHANGED, 0);
-  }
-  bool mutate_total_fields_changed(uint8_t _total_fields_changed = 0) {
-    return SetField<uint8_t>(VT_TOTAL_FIELDS_CHANGED, _total_fields_changed, 0);
-  }
-  bool Verify(::flatbuffers::Verifier &verifier) const {
-    return VerifyTableStart(verifier) &&
-           VerifyField<uint64_t>(verifier, VT_SEQUENCE_ID, 8) &&
-           VerifyField<int32_t>(verifier, VT_BAR_INDEX, 4) &&
-           VerifyField<int64_t>(verifier, VT_TIMESTAMP_US, 8) &&
-           VerifyField<uint8_t>(verifier, VT_EVENT_TYPE_CODE, 1) &&
-           VerifyOffset(verifier, VT_CHANGED_FIELD_IDS) &&
-           verifier.VerifyVector(changed_field_ids()) &&
-           VerifyOffset(verifier, VT_CHANGED_VALUES_INT) &&
-           verifier.VerifyVector(changed_values_int()) &&
-           VerifyOffset(verifier, VT_CHANGED_VALUES_FLOAT) &&
-           verifier.VerifyVector(changed_values_float()) &&
-           VerifyField<uint8_t>(verifier, VT_IS_SNAPSHOT, 1) &&
-           VerifyField<uint8_t>(verifier, VT_TOTAL_FIELDS_CHANGED, 1) &&
-           verifier.EndTable();
-  }
-  DeltaEventT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  void UnPackTo(DeltaEventT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  static ::flatbuffers::Offset<DeltaEvent> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
-};
-
-struct DeltaEventBuilder {
-  typedef DeltaEvent Table;
-  ::flatbuffers::FlatBufferBuilder &fbb_;
-  ::flatbuffers::uoffset_t start_;
-  void add_sequence_id(uint64_t sequence_id) {
-    fbb_.AddElement<uint64_t>(DeltaEvent::VT_SEQUENCE_ID, sequence_id, 0);
-  }
-  void add_bar_index(int32_t bar_index) {
-    fbb_.AddElement<int32_t>(DeltaEvent::VT_BAR_INDEX, bar_index, 0);
-  }
-  void add_timestamp_us(int64_t timestamp_us) {
-    fbb_.AddElement<int64_t>(DeltaEvent::VT_TIMESTAMP_US, timestamp_us, 0);
-  }
-  void add_event_type_code(MTS::Training::EventTypeCode event_type_code) {
-    fbb_.AddElement<uint8_t>(DeltaEvent::VT_EVENT_TYPE_CODE, static_cast<uint8_t>(event_type_code), 0);
-  }
-  void add_changed_field_ids(::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> changed_field_ids) {
-    fbb_.AddOffset(DeltaEvent::VT_CHANGED_FIELD_IDS, changed_field_ids);
-  }
-  void add_changed_values_int(::flatbuffers::Offset<::flatbuffers::Vector<int8_t>> changed_values_int) {
-    fbb_.AddOffset(DeltaEvent::VT_CHANGED_VALUES_INT, changed_values_int);
-  }
-  void add_changed_values_float(::flatbuffers::Offset<::flatbuffers::Vector<float>> changed_values_float) {
-    fbb_.AddOffset(DeltaEvent::VT_CHANGED_VALUES_FLOAT, changed_values_float);
-  }
-  void add_is_snapshot(bool is_snapshot) {
-    fbb_.AddElement<uint8_t>(DeltaEvent::VT_IS_SNAPSHOT, static_cast<uint8_t>(is_snapshot), 0);
-  }
-  void add_total_fields_changed(uint8_t total_fields_changed) {
-    fbb_.AddElement<uint8_t>(DeltaEvent::VT_TOTAL_FIELDS_CHANGED, total_fields_changed, 0);
-  }
-  explicit DeltaEventBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
-        : fbb_(_fbb) {
-    start_ = fbb_.StartTable();
-  }
-  ::flatbuffers::Offset<DeltaEvent> Finish() {
-    const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<DeltaEvent>(end);
-    return o;
-  }
-};
-
-inline ::flatbuffers::Offset<DeltaEvent> CreateDeltaEvent(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint64_t sequence_id = 0,
-    int32_t bar_index = 0,
-    int64_t timestamp_us = 0,
-    MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown,
-    ::flatbuffers::Offset<::flatbuffers::Vector<uint8_t>> changed_field_ids = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<int8_t>> changed_values_int = 0,
-    ::flatbuffers::Offset<::flatbuffers::Vector<float>> changed_values_float = 0,
-    bool is_snapshot = false,
-    uint8_t total_fields_changed = 0) {
-  DeltaEventBuilder builder_(_fbb);
-  builder_.add_timestamp_us(timestamp_us);
-  builder_.add_sequence_id(sequence_id);
-  builder_.add_changed_values_float(changed_values_float);
-  builder_.add_changed_values_int(changed_values_int);
-  builder_.add_changed_field_ids(changed_field_ids);
-  builder_.add_bar_index(bar_index);
-  builder_.add_total_fields_changed(total_fields_changed);
-  builder_.add_is_snapshot(is_snapshot);
-  builder_.add_event_type_code(event_type_code);
-  return builder_.Finish();
-}
-
-inline ::flatbuffers::Offset<DeltaEvent> CreateDeltaEventDirect(
-    ::flatbuffers::FlatBufferBuilder &_fbb,
-    uint64_t sequence_id = 0,
-    int32_t bar_index = 0,
-    int64_t timestamp_us = 0,
-    MTS::Training::EventTypeCode event_type_code = MTS::Training::EventTypeCode_Unknown,
-    const std::vector<uint8_t> *changed_field_ids = nullptr,
-    const std::vector<int8_t> *changed_values_int = nullptr,
-    const std::vector<float> *changed_values_float = nullptr,
-    bool is_snapshot = false,
-    uint8_t total_fields_changed = 0) {
-  auto changed_field_ids__ = changed_field_ids ? _fbb.CreateVector<uint8_t>(*changed_field_ids) : 0;
-  auto changed_values_int__ = changed_values_int ? _fbb.CreateVector<int8_t>(*changed_values_int) : 0;
-  auto changed_values_float__ = changed_values_float ? _fbb.CreateVector<float>(*changed_values_float) : 0;
-  return MTS::Training::CreateDeltaEvent(
-      _fbb,
-      sequence_id,
-      bar_index,
-      timestamp_us,
-      event_type_code,
-      changed_field_ids__,
-      changed_values_int__,
-      changed_values_float__,
-      is_snapshot,
-      total_fields_changed);
-}
-
-::flatbuffers::Offset<DeltaEvent> CreateDeltaEvent(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct TrainingFileT : public ::flatbuffers::NativeTable {
   typedef TrainingFile TableType;
@@ -10125,12 +10272,84 @@ inline ::flatbuffers::Offset<Heartbeat> CreateHeartbeat(::flatbuffers::FlatBuffe
       _error_count);
 }
 
+inline RiskGateContextT *RiskGateContext::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<RiskGateContextT>(new RiskGateContextT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void RiskGateContext::UnPackTo(RiskGateContextT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shannon_flow_entropy(); _o->shannon_flow_entropy = _e; }
+  { auto _e = shannon_efficiency(); _o->shannon_efficiency = _e; }
+  { auto _e = taleb_kurtosis(); _o->taleb_kurtosis = _e; }
+  { auto _e = taleb_skewness(); _o->taleb_skewness = _e; }
+  { auto _e = elder_chandelier_atr(); _o->elder_chandelier_atr = _e; }
+  { auto _e = pareto_tail_alpha(); _o->pareto_tail_alpha = _e; }
+  { auto _e = amihud_illiquidity(); _o->amihud_illiquidity = _e; }
+  { auto _e = spread_stress(); _o->spread_stress = _e; }
+  { auto _e = hurst_exponent(); _o->hurst_exponent = _e; }
+  { auto _e = fractal_dim(); _o->fractal_dim = _e; }
+  { auto _e = mean_rev_z(); _o->mean_rev_z = _e; }
+  { auto _e = raschke_burst(); _o->raschke_burst = _e; }
+  { auto _e = fisher_info(); _o->fisher_info = _e; }
+  { auto _e = regime_duration(); _o->regime_duration = _e; }
+  { auto _e = is_valid(); _o->is_valid = _e; }
+  { auto _e = snapshot_timestamp_us(); _o->snapshot_timestamp_us = _e; }
+}
+
+inline ::flatbuffers::Offset<RiskGateContext> RiskGateContext::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const RiskGateContextT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateRiskGateContext(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffers::FlatBufferBuilder &_fbb, const RiskGateContextT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const RiskGateContextT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shannon_flow_entropy = _o->shannon_flow_entropy;
+  auto _shannon_efficiency = _o->shannon_efficiency;
+  auto _taleb_kurtosis = _o->taleb_kurtosis;
+  auto _taleb_skewness = _o->taleb_skewness;
+  auto _elder_chandelier_atr = _o->elder_chandelier_atr;
+  auto _pareto_tail_alpha = _o->pareto_tail_alpha;
+  auto _amihud_illiquidity = _o->amihud_illiquidity;
+  auto _spread_stress = _o->spread_stress;
+  auto _hurst_exponent = _o->hurst_exponent;
+  auto _fractal_dim = _o->fractal_dim;
+  auto _mean_rev_z = _o->mean_rev_z;
+  auto _raschke_burst = _o->raschke_burst;
+  auto _fisher_info = _o->fisher_info;
+  auto _regime_duration = _o->regime_duration;
+  auto _is_valid = _o->is_valid;
+  auto _snapshot_timestamp_us = _o->snapshot_timestamp_us;
+  return MTS::Schema::CreateRiskGateContext(
+      _fbb,
+      _shannon_flow_entropy,
+      _shannon_efficiency,
+      _taleb_kurtosis,
+      _taleb_skewness,
+      _elder_chandelier_atr,
+      _pareto_tail_alpha,
+      _amihud_illiquidity,
+      _spread_stress,
+      _hurst_exponent,
+      _fractal_dim,
+      _mean_rev_z,
+      _raschke_burst,
+      _fisher_info,
+      _regime_duration,
+      _is_valid,
+      _snapshot_timestamp_us);
+}
+
 inline MarketObservationT::MarketObservationT(const MarketObservationT &o)
       : timestamp_us(o.timestamp_us),
         sequence_id(o.sequence_id),
         observation((o.observation) ? new MTS::Schema::ObservationData(*o.observation) : nullptr),
         asymmetry_context((o.asymmetry_context) ? new MTS::Schema::AsymmetryContext(*o.asymmetry_context) : nullptr),
-        daily_bias_enum(o.daily_bias_enum) {
+        daily_bias_enum(o.daily_bias_enum),
+        risk_gate_context((o.risk_gate_context) ? new MTS::Schema::RiskGateContextT(*o.risk_gate_context) : nullptr) {
 }
 
 inline MarketObservationT &MarketObservationT::operator=(MarketObservationT o) FLATBUFFERS_NOEXCEPT {
@@ -10139,6 +10358,7 @@ inline MarketObservationT &MarketObservationT::operator=(MarketObservationT o) F
   std::swap(observation, o.observation);
   std::swap(asymmetry_context, o.asymmetry_context);
   std::swap(daily_bias_enum, o.daily_bias_enum);
+  std::swap(risk_gate_context, o.risk_gate_context);
   return *this;
 }
 
@@ -10156,6 +10376,7 @@ inline void MarketObservation::UnPackTo(MarketObservationT *_o, const ::flatbuff
   { auto _e = observation(); if (_e) _o->observation = std::unique_ptr<MTS::Schema::ObservationData>(new MTS::Schema::ObservationData(*_e)); }
   { auto _e = asymmetry_context(); if (_e) _o->asymmetry_context = std::unique_ptr<MTS::Schema::AsymmetryContext>(new MTS::Schema::AsymmetryContext(*_e)); }
   { auto _e = daily_bias_enum(); _o->daily_bias_enum = _e; }
+  { auto _e = risk_gate_context(); if (_e) { if(_o->risk_gate_context) { _e->UnPackTo(_o->risk_gate_context.get(), _resolver); } else { _o->risk_gate_context = std::unique_ptr<MTS::Schema::RiskGateContextT>(_e->UnPack(_resolver)); } } else if (_o->risk_gate_context) { _o->risk_gate_context.reset(); } }
 }
 
 inline ::flatbuffers::Offset<MarketObservation> MarketObservation::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const MarketObservationT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -10171,13 +10392,15 @@ inline ::flatbuffers::Offset<MarketObservation> CreateMarketObservation(::flatbu
   auto _observation = _o->observation ? _o->observation.get() : nullptr;
   auto _asymmetry_context = _o->asymmetry_context ? _o->asymmetry_context.get() : nullptr;
   auto _daily_bias_enum = _o->daily_bias_enum;
+  auto _risk_gate_context = _o->risk_gate_context ? CreateRiskGateContext(_fbb, _o->risk_gate_context.get(), _rehasher) : 0;
   return MTS::Schema::CreateMarketObservation(
       _fbb,
       _timestamp_us,
       _sequence_id,
       _observation,
       _asymmetry_context,
-      _daily_bias_enum);
+      _daily_bias_enum,
+      _risk_gate_context);
 }
 
 inline SystemStateT *SystemState::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
@@ -11591,7 +11814,11 @@ inline TrainingEventT::TrainingEventT(const TrainingEventT &o)
         stop_hit(o.stop_hit),
         target_hit(o.target_hit),
         event_type_code(o.event_type_code),
-        trade_action(o.trade_action) {
+        trade_action(o.trade_action),
+        trap_horizon_bars(o.trap_horizon_bars),
+        trap_t1_bar_pct(o.trap_t1_bar_pct),
+        exit_horizon_bars(o.exit_horizon_bars),
+        exit_t1_bar_pct(o.exit_t1_bar_pct) {
 }
 
 inline TrainingEventT &TrainingEventT::operator=(TrainingEventT o) FLATBUFFERS_NOEXCEPT {
@@ -11670,6 +11897,10 @@ inline TrainingEventT &TrainingEventT::operator=(TrainingEventT o) FLATBUFFERS_N
   std::swap(target_hit, o.target_hit);
   std::swap(event_type_code, o.event_type_code);
   std::swap(trade_action, o.trade_action);
+  std::swap(trap_horizon_bars, o.trap_horizon_bars);
+  std::swap(trap_t1_bar_pct, o.trap_t1_bar_pct);
+  std::swap(exit_horizon_bars, o.exit_horizon_bars);
+  std::swap(exit_t1_bar_pct, o.exit_t1_bar_pct);
   return *this;
 }
 
@@ -11757,6 +11988,10 @@ inline void TrainingEvent::UnPackTo(TrainingEventT *_o, const ::flatbuffers::res
   { auto _e = target_hit(); _o->target_hit = _e; }
   { auto _e = event_type_code(); _o->event_type_code = _e; }
   { auto _e = trade_action(); _o->trade_action = _e; }
+  { auto _e = trap_horizon_bars(); _o->trap_horizon_bars = _e; }
+  { auto _e = trap_t1_bar_pct(); _o->trap_t1_bar_pct = _e; }
+  { auto _e = exit_horizon_bars(); _o->exit_horizon_bars = _e; }
+  { auto _e = exit_t1_bar_pct(); _o->exit_t1_bar_pct = _e; }
 }
 
 inline ::flatbuffers::Offset<TrainingEvent> TrainingEvent::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TrainingEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -11842,6 +12077,10 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(::flatbuffers::F
   auto _target_hit = _o->target_hit;
   auto _event_type_code = _o->event_type_code;
   auto _trade_action = _o->trade_action;
+  auto _trap_horizon_bars = _o->trap_horizon_bars;
+  auto _trap_t1_bar_pct = _o->trap_t1_bar_pct;
+  auto _exit_horizon_bars = _o->exit_horizon_bars;
+  auto _exit_t1_bar_pct = _o->exit_t1_bar_pct;
   return MTS::Training::CreateTrainingEvent(
       _fbb,
       _sequence_id,
@@ -11918,57 +12157,11 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(::flatbuffers::F
       _stop_hit,
       _target_hit,
       _event_type_code,
-      _trade_action);
-}
-
-inline DeltaEventT *DeltaEvent::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
-  auto _o = std::unique_ptr<DeltaEventT>(new DeltaEventT());
-  UnPackTo(_o.get(), _resolver);
-  return _o.release();
-}
-
-inline void DeltaEvent::UnPackTo(DeltaEventT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
-  (void)_o;
-  (void)_resolver;
-  { auto _e = sequence_id(); _o->sequence_id = _e; }
-  { auto _e = bar_index(); _o->bar_index = _e; }
-  { auto _e = timestamp_us(); _o->timestamp_us = _e; }
-  { auto _e = event_type_code(); _o->event_type_code = _e; }
-  { auto _e = changed_field_ids(); if (_e) { _o->changed_field_ids.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->changed_field_ids.begin()); } }
-  { auto _e = changed_values_int(); if (_e) { _o->changed_values_int.resize(_e->size()); std::copy(_e->begin(), _e->end(), _o->changed_values_int.begin()); } }
-  { auto _e = changed_values_float(); if (_e) { _o->changed_values_float.resize(_e->size()); for (::flatbuffers::uoffset_t _i = 0; _i < _e->size(); _i++) { _o->changed_values_float[_i] = _e->Get(_i); } } else { _o->changed_values_float.resize(0); } }
-  { auto _e = is_snapshot(); _o->is_snapshot = _e; }
-  { auto _e = total_fields_changed(); _o->total_fields_changed = _e; }
-}
-
-inline ::flatbuffers::Offset<DeltaEvent> DeltaEvent::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaEventT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  return CreateDeltaEvent(_fbb, _o, _rehasher);
-}
-
-inline ::flatbuffers::Offset<DeltaEvent> CreateDeltaEvent(::flatbuffers::FlatBufferBuilder &_fbb, const DeltaEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  (void)_rehasher;
-  (void)_o;
-  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const DeltaEventT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
-  auto _sequence_id = _o->sequence_id;
-  auto _bar_index = _o->bar_index;
-  auto _timestamp_us = _o->timestamp_us;
-  auto _event_type_code = _o->event_type_code;
-  auto _changed_field_ids = _o->changed_field_ids.size() ? _fbb.CreateVector(_o->changed_field_ids) : 0;
-  auto _changed_values_int = _o->changed_values_int.size() ? _fbb.CreateVector(_o->changed_values_int) : 0;
-  auto _changed_values_float = _o->changed_values_float.size() ? _fbb.CreateVector(_o->changed_values_float) : 0;
-  auto _is_snapshot = _o->is_snapshot;
-  auto _total_fields_changed = _o->total_fields_changed;
-  return MTS::Training::CreateDeltaEvent(
-      _fbb,
-      _sequence_id,
-      _bar_index,
-      _timestamp_us,
-      _event_type_code,
-      _changed_field_ids,
-      _changed_values_int,
-      _changed_values_float,
-      _is_snapshot,
-      _total_fields_changed);
+      _trade_action,
+      _trap_horizon_bars,
+      _trap_t1_bar_pct,
+      _exit_horizon_bars,
+      _exit_t1_bar_pct);
 }
 
 inline TrainingFileT::TrainingFileT(const TrainingFileT &o)

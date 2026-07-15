@@ -3279,7 +3279,8 @@ inline TradeRecordT::TradeRecordT(const TradeRecordT &o)
         volume_ratio_at_entry(o.volume_ratio_at_entry),
         volume_imbalance_at_entry(o.volume_imbalance_at_entry),
         close_percentile_at_entry(o.close_percentile_at_entry),
-        atr10_price_at_entry(o.atr10_price_at_entry) {
+        atr10_price_at_entry(o.atr10_price_at_entry),
+        decision_id(o.decision_id) {
 }
 
 inline TradeRecordT &TradeRecordT::operator=(TradeRecordT o) FLATBUFFERS_NOEXCEPT {
@@ -3336,6 +3337,7 @@ inline TradeRecordT &TradeRecordT::operator=(TradeRecordT o) FLATBUFFERS_NOEXCEP
   std::swap(volume_imbalance_at_entry, o.volume_imbalance_at_entry);
   std::swap(close_percentile_at_entry, o.close_percentile_at_entry);
   std::swap(atr10_price_at_entry, o.atr10_price_at_entry);
+  std::swap(decision_id, o.decision_id);
   return *this;
 }
 
@@ -3401,6 +3403,7 @@ inline void TradeRecord::UnPackTo(TradeRecordT *_o, const ::flatbuffers::resolve
   { auto _e = volume_imbalance_at_entry(); _o->volume_imbalance_at_entry = _e; }
   { auto _e = close_percentile_at_entry(); _o->close_percentile_at_entry = _e; }
   { auto _e = atr10_price_at_entry(); _o->atr10_price_at_entry = _e; }
+  { auto _e = decision_id(); _o->decision_id = _e; }
 }
 
 inline ::flatbuffers::Offset<TradeRecord> TradeRecord::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const TradeRecordT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -3464,6 +3467,7 @@ inline ::flatbuffers::Offset<TradeRecord> CreateTradeRecord(::flatbuffers::FlatB
   auto _volume_imbalance_at_entry = _o->volume_imbalance_at_entry;
   auto _close_percentile_at_entry = _o->close_percentile_at_entry;
   auto _atr10_price_at_entry = _o->atr10_price_at_entry;
+  auto _decision_id = _o->decision_id;
   return MTS::Backtest::CreateTradeRecord(
       _fbb,
       _schema_version,
@@ -3518,7 +3522,8 @@ inline ::flatbuffers::Offset<TradeRecord> CreateTradeRecord(::flatbuffers::FlatB
       _volume_ratio_at_entry,
       _volume_imbalance_at_entry,
       _close_percentile_at_entry,
-      _atr10_price_at_entry);
+      _atr10_price_at_entry,
+      _decision_id);
 }
 
 inline DecisionEventT *DecisionEvent::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
