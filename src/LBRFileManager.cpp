@@ -124,9 +124,10 @@ void LBRFileManager::LogContext(
     const MTS::Schema::ObservationData& obs,
     const MTS::Schema::AsymmetryContext& ctx,
     uint64_t timestamp_us,
-    float bars_since_last_update) {
+    float bars_since_last_update,
+    const MTS::Schema::RiskGateContextT* risk_gate_context) {
     const uint64_t sequence_id = ReserveSequenceId();
-    LogContextWithSequence(obs, ctx, timestamp_us, bars_since_last_update, sequence_id);
+    LogContextWithSequence(obs, ctx, timestamp_us, bars_since_last_update, sequence_id, risk_gate_context);
 }
 
 void LBRFileManager::LogContextWithSequence(
@@ -134,10 +135,11 @@ void LBRFileManager::LogContextWithSequence(
     const MTS::Schema::AsymmetryContext& ctx,
     uint64_t timestamp_us,
     float bars_since_last_update,
-    uint64_t sequence_id) {
+    uint64_t sequence_id,
+    const MTS::Schema::RiskGateContextT* risk_gate_context) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
-    LogContextUnlocked(obs, ctx, timestamp_us, bars_since_last_update, sequence_id);
+    LogContextUnlocked(obs, ctx, timestamp_us, bars_since_last_update, sequence_id, risk_gate_context);
 }
 
 void LBRFileManager::LogContextUnlocked(
@@ -145,7 +147,8 @@ void LBRFileManager::LogContextUnlocked(
     const MTS::Schema::AsymmetryContext& ctx,
     uint64_t timestamp_us,
     float bars_since_last_update,
-    uint64_t sequence_id) {
+    uint64_t sequence_id,
+    const MTS::Schema::RiskGateContextT* risk_gate_context) {
     if (!m_isOpen || !m_contextStream.is_open()) {
         return;
     }
@@ -155,12 +158,24 @@ void LBRFileManager::LogContextUnlocked(
 
     // 1) MarketObservation
     m_fbb.Clear();
+
+    // Raw, unscaled risk-gate inputs (Findings 19/20/21 wire parity). Built before
+    // the MarketObservation table starts, per the FlatBuffers nested-table rule.
+    // When the caller passes nullptr (live / synchronized paths) the field is left
+    // unset and serializes zero bytes.
+    ::flatbuffers::Offset<MTS::Schema::RiskGateContext> rgc_offset = 0;
+    if (risk_gate_context != nullptr) {
+        rgc_offset = MTS::Schema::CreateRiskGateContext(m_fbb, risk_gate_context);
+    }
+
     auto mo_loc = MTS::Schema::CreateMarketObservation(
         m_fbb,
         static_cast<int64_t>(timestamp_us),
         sequence_id,
         &obs,
-        &ctx
+        &ctx,
+        0,           // daily_bias_enum: unused on the .context path
+        rgc_offset
     );
     m_fbb.Finish(mo_loc);
 

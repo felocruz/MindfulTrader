@@ -855,8 +855,30 @@ bool ContextManager::EmitTrainingContext(
         const float bars_since_last_update =
             m_hasWaveContext ? static_cast<float>(m_waveContext.regimeTenure) : 0.0f;
 
-        // Log both Physics (16D) and Asymmetry (8D).
-        lbr_mgr.LogContext(obs_data, asymContext, now_us, bars_since_last_update);
+        // Raw gate-input twin (Findings 19/20/21): serialize the exact, UNSCALED
+        // LocalRiskContext values the RiskManager gates evaluate, so the Python
+        // execution-sim reads the same signals C++ gates on (no scaled proxies).
+        const LocalRiskContext& lrc = m_localRiskContext;
+        MTS::Schema::RiskGateContextT rgc;
+        rgc.shannon_flow_entropy  = lrc.shannonFlowEntropy;
+        rgc.shannon_efficiency    = lrc.shannonEfficiency;
+        rgc.taleb_kurtosis        = lrc.talebKurtosis;
+        rgc.taleb_skewness        = lrc.talebSkewness;
+        rgc.elder_chandelier_atr  = lrc.elderChandelierATR;
+        rgc.pareto_tail_alpha     = lrc.paretoTailAlpha;
+        rgc.amihud_illiquidity    = lrc.vpin;   // PC-03: legacy 'vpin' field carries Amihud illiquidity
+        rgc.spread_stress         = lrc.spreadStress;
+        rgc.hurst_exponent        = lrc.hurstExponent;
+        rgc.fractal_dim           = lrc.fractalDim;
+        rgc.mean_rev_z            = lrc.meanRevZ;
+        rgc.raschke_burst         = lrc.raschkeBurst;
+        rgc.fisher_info           = lrc.fisherInfo;
+        rgc.regime_duration       = lrc.regimeDuration;
+        rgc.is_valid              = lrc.isValid;
+        rgc.snapshot_timestamp_us = static_cast<int64_t>(lrc.snapshotTimestampUs);
+
+        // Log both Physics (16D) and Asymmetry (8D) + raw gate context.
+        lbr_mgr.LogContext(obs_data, asymContext, now_us, bars_since_last_update, &rgc);
         return true;
     } catch (const std::exception& e) {
         Logger::getInstance().log(

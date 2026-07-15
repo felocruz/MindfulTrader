@@ -22,11 +22,14 @@ public:
     // Log alpha event using caller-provided sequence_id (for stitched writes).
     void LogAlphaWithSequence(MTS::Training::TrainingEventT& event, uint64_t sequence_id);
     // Log context snapshot to Context stream as paired MarketObservation + SystemState records.
+    // Optional risk_gate_context serializes the raw, unscaled RiskManager gate inputs
+    // (Findings 19/20/21) onto the MarketObservation; nullptr leaves the field unset.
     void LogContext(
         const MTS::Schema::ObservationData& obs,
         const MTS::Schema::AsymmetryContext& ctx,
         uint64_t timestamp_us,
-        float bars_since_last_update
+        float bars_since_last_update,
+        const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
     // Log context snapshot with caller-provided sequence_id (for stitched writes).
     void LogContextWithSequence(
@@ -34,7 +37,8 @@ public:
         const MTS::Schema::AsymmetryContext& ctx,
         uint64_t timestamp_us,
         float bars_since_last_update,
-        uint64_t sequence_id
+        uint64_t sequence_id,
+        const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
     // Sequence-locked stitcher: write MarketObservation + SystemState + TrainingEvent under one shared sequence_id.
     void LogSynchronizedEvent(
@@ -59,7 +63,8 @@ private:
         const MTS::Schema::AsymmetryContext& ctx,
         uint64_t timestamp_us,
         float bars_since_last_update,
-        uint64_t sequence_id
+        uint64_t sequence_id,
+        const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
 
     void WriteToStream(std::ofstream& stream, uint8_t* buf, size_t size);
