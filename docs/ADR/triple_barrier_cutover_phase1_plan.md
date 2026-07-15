@@ -65,13 +65,28 @@ Net: stop/target stay SC-native (reliable, zero-latency fills); time-exit become
 2. **`pattern_id` provenance (Finding 17).** `GetPatternId()` returns an int; the wiring must **fail-closed** — validate it is a live `RaschkeTacticalTrigger` in `kPatternTable`'s valid range (1..18); `0/NONE` or out-of-range → reject entry or safe default, never silent mis-seed.
 
 
-**D2 — Finding 17 (pattern-id routing).** Seed `patternId` from the §5.3 table by enum namespace; **fail-closed** (unknown/colliding id → reject entry or safe default, never silent mis-seed). `TripleBarrierExitManager::ToPatternId()` already maps `RaschkeTacticalTrigger`; verify all live entry patterns fall in `kPatternTable`'s valid range and add the fail-closed guard.
+**D2 — Finding 17 (pattern-id routing, fail-closed).**
+*Context:* barriers protect an **already-filled** position (`HandleFills` is post-fill), so "reject the entry" is not available — the position exists and must be protected. `pattern_id = ToPatternId(m_openTrade.GetPatternId())` returns a raw int.
+**Decision (recommended):** seed `patternId` from `GetPatternId()` and guard at the `OpenBracket` call:
+- Valid iff `1 ≤ patternId ≤ 18` (a live `RaschkeTacticalTrigger` present in `kPatternTable`). `0/NONE` or out-of-range ⇒ **safe-default to LOW-tier generic params** (`Tier::LOW`, `stop_mult 0.5`, `target_r_mult 1.5`, regime `max_bars`) and emit a **WARN** with the raw id — never silent-mis-seed with another pattern's tier, and never leave the filled position unprotected.
+- Escalate to an immediate flatten only if the id is *structurally* impossible (negative / ≫18), which signals a real upstream bug rather than a benign `NONE`.
+- **Drift guard:** add a compile-time check that `static_cast<int>(RaschkeTacticalTrigger::<max>) == kPatternTable.size() - 1` (== 18) so the enum and the table cannot silently diverge.
 
-**D3 — Regime scaling overlap.** Chandelier widened the trailing stop in `PARETO_MOMENTUM` (4.0×). The Triple-Barrier engine already applies regime scaling `[0.5,2.0]` inside `ComputeBarriers()`. *Recommendation:* drop the ad-hoc `PARETO→4.0` entry hook; regime effects come solely from the engine (single source of truth).
+**D3 — Regime scaling overlap.**
+*Context:* the ad-hoc `PARETO_MOMENTUM → trailingMultiplier = 4.0` hook (`PositionManager.cpp:335-338`) is a **trailing-specific** widening, structurally incompatible with immutable barriers. The engine expresses regime effect via `MaxBarsForRegime` (PARETO = 12 bars — momentum resolves fast) and the Phase-3 `regime_stop_width_scale` `[0.5,2.0]` (Phase 1 = 1.0 identity).
+**Decision (recommended):** **drop the `PARETO→4.0` hook** — the engine is the single source of truth for regime effect. Accept that in Phase 1 PARETO no longer widens the stop (intentional; the old 4.0× was a trailing hack). The A/B log (impl step 1) quantifies the P&L impact; if the data justifies a principled PARETO stop-width, re-introduce it **only** via the bounded `regime_stop_width_scale` when Phase 3 activates — never as an ad-hoc entry constant.
 
-**D4 — Time-exit market close mechanism.** Reuse a flatten path for the vertical barrier. `EmergencyFlattenPosition()` exists but is emergency-semantics (logs as emergency). *Recommendation:* add a neutral `ClosePositionAtMarket(sc, ExitReason::TIME_STOP)` (or parameterize the existing flatten) so `.btst` `TradeRecord.exit_reason` records `TIME_STOP` distinctly. Schema already has `TIME_STOP`.
+**D4 — Time-exit market close mechanism.**
+*Context:* `.btst` exit reason = `MapExitReason(InferExitReason(trade, tickSize))`, which **infers from exit price vs stop/target** — a time-exit fills at an arbitrary price and would misclassify as `ExitReason_MANUAL`. `ExitReason_TIME_STOP = 3` already exists in the schema. `EmergencyFlattenPosition()` carries emergency logging semantics (wrong for a routine horizon exit).
+**Decision (recommended):** add a **neutral `ClosePositionAtMarket(sc, exitTag)`** (same market-close order mechanics as `EmergencyFlattenPosition`, without the emergency logging) and record the reason **explicitly, not by price inference**:
+- Set an explicit exit-reason tag on the `Trade` (e.g. `m_exitReasonTag = "TIME_STOP"`); have `InferExitReason()` **honor an explicit tag before falling back to price inference**.
+- Add `if (reason == "TIME_STOP") return ExitReason_TIME_STOP;` to `MapExitReason`.
+- Wire the vertical-barrier `TIME_EXIT` resolution → `ClosePositionAtMarket(TIME_STOP)`. Keep `EmergencyFlattenPosition` for genuine emergencies (Mahalanobis, tail-risk, disconnect) so `TIME_STOP` stays analytically distinct from `MANUAL`/emergency. **Schema-free** (enum already exists).
 
-**D5 — `EvaluateRegimeDefense` coexistence.** It currently also tightens stops via Chandelier (`ForceTightenStop`) and can flatten on hostile regime. After Chandelier removal, its stop-tightening calls are dead. *Recommendation:* keep its **flatten-on-hostile-regime** behavior (interim regime barrier), remove its Chandelier stop-tightening calls. Formal `REGIME_INVALIDATION` unifies this in Phase 2.
+**D5 — `EvaluateRegimeDefense` coexistence.**
+*Context:* `EvaluateRegimeDefense` (`PositionManagerPatterns.cpp:81`) flattens on hostile regime (`HOSTILE_REGIME_EXIT` :99, `TOXIC_ENV_EXIT` :164) via `EmergencyFlattenPosition`; the Chandelier `ForceTightenStop` path (`PositionManager.cpp:728`) lives in `UpdateChandelierStops` and dies with Chandelier removal.
+**Decision (recommended):** **keep** the flatten-on-hostile-regime behavior as the Phase-1 **interim regime barrier** (informal `REGIME_INVALIDATION` until Phase 2 formalizes it); **remove** the now-dead Chandelier stop-tightening. Guard against double-exit (R4): Phase 1 keeps **only** `EvaluateRegimeDefense`; the formal engine `REGIME_INVALIDATION` stays disabled (`Evaluate(..., regimeInvalidated=false)`) until Phase 2. Its flatten maps to `ExitReason_MANUAL` in Phase 1 (acceptable); Phase 2's coordinated schema bump gives `REGIME_INVALIDATION` its own `ExitReason`.
+
 
 ---
 
