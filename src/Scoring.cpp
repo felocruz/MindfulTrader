@@ -165,51 +165,6 @@ double Scoring::GetClimateMultiplier(PatternType pattern, MarketClimate climate)
     return 1.0; // Default buffer
 }
 
-double Scoring::GetIntrabarConfidenceMultiplier(double timeIntoBar, bool isBarClose, int dirtyCount) const {
-    // Bar-close events get full confidence regardless of noise
-    if (isBarClose) {
-        return 1.0;
-    }
-
-    // Base confidence from time progression
-    double baseConfidence = 0.65;
-    if (timeIntoBar >= 0.80) {
-        baseConfidence = 0.95; // Late-bar (high confidence)
-    } else if (timeIntoBar >= 0.60) {
-        baseConfidence = 0.85; // Mid-late bar
-    } else if (timeIntoBar >= 0.40) {
-        baseConfidence = 0.75; // Mid-bar
-    }
-
-    // Institutional Signal Stability Penalty
-    // A signal that flickers on/off many times is "dirty" and less reliable.
-    // Penalty decays confidence for noisy setups.
-    // 0-2 flips: No penalty
-    // 3-5 flips: Minor penalty (0.9x)
-    // 6+ flips: Major penalty (0.8x or lower)
-    double stabilityMultiplier = 1.0;
-    if (dirtyCount > 5) {
-        stabilityMultiplier = 0.80;
-    } else if (dirtyCount > 2) {
-        stabilityMultiplier = 0.90;
-    }
-
-    return baseConfidence * stabilityMultiplier;
-}
-
-double Scoring::GetEventVelocityMultiplier(double eventsPerMin) const {
-    // Matches get_event_velocity_multiplier in scoring.py
-    if (eventsPerMin > 30.0) {
-        return 1.15; // Event storm (strong conviction)
-    } else if (eventsPerMin > 15.0) {
-        return 1.10; // High activity
-    } else if (eventsPerMin > 5.0) {
-        return 1.00; // Normal activity
-    } else {
-        return 0.95; // Low activity (weak follow-through)
-    }
-}
-
 
 PatternType Scoring::StringToPatternType(const std::string& name) const {
     if (name == "kangaroo_tail") return PatternType::KangarooTail;

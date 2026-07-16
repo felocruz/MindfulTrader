@@ -323,15 +323,38 @@ possibility, not the intentional-transition possibility. See
 
 ---
 
-## Finding 8 [LOW] — `Scoring.cpp`: two fully-implemented functions never called anywhere
+## Finding 8 [LOW] — `Scoring.cpp`: two fully-implemented functions never called anywhere — RESOLVED (removed)
 
 `GetEventVelocityMultiplier` (`Scoring.cpp:200-211`) and `GetIntrabarConfidenceMultiplier`
-(`Scoring.cpp:168-198`) — both declared in `Scoring.h`, both carry comments claiming they mirror
-active Python logic ("Matches get_event_velocity_multiplier in scoring.py"), neither has any call
+(`Scoring.cpp:168-198`) — both declared in `Scoring.h`, both carried comments claiming they mirror
+active Python logic ("Matches get_event_velocity_multiplier in scoring.py"), neither had any call
 site in this codebase.
 
-**Fix**: wire both into whichever scoring path they were intended for (likely
-`GetDeepContextMultiplier` or the pattern-quality pipeline), or remove them if superseded.
+**Disposition (2026-07-16): REMOVED from both C++ and Python.** Investigation overturned the
+parity rationale:
+- The "Matches scoring.py" claim was false: the C++ `GetIntrabarConfidenceMultiplier` added a
+  `dirtyCount` stability penalty (`>5 → 0.80`, `>2 → 0.90`) that the Python
+  `get_intrabar_confidence_multiplier` does not contain.
+- In Python, both were wired into every entry scorer's composite list, but the only live caller
+  of `get_scoring_payload()` (`pattern_stability.py:928`) passes defaults
+  (`update_reason='BAR_CLOSE'`, `event_velocity=10.0`), so both always returned their neutral
+  value (1.0) — inert in production.
+- **Double-count**: `event_velocity` is already a first-class model input feature
+  (`lbr_to_polars.py` `required=True`; `time_delta_encoding.py` "temperature" token → Transformer).
+  A hardcoded velocity→score multiplier duplicates a signal the model already learns.
+- **Literature**: the underlying concepts are backed (event-intensity/MDH — Clark 1973,
+  Tauchen-Pitts 1983; VPIN/volume-clock — Easley-López de Prado-O'Hara 2012; ACD durations —
+  Engle-Russell 1998; early-classification — Xing 2012, Mori 2017, Dachraoui 2015), but none
+  prescribes a fixed multiplicative ladder (1.15/1.10/1.00/0.95 or the `time_into_bar` steps). The
+  literature-correct realizations already exist in-system: event intensity as a learned feature,
+  and intrabar timing via the cost-based τ* stopping rule adopted for TRAP. Per the governing
+  principle (neither runtime is authoritative absent strong literature), an unanchored heuristic is
+  not wired into live sizing.
+
+C++ removal: `Scoring.cpp` defs + `Scoring.h` decls. Python removal: `core/scoring.py` defs + all
+five scorers' usages. The now-unused `event_metadata` parameter on the five Python scorers was
+retained to avoid a cascade into `stateful_buffer.get_scoring_payload()`; that plumbing is optional
+future cleanup.
 
 ---
 

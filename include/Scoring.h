@@ -71,11 +71,6 @@ public:
     // Returns TRUE if the change is significant enough to publish an event
     bool IsIndicatorEventSignificant(IndicatorKey indicatorKey, const LocalRiskContext& ctx) const;
 
-    // Phase 1: Event-driven inference utilities
-    // dirtyCount: Measures signal flicker/instability within the bar (fewer is better)
-    double GetIntrabarConfidenceMultiplier(double timeIntoBar, bool isBarClose, int dirtyCount) const;
-    double GetEventVelocityMultiplier(double eventsPerMin) const;
-
     // Helper to convert string to PatternType (if needed for bridging)
     PatternType StringToPatternType(const std::string& name) const;
 
