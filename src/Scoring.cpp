@@ -208,21 +208,30 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     // scaled by kShannonMaxEntropyBits = log2(10) (Finding 18).
     bool isMeanReversionPattern = (pattern == PatternType::TurtleSoup || pattern == PatternType::KangarooTail);
     bool isTrendPattern = (pattern == PatternType::ElderBreakout || pattern == PatternType::MomentumPinball);
+    // NR7 (Crabel 1990) is a volatility-compression breakout-anticipation setup whose payoff is a
+    // DIRECTIONAL range expansion. Like the trend/breakout patterns it needs informative
+    // (low-entropy) order flow to follow through -- balanced (high-entropy) flow yields the classic
+    // failed-breakout-in-chop -- so its flow-entropy and trend-quality response belongs to the
+    // directional family. Classifying it EXPLICITLY (Finding 9) stops it falling into the Unknown
+    // catch-all below, which previously hard-zeroed NR7 at high entropy and silently annihilated
+    // every other NR7 multiplier. Coherent with the encoded NR7 thesis (HMM/climate tables:
+    // GAUSSIAN_STABLE/COILED_SPRING favored, SHANNON_CHAOS penalized).
+    bool isDirectionalPattern = isTrendPattern || (pattern == PatternType::NR7);
 
     if (ctx.shannonFlowEntropy > 0.80f * kShannonMaxEntropyBits) {
-        if (isMeanReversionPattern) multiplier *= 1.25;
-        else if (isTrendPattern) multiplier *= 0.70;
-        else multiplier *= 0.0;
+        if (isMeanReversionPattern) multiplier *= 1.25;     // chaos favors fading extremes
+        else if (isDirectionalPattern) multiplier *= 0.70;  // chaos kills breakouts (incl. NR7 expansion)
+        else multiplier *= 0.0;                             // Unknown/aggregate path: conservative floor (backstopped by the 0.90 hard veto)
     } else if (ctx.shannonFlowEntropy > 0.60f * kShannonMaxEntropyBits) {
         if (!isMeanReversionPattern) multiplier *= 0.50;
     } else if (ctx.shannonFlowEntropy < 0.45f * kShannonMaxEntropyBits) {
-        if (isTrendPattern) multiplier *= 1.20;
+        if (isDirectionalPattern) multiplier *= 1.20;       // order favors persistence & clean breakouts
         else if (isMeanReversionPattern) multiplier *= 0.80;
         else multiplier *= 1.10;
     }
 
     // --- 3. TREND QUALITY (Hurst persistence) ---
-    if ((isTrendPattern || pattern == PatternType::Unknown) && ctx.hurstExponent > 0.70f) {
+    if ((isDirectionalPattern || pattern == PatternType::Unknown) && ctx.hurstExponent > 0.70f) {
         multiplier *= 1.15;
     }
 

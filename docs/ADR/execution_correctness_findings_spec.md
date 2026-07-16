@@ -358,25 +358,45 @@ future cleanup.
 
 ---
 
-## Finding 9 [LOW-MEDIUM] — `Scoring.cpp`: NR7 pattern silently gets a hard 0.0 multiplier under high entropy
+## Finding 9 [LOW-MEDIUM] — `Scoring.cpp`: NR7 pattern silently gets a hard 0.0 multiplier under high entropy — RESOLVED
 
-`Scoring.cpp:257-260`:
+`Scoring.cpp` (entropy block of `GetDeepContextMultiplier`):
 ```cpp
-if (ctx.shannonFlowEntropy > 0.80f) {
+if (ctx.shannonFlowEntropy > 0.80f * kShannonMaxEntropyBits) {
     if (isMeanReversionPattern) multiplier *= 1.25;
     else if (isTrendPattern) multiplier *= 0.70;
-    else multiplier *= 0.0;
+    else multiplier *= 0.0;   // <-- NR7 fell here
 }
 ```
 `isMeanReversionPattern` = `TurtleSoup || KangarooTail`, `isTrendPattern` = `ElderBreakout ||
-MomentumPinball` (lines 254-255). `PatternType::NR7` falls into neither bucket, so under
-`shannonFlowEntropy > 0.80` an NR7 signal's multiplier is silently forced to exactly `0.0`,
-flowing into `RiskManager.cpp:1584` and `PositionManagerPatterns.cpp:124`.
+MomentumPinball`. `PatternType::NR7` fell into neither bucket, so under high entropy an NR7 signal's
+multiplier was silently forced to exactly `0.0`.
 
-**Fix**: confirm whether killing NR7 entries in high-entropy/chaos regimes is intentional; if so,
-add an explicit comment and consider whether ITR_Breakout/ITR_Fade/RSI_Failure_Swing/
-Stochastic_Pop (also not in either bucket) should behave the same way rather than falling through
-to the same silent zero.
+**Disposition (2026-07-16): RESOLVED — NR7 reclassified into the directional/breakout family** in
+both C++ (`Scoring.cpp`) and Python (`core/scoring.py`), via an explicit `isDirectionalPattern =
+isTrendPattern || NR7`. Rationale:
+- NR7 (Crabel 1990) is a volatility-compression **breakout-anticipation** setup; its payoff is a
+  DIRECTIONAL range expansion. Like the trend/breakout patterns, its edge needs informative
+  (low-entropy) order flow to follow through — balanced (high-entropy) flow produces the classic
+  failed-breakout-in-chop. So its flow-entropy response belongs with the directional family, not a
+  catch-all.
+- The prior hard `0.0` was an accident of an incomplete taxonomy, and it directly **contradicted the
+  system's own encoded NR7 thesis**: the HMM table favors NR7 in `GAUSSIAN_STABLE`/`COILED_SPRING`
+  (1.30) and penalizes it in `PARETO_MOMENTUM`/`GAUSSIAN_FRAGILE` (0.80); the climate table favors
+  `COILED_SPRING` (1.45) and **penalizes `SHANNON_CHAOS` (0.80)** — a penalty, not a kill. A hard
+  `0.0` in the deep-context layer annihilated all of those.
+- Net effect: NR7 at high entropy now gets `0.70` (trend/breakout penalty) instead of `0.0`, which
+  composes coherently with the climate `0.80` (net ≈ 0.56, a strong-but-not-annihilating penalty)
+  rather than nuking every other NR7 multiplier. At low entropy NR7 now gets `1.20` (was `1.10`) and
+  becomes eligible for the Hurst persistence boost — both consistent with clean-coil → clean-breakout.
+- The `else → 0.0` now catches only `Unknown` (the aggregate position-sizing path), which is
+  documented as a conservative floor backstopped by the 0.90 hard entropy veto.
+
+The two Python parity tests in `tests/test_scoring_deep_context_multiplier.py` that encoded the old
+`0.0` behavior were updated to expect `0.70`. (The other unclassified Raschke setups named in the
+original finding do not exist as distinct `PatternType` enum values — the enum is only
+`{KangarooTail, MomentumPinball, ElderBreakout, TurtleSoup, NR7, Unknown}` — so no further
+reclassification is required.)
 
 ---
 
