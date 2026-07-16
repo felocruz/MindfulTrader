@@ -820,17 +820,17 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | taleb_cliff=" + std::to_string(ctx.elderChandelierATR) +
             " threshold=0.50");
     }
-    if (ctx.shannonFlowEntropy > 0.90f * kShannonMaxEntropyBits) {
+    if (ctx.shannonFlowEntropy > m_execParams.shannonEntropyHaltFrac * kShannonMaxEntropyBits) {
         return Result<void>::Failure(
             "HARD_GATE: Shannon entropy critical"
             " | shannon_entropy=" + std::to_string(ctx.shannonFlowEntropy) +
-            " threshold=" + std::to_string(0.90f * kShannonMaxEntropyBits));
+            " threshold=" + std::to_string(m_execParams.shannonEntropyHaltFrac * kShannonMaxEntropyBits));
     }
-    if (ctx.talebKurtosis > 15.0f) {
+    if (ctx.talebKurtosis > m_execParams.talebKurtosisHaltThreshold) {
         return Result<void>::Failure(
             "HARD_GATE: Taleb kurtosis critical"
             " | taleb_kurtosis=" + std::to_string(ctx.talebKurtosis) +
-            " threshold=15.0");
+            " threshold=" + std::to_string(m_execParams.talebKurtosisHaltThreshold));
     }
     if (ctx.spreadStress > 0.85f) {
         return Result<void>::Failure(
@@ -1594,6 +1594,22 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
     if (AIConnectionMonitor::Instance().IsTransportDegraded()) {
         riskMultiplier *= 0.50;
         buckets.safety *= 0.50;
+    }
+
+    // === CONTINUOUS DRAWDOWN THROTTLE (CPPI-style equity-curve de-risking) ===
+    // Perold-Sharpe (1988) CPPI cushion / Grossman-Zhou (1993) drawdown control:
+    // scale per-trade risk down linearly as equity falls from peak toward the hard
+    // drawdownHalt floor, rather than running full size right up to the cliff. The
+    // equity curve is an axis independent of microstructure/regime, so this factor
+    // compounds multiplicatively with the sensors above (same doctrine as dual-tail).
+    // The 25% drawdownHalt inside GetRiskMultiplier remains the non-negotiable backstop.
+    const double drawdownThrottle = GetRiskMultiplier(sc);
+    if (drawdownThrottle < 1.0) {
+        riskMultiplier *= drawdownThrottle;
+        buckets.safety *= drawdownThrottle;
+        Logger::getInstance().log(
+            "RiskManager: DRAWDOWN THROTTLE active: multiplier=" + std::to_string(drawdownThrottle) +
+            " (continuous CPPI-style de-risking toward hard halt)");
     }
 
     if (m_kurtosisEmergencyActive.load(std::memory_order_relaxed)) {
@@ -2436,14 +2452,14 @@ bool RiskManager::IsTradeAllowed(SCStudyInterfaceRef sc, const TradeValidationPa
     const auto& regimeCtx = ContextManager::Instance().GetLocalRiskContext();
     if (regimeCtx.isValid) {
         // 1. TALEB (Fragility): Flash Crash Block
-        if (regimeCtx.talebKurtosis > 15.0f) {
+        if (regimeCtx.talebKurtosis > m_execParams.talebKurtosisHaltThreshold) {
             result.allowed = false;
             result.reason = "MARKET FRAGILITY CRITICAL (Taleb Crash Risk)";
             return false;
         }
 
         // 2. SHANNON (Entropy): Chaos Block
-        if (regimeCtx.shannonFlowEntropy > 0.9f * kShannonMaxEntropyBits) {
+        if (regimeCtx.shannonFlowEntropy > m_execParams.shannonEntropyHaltFrac * kShannonMaxEntropyBits) {
             result.allowed = false;
             result.reason = "MARKET ENTROPY CRITICAL (Shannon Chaos)";
             return false;

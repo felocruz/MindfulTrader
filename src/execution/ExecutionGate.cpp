@@ -76,6 +76,12 @@ ExecutionGate::GateDecision EvaluateAutomatic(const ExecutionGate::GateContext& 
 }
 
 ExecutionGate::GateDecision EvaluateManual(const ExecutionGate::GateContext& ctx) {
+    // NOTE (intentional): manual/discretionary entries deliberately do NOT gate on
+    // modelReady / predictionFresh (unlike EvaluateAutomatic). A human-in-the-loop
+    // override must remain available precisely when the ML model is down or stale;
+    // requiring model availability would defeat the failsafe. Every hard-safety and
+    // risk gate below (connectivity, context freshness, hard gates, flat, pending,
+    // halt, empirical regime) still applies unchanged.
     if (ctx.connectivityFailClosed) {
         return DenyDecision(ctx.connectivityReason);
     }

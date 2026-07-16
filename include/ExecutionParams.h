@@ -59,6 +59,11 @@ struct ExecutionParams {
     float  talebKurtosisCrisisExit    = 3.0f;
     float  talebKurtosisCrisisCeiling = 0.35f;
 
+    // ── Hard-gate regime critical cutoffs (single source of truth shared by
+    //    EvaluateHardGates and ValidateOrder's regime filter) ──
+    float  talebKurtosisHaltThreshold = 15.0f;  // kurtosis above this = flash-crash block
+    float  shannonEntropyHaltFrac     = 0.90f;  // fraction of kShannonMaxEntropyBits = chaos block
+
     // ── Shared TRAP contract (cross-runtime parity with Python) ──
     std::string trapContractVersion   = "v1";
     std::string trapRefactorMode      = "fsm_authoritative_recompute";
@@ -146,6 +151,10 @@ struct ExecutionParams {
             talebKurtosisCrisisEnter   = j.value("taleb_kurtosis_crisis_enter",   talebKurtosisCrisisEnter);
             talebKurtosisCrisisExit    = j.value("taleb_kurtosis_crisis_exit",    talebKurtosisCrisisExit);
             talebKurtosisCrisisCeiling = j.value("taleb_kurtosis_crisis_ceiling", talebKurtosisCrisisCeiling);
+
+            // Hard-gate regime critical cutoffs
+            talebKurtosisHaltThreshold = j.value("taleb_kurtosis_halt_threshold", talebKurtosisHaltThreshold);
+            shannonEntropyHaltFrac     = j.value("shannon_entropy_halt_frac",     shannonEntropyHaltFrac);
 
             // Shared trap config contract (strict validation when present)
             if (j.contains("trap_config") && j["trap_config"].is_object()) {
