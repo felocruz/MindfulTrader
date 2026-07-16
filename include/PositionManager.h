@@ -174,10 +174,6 @@ private:
     bool CalculateStrategySetupPrices(SCStudyInterfaceRef sc, int patternId, bool isLong, float atr,
                                       float& entryPrice, float& stopPrice, float& targetPrice) const;
 
-    // Scale-out target calculation (50/30/20 split) - uses pattern enum directly, no strings
-    void CalculateScaleOutTargets(RaschkeTacticalTrigger patternTrigger, float entryPrice, float stopPrice,
-                                  bool isLong, float& target1, float& target2, float& target3) const;
-
     bool IsDirty(SCStudyInterfaceRef sc) const;
     void CachePreviousState(SCStudyInterfaceRef sc);
     // Copies live HMM + MarketClimate indicator values into m_previous*/m_current*.

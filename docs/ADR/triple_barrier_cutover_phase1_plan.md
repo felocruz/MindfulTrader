@@ -209,6 +209,6 @@ Landed so far (context): Step C single-stage first-touch cutover (`2eb658e`); st
 
 4. **Option B — intra-bar TRAP re-inference (full ECTS edge).** Refresh the TRAP-relevant fast features + re-run inference intra-bar so `p` itself updates within the bar (not just per-tick τ* over a bar-gated `p`). Blocked on **ECTS-style training on intra-bar prefixes** (train on partial bars labeled with the eventual completed-bar outcome) to avoid train/live OOD. Governing: the intra-bar timing ruling (§5 of the Trap doctrine; Dachraoui 2015 / Mori 2017 / Shiryaev).
 
-5. **`CalculateScaleOutTargets` cleanup.** Now dead (no caller after Step C; no `Chandelier` dependency) — left in place to keep Step D surgical. Delete decl+def (`PositionManager.h` / `.cpp`) in a standalone cleanup commit.
+5. **`CalculateScaleOutTargets` cleanup — DONE.** Dead after Step C (no caller; no `Chandelier` dependency); decl (`PositionManager.h`) + def (`PositionManager.cpp`) deleted in a standalone cleanup commit. Build green.
 
 6. **Regime-invalidation FLATTEN escalation (optional).** The `EvaluateRegimeDefense` climate-shift / hostile-env branches were demoted to telemetry when trailing was removed (Step D). Decide whether an adverse `DECISIVE_*` / hostile-regime mid-trade should escalate to a `REGIME_INVALIDATION` market flatten (a sibling of TRAP) rather than only telemetry. Pairs naturally with items 1–2.
