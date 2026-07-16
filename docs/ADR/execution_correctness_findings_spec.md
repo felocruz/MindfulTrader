@@ -114,6 +114,15 @@ have shifted.
 
 ## Finding 1 [CRITICAL] — `PositionManager::UpdateContext()` is never called; the entire regime-defense subsystem runs on permanently frozen state
 
+> **RESOLVED (2026-07-14, commit `097e11b`; re-verified 2026-07-15).** Fixed exactly per
+> `regime_state_wiring_fix_spec.md`: the state refresh was extracted into
+> `PositionManager::SyncRegimeState()` and wired at the top of `Update()` (right after
+> `CachePreviousState`), so `m_current*`/`m_previous*` are refreshed every tick **before** all
+> in-position consumers (`UpdateTradeGradeProtection`, `EvaluateRegimeDefense`). `UpdateContext()`
+> is retained as the event-driven entry point (`SyncRegimeState()` + defense), and
+> `EvaluateRegimeDefense()` remains a single per-tick call (no double-evaluation). The analysis
+> below is preserved as the historical record.
+
 `UpdateContext()` (declared `include/PositionManager.h:97`, defined
 `src/PositionManagerPatterns.cpp:55-72`) is the *only* place that updates
 `m_currentHMMState`/`m_previousHMMState`/`m_currentClimate`/`m_previousClimate`:

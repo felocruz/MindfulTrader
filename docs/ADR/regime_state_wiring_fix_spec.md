@@ -1,6 +1,6 @@
 # Spec — Regime-State Wiring Fix (Execution Correctness Finding 1)
 
-**Status:** SPEC — READY TO IMPLEMENT (2026-07-14)
+**Status:** IMPLEMENTED (2026-07-14, commit `097e11b`; re-verified 2026-07-15). `SyncRegimeState()` extracted + wired at the top of `Update()`; `UpdateContext()` split (sync + defense); single per-tick `EvaluateRegimeDefense`. Build green.
 **Scope:** C++ execution layer only. **Schema-free** (no `mts_schema.fbs` change; consistent with the current schema-deferral directive).
 **Resolves:** `docs/ADR/execution_correctness_findings_spec.md` Finding 1 (CRITICAL) and its addendum.
 **Prerequisite for:** Triple-Barrier Exit Engine Phase 1 (the regime-conditioned vertical barrier / kill-switch reads this same state — see `triple_barrier_exit_engine_spec.md` §4.3, §7).

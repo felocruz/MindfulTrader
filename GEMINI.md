@@ -208,7 +208,7 @@ Two observers of one truth: (a) native REACTIVE floor = completed-bar `Structure
 ### Active Roadmaps
 - `../docs/ROADMAP_EXECUTION_ENGINE.md` — `PositionManager`/`RiskManager` refactor spec
 - `../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` — `ContextManager` hardening
-- `docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit); Finding 1 (`UpdateContext()` never called) is highest priority; Finding 12 is a Python-port parity gap, not a C++ fix
+- `docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit); Finding 1 (`UpdateContext()` never called) — RESOLVED (commit `097e11b`; `SyncRegimeState()` wired into `Update()`, `regime_state_wiring_fix_spec.md`); Finding 12 is a Python-port parity gap, not a C++ fix
 
 ---
 
