@@ -2764,6 +2764,7 @@ void PositionManager::ProcessManualTradeCommand(
         m_pendingEntryOrder.requestedQuantity = adjustedQuantity;
         m_pendingEntryOrder.isLong = isLong;
         m_pendingEntryOrder.submitPrice = entryPrice;
+        m_pendingEntryOrder.decisionPrice = entryPrice;  // Decision-time reference for partial-fill slippage accounting
         m_pendingEntryOrder.executionStyle = "MANUAL";  // Manual directives tracked separately
         m_pendingEntryOrder.repriceCount = 0;
         m_pendingEntryOrder.submitTime = sc.CurrentSystemDateTime;

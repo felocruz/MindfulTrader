@@ -227,7 +227,7 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
             const double dailyPnL = RiskManager::Instance().GetDailyPnL();
             const double accountEquity = RiskManager::Instance().GetAccountEquity(sc);
             const double totalExposure = RiskManager::Instance().CalculateTotalExposure(sc);
-            const int consecutiveLosses = RiskManager::Instance().GetConsecutiveLosses();
+            const int consecutiveLosses = RiskManager::Instance().GetConsecutiveLosses(sc);
             const bool isHalted = RiskManager::Instance().IsTradingHalted(sc);
 
             auto& log = Logger::getInstance();

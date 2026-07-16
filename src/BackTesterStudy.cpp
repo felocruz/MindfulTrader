@@ -1570,7 +1570,7 @@ static void WritePredictionAckFb(SCStudyInterfaceRef sc, const PositionManager::
             const double dailyPnl = RiskManager::Instance().GetDailyPnL();
             riskGateJson = nlohmann::json{
                 {"trading_halted",     RiskManager::Instance().IsTradingHalted(sc)},
-                {"consecutive_losses", RiskManager::Instance().GetConsecutiveLosses()},
+                {"consecutive_losses", RiskManager::Instance().GetConsecutiveLosses(sc)},
                 {"daily_pnl",          std::isfinite(dailyPnl) ? nlohmann::json(dailyPnl) : nlohmann::json(nullptr)}
             }.dump();
         }

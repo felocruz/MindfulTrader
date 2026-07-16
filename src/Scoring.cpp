@@ -226,19 +226,17 @@ PatternType Scoring::StringToPatternType(const std::string& name) const {
 // Logic replicates Python 'MarketClimate' feature engineering + scoring
 // Source: lbrnet/core/scoring.py -> get_climate_impact_score
 //
-// "The Gang" Rules Implementation:
-// 1. Taleb (Kurtosis): Fragility Penalty.
-//    - Kurtosis > 10.0 => 0.6x (Severe Panic Protection)
-//    - Kurtosis > 4.0 => 0.8x (Caution)
+// "The Gang" Rules Implementation (continuous, not discrete tiers):
+// 1. Taleb (Kurtosis): fragility penalty via sigmoid 1/(1+exp(0.5*(kurtosis-6.0))),
+//    gated on kurtosis > 2.5, with NO artificial floor
+//    (kurtosis=3 => ~0.95, =6 => ~0.50, =10 => ~0.08).
+// 2. Shannon (Entropy, in BITS): thresholds are normalized H/Hmax ratios scaled by
+//    kShannonMaxEntropyBits (=log2(NUM_BINS)). High entropy boosts mean-reversion and
+//    cuts trend (hard-zero for patterns in neither bucket); low entropy boosts trend.
+// 3. Hurst: quality > 0.70 => trend/breakout boost.
+// Plus session-aware Amihud, spread-stress, Taleb-cliff, Fisher, and mean-rev-Z gates.
 //
-// 2. Shannon (Entropy): Structure Detection.
-//    - Entropy > 0.8 => 1.25x for Mean Reversion (Turtle Soup, Pinball Reversed)
-//    - Entropy < 0.4 => 1.25x for Trend (Elder Breakout, Pinball Continuation)
-//
-// 3. Hurst/ADX: Trend Quality
-//    - Quality > 0.70 => 1.2x for Trend/Breakout
-//
-// Returns: Multiplier [0.6, 1.5]
+// Returns: multiplier unbounded below (can reach 0.0 = hard kill); no fixed [0.6,1.5] range.
 // ============================================================================
 double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskContext& ctx) const {
     double multiplier = 1.0;
@@ -321,7 +319,7 @@ bool Scoring::IsIndicatorEventSignificant(IndicatorKey indicatorKey, const Local
 
     if (ctx.shannonFlowEntropy > 0.85f * kShannonMaxEntropyBits) {
         // Chaos Mode: Only allow VITAL structural updates
-        if (indicatorKey == IndicatorKey::HMM_STATE || 
+        if (indicatorKey == IndicatorKey::HMM_STATE ||
             indicatorKey == IndicatorKey::MARKET_CLIMATE || // Recursive safety
             indicatorKey == IndicatorKey::ATR_PROXIMITY ||  // Risk management
             indicatorKey == IndicatorKey::SIDE) {           // Trade state
@@ -330,10 +328,10 @@ bool Scoring::IsIndicatorEventSignificant(IndicatorKey indicatorKey, const Local
 
         // Suppress trend-followers which false-signal in chop
         if (indicatorKey == IndicatorKey::LONG_MACD ||
-            indicatorKey == IndicatorKey::INTERM_MACD || 
-            indicatorKey == IndicatorKey::LONG_FI13_SIGNAL || 
+            indicatorKey == IndicatorKey::INTERM_MACD ||
+            indicatorKey == IndicatorKey::LONG_FI13_SIGNAL ||
             indicatorKey == IndicatorKey::INTERM_FI2_SIGNAL) {
-            return false; 
+            return false;
         }
 
         // Suppress generic market action chatter
@@ -359,7 +357,7 @@ Scoring::BiasFilterResult Scoring::ApplyDailyBiasFilter(PatternType /*pattern*/,
         // In Python we technically allow it but with 0 confidence adjustments.
         // In C++ High Performance mode, we might want to be stricter, but following contract:
         // No Veto, No Boost.
-        return result; 
+        return result;
     }
 
     // 2. STRUCTURE VETOS (Counter-Trend Filters)

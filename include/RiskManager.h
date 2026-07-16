@@ -12,14 +12,14 @@
 
 /**
  * @brief Singleton class responsible for all risk management decisions
- * 
+ *
  * Implements Linda Raschke's risk management principles:
  * - 2% daily loss limit (hard lockout via sc.SetTradingIsDisabledForDay)
  * - 2% risk per trade (position sizing validation)
  * - 6% total portfolio exposure limit
  * - 2 consecutive losses → trading halt (prevents revenge trading)
  * - Drawdown-based position sizing reduction
- * 
+ *
  * Integration points:
  * - Called by scsf_MindfulTrader orchestrator for continuous monitoring
  * - Called by PositionManager::OpenPosition() for pre-trade validation
@@ -86,7 +86,7 @@ struct LatencyGateResult {
 
 /**
  * @brief Per-pattern performance tracking for adaptive quality thresholds
- * 
+ *
  * Tracks wins, losses, expectancy for each pattern type.
  * After 20 trades, if expectancy < 0, pattern goes on "probation"
  * requiring quality score > 0.8 instead of base 0.6.
@@ -104,14 +104,14 @@ struct PatternStats {
 
 /**
  * @brief Singleton class responsible for all risk management decisions
- * 
+ *
  * Implements Linda Raschke's risk management principles:
  * - 2% daily loss limit (hard lockout via sc.SetTradingIsDisabledForDay)
  * - 2% risk per trade (position sizing validation)
  * - 6% total portfolio exposure limit
  * - 2 consecutive losses → trading halt (prevents revenge trading)
  * - Drawdown-based position sizing reduction
- * 
+ *
  * Integration points:
  * - Called by scsf_MindfulTrader orchestrator for continuous monitoring
  * - Called by PositionManager::OpenPosition() for pre-trade validation
@@ -124,43 +124,43 @@ public:
     // Initialization and updates
     void Init(SCStudyInterfaceRef sc);
     void Update(SCStudyInterfaceRef sc);  // Call every bar for continuous monitoring
-    
+
     // Pre-trade validation (call before submitting orders) - Elite Refactor #7: Result<T> error handling
     Result<void> ValidateOrder(SCStudyInterfaceRef sc, double entryPrice, double stopPrice, int& quantity,
                                long inferenceLatencyUs = -1,
                                long transformerLatencyUs = -1,
                                long regimeLatencyUs = -1);
     Result<int> CalculateSafePositionSize(SCStudyInterfaceRef sc, double entryPrice, double stopPrice, float modelConfidence = 0.5f);
-    
+
     // Manual trade decision support - logs validation results for manual trading
     void LogTradeValidation(SCStudyInterfaceRef sc, double entryPrice, double stopPrice, int quantity, const char* tradeDescription);
-    
+
     // === ELITE GAP 3: MODEL HEALTH SIGNAL STRICTNESS ===
     // Returns required confidence threshold based on current model health
     // HEALTHY: 60% (base), WARNING: 75% (stricter), SOFT_LOCKED: reject all
     float GetRequiredConfidenceThreshold(SCStudyInterfaceRef sc) const;
-    
+
     // Post-trade updates (call when position opens/closes)
     void OnPositionOpened(SCStudyInterfaceRef sc);
     void OnTradeClose(SCStudyInterfaceRef sc, double pnl);
-    
+
     // Cache refresh (call once per bar if position is open, otherwise no-op)
     void RefreshMetrics(SCStudyInterfaceRef sc);
-    
+
     // State queries (lightweight - return cached values, no broker API calls)
     bool IsTradingHalted() const;
     bool IsTradingHalted(SCStudyInterfaceRef sc) const;  // Version with sc parameter
-    int GetConsecutiveLosses() const;
+    int GetConsecutiveLosses(SCStudyInterfaceRef sc) const;
     double GetDailyPnL() const;                          // Returns cached daily P&L
     double GetUnrealizedPnL() const;                     // Returns cached unrealized P&L
     double GetRealizedPnL() const;                       // Returns cached realized P&L
     double GetAccountEquity(SCStudyInterfaceRef sc) const;  // IB account data (fallback to SC balance)
     double CalculateTotalExposure(SCStudyInterfaceRef sc) const;
-    
+
     // Psychological metrics (for dashboard - hides dollar amounts)
     double GetNetTicksToday(SCStudyInterfaceRef sc) const;
     double GetTradeQualityScore(SCStudyInterfaceRef sc) const;
-    
+
     // Emergency controls
     void EmergencyHalt(SCStudyInterfaceRef sc, const char* reason);
     void ResetDailyState(SCStudyInterfaceRef sc);  // Call at start of trading day
@@ -179,7 +179,7 @@ public:
 
     // Top-level validation method
     bool IsTradeAllowed(SCStudyInterfaceRef sc, const TradeValidationParams& params, TradeValidationResult& result);
-    
+
     // Market data setters from TripleScreen1 (for regime-adaptive position sizing)
     void SetATR14(float value) { m_atr14 = value; }
     void SetATR14Avg(float value) { m_atr14Avg = value; }
@@ -214,24 +214,24 @@ private:
     ~RiskManager() = default;
     RiskManager(const RiskManager&) = delete;
     RiskManager& operator=(const RiskManager&) = delete;
-    
+
     // Cached invariant values (captured once in Init(), never change during session)
     struct SessionInvariants {
         // Contract specifications (truly invariant)
         double tickSize = 0.0;
         double currencyPerTick = 0.0;
         std::string symbol;
-        
+
         // Session start values (invariant until next trading day)
         double sessionStartBalance = 0.0;
         double maxDailyLoss = 0.0;        // 2% of session start
         double maxPortfolioHeat = 0.0;    // 6% of session start
         double maxDailyWin = 0.0;         // 5% of session start
-        
+
         int sessionStartDate = 0;
         bool initialized = false;
     } m_invariants;
-    
+
     // Cached P&L metrics (updated on events: position open/close, or RefreshMetrics())
     struct CachedMetrics {
         double dailyPnL = 0.0;           // Realized + Unrealized P&L today
@@ -243,7 +243,7 @@ private:
         bool hasOpenPosition = false;    // True if position is open
         bool isValid = false;            // True if cache has been initialized
     } m_cache;
-    
+
     // P-AER runtime-configurable execution parameters
     ExecutionParams m_execParams;
 
@@ -258,7 +258,7 @@ private:
     std::unordered_map<std::string, PatternStats> m_patternStats;
     static constexpr int MIN_TRADES_FOR_PROBATION = 20;  // Require statistical sample
     static constexpr int PROBATION_RESET_STREAK = 10;    // Good trades to exit probation
-    
+
     // ── Structural time constants (compiled, not tunable) ──
     static constexpr int TRADING_START_HOUR = 9;                     // 9:30 AM ET - avoid overnight gap chaos
     static constexpr int TRADING_START_MIN = 30;
@@ -271,7 +271,7 @@ private:
     // All 25 P-AER risk parameters now live in ExecutionParams (m_execParams),
     // loaded at runtime from C:/Trading/config/execution_params.json.
     // Phase 3 complete — constexpr originals removed 2026-03-31.
-    
+
     // Validator methods (Chain of Responsibility + Result<T> - Elite Refactor #7)
     Result<void> ValidateMonthlyLimit(SCStudyInterfaceRef sc);
     Result<void> ValidateTradingHalt(SCStudyInterfaceRef sc);
@@ -286,10 +286,10 @@ private:
                                           long inferenceLatencyUs,
                                           long transformerLatencyUs,
                                           long regimeLatencyUs) const;
-    
+
     // Helper methods (DRY refactoring)
     double EnsureMonthlyEquityTracking(SCStudyInterfaceRef sc);  // Returns monthly start equity (handles reset)
-    
+
     // Internal validation methods
     bool CheckDailyLossLimit(SCStudyInterfaceRef sc);
     bool CheckMonthlyLossLimit(SCStudyInterfaceRef sc);  // Elder's 6% monthly kill-switch
@@ -301,7 +301,7 @@ private:
     double CalculateOrderRisk(SCStudyInterfaceRef sc, double entryPrice, double stopPrice, int quantity) const;
     void RefreshKurtosisEmergencyState(SCStudyInterfaceRef sc);
     bool IsTrendContinuationTrigger(RaschkeTacticalTrigger trigger) const;
-    
+
     // Pattern probation helpers
     void UpdatePatternStats(const std::string& patternEnum, double pnl, bool isWin);
     bool IsPatternOnProbation(const std::string& patternEnum) const;
@@ -312,7 +312,7 @@ private:
 private:
     // Trade statistics tracker (trade history for diagnostics / pattern probation)
     KellyCalculator m_kellyCalculator;
-    
+
     // Market metrics for adaptive position sizing
     float m_atr14 = 0.0f;
     float m_atr14Avg = 0.0f;

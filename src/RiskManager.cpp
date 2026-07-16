@@ -61,7 +61,7 @@ namespace {
         bool inject_sc_disconnect = false;
         bool inject_ib_disconnect = false;
         bool inject_order_ack_timeout = false;
-        
+
         // Empirical HMM gate thresholds (calibrated from lbrnet)
         double pareto_top_state_ratio_max = 0.25;
         double shannon_min_tenure_bars = 109.158494;
@@ -180,7 +180,7 @@ namespace {
             policy.inject_order_ack_timeout = j.value(
                 "inject_order_ack_timeout",
                 policy.inject_order_ack_timeout);
-            
+
             // Parse empirical gate thresholds if present
             if (j.contains("empirical_gate_thresholds") && j["empirical_gate_thresholds"].is_object()) {
                 const auto& gates = j["empirical_gate_thresholds"];
@@ -188,7 +188,7 @@ namespace {
                 policy.shannon_min_tenure_bars = gates.value("shannon_min_tenure_bars", policy.shannon_min_tenure_bars);
                 policy.taleb_signal_sigma_threshold = gates.value("taleb_signal_sigma_threshold", policy.taleb_signal_sigma_threshold);
             }
-            
+
             policy.load_status = HMMRiskPolicy::LoadStatus::LOADED_FROM_FILE;
 
             Logger::getInstance().log(
@@ -1092,11 +1092,6 @@ Result<void> RiskManager::ValidateRiskLimits(SCStudyInterfaceRef sc, double entr
                    dailyPnL, -maxDailyLoss, m_execParams.elder2PctRuleFrac * 100.0, accountEquity);
         EmergencyHalt(sc, msg.GetChars());
         return Result<void>::Failure(msg.GetChars(), 1009);
-    }
-
-    // Check 3: Daily win protection
-    if (dailyPnL >= accountEquity * m_execParams.dailyWinWarningPct) {
-        // Don't reject - CalculateSafePositionSize() will apply 0.5x multiplier
     }
 
     if (dailyPnL >= accountEquity * m_execParams.maxDailyWinPct) {
@@ -2009,10 +2004,8 @@ bool RiskManager::IsTradingHalted(SCStudyInterfaceRef sc) const {
     return sc.GetPersistentInt(RISK_TRADING_HALTED_ID) != 0;
 }
 
-int RiskManager::GetConsecutiveLosses() const {
-    // Note: Need sc reference to read persistent storage
-    // This is a convenience method - callers should use the version with sc parameter
-    return 0;
+int RiskManager::GetConsecutiveLosses(SCStudyInterfaceRef sc) const {
+    return sc.GetPersistentInt(RISK_CONSECUTIVE_LOSSES_ID);
 }
 
 double RiskManager::GetDailyPnL() const {
