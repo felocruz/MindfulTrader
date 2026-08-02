@@ -820,14 +820,35 @@ enum class OvernightExitTypeEnum : int8_t {
 /**
  * HMMStateEnum mirrors Python rc_enums.HMMStateEnum for cross-language parity.
  *
- * IDs match ModelManifest.json state_map[*].raw_id (K=4 Student-t HMM, direct argmax).
+ * IDs are a fixed canonical convention, not a raw EM output: EM state indices
+ * are arbitrary per-fit (label-switching) and are NOT guaranteed to match
+ * this convention on their own. The Python training pipeline's state-alignment
+ * step (lbrnet/docs/architecture/HMM_STATE_ALIGNMENT_SPEC.md) reorders each
+ * freshly-fit model's raw arrays before saving so that raw_id matches these
+ * ids by construction -- this side never runs independent HMM inference, it
+ * only deserialises the already-resolved hmm_state_id Python sends over the
+ * wire (HMMClient::HandleBinaryResponse -> MutableHmmState()).
  * No UNKNOWN member — use HMM_NO_PRIOR constexpr for uninitialised state.
  *
- * Manifest centroid keys:
- *   COILED_SPRING:    vpin_toxicity=-3.25, lempel_ziv=-0.46  (clean, compressed setup)
- *   GAUSSIAN_STABLE:  vpin_toxicity=-0.36, recurrence=0.49   (normal baseline)
- *   GAUSSIAN_FRAGILE: vpin_toxicity=+2.25, liq_fragility=0.67 (toxic flow, fat tails)
- *   PARETO_MOMENTUM:  burstiness=0.49, relative_range=0.75   (directional thrust)
+ * Identified by RULE, not by fixed numeric centroids (any specific centroid
+ * values are retrain-specific and go stale the moment the feature pipeline
+ * or training data changes -- this bit us once already: an earlier version
+ * of this comment cited z-score-era centroid values from before the
+ * redundant Python-side normalization step was removed, 2026-08-02):
+ *   COILED_SPRING:    quiet (low vol_convexity/relative_range) AND fleeting
+ *                     (low tenure/occupancy) -- rare, short-lived compression
+ *   GAUSSIAN_STABLE:  quiet AND persistent (high tenure/occupancy) -- the
+ *                     common, long-lived baseline regime
+ *   GAUSSIAN_FRAGILE: DOF < 4.0 (Student-t kurtosis-undefined threshold,
+ *                     Kotz & Nadarajah 2004) OR low-tenure/high-entropy
+ *                     chaos -- the "doesn't look like a clean archetype"
+ *                     bucket; also absorbs what MarketClimate labels
+ *                     SHANNON_CHAOS below, since HMMStateEnum has no chaos
+ *                     slot of its own
+ *   PARETO_MOMENTUM:  high burstiness AND positive relative_range --
+ *                     directional thrust
+ * See lbrnet.models.regime_registry.compute_hmmstate_affinity() (Python) for
+ * the exact, executable form of these rules.
  */
 enum class HMMStateEnum : int8_t {
     COILED_SPRING    = 0,
