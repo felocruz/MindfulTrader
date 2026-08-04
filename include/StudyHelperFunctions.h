@@ -10,7 +10,8 @@ int GetImpulse(float maDiff, float macdDiff);
 
 RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, float hurst, float ema21);
 RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, float rsi3, float rsi10, float stochK);
-DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevDayLow, float hurstExponent, float entropy);
+DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevDayLow, float hurstExponent, float entropy,
+                                  float valueAreaLow = 0.0f, float valueAreaHigh = 0.0f);
 // GetVolumeEnum() removed in v5.7 — VolumeIndicator self-classifies via robust z-score
 StructureTest ClassifyStructure(float high, float low, float close,
                                 float prev_high, float prev_low, double atr,

@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <random> // Added for shuffling
 #include "Logger.h"
+#include "DailyBiasEngine.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -1483,74 +1484,13 @@ RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, floa
     return RaschkeTacticalTrigger::NONE;
 }
 
-DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevDayLow, float hurstExponent, float /*entropy*/)
+DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevDayLow, float hurstExponent, float /*entropy*/,
+                                  float valueAreaLow, float valueAreaHigh)
 {
-    // PHASE 0: PHYSICS VETO (The "Gang's" Filter)
-    // -------------------------------------------
-    // Mandelbrot: If Hurst ~0.5, the market is a Random Walk. Directional bias is a hallucination.
-    // Shannon: If Spectral Entropy is high (>0.85), the signal-to-noise ratio is too low for structure.
-
-    // Safety: ensure metrics are computed (non-zero) before filtering
-    if (hurstExponent > 0.0f) {
-        // Random Walk Zone: 0.45 - 0.55 (No persistent trend)
-        if (hurstExponent > 0.45f && hurstExponent < 0.55f) {
-            return DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK;
-        }
-        // Mean Reverting Zone: < 0.4 (Active Anti-Persistence)
-        // If we are mean reverting, breakouts (Initiative Buying/Selling) are likely traps.
-        // We only allow "Rejection" biases in this regime.
-    }
-
-    // Invalid data check (legacy)
-    if (prevDayHigh <= 0.0f || prevDayLow <= 0.0f || prevDayHigh <= prevDayLow) {
-        return DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK;
-    }
-
-    const float range = prevDayHigh - prevDayLow;
-
-    // INSTITUTIONAL LOGIC REFACTOR (Raschke's 80% Rule & Gap Analysis)
-    // [Resuming Spatial Logic...]
-
-    // 1. Calculate TPO Value Area Proxy (Central 70% of Range)
-    //    VAH = Low + 85% of Range
-    //    VAL = Low + 15% of Range
-    const float val = prevDayLow + (range * 0.15f);
-    const float vah = prevDayLow + (range * 0.85f);
-
-    // 2. Gap Analysis (Opening Relation / Breakout)
-
-    // ZONE A: Initiative Buying (Gap & Go / Breakout)
-    if (lastPrice > prevDayHigh) {
-        // Taleb Veto: Is this breakout "Fragile"?
-        // If Hurst < 0.4 (Mean Reverting), a breakout is likely a trap (Fakeout).
-        if (hurstExponent > 0.0f && hurstExponent < 0.4f) {
-             return DailyBiasEnum::BEARISH_VOLATILITY_TRAP; // Institutional: Fade the breakout!
-        }
-        return DailyBiasEnum::BULLISH_TREND_PERSISTENT; // Strong Trend (Persistent)
-    }
-
-    // ZONE B: Initiative Selling (Gap & Go / Breakout)
-    else if (lastPrice < prevDayLow) {
-        if (hurstExponent > 0.0f && hurstExponent < 0.4f) {
-             return DailyBiasEnum::BULLISH_VOLATILITY_TRAP; // Institutional: Fade the breakdown!
-        }
-        return DailyBiasEnum::BEARISH_TREND_PERSISTENT; // Strong Trend
-    }
-
-    // ZONE C: 80% Rule Reversal (Responsive Buying)
-    else if (lastPrice > prevDayLow && lastPrice < val) {
-        return DailyBiasEnum::BULLISH_MEAN_REVERSION;
-    }
-
-    // ZONE D: 80% Rule Reversal (Responsive Selling)
-    else if (lastPrice < prevDayHigh && lastPrice > vah) {
-        return DailyBiasEnum::BEARISH_MEAN_REVERSION;
-    }
-
-    // ZONE E: Value Area Rotation (Neutral / Chop)
-    else {
-        return DailyBiasEnum::VALUE_AREA_ROTATION;
-    }
+    const dbe::Bias bias = dbe::ComputeDailyBias({
+        lastPrice, prevDayHigh, prevDayLow, hurstExponent, valueAreaLow, valueAreaHigh
+    });
+    return static_cast<DailyBiasEnum>(static_cast<int8_t>(bias));
 }
 
 // GetVolumeEnum() removed in v5.7 — VolumeIndicator self-classifies using
