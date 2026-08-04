@@ -12,6 +12,7 @@
 #include "InformationEngine.h"
 #include "TailRiskEngine.h"
 #include "StructureEngine.h"
+#include "EventVelocityEngine.h"
 
 // Shannon flow entropy is measured in BITS (range 0 .. log2(NUM_BINS)). Several gates
 // were authored with thresholds that read like normalized [0,1] ratios of H/Hmax but
@@ -820,7 +821,8 @@ private:
     uint64_t m_lastSequenceId = 0;
     uint64_t m_lastHMMUpdateTimeUS = 0;
     float m_lastEventVelocityPerSec = 0.0f;
-    std::deque<uint64_t> m_eventTimestampsUS;
+    std::deque<uint64_t> m_eventTimestampsUS;       // Close prices
+    eve::VelocityState m_velocityState;              // EMA-based event velocity (Task 1, phase1-hardening plan)
     std::deque<std::array<float, OBSERVATION_VECTOR_SIZE>> m_observationHistory;
     std::optional<HMMTriggerDiagnostics> m_lastTriggerDiagnostics;  ///< Diagnostics from most recent trigger
     std::array<float, OBSERVATION_VECTOR_SIZE> m_prevCollectionObservation = {};

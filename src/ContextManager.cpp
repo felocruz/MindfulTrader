@@ -566,25 +566,21 @@ MTS::Schema::AsymmetryContext ContextManager::GetAsymmetryContext() const {
 
 // Utility: Calculate event velocity from timestamp history
 float ContextManager::CalculateEventVelocity(uint64_t now_us) {
+    // Deque maintenance UNCHANGED: CalculateBurstinessIndex() (below) independently
+    // reads this same m_eventTimestampsUS history for its own CV-of-inter-arrival-times
+    // computation (raschkeBurst) -- do not remove or resize this buffer.
     if (m_eventTimestampsUS.size() >= EVENT_VELOCITY_MAX) {
         m_eventTimestampsUS.pop_front();
     }
     m_eventTimestampsUS.push_back(now_us);
 
-    if (m_eventTimestampsUS.empty()) {
-        return 0.0f;
-    }
-
-    uint64_t window_size_us = static_cast<uint64_t>(EVENT_VELOCITY_WINDOW_SEC) * 1000000ULL;
-    uint64_t window_start = (now_us > window_size_us) ? (now_us - window_size_us) : 0;
-
-    size_t count = 0;
-    for (auto it = m_eventTimestampsUS.rbegin(); it != m_eventTimestampsUS.rend(); ++it) {
-        if (*it < window_start) break;
-        ++count;
-    }
-
-    return static_cast<float>(count) / EVENT_VELOCITY_WINDOW_SEC;
+    // Velocity itself: EMA of inter-arrival time (uncapped, O(1)), replacing the
+    // old windowed-count formula, which was mathematically capped at
+    // EVENT_VELOCITY_MAX / EVENT_VELOCITY_WINDOW_SEC = 50.0 events/sec regardless
+    // of true event rate (docs/superpowers/plans/2026-08-04-phase1-hardening.md
+    // Task 1; lbrnet/logs/rc_gemini.log GEMINI_BRIEF_082 §1).
+    const double tauUs = static_cast<double>(EVENT_VELOCITY_WINDOW_SEC) * 1'000'000.0;
+    return eve::UpdateAndGetVelocity(m_velocityState, now_us, tauUs);
 }
 
 // Populate TrainingEvent with environmental context (SECTION 11)
@@ -1348,6 +1344,7 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_asymmetryContext = MTS::Schema::AsymmetryContext();
     m_hmmInitialized = false;
     m_eventTimestampsUS.clear();
+    m_velocityState = eve::VelocityState{};
     m_observationHistory.clear();
     m_lastSequenceId = 0;
     m_hmmObservation.fill(0.0f);
