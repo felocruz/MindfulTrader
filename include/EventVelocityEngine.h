@@ -34,13 +34,18 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
     }
 
     const double dtUs = static_cast<double>(nowUs) - static_cast<double>(state.lastEventUs);
-    state.lastEventUs = nowUs;
 
     if (dtUs <= 0.0) {
         // Non-monotonic timestamp (replay seek/duplicate tick) -- hold the
         // prior estimate rather than corrupt it with a negative/zero interval.
+        // Deliberately do NOT advance state.lastEventUs here: doing so would
+        // rewind the anchor to this earlier, out-of-order nowUs, inflating the
+        // *next* legitimate forward-moving tick's dtUs and distorting the EMA
+        // for one cycle. Leave the last known-good forward timestamp in place.
         return state.emaIntervalUs > 0.0 ? static_cast<float>(1'000'000.0 / state.emaIntervalUs) : 0.0f;
     }
+
+    state.lastEventUs = nowUs;
 
     if (state.emaIntervalUs <= 0.0) {
         state.emaIntervalUs = dtUs;  // seed on the first real interval

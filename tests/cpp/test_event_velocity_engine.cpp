@@ -78,6 +78,29 @@ int main() {
         check("non_monotonic_timestamp_holds_prior_estimate", vAfter == vBefore);
     }
 
+    // Anchor-rewind persistence: a backward jump must not advance state.lastEventUs.
+    // If it did, the *next* legitimate forward tick would measure its interval
+    // against the earlier, out-of-order timestamp instead of the last known-good
+    // forward one, inflating that interval and distorting the EMA for one cycle.
+    // Use a small tauUs so a stale anchor's distorted interval measurably moves
+    // the EMA/velocity (with tauUs=2s the effect would be too small to detect).
+    {
+        VelocityState state;
+        const double tauUs = 10'000.0;
+        UpdateAndGetVelocity(state, 1'000'000, tauUs);   // seed: no interval yet
+        UpdateAndGetVelocity(state, 1'010'000, tauUs);   // dt=10ms -> ema seeded at 10000us (~100/sec)
+        UpdateAndGetVelocity(state, 1'005'000, tauUs);   // backward jump: must NOT move the anchor
+
+        check("anchor_not_rewound_by_backward_jump", state.lastEventUs == 1'010'000);
+
+        // Next forward tick, 10ms after the last known-good anchor (1,010,000).
+        // If the anchor had been incorrectly rewound to 1,005,000, this tick's
+        // measured interval would be inflated to 15ms instead of 10ms, pulling
+        // the reported velocity down from ~100/sec toward ~72/sec.
+        const float v = UpdateAndGetVelocity(state, 1'020'000, tauUs);
+        check("velocity_after_backward_jump_uses_last_known_good_anchor", approx(v, 100.0f, 0.1f));
+    }
+
     // Quiet market (10 seconds between events) -- velocity should be very low,
     // not zero (there IS a real, if slow, arrival rate) and not NaN/inf.
     // Note: the first call's nowUs must be non-zero -- 0 is this engine's

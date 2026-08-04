@@ -821,7 +821,7 @@ private:
     uint64_t m_lastSequenceId = 0;
     uint64_t m_lastHMMUpdateTimeUS = 0;
     float m_lastEventVelocityPerSec = 0.0f;
-    std::deque<uint64_t> m_eventTimestampsUS;       // Close prices
+    std::deque<uint64_t> m_eventTimestampsUS;       // Event-arrival timestamps (us); shared by CalculateEventVelocity() and CalculateBurstinessIndex()
     eve::VelocityState m_velocityState;              // EMA-based event velocity (Task 1, phase1-hardening plan)
     std::deque<std::array<float, OBSERVATION_VECTOR_SIZE>> m_observationHistory;
     std::optional<HMMTriggerDiagnostics> m_lastTriggerDiagnostics;  ///< Diagnostics from most recent trigger
