@@ -7,9 +7,13 @@
 // during high-intensity events (CPI, FOMC, US open) ES tick rates can exceed
 // 500-1000/sec, but the old formula could never report above 50.0. This
 // computes an exponential moving average of inter-arrival TIME instead of
-// counting arrivals in a fixed window, giving an O(1), uncapped, continuously
-// reactive velocity with constant memory and no loop overhead. No Sierra Chart
-// types, natively unit-testable (tests/cpp/test_event_velocity_engine.cpp).
+// counting arrivals in a fixed window, giving an O(1), continuously reactive
+// velocity with constant memory and no loop overhead -- uncapped by design
+// (no fixed ceiling like the old formula's 50/sec), though in practice still
+// bounded by the resolution of the timestamp source (nowUs comes from a
+// millisecond-resolution clock in production, i.e. a practical ceiling around
+// 1000 events/sec). No Sierra Chart types, natively unit-testable
+// (tests/cpp/test_event_velocity_engine.cpp).
 //
 // tauUs is the EMA's time constant, in microseconds -- pass the same window
 // the old formula used (2 seconds) to preserve its intended responsiveness
@@ -46,6 +50,20 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
     }
 
     state.lastEventUs = nowUs;
+
+    // A session break (e.g. a weekend or overnight halt) produces a dtUs many
+    // orders of magnitude larger than tauUs. Folding that gap into the EMA as
+    // if it were a real inter-arrival interval would snap emaIntervalUs to the
+    // huge value (alpha~=1) and then take ~14 time constants of *wall-clock*
+    // ticks after resumption to decay back down (Finding 3, final-review fix
+    // round). Treat it as a cold start instead: reset emaIntervalUs to 0 so
+    // the NEXT interval seeds fresh via the branch above, rather than smoothing
+    // the gap itself into the estimate.
+    constexpr double kSessionBreakMultiple = 100.0;
+    if (dtUs > kSessionBreakMultiple * tauUs) {
+        state.emaIntervalUs = 0.0;
+        return 0.0f;
+    }
 
     if (state.emaIntervalUs <= 0.0) {
         state.emaIntervalUs = dtUs;  // seed on the first real interval

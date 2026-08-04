@@ -115,6 +115,45 @@ int main() {
         check("quiet_market_gives_low_finite_velocity", std::isfinite(v) && v > 0.0f && v < 1.0f);
     }
 
+    // Finding 3 regression test (final-review fix round): a large gap (e.g. a
+    // weekend) used to get folded directly into emaIntervalUs (alpha~=1 when
+    // dtUs >> tauUs), then take ~14 time constants of wall-clock ticks after
+    // resumption to decay back down to the true rate. This matters now because
+    // a separate weekend-aware freshness gate task on this branch newly lets
+    // HMM inference proceed through the Sunday-reopen window, making this lag
+    // live-reachable during one of the most information-dense moments of the
+    // week. The fix re-seeds (treats the gap like a cold start) instead of
+    // smoothing it in, so velocity should recover within 1-2 ticks of resumption.
+    {
+        VelocityState state;
+        const double tauUs = 2'000'000.0;  // 2s, the production value
+
+        // Seed a normal 10ms/100-per-sec cadence before the gap.
+        uint64_t t = 0;
+        for (int i = 0; i < 50; ++i) {
+            t += 10'000;
+            UpdateAndGetVelocity(state, t, tauUs);
+        }
+
+        // A 49-hour weekend gap (in microseconds).
+        const uint64_t kFortyNineHoursUs = 49ULL * 60ULL * 60ULL * 1'000'000ULL;
+        t += kFortyNineHoursUs;
+        const float vDuringGap = UpdateAndGetVelocity(state, t, tauUs);
+        check("velocity_report_during_gap_is_not_a_stale_spike", vDuringGap == 0.0f);
+
+        // Steady 100/sec resumes. Velocity should recover to ~100/sec within the
+        // first 1-2 ticks of resumption, not tens of seconds of wall-clock ticks.
+        t += 10'000;
+        const float vFirstTickAfterResumption = UpdateAndGetVelocity(state, t, tauUs);
+        check("velocity_recovers_within_one_tick_of_resumption_after_a_weekend_gap",
+              approx(vFirstTickAfterResumption, 100.0f, 0.1f));
+
+        t += 10'000;
+        const float vSecondTickAfterResumption = UpdateAndGetVelocity(state, t, tauUs);
+        check("velocity_stays_correct_on_the_second_tick_after_resumption",
+              approx(vSecondTickAfterResumption, 100.0f, 0.1f));
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;
