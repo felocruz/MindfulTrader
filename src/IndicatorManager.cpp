@@ -927,6 +927,19 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
     // and misresolve "yesterday" to Sunday (zero RTH bars by construction).
     const int currentTradingDay = sc.GetTradingDayDate(sc.BaseDateTimeIn[sc.Index]);
 
+    // Trading-day-anchored midnight (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    // final-review fix wave, round 2): the native-OHLC and CSV-override lookback loops below walk
+    // backward by whole days to resolve "yesterday". Anchoring that walk to sc.BaseDateTimeIn[sc.Index]
+    // (the current bar's raw calendar timestamp) is wrong for an overnight-session instrument -- on the
+    // first bar of a new trading day that starts the prior calendar evening (e.g. Tuesday 18:00 Globex
+    // open for trading day "Wednesday"), `daysBack=1` from that raw timestamp lands on Monday, not
+    // Tuesday, shifting prevDayHigh/prevDayLow back a full session for the entire new trading day.
+    // Anchoring to currentTradingDay's own midnight fixes both loops: DailyHighLowLoader::GetDataForDate
+    // (src/DailyHighLowLoader.cpp:130-134) provably keys on calendar date only (SCDateTime::GetDateYMD),
+    // so a trading-day-anchored SCDateTime resolves correctly there. GetOHLCForDate's exact treatment of
+    // the argument is not independently confirmed from the header alone -- see report residual note.
+    const SCDateTime tradingDayAnchor(currentTradingDay, 0);  // SCDateTime(int Date, int TimeInSeconds), scdatetime.h:1034
+
     // Update cache only when trading day changes (reload daily high/low once per day)
     if (currentTradingDay != m_dailyCache.tradingDay) {
     // ── INSTITUTIONAL HYBRID STRATEGY ─────────────────────────────
@@ -945,7 +958,7 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
 
     constexpr int MAX_LOOKBACK_DAYS = 7;
     for (int daysBack = 1; daysBack <= MAX_LOOKBACK_DAYS; ++daysBack) {
-        const SCDateTime candidateDay = sc.BaseDateTimeIn[sc.Index] - static_cast<double>(daysBack);
+        const SCDateTime candidateDay = tradingDayAnchor - static_cast<double>(daysBack);
         float scOpen = 0.0f, scHigh = 0.0f, scLow = 0.0f, scClose = 0.0f;
 
         // Native SC API call
@@ -976,7 +989,7 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
         // Try to match the exact date we found natively, or search similar logic
         constexpr int MAX_LOOKBACK_DAYS = 7;
     for (int daysBack = 1; daysBack <= MAX_LOOKBACK_DAYS; ++daysBack) {
-            const SCDateTime candidateDay = sc.BaseDateTimeIn[sc.Index] - static_cast<double>(daysBack);
+            const SCDateTime candidateDay = tradingDayAnchor - static_cast<double>(daysBack);
             const DailyHighLowData candidate = loader.GetDataForDate(candidateDay);
 
             if (candidate.prevDayHigh > 0.0 && candidate.prevDayLow > 0.0) {

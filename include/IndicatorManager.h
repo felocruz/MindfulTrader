@@ -25,6 +25,15 @@ public:
     void Reset();
     void UpdateBarContext(SCStudyInterfaceRef sc);
 
+    /// Refresh the daily cache (prevDayHigh/prevDayLow, real Value Area) for the current trading
+    /// day. Idempotent by construction (day-gated internally: a call after the trading day has
+    /// already been refreshed this bar is a cheap no-op), so it is safe to call from more than one
+    /// study on the same chart. Public (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    /// final-review fix wave, round 2): TripleScreen3.cpp calls this directly, immediately before its
+    /// own CalculateDailyBias(...) read, rather than relying on inferred cross-study
+    /// CalculationPrecedence ordering against SCStudies.cpp's call inside UpdateBarContext().
+    void UpdateDailyCache(SCStudyInterfaceRef sc);
+
     bool HasSignificantChange();
     void ClearDirtyMask() { m_dirty_mask = 0; }
     std::string getScreen1EntryText();
@@ -117,7 +126,6 @@ public:
 
 private:
     IndicatorManager();
-    void UpdateDailyCache(SCStudyInterfaceRef sc);
     ~IndicatorManager() = default;
 
     // Helper: Build Event FlatBuffer and send via pubQueue with size prefix
