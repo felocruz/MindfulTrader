@@ -6,6 +6,7 @@
 #include <numeric>
 #include <array>
 #include <string>
+#include <cstdint>
 
 namespace MindfulTrader {
 
@@ -40,6 +41,16 @@ namespace MindfulTrader {
             // Initialize histograms to zero (institutional standard: no arbitrary priors)
             m_histogramP.fill(0.0);
             m_histogramQ.fill(0.0);
+
+            // Bin index recorded at insertion time for each ring-buffer slot (Finding 1,
+            // final-review fix round). MapToBin() is time-varying (depends on the live,
+            // drifting m_emaAbsLogReturn), so re-deriving a slot's eviction bin via
+            // MapToBin(oldVal) at eviction time can disagree with the bin it was
+            // originally counted into when inserted -- desyncing the histogram from the
+            // ring buffer's true contents. Recording the bin at insertion and decrementing
+            // THAT recorded bin at eviction restores the invariant sum(hist) == count.
+            m_binIndexP.fill(0);
+            m_binIndexQ.fill(0);
         }
 
         /**
@@ -62,17 +73,25 @@ namespace MindfulTrader {
             }
 
             // Update Long-Term Window (Q) - Baseline
-            double oldValQ = m_bufferQ[m_headIndexQ];
+            // Compute the new bin once and record it into the parallel bin-index array
+            // for this slot BEFORE it gets evicted on some future call -- the recorded
+            // bin (not a re-derived MapToBin(oldVal) under a since-drifted sigma) is
+            // what UpdateHistogram() decrements at eviction time (Finding 1).
+            size_t newBinQ = MapToBin(logReturn);
+            uint8_t oldBinQ = m_binIndexQ[m_headIndexQ];
             m_bufferQ[m_headIndexQ] = logReturn;
-            UpdateHistogram(m_histogramQ, logReturn, oldValQ, m_countQ < WINDOW_SIZE_Q);
+            UpdateHistogram(m_histogramQ, newBinQ, oldBinQ, m_countQ < WINDOW_SIZE_Q);
+            m_binIndexQ[m_headIndexQ] = static_cast<uint8_t>(newBinQ);
 
             m_headIndexQ = (m_headIndexQ + 1) % WINDOW_SIZE_Q;
             if (m_countQ < WINDOW_SIZE_Q) m_countQ++;
 
             // Update Short-Term Window (P) - Current Regime
-            double oldValP = m_bufferP[m_headIndexP];
+            size_t newBinP = MapToBin(logReturn);
+            uint8_t oldBinP = m_binIndexP[m_headIndexP];
             m_bufferP[m_headIndexP] = logReturn;
-            UpdateHistogram(m_histogramP, logReturn, oldValP, m_countP < WINDOW_SIZE_P);
+            UpdateHistogram(m_histogramP, newBinP, oldBinP, m_countP < WINDOW_SIZE_P);
+            m_binIndexP[m_headIndexP] = static_cast<uint8_t>(newBinP);
 
             m_headIndexP = (m_headIndexP + 1) % WINDOW_SIZE_P;
             if (m_countP < WINDOW_SIZE_P) m_countP++;
@@ -139,6 +158,8 @@ namespace MindfulTrader {
             m_bufferLZ.fill(0.0);
             m_histogramP.fill(0.0);
             m_histogramQ.fill(0.0);
+            m_binIndexP.fill(0);
+            m_binIndexQ.fill(0);
             m_headIndexP = 0;
             m_headIndexQ = 0;
             m_headIndexLZ = 0;
@@ -333,6 +354,13 @@ namespace MindfulTrader {
         std::array<double, NUM_BINS> m_histogramP;
         std::array<double, NUM_BINS> m_histogramQ;
 
+        // Bin index each ring-buffer slot was mapped to at insertion time (Finding 1).
+        // NUM_BINS == 10 fits in uint8_t; indexed by the same head-index slot as
+        // m_bufferP/m_bufferQ, so eviction always decrements the bin actually
+        // occupied by the value being overwritten, not a live-sigma re-derivation.
+        std::array<uint8_t, WINDOW_SIZE_P> m_binIndexP;
+        std::array<uint8_t, WINDOW_SIZE_Q> m_binIndexQ;
+
         size_t m_headIndexP;
         size_t m_headIndexQ;
         size_t m_headIndexLZ;
@@ -381,12 +409,15 @@ namespace MindfulTrader {
             return 9;
         }
 
-        void UpdateHistogram(std::array<double, NUM_BINS>& hist, double newVal, double oldVal, bool isWarmingUp) {
-            size_t newBin = MapToBin(newVal);
+        // Takes the bin indices directly (already computed by the caller from the
+        // insertion-time sigma and, for eviction, recorded at the original insertion
+        // time) rather than re-deriving them from raw values via MapToBin() -- that
+        // re-derivation is what caused Finding 1's histogram/ring-buffer desync,
+        // since MapToBin() depends on the live, drifting m_emaAbsLogReturn.
+        void UpdateHistogram(std::array<double, NUM_BINS>& hist, size_t newBin, size_t oldBin, bool isWarmingUp) {
             hist[newBin] += 1.0;
 
             if (!isWarmingUp) {
-                size_t oldBin = MapToBin(oldVal);
                 if (hist[oldBin] > 0.0) {
                     hist[oldBin] -= 1.0;
                 }

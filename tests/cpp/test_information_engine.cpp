@@ -19,6 +19,7 @@
 
 #include "InformationEngine.h"
 
+#include <cmath>
 #include <cstdio>
 
 using namespace MindfulTrader;
@@ -133,6 +134,62 @@ int main() {
         }
         const double recurrenceAfterReset = engine.GetRecurrenceRate(0.00012);  // 1.2bp
         check("reset_clears_stale_volatility_estimate", recurrenceAfterReset < 0.05);
+    }
+
+    // Finding 1 regression test (final-review fix round): UpdateHistogram() used
+    // to re-derive the eviction bin via MapToBin(oldVal) using the CURRENT (live,
+    // drifted) m_emaAbsLogReturn, instead of the sigma in effect when oldVal was
+    // originally inserted. That desyncs the histogram from the ring buffer's true
+    // contents once sigma drifts across an eviction -- which requires (a) pushing
+    // well past WINDOW_SIZE_Q (500) so eviction actually happens, and (b) genuinely
+    // varying volatility between insertion and eviction of the SAME slot.
+    //
+    // GetShannonEntropy() is the actual production consumer (wired through
+    // ContextManager::shannonFlowEntropy into RiskManager's chaos-halt gate and
+    // Scoring's directional/mean-reversion multipliers) and is exercised by no
+    // other test in this file -- this is the regression test that would have
+    // caught the bug: it FAILS against the unfixed header (entropy goes deeply
+    // negative once the histogram desyncs) and PASSES against the fixed one.
+    {
+        InformationEngine engine;
+        bool sawEntropyOutOfBounds = false;
+        bool sawRecurrenceOutOfBounds = false;
+        const double kMaxEntropy = std::log2(10.0);
+
+        // Alternate quiet/volatile blocks of 200+ observations each (each block
+        // exceeds neither window alone, but the total drives repeated eviction
+        // in both P (50) and Q (500) windows across many sigma regime changes).
+        constexpr int kBlocks = 8;             // 8 * 220 = 1760 observations total
+        constexpr int kObservationsPerBlock = 220;
+        for (int block = 0; block < kBlocks; ++block) {
+            const bool quiet = (block % 2 == 0);
+            const double base = quiet ? 0.00012 : 0.006;  // ~1.2bp vs ~60bp typical moves
+            for (int i = 0; i < kObservationsPerBlock; ++i) {
+                // Varied signed magnitudes (not a constant), matching feedVariedRegime's
+                // rationale: spreads mass across bins instead of pinning it at one.
+                static const double signedMultiples[] = {
+                    -3.0, -2.0, -1.3, -0.8, -0.5, -0.3, -0.15,
+                     0.15, 0.3,  0.5,  0.8,  1.3,  2.0,  3.0
+                };
+                constexpr int kNumMultiples = sizeof(signedMultiples) / sizeof(signedMultiples[0]);
+                const double logReturn = base * signedMultiples[i % kNumMultiples];
+                engine.AddObservation(logReturn);
+
+                const double h = engine.GetShannonEntropy();
+                if (h < 0.0 || h > kMaxEntropy) {
+                    sawEntropyOutOfBounds = true;
+                }
+                const double r = engine.GetRecurrenceRate(logReturn);
+                if (r < 0.0 || r > 1.0) {
+                    sawRecurrenceOutOfBounds = true;
+                }
+            }
+        }
+
+        check("shannon_entropy_stays_in_bounds_across_drifting_volatility_and_eviction",
+              !sawEntropyOutOfBounds);
+        check("recurrence_rate_stays_in_bounds_across_drifting_volatility_and_eviction",
+              !sawRecurrenceOutOfBounds);
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
