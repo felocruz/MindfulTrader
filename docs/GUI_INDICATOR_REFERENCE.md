@@ -410,7 +410,7 @@ Screen 3 provides precise entry execution (Elder: "Pick the right moment"). Thes
 - **Usage**: EXTREME_LOW (3) = compression before breakout. EXTREME_HIGH (4) = exhaustion or gap.
 
 ### 22. daily_bias
-- **JSON Key**: `"daily_bias"` ⚠️ (NOT present in raw data as separate integer - may be embedded in context fields)
+- **JSON Key**: `"daily_bias"`
 - **Enum Type**: `DailyBiasEnum`
 - **Value Range**: -2 to 2
 - **Description**: Daily price action bias from overnight/opening range (Market Profile context)  
@@ -421,7 +421,7 @@ Screen 3 provides precise entry execution (Elder: "Pick the right moment"). Thes
   - `1` = BULLISH_ACCEPTANCE: Price accepted above value area (bullish day)
   - `2` = BULLISH_REJECTION_TEST: Price tested below value area, rejected up (buy signal)
 - **Usage**: Rejection tests (±2) are strongest signals. Acceptance states (±1) define intraday bias.
-- **⚠️ WARNING**: Field NOT found in raw data as of January 2026 - may be missing from C++ transmission or embedded elsewhere
+- **Transmission**: Transmitted via `IndicatorManager::SyncFeatureVector()` (feature vector index 25) and mutated directly to FlatBuffer events (`IndicatorManager.cpp:902-903`)
 
 ### 23. short_mkt_action
 - **JSON Key**: `"short_mkt_action"` ⚠️ (NOT present in raw data - C++ may not be sending this field)

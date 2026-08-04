@@ -11,6 +11,7 @@
 #include "generated/indicator_key_registry_generated.h"
 #include "generated/training_shared_writers_generated.h"
 #include "messaging/EventSerializer.h"
+#include "VolumeProfileEngine.h"
 
 // Elite v2.3: Named constants for feature vector defaults
 namespace FeatureDefaults {
@@ -919,7 +920,25 @@ void IndicatorManager::PopulateIndicatorState(MTS::Schema::IndicatorState& state
 }
 
 void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
-    const int currentTradingDay = sc.BaseDateTimeIn[sc.Index].GetDate();
+    // Trading-day semantics, not calendar date (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    // final-review fix wave, lbrnet/logs/rc_gemini.log GEMINI_REVIEW_080): for an overnight-session
+    // instrument like ES, Sunday evening through Monday's close is ONE trading day spanning two
+    // calendar dates. Using plain GetDate() here would fire this gate at Monday midnight, mid-Globex,
+    // and misresolve "yesterday" to Sunday (zero RTH bars by construction).
+    const int currentTradingDay = sc.GetTradingDayDate(sc.BaseDateTimeIn[sc.Index]);
+
+    // Trading-day-anchored midnight (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    // final-review fix wave, round 2): the native-OHLC and CSV-override lookback loops below walk
+    // backward by whole days to resolve "yesterday". Anchoring that walk to sc.BaseDateTimeIn[sc.Index]
+    // (the current bar's raw calendar timestamp) is wrong for an overnight-session instrument -- on the
+    // first bar of a new trading day that starts the prior calendar evening (e.g. Tuesday 18:00 Globex
+    // open for trading day "Wednesday"), `daysBack=1` from that raw timestamp lands on Monday, not
+    // Tuesday, shifting prevDayHigh/prevDayLow back a full session for the entire new trading day.
+    // Anchoring to currentTradingDay's own midnight fixes both loops: DailyHighLowLoader::GetDataForDate
+    // (src/DailyHighLowLoader.cpp:130-134) provably keys on calendar date only (SCDateTime::GetDateYMD),
+    // so a trading-day-anchored SCDateTime resolves correctly there. GetOHLCForDate's exact treatment of
+    // the argument is not independently confirmed from the header alone -- see report residual note.
+    const SCDateTime tradingDayAnchor(currentTradingDay, 0);  // SCDateTime(int Date, int TimeInSeconds), scdatetime.h:1034
 
     // Update cache only when trading day changes (reload daily high/low once per day)
     if (currentTradingDay != m_dailyCache.tradingDay) {
@@ -939,7 +958,7 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
 
     constexpr int MAX_LOOKBACK_DAYS = 7;
     for (int daysBack = 1; daysBack <= MAX_LOOKBACK_DAYS; ++daysBack) {
-        const SCDateTime candidateDay = sc.BaseDateTimeIn[sc.Index] - static_cast<double>(daysBack);
+        const SCDateTime candidateDay = tradingDayAnchor - static_cast<double>(daysBack);
         float scOpen = 0.0f, scHigh = 0.0f, scLow = 0.0f, scClose = 0.0f;
 
         // Native SC API call
@@ -970,7 +989,7 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
         // Try to match the exact date we found natively, or search similar logic
         constexpr int MAX_LOOKBACK_DAYS = 7;
     for (int daysBack = 1; daysBack <= MAX_LOOKBACK_DAYS; ++daysBack) {
-            const SCDateTime candidateDay = sc.BaseDateTimeIn[sc.Index] - static_cast<double>(daysBack);
+            const SCDateTime candidateDay = tradingDayAnchor - static_cast<double>(daysBack);
             const DailyHighLowData candidate = loader.GetDataForDate(candidateDay);
 
             if (candidate.prevDayHigh > 0.0 && candidate.prevDayLow > 0.0) {
@@ -997,6 +1016,71 @@ void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
             m_dailyCache.prevDayLow = static_cast<float>(csvData.prevDayLow);
         }
     } // End of loader.IsLoaded() check
+
+    // === Real Volume Profile Value Area (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    // final-review fix wave). Gated off by default -- see SetRealVolumeProfileDailyBiasEnabled's
+    // comment for why. Mirrors the backward-walk-if-empty pattern the native-OHLC block above already
+    // uses for prevDayHigh/prevDayLow, so a market holiday (or any other RTH-less prior day) doesn't
+    // silently strand the cache -- it keeps walking back to the most recent day with real RTH volume.
+    if (m_realVolumeProfileDailyBiasEnabled && sc.VolumeAtPriceForBars != nullptr) {
+        // RTH-only (09:30-16:00 ET): Market Profile theory is built on RTH volume, and this codebase
+        // already keeps the same RTH/overnight split for the Amihud percentile pools (TripleScreen3.cpp
+        // "Layer B") for the same reason -- thin overnight/Globex volume would otherwise dilute the
+        // Value Area into something unnaturally wide. sc.HMS_TIME() is deprecated (scdatetime.h:965) --
+        // SCDateTime(...).GetTime() is the modern replacement.
+        static const int kRthOpenTime = SCDateTime(9, 30, 0, 0).GetTime();
+        static const int kRthCloseTime = SCDateTime(16, 0, 0, 0).GetTime();
+        constexpr int MAX_VALUE_AREA_LOOKBACK_DAYS = 7;
+
+        int searchEndIndex = sc.GetFirstIndexForDate(sc.ChartNumber, currentTradingDay);
+        bool foundValueArea = false;
+
+        for (int daysBack = 0; daysBack < MAX_VALUE_AREA_LOOKBACK_DAYS && searchEndIndex > 0 && !foundValueArea; ++daysBack) {
+            const int candidateLastIndex = searchEndIndex - 1;
+            const int candidateTradingDay = sc.GetTradingDayDate(sc.BaseDateTimeIn[candidateLastIndex]);
+            const int candidateFirstIndex = sc.GetFirstIndexForDate(sc.ChartNumber, candidateTradingDay);
+            if (candidateFirstIndex < 0 || candidateFirstIndex > candidateLastIndex) {
+                break;  // date resolution failed -- stop walking, fall through to the zeroed fallback below
+            }
+
+            std::vector<vpe::PriceVolume> levels;
+            for (int barIndex = candidateFirstIndex; barIndex <= candidateLastIndex; ++barIndex) {
+                const int barTime = sc.BaseDateTimeIn[barIndex].GetTime();
+                if (barTime < kRthOpenTime || barTime >= kRthCloseTime) {
+                    continue;  // overnight/Globex bar -- excluded from the Value Area
+                }
+                const unsigned int numLevels = sc.VolumeAtPriceForBars->GetSizeAtBarIndex(barIndex);
+                for (unsigned int i = 0; i < numLevels; ++i) {
+                    const s_VolumeAtPriceV2* vap = nullptr;
+                    if (sc.VolumeAtPriceForBars->GetVAPElementAtIndex(barIndex, static_cast<int>(i), &vap) && vap != nullptr) {
+                        levels.push_back({static_cast<int32_t>(vap->PriceInTicks), static_cast<double>(vap->Volume)});
+                    }
+                }
+            }
+
+            const vpe::ValueArea va = vpe::ComputeValueArea(levels, 70.0);
+            if (va.valid && sc.TickSize > 0.0) {
+                m_dailyCache.valueAreaHigh = static_cast<float>(va.valueAreaHighInTicks * sc.TickSize);
+                m_dailyCache.valueAreaLow = static_cast<float>(va.valueAreaLowInTicks * sc.TickSize);
+                foundValueArea = true;
+            } else {
+                searchEndIndex = candidateFirstIndex;  // this day had no RTH volume -- walk back further
+            }
+        }
+
+        if (!foundValueArea) {
+            m_dailyCache.valueAreaHigh = 0.0f;
+            m_dailyCache.valueAreaLow = 0.0f;
+            Logger::getInstance().log(
+                "IndicatorManager::UpdateDailyCache: Volume Profile Value Area aggregation found no "
+                "valid RTH session within " + std::to_string(MAX_VALUE_AREA_LOOKBACK_DAYS) +
+                " days -- falling back to the range-split proxy for today."
+            );
+        }
+    } else {
+        m_dailyCache.valueAreaHigh = 0.0f;
+        m_dailyCache.valueAreaLow = 0.0f;
+    }
 
     // Daily anchor updates are intentionally silent to avoid recurring startup/runtime noise.
     m_dailyCache.tradingDay = currentTradingDay;

@@ -193,6 +193,15 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         sc.FreeDLL = 0;
         // ENABLE INTRA-BAR UPDATES FOR PHYSICS (Recurrence Rate / Fractal Dim)
         sc.AutoLoop = 1;
+        // Required for VolumeAtPriceForBars aggregation in IndicatorManager::UpdateDailyCache
+        // (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md final-review fix wave,
+        // round 3). This study's own sc almost always wins the day-gate race (STD precedence, runs
+        // before SCStudies.cpp's LOW-precedence study on the same tick per round-2's fix) and is the
+        // one that actually performs the aggregation, reading sc.VolumeAtPriceForBars off ITS OWN
+        // study interface -- so this study must request VAP maintenance itself too, in case the flag
+        // is populated per-study-interface rather than purely chart-wide. Also set in SCStudies.cpp;
+        // redundant-but-harmless if the flag turns out to be chart-wide, and load-bearing if it isn't.
+        sc.MaintainVolumeAtPriceData = 1;
 
         Subgraph_KeltnerAverage.Name = "Keltner Average";
         Subgraph_KeltnerAverage.DrawStyle = DRAWSTYLE_LINE;
@@ -568,6 +577,19 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     auto& indMgr = IndicatorManager::Instance();
     auto& infMgr = InferenceManager::Instance();
 
+    // Ensure the daily cache (prevDayHigh/prevDayLow, real Value Area) is fresh on THIS chart's own
+    // sc reference before anything below reads it (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    // final-review fix wave, round 2). SCStudies.cpp's scsf_MindfulTrader also calls UpdateDailyCache()
+    // (inside UpdateBarContext()) on the same TS3 chart, but that study runs at LOW_PREC_LEVEL, i.e.
+    // AFTER this (STD_PREC_LEVEL) study's calculation on the same tick -- so relying on that call alone
+    // would leave prevDayHigh/prevDayLow (read below and threaded into DetectStructure's TRAP floor,
+    // CalculateDailyBias, and the support/resistance/distance calculations further down this function)
+    // one full tick stale on every bar. UpdateDailyCache() is idempotent (internally day-gated), so
+    // calling it a second time here, from this study's own sc, is a cheap no-op once the day has
+    // already been refreshed -- it does not duplicate work, it just guarantees freshness regardless of
+    // cross-study execution order.
+    indMgr.UpdateDailyCache(sc);
+
     // Update indicators with new high/low values
     const auto shortPriceAction = indMgr.GetIndicator<ShortMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
 
@@ -684,7 +706,9 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             prevDayHigh,
             prevDayLow,
             Subgraph_HurstExponent[sc.Index],
-            Subgraph_PathEfficiencySNR[sc.Index]
+            Subgraph_PathEfficiencySNR[sc.Index],
+            indMgr.GetCachedValueAreaLow(),
+            indMgr.GetCachedValueAreaHigh()
         ));
 
 
@@ -786,6 +810,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             }
         }
     }
+
     if (climateIndicator) {
         currentClimate = climateIndicator->Value();
     }

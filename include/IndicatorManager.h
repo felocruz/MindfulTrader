@@ -25,6 +25,15 @@ public:
     void Reset();
     void UpdateBarContext(SCStudyInterfaceRef sc);
 
+    /// Refresh the daily cache (prevDayHigh/prevDayLow, real Value Area) for the current trading
+    /// day. Idempotent by construction (day-gated internally: a call after the trading day has
+    /// already been refreshed this bar is a cheap no-op), so it is safe to call from more than one
+    /// study on the same chart. Public (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    /// final-review fix wave, round 2): TripleScreen3.cpp calls this directly, immediately before its
+    /// own CalculateDailyBias(...) read, rather than relying on inferred cross-study
+    /// CalculationPrecedence ordering against SCStudies.cpp's call inside UpdateBarContext().
+    void UpdateDailyCache(SCStudyInterfaceRef sc);
+
     bool HasSignificantChange();
     void ClearDirtyMask() { m_dirty_mask = 0; }
     std::string getScreen1EntryText();
@@ -50,6 +59,15 @@ public:
 
     float GetCachedPrevDayHigh() const { return m_dailyCache.prevDayHigh; }
     float GetCachedPrevDayLow() const { return m_dailyCache.prevDayLow; }
+    float GetCachedValueAreaHigh() const { return m_dailyCache.valueAreaHigh; }
+    float GetCachedValueAreaLow() const { return m_dailyCache.valueAreaLow; }
+
+    /// Train/live parity gate (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    /// final-review fix wave): the real Volume Profile Value Area must stay OFF by default
+    /// because the currently-deployed HMM was fitted on the old proxy's semantics. Only the
+    /// operator flipping the "Enable Real Volume Profile Daily Bias" ACSIL input (SCStudies.cpp)
+    /// turns this on; UpdateDailyCache() checks it before running the real aggregation.
+    void SetRealVolumeProfileDailyBiasEnabled(bool enabled) { m_realVolumeProfileDailyBiasEnabled = enabled; }
 
     // ...existing code...
     Oscillator310* Oscillator310Ptr() const {
@@ -108,7 +126,6 @@ public:
 
 private:
     IndicatorManager();
-    void UpdateDailyCache(SCStudyInterfaceRef sc);
     ~IndicatorManager() = default;
 
     // Helper: Build Event FlatBuffer and send via pubQueue with size prefix
@@ -185,10 +202,13 @@ private:
         int tradingDay = -1;        // Cached trading day (Julian date)
         float prevDayHigh = 0.0f;   // Previous day's session high
         float prevDayLow = 0.0f;    // Previous day's session low
+        float valueAreaHigh = 0.0f; // Previous day's real Volume Profile VAH (0.0f = unavailable)
+        float valueAreaLow = 0.0f;  // Previous day's real Volume Profile VAL (0.0f = unavailable)
         bool validated = false;     // Validation done once at startup
     };
 
     DailyCache m_dailyCache;
+    bool m_realVolumeProfileDailyBiasEnabled = false;
     bool m_dailyCacheInitialized = false;
     bool m_dailyAnchorZeroWarningLogged = false;
 

@@ -10,6 +10,7 @@ namespace {
     // Menu and UI persistent IDs
     constexpr int MENU_ITEM_EXISTS_ID = 10;
     constexpr int IDX_INPUT_DEBUG_MTS = 13;
+    constexpr int IDX_INPUT_ENABLE_REAL_VOLUME_PROFILE_DAILY_BIAS = 14;
     constexpr int VALIDATE_TRADE_MENU_ID = 22;
     constexpr int RISK_DASHBOARD_MENU_ID = 23;
     constexpr int STRUCT_BAR_INDEX_ID = 40; // Elite v3.0: Track last structure update
@@ -44,6 +45,19 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
 
         sc.Input[IDX_INPUT_DEBUG_MTS].Name = "Debug MTS";
         sc.Input[IDX_INPUT_DEBUG_MTS].SetYesNo(0);
+
+        // Train/live parity gate (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+        // final-review fix wave): OFF by default. The currently-deployed HMM was fitted on the old
+        // range-split proxy's daily_bias semantics; do not enable until a coordinated retrain on the
+        // real Value Area's distribution has shipped on the Python side.
+        sc.Input[IDX_INPUT_ENABLE_REAL_VOLUME_PROFILE_DAILY_BIAS].Name =
+            "Enable Real Volume Profile Daily Bias (EXPERIMENTAL - requires HMM retrain, see plan doc)";
+        sc.Input[IDX_INPUT_ENABLE_REAL_VOLUME_PROFILE_DAILY_BIAS].SetYesNo(0);
+
+        // Chart-level flag required for VolumeAtPriceForBars aggregation in IndicatorManager::UpdateDailyCache.
+        // Runs on the same TS3 15-minute chart as this study (see comment above), so setting it here is
+        // equivalent to setting it in any other study on this chart.
+        sc.MaintainVolumeAtPriceData = 1;
 
         // Psychological Dashboard - No Dollar Amounts Visible
         // All in same region (1) below price chart
@@ -300,6 +314,8 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
         // Update bar-level indicator context (daily cache, warmup, temporal counters).
         // Must run during history to prime DailyHighLowLoader and CheckWarmupStatus.
         // Mirrors EventDataCollectorStudy for path consistency.
+        IndicatorManager::Instance().SetRealVolumeProfileDailyBiasEnabled(
+            sc.Input[IDX_INPUT_ENABLE_REAL_VOLUME_PROFILE_DAILY_BIAS].GetYesNo() != 0);
         IndicatorManager::Instance().UpdateBarContext(sc);
 
         // === FULL RECALCULATION / HISTORICAL DOWNLOAD GUARD ===
