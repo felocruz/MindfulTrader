@@ -402,10 +402,10 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
                 const int closeHHMM = (sc.EndTime1 / 3600) * 100
                                     + (sc.EndTime1 % 3600) / 60;
 
-                // Sierra Chart DOW: 1=Sunday, 2=Monday, ..., 6=Friday, 7=Saturday
-                bool isMarketClosed = (barDOW == 7)                        // Saturday: always closed
-                    || (barDOW == 1 && barTimeHHMM < openHHMM)             // Sunday before session open
-                    || (barDOW == 6 && barTimeHHMM >= closeHHMM);          // Friday at/after session close
+                // Sierra Chart DOW: 0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday
+                bool isMarketClosed = (barDOW == 6)                        // Saturday: always closed
+                    || (barDOW == 0 && barTimeHHMM < openHHMM)             // Sunday before session open
+                    || (barDOW == 5 && barTimeHHMM >= closeHHMM);          // Friday at/after session close
                 if (isMarketClosed) {
                     return;  // Silently skip — no stale data in .context
                 }
