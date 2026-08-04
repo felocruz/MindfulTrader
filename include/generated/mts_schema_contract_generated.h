@@ -30,7 +30,7 @@ inline constexpr std::size_t kObsMicroAsymmetry = 7;
 inline constexpr std::size_t kObsFisherInfo = 8;
 inline constexpr std::size_t kObsTailIndex = 9;
 inline constexpr std::size_t kObsSkewnessIdx = 10;
-inline constexpr std::size_t kObsVpinToxicity = 11;
+inline constexpr std::size_t kObsAmihudIlliquidity = 11;
 inline constexpr std::size_t kObsLiqFragility = 12;
 inline constexpr std::size_t kObsRecurrenceRate = 13;
 inline constexpr std::size_t kObsFractalDim = 14;
@@ -57,7 +57,7 @@ inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames
     "fisher_info",
     "tail_index",
     "skewness_idx",
-    "vpin_toxicity",
+    "amihud_illiquidity",
     "liq_fragility",
     "recurrence_rate",
     "fractal_dim",
@@ -155,7 +155,7 @@ inline MTS::Schema::ObservationData MakeObservationData(
         values[kObsFisherInfo],
         values[kObsTailIndex],
         values[kObsSkewnessIdx],
-        values[kObsVpinToxicity],
+        values[kObsAmihudIlliquidity],
         values[kObsLiqFragility],
         values[kObsRecurrenceRate],
         values[kObsFractalDim],
@@ -176,7 +176,7 @@ inline ObservationArray ToObservationArray(
         observation.fisher_info(),
         observation.tail_index(),
         observation.skewness_idx(),
-        observation.vpin_toxicity(),
+        observation.amihud_illiquidity(),
         observation.liq_fragility(),
         observation.recurrence_rate(),
         observation.fractal_dim(),

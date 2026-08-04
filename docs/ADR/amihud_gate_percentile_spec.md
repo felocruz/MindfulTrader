@@ -18,7 +18,7 @@
 | O1 | Rolling-percentile window | **21 trading days, SESSION-AWARE (separate RTH vs overnight percentile pools), continuous ring (no daily reset).** Sample one raw Amihud per closed 15-min bar. 24h/globex data → overnight thin-volume Amihud must not contaminate the RTH pool. Amihud's native aggregation is monthly; liquidity-risk/TCA practice converges on a ~1-month recent-normal window. RTH pool ≈ 546 samples, overnight ≈ 1470 over 21d — both resolve p90/p75. |
 | O2 | Percentile parity mechanism | **Ship the C++-computed `amihud_percentile` on the wire** (new `RiskGateContext` field). Exact bar-for-bar veto parity; Python reads it directly rather than re-deriving (no window-drift risk). |
 | O3 | Threshold values | **p90 normal / p75 fat-tail** (fat-tail = Student-t DOF ≤ 4 **or** realized kurtosis > 8). Validate firing rate against the 200k-event `.alpha` sample before sign-off (not 0%, not ~100%). |
-| O4 | `vpin_toxicity` obs-field rename | **DEFER** to next retrain cycle (obs index 11 unchanged, name only is stale — renaming ripples into training/inference feature maps). **Pre-production update (2026-07-15):** the system is not in production yet, so the first prod model will be trained fresh anyway — **pull this rename forward before that canonical training run** so no mislabel ships to production. It is name-only (index 11 and trained weights unaffected), so the risk is low; the only reason to defer within dev is to batch it with the training-side field-map edit. |
+| O4 | `vpin_toxicity` obs-field rename | **DONE (2026-08-04).** Pulled forward per the pre-production carve-out below, ahead of the first canonical training run. Schema field renamed `vpin_toxicity` → `amihud_illiquidity` (obs index 11 unchanged); `regenerate_schema.sh`'s hardcoded contract-header heredoc updated to match; C++ (`OBS_VPIN_TOXICITY` → `OBS_AMIHUD_ILLIQUIDITY`, `mutate_vpin_toxicity` → `mutate_amihud_illiquidity`, `NormalizedAnchors.vpin` → `.amihudIlliquidity`) and lbrnet (`train_student_t_hmm.py`'s `_M_VPIN` model-field lookup, `feature_contract.py`, `schema.py`, generated `ObservationData.py`/`schema_contract.py`, tests) renamed together in one coordinated pass. MindfulTrader build green; full lbrnet test suite (557 passed) green. |
 
 ---
 
@@ -42,19 +42,18 @@ Three representations, three blast radii:
 - `PositionManager` toxic-flow now reads `lrc.amihudPercentile` (Phase A) — no raw read remains.
 - **Already done earlier:** the `RiskGateContext.amihud_illiquidity` schema field (born correct).
 
-**(b) Serialized DTO mirror fields + JSON keys — CONTRACT-coupled (DEFER to a Python-coordinated pass):**
+**(b) Serialized DTO mirror fields + JSON keys — CONTRACT-coupled — DONE (2026-08-04):**
 - `RejectionLedger::ContextSnapshot.vpin` + JSON key `{"vpin", …}` (consumed by the Python PAER).
 - `RiskPolicy` input `.vpin` (`TradeDecisionEngine.h`) + its own `ToJson` `{"vpin", …}` key + the `in.vpin / 0.80` sizing normalization.
 - `NormalizedAnchors.vpin` (written from the subgraph at `TripleScreen3.cpp`).
-- **Rationale for deferral:** these DTO field names double as JSON/serialization keys read downstream; renaming them in isolation breaks the consumer contract. Rename them together with the Python readers (same discipline as (c)). The C++ source now assigns from `lrc.amihudIlliquidity`, so the value is correct; only the mirror *name* is legacy.
-- **Pre-production update (2026-07-15):** no production consumer exists yet, so there is no live contract to preserve — do the C++-and-Python rename together **before first deploy** rather than carrying `vpin` mislabels into production. This is a coordinated (not deferred-indefinitely) task; sequence it with the Python co-evolution pass (§4b).
+- **Resolution:** `RejectionLedger::ContextSnapshot.vpin` → `.amihudIlliquidity` (+ JSON key `"vpin"` → `"amihud_illiquidity"`), `TradeDecisionEngine.h`'s mirror struct + its `ToJson` key, and `NormalizedAnchors.vpin` → `.amihudIlliquidity` all renamed in the same pass as (c), per the pre-production carve-out (no live consumer contract existed yet to preserve).
 - **Also converted to the percentile (done):** `Scoring.cpp` (was `> 0.80/0.60` raw → now `amihudPercentile > 0.90/0.75`, kill/halve) and `RiskPolicy`/`ComputeRiskPrice` microstructure premium (was `in.vpin / 0.80` raw → now `in.amihudPercentile` directly; the `RiskPriceInputs.vpin` field became `amihudPercentile`). The entire raw-gate path now uses the stationary session-aware percentile; no fixed-threshold-on-raw-Amihud site remains.
 
-**(c) Scaled observation field — MODEL INPUT, retrain blast radius (DEFER to next HPO/training cycle):**
-- schema `ObservationData.vpin_toxicity` (`mts_schema.fbs:395`, obs index 11)
-- `OBS_VPIN_TOXICITY` enum (`ContextManager.cpp:39,58,791`) + generated `kObsVpinToxicity` (`mts_schema_contract_generated.h:33`)
-- Python name-based readers (`schema_contract` field map, `calibrate_context_thresholds.py`, `backtest_runner.py` obs[11])
-- **Rationale for deferral:** renaming a model-input dimension name ripples into training/inference feature maps; per PC-03's original rationale, bundle with a retrain. Index 11 is unchanged; only the *name* is stale — low risk to defer.
+**(c) Scaled observation field — MODEL INPUT, retrain blast radius — DONE (2026-08-04):**
+- schema `ObservationData.amihud_illiquidity` (`mts_schema.fbs:395`, obs index 11 unchanged) — was `vpin_toxicity`
+- `OBS_AMIHUD_ILLIQUIDITY` enum (`ContextManager.cpp`, `ContextManager.h`) + generated `kObsAmihudIlliquidity` (`mts_schema_contract_generated.h`) — was `OBS_VPIN_TOXICITY`/`kObsVpinToxicity`
+- Python name-based readers renamed together: `schema_contract` field map (regenerated), `train_student_t_hmm.py`'s `_M_VPIN` → `_M_AMIHUD_ILLIQUIDITY`, `feature_contract.py`, `calibrate_context_thresholds.py`, `backtest_runner.py` (obs[11] readers + `_VPIN_TOXICITY_TAIL_THRESHOLD_*` → `_AMIHUD_ILLIQUIDITY_TAIL_THRESHOLD_*`)
+- **Rationale for pulling forward:** no trained production model exists yet (pre-production carve-out, §0 O4) — the first canonical training run reads the corrected name directly instead of inheriting a stale one. Index 11 and trained-weight semantics are unaffected; only the name changed, so the retrain-bundling rationale that originally justified deferral no longer applied once C++ and Python were renamed in the same pass.
 
 ## 3. Implementation steps (C++)
 
@@ -90,7 +89,7 @@ The Python co-evolution cannot be validated until a fresh `.context` is regenera
 1. **[DONE]** Build green (C++); rename complete (no residual raw-side `vpin` in the gate path — all four consumers use the percentile); gate uses percentile. Commits: schema `8874418`, MindfulTrader `30b2f7c` (Layer B), `32389b3` (rename), `a482499` (Scoring/RiskPolicy), lbrnet `1963c14`.
 2. **[DONE, offline proxy]** Gate firing rate sane. See §5.1.
 3. **[PENDING replay]** C++ and Python agree on the veto decision bar-for-bar on a shared replay (percentile parity). Requires a Sierra replay with the new DLL to produce the frozen `.context`.
-4. **[PENDING Python pass]** PC-03 CLOSED (C++ source field renamed; serialized DTO/JSON mirrors deferred, §2b); PC-17 reclassified as canonical (stopgap framing removed in the lbrnet co-evolution pass).
+4. **[DONE, rename]** PC-03 CLOSED — C++ source field, DTO/JSON mirrors (§2b), and the wire schema obs field + Python name-based readers (§2c) all renamed `vpin`→`amihud_illiquidity` in one coordinated pass (2026-08-04). **[PENDING]** PC-17's stopgap-vs-canonical reclassification (the deeper percentile-gate-logic migration in §4b) is a separate, still-open item — not addressed by this rename.
 
 ### 5.1 Offline validation (pre-replay proxy, 2026-07-15)
 

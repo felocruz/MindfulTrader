@@ -1197,7 +1197,7 @@ Result<void> RiskManager::ValidateOrder(
 
     // Market snapshot from LocalRiskContext
     const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
-    baseRec.context.vpin               = lrc.amihudIlliquidity;
+    baseRec.context.amihudIlliquidity  = lrc.amihudIlliquidity;
     baseRec.context.spreadStress       = lrc.spreadStress;
     baseRec.context.shannonFlowEntropy = lrc.shannonFlowEntropy;
     baseRec.context.shannonEfficiency  = lrc.shannonEfficiency;
@@ -1493,7 +1493,7 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
     //  entropyDiscount                → ConvictionScore c2
     //  FreshnessDiscount              → ConvictionScore c8
     //  GetAtrVolatilityMultiplier()   → RiskPrice volatilityPremium
-    //  DeepContextMultiplier (VPIN…)  → RiskPrice microstructurePremium
+    //  DeepContextMultiplier (Amihud…) → RiskPrice microstructurePremium
     //  HMM RiskMultiplier             → RiskPrice regimeUncertaintyPremium
     //  HMM SizingDurationFactor       → RiskPrice regimeUncertaintyPremium
     //  MahalanobisSizingCap           → RiskPrice tailRiskPremium
@@ -1845,7 +1845,7 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
             rec.margin          = riskMultiplier;
             rec.sizingBuckets   = buckets;
 
-            rec.context.vpin               = localCtx.amihudIlliquidity;
+            rec.context.amihudIlliquidity  = localCtx.amihudIlliquidity;
             rec.context.spreadStress       = localCtx.spreadStress;
             rec.context.shannonFlowEntropy = localCtx.shannonFlowEntropy;
             rec.context.shannonEfficiency  = localCtx.shannonEfficiency;

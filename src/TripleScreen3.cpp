@@ -738,7 +738,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     // Canonical source: use adaptive-window subgraph outputs computed by
     // UpdateObservationVectorSubgraphs(...) to avoid duplicate fixed-window paths.
     const float skewness = Subgraph_SkewnessIdx[sc.Index];
-    const float vpin = Subgraph_AmihudIlliquidity[sc.Index];
+    const float amihud = Subgraph_AmihudIlliquidity[sc.Index];
     const float liqFragility = Subgraph_LiqFragility[sc.Index];
     const float microAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
 
@@ -752,7 +752,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     auto* obs = ContextManager::Instance().GetMutableObservation();
     if (obs) {
         obs->mutate_skewness_idx(skewness);
-        obs->mutate_vpin_toxicity(vpin);
+        obs->mutate_amihud_illiquidity(amihud);
         obs->mutate_liq_fragility(liqFragility);
         obs->mutate_mean_rev_z(meanRevZ);
         obs->mutate_vol_convexity(volConvexity);       // Also Q1 for safety
@@ -774,7 +774,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             // pre-open, after-hours, and globex route to the overnight pool.
             const bool isRTH = (s >= static_cast<int8_t>(TimeOfDayEnum::OPENING_HOUR) &&
                                 s <= static_cast<int8_t>(TimeOfDayEnum::PM_RUN_ENTRY));
-            ContextManager::Instance().PushAmihudSample(vpin, isRTH);
+            ContextManager::Instance().PushAmihudSample(amihud, isRTH);
 
             // Session-aware volume z-score baseline (deseasonalized): sample the
             // just-completed bar's total volume into its RTH/overnight pool. Same guard
@@ -1366,7 +1366,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         anchors.microAsymmetry = Subgraph_MicroAsymmetry[signalBarIndex];
         anchors.realizedKurtosis = Subgraph_RealizedKurtosis[signalBarIndex];
         anchors.skewnessIdx = Subgraph_SkewnessIdx[signalBarIndex];
-        anchors.vpin = Subgraph_AmihudIlliquidity[signalBarIndex];
+        anchors.amihudIlliquidity = Subgraph_AmihudIlliquidity[signalBarIndex];
         anchors.spreadStress = Subgraph_LiqFragility[signalBarIndex];
 
         const auto nhNlIndicator = indMgr.GetIndicator<NhNlSignalIndicator>(IndicatorKey::NH_NL_SIGNAL);

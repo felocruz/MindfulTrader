@@ -52,7 +52,7 @@ public:
     // ELITE v3.2: Deep Context Multiplier (Institutional Grade)
     // Uses LocalRiskContext (ContextManager single source of truth) to apply
     // continuous, non-linear scoring adjustments including:
-    // Shannon entropy, Taleb fragility, Hurst trend quality, VPIN toxicity,
+    // Shannon entropy, Taleb fragility, Hurst trend quality, Amihud illiquidity,
     // Taleb cliff proximity, Fisher info reliability
     double GetDeepContextMultiplier(PatternType pattern, const LocalRiskContext& ctx) const;
 

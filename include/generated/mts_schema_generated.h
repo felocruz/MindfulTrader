@@ -2202,7 +2202,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   float fisher_info_;
   float tail_index_;
   float skewness_idx_;
-  float vpin_toxicity_;
+  float amihud_illiquidity_;
   float liq_fragility_;
   float recurrence_rate_;
   float fractal_dim_;
@@ -2221,13 +2221,13 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         fisher_info_(0),
         tail_index_(0),
         skewness_idx_(0),
-        vpin_toxicity_(0),
+        amihud_illiquidity_(0),
         liq_fragility_(0),
         recurrence_rate_(0),
         fractal_dim_(0),
         mean_rev_z_(0) {
   }
-  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _tail_index, float _skewness_idx, float _vpin_toxicity, float _liq_fragility, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
+  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
       : log_variance_ratio_(::flatbuffers::EndianScalar(_log_variance_ratio)),
         burstiness_index_(::flatbuffers::EndianScalar(_burstiness_index)),
         relative_range_(::flatbuffers::EndianScalar(_relative_range)),
@@ -2239,7 +2239,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         fisher_info_(::flatbuffers::EndianScalar(_fisher_info)),
         tail_index_(::flatbuffers::EndianScalar(_tail_index)),
         skewness_idx_(::flatbuffers::EndianScalar(_skewness_idx)),
-        vpin_toxicity_(::flatbuffers::EndianScalar(_vpin_toxicity)),
+        amihud_illiquidity_(::flatbuffers::EndianScalar(_amihud_illiquidity)),
         liq_fragility_(::flatbuffers::EndianScalar(_liq_fragility)),
         recurrence_rate_(::flatbuffers::EndianScalar(_recurrence_rate)),
         fractal_dim_(::flatbuffers::EndianScalar(_fractal_dim)),
@@ -2311,11 +2311,11 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   void mutate_skewness_idx(float _skewness_idx) {
     ::flatbuffers::WriteScalar(&skewness_idx_, _skewness_idx);
   }
-  float vpin_toxicity() const {
-    return ::flatbuffers::EndianScalar(vpin_toxicity_);
+  float amihud_illiquidity() const {
+    return ::flatbuffers::EndianScalar(amihud_illiquidity_);
   }
-  void mutate_vpin_toxicity(float _vpin_toxicity) {
-    ::flatbuffers::WriteScalar(&vpin_toxicity_, _vpin_toxicity);
+  void mutate_amihud_illiquidity(float _amihud_illiquidity) {
+    ::flatbuffers::WriteScalar(&amihud_illiquidity_, _amihud_illiquidity);
   }
   float liq_fragility() const {
     return ::flatbuffers::EndianScalar(liq_fragility_);

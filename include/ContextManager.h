@@ -41,7 +41,7 @@ struct NormalizedAnchors {
     // Fragility metrics.
     float realizedKurtosis = 0.0f;      ///< 4th moment (fat-tail detector).
     float skewnessIdx = 0.0f;           ///< 3rd moment directional asymmetry.
-    float vpin = 0.0f;                   ///< Amihud illiquidity (|r_t|/V_t, legacy field name).
+    float amihudIlliquidity = 0.0f;      ///< Amihud illiquidity (|r_t|/V_t).
     float spreadStress = 0.0f;           ///< Spread-stress fragility estimate.
 
     // Structural anchors.
@@ -167,7 +167,7 @@ struct FeatureScaler {
         500,  //  8  fisher_info           geometry, stable
         500,  //  9  tail_index            Hill needs depth
         300,  // 10  skewness              regime-reactive
-        300,  // 11  vpin_toxicity         regime-sensitive
+        300,  // 11  amihud_illiquidity    regime-sensitive
         500,  // 12  liq_fragility         LOGZ, stable
         200,  // 13  recurrence_rate       structural, periodic
         200,  // 14  fractal_dim           structural, slow
@@ -717,7 +717,7 @@ public:
     // Quadrant III: Tail Risk (Fragility)
     static constexpr size_t OBS_TAIL_INDEX = MTS::Schema::Contract::kObsTailIndex;
     static constexpr size_t OBS_SKEWNESS = MTS::Schema::Contract::kObsSkewnessIdx;
-    static constexpr size_t OBS_VPIN_TOXICITY = MTS::Schema::Contract::kObsVpinToxicity;
+    static constexpr size_t OBS_AMIHUD_ILLIQUIDITY = MTS::Schema::Contract::kObsAmihudIlliquidity;
     static constexpr size_t OBS_LIQ_FRAGILITY = MTS::Schema::Contract::kObsLiqFragility;
 
     // Quadrant IV: Structure (Topological Stability)

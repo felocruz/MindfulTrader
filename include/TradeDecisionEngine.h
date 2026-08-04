@@ -471,7 +471,7 @@ struct OpportunityRecord {
 
         // Market snapshot
         j["context"] = {
-            {"vpin",                 context.vpin},
+            {"amihud_illiquidity",   context.amihudIlliquidity},
             {"spread_stress",        context.spreadStress},
             {"shannon_flow_entropy", context.shannonFlowEntropy},
             {"shannon_efficiency",   context.shannonEfficiency},

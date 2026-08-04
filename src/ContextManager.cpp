@@ -35,7 +35,7 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBo
    -6.0f,   // OBS_FISHER_INFO
     0.5f,   // OBS_TAIL_INDEX
    -2.5f,   // OBS_SKEWNESS
-    0.0f,   // OBS_VPIN_TOXICITY (Amihud illiquidity)
+    0.0f,   // OBS_AMIHUD_ILLIQUIDITY
     0.0f,   // OBS_LIQ_FRAGILITY
     0.0f,   // OBS_RECURRENCE_RATE
     1.0f,   // OBS_FRACTAL_DIM
@@ -54,7 +54,7 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBo
     6.0f,    // OBS_FISHER_INFO
     8.0f,    // OBS_TAIL_INDEX
     2.5f,    // OBS_SKEWNESS
-    100.0f,  // OBS_VPIN_TOXICITY (Amihud illiquidity)
+    100.0f,  // OBS_AMIHUD_ILLIQUIDITY
     1.0f,    // OBS_LIQ_FRAGILITY
     1.0f,    // OBS_RECURRENCE_RATE
     2.0f,    // OBS_FRACTAL_DIM
@@ -512,7 +512,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
         m_cachedHillAlpha.store(4.0f, std::memory_order_relaxed);  // P1.4: assume safe during warmup
     }
     obs[OBS_SKEWNESS] = m_observationData.skewness_idx();
-    obs[OBS_VPIN_TOXICITY] = m_observationData.vpin_toxicity();
+    obs[OBS_AMIHUD_ILLIQUIDITY] = m_observationData.amihud_illiquidity();
     obs[OBS_LIQ_FRAGILITY] = m_observationData.liq_fragility();
 
     // === QUADRANT IV (Structure): Indices 13-15 - Topological Stability ===
@@ -531,7 +531,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     m_localRiskContext.talebSkewness = m_latestInstitutionalMetrics.talebSkewness;
     m_localRiskContext.elderChandelierATR = m_latestInstitutionalMetrics.elderChandelierATR;
     m_localRiskContext.paretoTailAlpha = m_cachedHillAlpha.load(std::memory_order_relaxed);
-    m_localRiskContext.amihudIlliquidity = obs[OBS_VPIN_TOXICITY];
+    m_localRiskContext.amihudIlliquidity = obs[OBS_AMIHUD_ILLIQUIDITY];
     m_localRiskContext.spreadStress = obs[OBS_LIQ_FRAGILITY];
     m_localRiskContext.hurstExponent = obs[OBS_HURST_EXPONENT];
     m_localRiskContext.fractalDim = obs[OBS_FRACTAL_DIM];
@@ -787,7 +787,7 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
             OBS_VOL_CONVEXITY,
             OBS_MICRO_ASYMMETRY,
             OBS_SKEWNESS,
-            OBS_VPIN_TOXICITY,
+            OBS_AMIHUD_ILLIQUIDITY,
             OBS_LIQ_FRAGILITY,
             OBS_MEAN_REV_Z
         };

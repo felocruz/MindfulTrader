@@ -84,7 +84,7 @@ struct RejectionRecord {
 
     // ─── Market Snapshot (from LocalRiskContext) ───
     struct ContextSnapshot {
-        float vpin              = 0.0f;
+        float amihudIlliquidity = 0.0f;
         float spreadStress      = 0.0f;
         float shannonFlowEntropy = 0.0f;
         float shannonEfficiency = 0.0f;
@@ -143,7 +143,7 @@ struct RejectionRecord {
 
         // Market snapshot
         j["context"] = {
-            {"vpin",                context.vpin},
+            {"amihud_illiquidity", context.amihudIlliquidity},
             {"spread_stress",       context.spreadStress},
             {"shannon_flow_entropy", context.shannonFlowEntropy},
             {"shannon_efficiency",  context.shannonEfficiency},
