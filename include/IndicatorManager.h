@@ -52,10 +52,13 @@ public:
     float GetCachedPrevDayLow() const { return m_dailyCache.prevDayLow; }
     float GetCachedValueAreaHigh() const { return m_dailyCache.valueAreaHigh; }
     float GetCachedValueAreaLow() const { return m_dailyCache.valueAreaLow; }
-    void SetCachedValueArea(float valueAreaHigh, float valueAreaLow) {
-        m_dailyCache.valueAreaHigh = valueAreaHigh;
-        m_dailyCache.valueAreaLow = valueAreaLow;
-    }
+
+    /// Train/live parity gate (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
+    /// final-review fix wave): the real Volume Profile Value Area must stay OFF by default
+    /// because the currently-deployed HMM was fitted on the old proxy's semantics. Only the
+    /// operator flipping the "Enable Real Volume Profile Daily Bias" ACSIL input (SCStudies.cpp)
+    /// turns this on; UpdateDailyCache() checks it before running the real aggregation.
+    void SetRealVolumeProfileDailyBiasEnabled(bool enabled) { m_realVolumeProfileDailyBiasEnabled = enabled; }
 
     // ...existing code...
     Oscillator310* Oscillator310Ptr() const {
@@ -197,6 +200,7 @@ private:
     };
 
     DailyCache m_dailyCache;
+    bool m_realVolumeProfileDailyBiasEnabled = false;
     bool m_dailyCacheInitialized = false;
     bool m_dailyAnchorZeroWarningLogged = false;
 
