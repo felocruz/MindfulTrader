@@ -1,5 +1,6 @@
 #include "MindfulTrader_Precompiled.h"
 #include "ContextManager.h"
+#include "VolumeProfileEngine.h"
 
 /*==========================================================================*/
 // TripleScreen3-specific constants
@@ -193,6 +194,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         sc.FreeDLL = 0;
         // ENABLE INTRA-BAR UPDATES FOR PHYSICS (Recurrence Rate / Fractal Dim)
         sc.AutoLoop = 1;
+        sc.MaintainVolumeAtPriceData = 1;  // Required for VolumeAtPriceForBars aggregation below (Task 5)
 
         Subgraph_KeltnerAverage.Name = "Keltner Average";
         Subgraph_KeltnerAverage.DrawStyle = DRAWSTYLE_LINE;
@@ -684,7 +686,9 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             prevDayHigh,
             prevDayLow,
             Subgraph_HurstExponent[sc.Index],
-            Subgraph_PathEfficiencySNR[sc.Index]
+            Subgraph_PathEfficiencySNR[sc.Index],
+            indMgr.GetCachedValueAreaLow(),
+            indMgr.GetCachedValueAreaHigh()
         ));
 
 
@@ -786,6 +790,74 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             }
         }
     }
+
+    // === Real Volume Profile Value Area: aggregate yesterday's TS3 bars once
+    // per trading-day change (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md) ===
+    {
+        const int currentTradingDay = sc.BaseDateTimeIn[sc.Index].GetDate();
+        int& lastValueAreaDay = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::LAST_VALUE_AREA_SAMPLE_INDEX);
+        if (currentTradingDay != lastValueAreaDay && sc.Index >= 1) {
+            lastValueAreaDay = currentTradingDay;
+
+            const int todayFirstIndex = sc.GetFirstIndexForDate(sc.ChartNumber, currentTradingDay);
+            if (todayFirstIndex > 0) {
+                const int priorTradingDay = sc.BaseDateTimeIn[todayFirstIndex - 1].GetDate();
+                const int yesterdayFirstIndex = sc.GetFirstIndexForDate(sc.ChartNumber, priorTradingDay);
+                const int yesterdayLastIndex = todayFirstIndex - 1;
+
+                if (yesterdayFirstIndex >= 0 && yesterdayLastIndex >= yesterdayFirstIndex && sc.VolumeAtPriceForBars != nullptr) {
+                    // RTH-only (09:30-16:00 ET), per lbrnet/logs/rc_gemini.log
+                    // GEMINI_REVIEW_077 §2: Market Profile theory is built on
+                    // RTH volume, and this codebase already keeps the exact
+                    // same RTH/overnight split for the Amihud percentile pools
+                    // a few lines above (the "Layer B" block) for the same
+                    // reason -- thin overnight/Globex volume would otherwise
+                    // dilute the Value Area into something unnaturally wide.
+                    // sc.HMS_TIME() is deprecated (scdatetime.h:985) -- use
+                    // SCDateTime(Hour, Minute, Second, Millisecond).GetTime()
+                    // directly. TimeOfDayIndicator is NOT reused here: it's a
+                    // stateful object tracking the CURRENT bar, and calling
+                    // its SetFromDateTime() for each historical bar in this
+                    // loop would overwrite live state other code reads.
+                    static const int kRthOpenTime = SCDateTime(9, 30, 0, 0).GetTime();
+                    static const int kRthCloseTime = SCDateTime(16, 0, 0, 0).GetTime();
+
+                    std::vector<vpe::PriceVolume> levels;
+                    for (int barIndex = yesterdayFirstIndex; barIndex <= yesterdayLastIndex; ++barIndex) {
+                        const int barTime = sc.BaseDateTimeIn[barIndex].GetTime();
+                        if (barTime < kRthOpenTime || barTime >= kRthCloseTime) {
+                            continue;  // overnight/Globex bar -- excluded from the Value Area
+                        }
+                        const unsigned int numLevels = sc.VolumeAtPriceForBars->GetSizeAtBarIndex(barIndex);
+                        for (unsigned int i = 0; i < numLevels; ++i) {
+                            const s_VolumeAtPriceV2* vap = nullptr;
+                            if (sc.VolumeAtPriceForBars->GetVAPElementAtIndex(barIndex, static_cast<int>(i), &vap) && vap != nullptr) {
+                                levels.push_back({static_cast<int32_t>(vap->PriceInTicks), static_cast<double>(vap->Volume)});
+                            }
+                        }
+                    }
+
+                    const vpe::ValueArea va = vpe::ComputeValueArea(levels, 70.0);
+                    if (va.valid && sc.TickSize > 0.0) {
+                        indMgr.SetCachedValueArea(
+                            static_cast<float>(va.valueAreaHighInTicks * sc.TickSize),
+                            static_cast<float>(va.valueAreaLowInTicks * sc.TickSize)
+                        );
+                    } else {
+                        indMgr.SetCachedValueArea(0.0f, 0.0f);
+                        Logger::getInstance().log(
+                            "TripleScreen3: Volume Profile Value Area aggregation produced no valid "
+                            "result for trading day " + std::to_string(priorTradingDay) +
+                            " — falling back to the range-split proxy for today."
+                        );
+                    }
+                } else {
+                    indMgr.SetCachedValueArea(0.0f, 0.0f);
+                }
+            }
+        }
+    }
+
     if (climateIndicator) {
         currentClimate = climateIndicator->Value();
     }

@@ -50,6 +50,12 @@ public:
 
     float GetCachedPrevDayHigh() const { return m_dailyCache.prevDayHigh; }
     float GetCachedPrevDayLow() const { return m_dailyCache.prevDayLow; }
+    float GetCachedValueAreaHigh() const { return m_dailyCache.valueAreaHigh; }
+    float GetCachedValueAreaLow() const { return m_dailyCache.valueAreaLow; }
+    void SetCachedValueArea(float valueAreaHigh, float valueAreaLow) {
+        m_dailyCache.valueAreaHigh = valueAreaHigh;
+        m_dailyCache.valueAreaLow = valueAreaLow;
+    }
 
     // ...existing code...
     Oscillator310* Oscillator310Ptr() const {
@@ -185,6 +191,8 @@ private:
         int tradingDay = -1;        // Cached trading day (Julian date)
         float prevDayHigh = 0.0f;   // Previous day's session high
         float prevDayLow = 0.0f;    // Previous day's session low
+        float valueAreaHigh = 0.0f; // Previous day's real Volume Profile VAH (0.0f = unavailable)
+        float valueAreaLow = 0.0f;  // Previous day's real Volume Profile VAL (0.0f = unavailable)
         bool validated = false;     // Validation done once at startup
     };
 
