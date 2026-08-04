@@ -351,7 +351,7 @@ void ContextManager::MarkTs1MacroDimsFresh(uint64_t timestamp_us) {
     m_ts1SeenAfterReset.store(true, std::memory_order_relaxed);
 }
 
-bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us) const {
+bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool bypassCheck) const {
     if (!m_ts1SeenAfterReset.load(std::memory_order_relaxed)) {
         return false;
     }
@@ -380,12 +380,7 @@ bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us) const
         return false;
     }
 
-    if (now_us >= lastWriteUs) {
-        return (now_us - lastWriteUs) <= max_age_us;
-    }
-
-    // Defensive for replay seeks or chart timeline jumps.
-    return (lastWriteUs - now_us) <= max_age_us;
+    return fge::IsFresh(now_us, lastWriteUs, max_age_us, bypassCheck);
 }
 
 uint64_t ContextManager::GetTs1MacroAgeUs(uint64_t now_us) const {
@@ -411,7 +406,7 @@ void ContextManager::MarkTs2StructuralDimsFresh(uint64_t timestamp_us) {
     m_ts2SeenAfterReset.store(true, std::memory_order_relaxed);
 }
 
-bool ContextManager::AreTs2StructuralDimsReady(uint64_t now_us, uint64_t max_age_us) const {
+bool ContextManager::AreTs2StructuralDimsReady(uint64_t now_us, uint64_t max_age_us, bool bypassCheck) const {
     if (!m_ts2SeenAfterReset.load(std::memory_order_relaxed)) {
         return false;
     }
@@ -434,11 +429,7 @@ bool ContextManager::AreTs2StructuralDimsReady(uint64_t now_us, uint64_t max_age
         return false;
     }
 
-    if (now_us >= lastWriteUs) {
-        return (now_us - lastWriteUs) <= max_age_us;
-    }
-
-    return (lastWriteUs - now_us) <= max_age_us;
+    return fge::IsFresh(now_us, lastWriteUs, max_age_us, bypassCheck);
 }
 
 uint64_t ContextManager::GetTs2StructuralAgeUs(uint64_t now_us) const {
@@ -1088,7 +1079,8 @@ HMMTriggerDiagnostics ContextManager::BuildTriggerDiagnostics(
 //   • L1-norm + Mahalanobis change detection for robust regime identification
 //   • Comprehensive diagnostics: Every trigger logged for production observability
 // ============================================================================
-void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, float syntheticVelocity) {
+void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, float syntheticVelocity,
+                                         bool isPostWeekendReopenGrace) {
     // ========================================================================
     // PHASE 1: Calculate Event Velocity (Events Per Second)
     // ========================================================================
@@ -1104,7 +1096,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // [NEW] Elite v3.0: Update Burstiness Loop
     m_latestInstitutionalMetrics.raschkeBurst = CalculateBurstinessIndex(now_us);
 
-    const bool ts1MacroReady = AreTs1DimsReady(now_us, kTs1MacroMaxAgeUs);
+    const bool ts1MacroReady = AreTs1DimsReady(now_us, kTs1MacroMaxAgeUs, isPostWeekendReopenGrace);
     if (!ts1MacroReady) {
         ++m_telemetryCounters.ts1MacroReject;
         if (ShouldSampleLog(m_telemetryCounters.ts1MacroReject, 3, kTs1MacroRejectLogEvery)) {
@@ -1123,7 +1115,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
         return;
     }
 
-    const bool ts2StructuralReady = AreTs2StructuralDimsReady(now_us, kTs2StructuralMaxAgeUs);
+    const bool ts2StructuralReady = AreTs2StructuralDimsReady(now_us, kTs2StructuralMaxAgeUs, isPostWeekendReopenGrace);
     if (!ts2StructuralReady) {
         ++m_telemetryCounters.ts2StructuralReject;
         if (ShouldSampleLog(m_telemetryCounters.ts2StructuralReject, 3, kTs2StructuralRejectLogEvery)) {

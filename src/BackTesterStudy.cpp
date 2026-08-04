@@ -893,7 +893,8 @@ void RunTradingPhase(SCStudyInterfaceRef sc, int phase)
                 ContextManager::Instance().UpdatePriceStructure(sc, sc.High[sc.Index], sc.Low[sc.Index], sc.Close[sc.Index], isNewBar);
                 if (isNewBar) sc.SetPersistentInt(BT_STRUCTURE_LAST_BAR_ID, sc.Index);
             }
-            ContextManager::Instance().CheckAndTriggerHMM(GetReplaySafeNowUs(sc), false);
+            ContextManager::Instance().CheckAndTriggerHMM(GetReplaySafeNowUs(sc), false, -1.0f,
+                                                            IsPostWeekendReopenGracePeriod(sc));
             return;
         }
 
@@ -913,7 +914,8 @@ void RunTradingPhase(SCStudyInterfaceRef sc, int phase)
             ContextManager::Instance().UpdatePriceStructure(sc, sc.High[sc.Index], sc.Low[sc.Index], sc.Close[sc.Index], isNewBar);
             if (isNewBar) sc.SetPersistentInt(BT_STRUCTURE_LAST_BAR_ID, sc.Index);
         }
-        ContextManager::Instance().CheckAndTriggerHMM(GetReplaySafeNowUs(sc), false);
+        ContextManager::Instance().CheckAndTriggerHMM(GetReplaySafeNowUs(sc), false, -1.0f,
+                                                        IsPostWeekendReopenGracePeriod(sc));
 
         if (tradingHalted) return;
 

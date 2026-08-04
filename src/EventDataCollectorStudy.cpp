@@ -488,7 +488,8 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
             // Synthetic velocity is injected so velocity-sensitive trigger logic and
             // log_event_velocity remain replay-safe (timestamp velocity flatlines in replay).
             // ObservationData dim1 is burstiness, not raw event velocity.
-            ContextManager::Instance().CheckAndTriggerHMM(now_us, true, syntheticVelocity);
+            ContextManager::Instance().CheckAndTriggerHMM(now_us, true, syntheticVelocity,
+                                                            IsPostWeekendReopenGracePeriod(sc));
 
             const size_t saturationSamples = ContextManager::Instance().GetObservationSampleCount();
             const size_t saturationRequired = ContextManager::GetObservationSaturationRequired();

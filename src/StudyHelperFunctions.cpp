@@ -286,6 +286,35 @@ void ResetAdaptiveCalculators(SCStudyInterfaceRef sc) {
     ResetAdaptiveWindowState(sc);
 }
 
+bool IsPostWeekendReopenGracePeriod(SCStudyInterfaceRef sc)
+{
+    // Grace window matches LOCK_D_TS1_MAX_AGE_US's own 6-hour budget
+    // (EventDataCollectorStudy.cpp) -- covers exactly the ~49-hour Friday-close
+    // to Sunday-reopen gap this fix exists for, without masking a genuinely
+    // stuck system on any other day.
+    constexpr int kWeekendGraceHours = 6;
+
+    // SCDateTime::GetDayOfWeek() returns the DayOfWeekEnum from
+    // sierra_chart_dependencies/scdatetime.h: SUNDAY=0, MONDAY=1, ..., SATURDAY=6
+    // (confirmed by direct construction against the vendored header). This is
+    // the standard 0=Sunday convention, not the 1=Sunday..7=Saturday convention
+    // that the existing Market-Closed Gate's comment in EventDataCollectorStudy.cpp
+    // assumes -- so 0 (not 1) is used here for Sunday.
+    const int barDOW = sc.BaseDateTimeIn[sc.Index].GetDayOfWeek();  // 0=Sunday, ..., 6=Saturday
+    if (barDOW != 0) {
+        return false;
+    }
+
+    int barHour = 0, barMinute = 0, barSecond = 0;
+    sc.BaseDateTimeIn[sc.Index].GetTimeHMS(barHour, barMinute, barSecond);
+    const int barTimeHHMM = barHour * 100 + barMinute;
+
+    const int openHHMM = (sc.StartTime1 / 3600) * 100 + (sc.StartTime1 % 3600) / 60;
+    const int graceEndHHMM = openHHMM + kWeekendGraceHours * 100;
+
+    return barTimeHHMM >= openHHMM && barTimeHHMM < graceEndHHMM;
+}
+
 float CalculateMarketSpeed(SCStudyInterfaceRef sc) {
     if (sc.Index < 20) return 1.0f;  // Warmup
 

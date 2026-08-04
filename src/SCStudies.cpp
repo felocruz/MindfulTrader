@@ -426,7 +426,7 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
 
         // === CONTEXT MANAGER: Update HMM every bar ===
         uint64_t now_us = sc.GetCurrentDateTime().ToUNIXTimeInMicroseconds();
-        ContextManager::Instance().CheckAndTriggerHMM(now_us, false);
+        ContextManager::Instance().CheckAndTriggerHMM(now_us, false, -1.0f, IsPostWeekendReopenGracePeriod(sc));
 
         // PositionManager gates manual intents against LocalRiskContext freshness.
         // Run it after current-tick ContextManager updates so manual orders do not

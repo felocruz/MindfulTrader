@@ -7,6 +7,20 @@
 // It is intended to be used by the Impulse studies.
 int GetImpulse(float maDiff, float macdDiff);
 
+/// True if the current bar falls within the post-weekend-reopen grace window:
+/// Sunday, at or after the session open time, within kWeekendGraceHours of it.
+/// Reuses the same Sierra Chart day-of-week convention and session-time-derivation
+/// pattern already established in EventDataCollectorStudy.cpp's Market-Closed Gate,
+/// so it stays correct regardless of chart timezone (ET, CT, etc.) the same way
+/// that gate does. See docs/superpowers/plans/2026-08-04-phase1-hardening.md Task 3.
+///
+/// NOTE: SCDateTime::GetDayOfWeek() returns the DayOfWeekEnum from
+/// sierra_chart_dependencies/scdatetime.h, which is SUNDAY=0, MONDAY=1, ...,
+/// SATURDAY=6 (verified by direct construction against the vendored header --
+/// NOT the 1=Sunday..7=Saturday convention assumed by the Market-Closed Gate's
+/// own comment in EventDataCollectorStudy.cpp, which appears to be mislabeled).
+bool IsPostWeekendReopenGracePeriod(SCStudyInterfaceRef sc);
+
 
 RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, float hurst, float ema21);
 RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, float rsi3, float rsi10, float stochK);

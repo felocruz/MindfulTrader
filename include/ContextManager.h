@@ -13,6 +13,7 @@
 #include "TailRiskEngine.h"
 #include "StructureEngine.h"
 #include "EventVelocityEngine.h"
+#include "FreshnessGateEngine.h"
 
 // Shannon flow entropy is measured in BITS (range 0 .. log2(NUM_BINS)). Several gates
 // were authored with thresholds that read like normalized [0,1] ratios of H/Hmax but
@@ -578,7 +579,12 @@ public:
     /// @param syntheticVelocity If >= 0, use this as event velocity instead of
     ///        timestamp-based calculation. Used by replay/data-collection to inject
     ///        bar-derived trade rate (NumberOfTrades / SecondsPerBar).
-    void CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, float syntheticVelocity = -1.0f);
+    /// @param isPostWeekendReopenGrace If true, bypasses the TS1/TS2 staleness check
+    ///        (see AreTs1DimsReady/AreTs2StructuralDimsReady) for the post-weekend-reopen
+    ///        grace window, since the market was closed and stale dims are the best
+    ///        available approximation. Default false preserves today's strict behavior.
+    void CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, float syntheticVelocity = -1.0f,
+                             bool isPostWeekendReopenGrace = false);
 
     /// Get diagnostics from the last HMM trigger decision (for observability and debugging)
     /// Useful for understanding label generation patterns, monitoring HMM health
@@ -598,7 +604,8 @@ public:
 
     /// Returns true when TS1 macro dims are finite, non-degenerate, and fresh.
     /// max_age_us bounds accepted staleness from the last TS1 macro commit.
-    bool AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us) const;
+    /// bypassCheck (post-weekend-reopen grace) skips the staleness check only.
+    bool AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool bypassCheck = false) const;
 
     /// Age of last TS1 macro commit using replay/live chart timeline (microseconds).
     uint64_t GetTs1MacroAgeUs(uint64_t now_us) const;
@@ -613,7 +620,8 @@ public:
 
     /// Returns true when TS2 structural dims are finite, in-contract bounds, and fresh.
     /// max_age_us bounds accepted staleness from the last TS2 structural commit.
-    bool AreTs2StructuralDimsReady(uint64_t now_us, uint64_t max_age_us) const;
+    /// bypassCheck (post-weekend-reopen grace) skips the staleness check only.
+    bool AreTs2StructuralDimsReady(uint64_t now_us, uint64_t max_age_us, bool bypassCheck = false) const;
 
     /// Age of last TS2 structural commit using replay/live chart timeline (microseconds).
     uint64_t GetTs2StructuralAgeUs(uint64_t now_us) const;
