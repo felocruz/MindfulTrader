@@ -193,6 +193,15 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         sc.FreeDLL = 0;
         // ENABLE INTRA-BAR UPDATES FOR PHYSICS (Recurrence Rate / Fractal Dim)
         sc.AutoLoop = 1;
+        // Required for VolumeAtPriceForBars aggregation in IndicatorManager::UpdateDailyCache
+        // (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md final-review fix wave,
+        // round 3). This study's own sc almost always wins the day-gate race (STD precedence, runs
+        // before SCStudies.cpp's LOW-precedence study on the same tick per round-2's fix) and is the
+        // one that actually performs the aggregation, reading sc.VolumeAtPriceForBars off ITS OWN
+        // study interface -- so this study must request VAP maintenance itself too, in case the flag
+        // is populated per-study-interface rather than purely chart-wide. Also set in SCStudies.cpp;
+        // redundant-but-harmless if the flag turns out to be chart-wide, and load-bearing if it isn't.
+        sc.MaintainVolumeAtPriceData = 1;
 
         Subgraph_KeltnerAverage.Name = "Keltner Average";
         Subgraph_KeltnerAverage.DrawStyle = DRAWSTYLE_LINE;
