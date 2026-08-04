@@ -5,41 +5,29 @@
 
 struct s_VolumeLevelAtPrice
 {
-	//--- Members ------------------------------------------------------------
-
-	int PriceInTicks;
+	int PriceInTicks = 0;
 
 	// The maximum volume of a trade at price, above or equal to the set
 	// volume level.
-	unsigned int MaxVolume;
+	double MaxVolume = 0;
 
 	// The total volume of all trades at price, above or equal to the set
 	// volume level.
-	unsigned int TotalVolume;
+	double TotalVolume = 0;
 
 	// The total volume of all bid trades at price, above or equal to the set
 	// volume level.
-	unsigned int BidTradeVolume;
+	double BidTradeVolume = 0;
 
 	// The total volume of all ask trades at price, above or equal to the set
 	// volume level.
-	unsigned int AskTradeVolume;
+	double AskTradeVolume = 0;
 
-	//--- Methods ------------------------------------------------------------
-
-	s_VolumeLevelAtPrice();
+	double AskBidVolumeDifference = 0.0;
+	double BidSideAskBidVolumeDiagonalDifference = 0.0;
+	double AskSideAskBidVolumeDiagonalDifference = 0.0;
+	double AskBidVolumeDiagonalDifferenceDominant = 0.0;
 };
-
-/*==========================================================================*/
-inline s_VolumeLevelAtPrice::s_VolumeLevelAtPrice()
-	: PriceInTicks(0)
-	, MaxVolume(0)
-	, TotalVolume(0)
-	, BidTradeVolume(0)
-	, AskTradeVolume(0)
-
-{
-}
 
 /****************************************************************************/
 // s_VolumeAtPriceV2
@@ -48,20 +36,25 @@ struct s_VolumeAtPriceV2
 {
 	//--- Members ------------------------------------------------------------
 
-	int PriceInTicks;
-	unsigned int Volume;
-	unsigned int BidVolume;
-	unsigned int AskVolume;
-	unsigned int NumberOfTrades;
+	int PriceInTicks = 0;
+	unsigned int NumberOfTrades = 0;
+	double Volume = 0;
+	double BidVolume = 0;
+	double AskVolume = 0;
+
+	//double AskBidVolumeDifference = 0.0;
+	//double BidSideAskBidVolumeDiagonalDifference = 0.0;
+	//double AskSideAskBidVolumeDiagonalDifference = 0.0;
+	//double AskBidVolumeDiagonalDifferenceDominant = 0.0;
 
 	//--- Methods ------------------------------------------------------------
 
 	s_VolumeAtPriceV2();
 	s_VolumeAtPriceV2
-		( const unsigned int Volume
-		, const unsigned int BidVolume
-		, const unsigned int AskVolume
-		, const unsigned int NumberOfTrades
+		( const double Volume_
+		, const double BidVolume_
+		, const double AskVolume_
+		, const unsigned int NumberOfTrades_
 		);
 
 	s_VolumeAtPriceV2& operator += (const s_VolumeAtPriceV2& Rhs);
@@ -70,31 +63,67 @@ struct s_VolumeAtPriceV2
 	bool IsEmpty() const
 	{
 		return PriceInTicks == 0 && Volume == 0;
+	}	
+	
+	double GetAverageTradeVolume() const
+	{
+		if (NumberOfTrades == 0)
+			return 0;
+
+		return Volume / static_cast<double>(NumberOfTrades);
 	}
+
+	/*======================================================================*/
+	double GetVolume() const
+	{
+		return Volume;
+	}
+
+	void SetVolume(double Value)
+	{
+		Volume = Value;
+	}
+
+	/*======================================================================*/
+	double GetBidVolume() const
+	{
+		return BidVolume;
+	}
+
+	void SetBidVolume(double Value)
+	{
+		BidVolume = Value;
+	}
+
+	/*======================================================================*/
+	double GetAskVolume() const
+	{
+		return AskVolume;
+	}
+
+	void SetAskVolume(double Value)
+	{
+		AskVolume = Value;
+	}
+
 };
 
 /*==========================================================================*/
 inline s_VolumeAtPriceV2::s_VolumeAtPriceV2()
-	: PriceInTicks(0)
-	, Volume(0)
-	, BidVolume(0)
-	, AskVolume(0)
-	, NumberOfTrades(0)
 {
 }
 
 /*==========================================================================*/
 inline s_VolumeAtPriceV2::s_VolumeAtPriceV2
-( const unsigned int Volume
-, const unsigned int BidVolume
-, const unsigned int AskVolume
-, const unsigned int NumberOfTrades
+( const double Volume_
+, const double BidVolume_
+, const double AskVolume_
+, const unsigned int NumberOfTrades_
 )
-	: PriceInTicks(0)
-	, Volume(Volume)
-	, BidVolume(BidVolume)
-	, AskVolume(AskVolume)
-	, NumberOfTrades(NumberOfTrades)
+	: Volume(Volume_)
+	, BidVolume(BidVolume_)
+	, AskVolume(AskVolume_)
+	, NumberOfTrades(NumberOfTrades_)
 {
 }
 
@@ -175,7 +204,9 @@ class c_VAPContainerBase
 			, const unsigned int BarIndex
 			, t_VolumeAtPrice** p_VAP
 			, const bool AllocateIfNeeded = false
+			, unsigned int* p_FoundVAPDataIndex = nullptr
 			);
+
 		bool GetVAPElementAtIndex
 			( const unsigned int BarIndex
 			, int VAPDataIndex
@@ -195,6 +226,7 @@ class c_VAPContainerBase
 			, const int PriceInTicks
 			, t_VolumeAtPrice** p_VAP
 			, unsigned int& r_InsertionIndex
+			, unsigned int* p_FoundVAPDataIndex = nullptr
 			);
 
 		bool GetNextHigherVAPElement
@@ -485,17 +517,23 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElement
 , const unsigned int BarIndex
 , t_VolumeAtPrice** p_VAP
 , const bool AllocateIfNeeded
+, unsigned int* p_FoundVAPDataIndex
 )
 {
 	*p_VAP = nullptr;
+
+	if (p_FoundVAPDataIndex != nullptr)
+		*p_FoundVAPDataIndex = UINT_MAX;
 
 	if (!EnsureBarExists(BarIndex, AllocateIfNeeded))
 		return false;
 
 	unsigned int InsertionIndex = -1;
 
-	if (GetVAPElementForPriceIfExists(BarIndex, PriceInTicks, p_VAP, InsertionIndex))
+	if (GetVAPElementForPriceIfExists(BarIndex, PriceInTicks, p_VAP, InsertionIndex, p_FoundVAPDataIndex))
+	{
 		return true;
+	}
 
 	// The requested element does not exist.
 
@@ -529,6 +567,16 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElement
 	VolumeAtPrice.PriceInTicks = PriceInTicks;
 	
 	*p_VAP = &m_p_VAPDataElements[InsertionIndex];
+
+	if (p_FoundVAPDataIndex != nullptr)
+	{
+		unsigned int BeginIndex = 0, EndIndex = 0;
+		if (GetBeginEndIndexesForBarIndex(BarIndex, &BeginIndex, &EndIndex))
+		{
+			*p_FoundVAPDataIndex = InsertionIndex - BeginIndex;
+		}
+		
+	}
 
 	return true;
 }
@@ -593,7 +641,9 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElementAtIndex
 {
 	*p_VAP = nullptr;
 
-	unsigned int VAPSegmentBeginIndex, VAPSegmentEndIndex;
+	unsigned int VAPSegmentBeginIndex = 0;
+	unsigned int VAPSegmentEndIndex = 0;
+
 	if (!GetBeginEndIndexesForBarIndex(BarIndex, &VAPSegmentBeginIndex, &VAPSegmentEndIndex	))
 	{
 		return false;
@@ -632,8 +682,12 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElementForPriceIfExists
 , const int PriceInTicks
 , t_VolumeAtPrice** p_VAP
 , unsigned int& r_InsertionIndex
+, unsigned int* p_FoundVAPDataIndex
 )
 {
+	if (p_FoundVAPDataIndex != nullptr)
+		*p_FoundVAPDataIndex = UINT_MAX;
+
 	unsigned int BeginIndex = 0, EndIndex = 0;
 	if (!GetBeginEndIndexesForBarIndex(BarIndex, &BeginIndex, &EndIndex))
 	{
@@ -653,6 +707,10 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElementForPriceIfExists
 	if (p_FoundElement->PriceInTicks == PriceInTicks && p_FoundElement != p_EndElement)
 	{
 		*p_VAP = p_FoundElement;
+		
+		if (p_FoundVAPDataIndex != nullptr)
+			*p_FoundVAPDataIndex = static_cast <unsigned int>(p_FoundElement - p_BeginElement);
+
 		return true;
 	}
 
@@ -660,6 +718,9 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::GetVAPElementForPriceIfExists
 		= static_cast<unsigned int>
 			( p_FoundElement - p_BeginElement + BeginIndex
 			);
+
+	if (p_FoundVAPDataIndex != nullptr)
+		*p_FoundVAPDataIndex = static_cast <unsigned int>(p_FoundElement - p_BeginElement);
 
 	return false;
 }
@@ -895,12 +956,67 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::AddVolumeAtPrice
 {
 	t_VolumeAtPrice* p_VAPElement = nullptr;
 
-	const bool ElementFound = GetVAPElement(PriceInTicks, BarIndex, &p_VAPElement, true);
+	unsigned int FoundVAPDataIndex = 0;
+
+	const bool ElementFound = GetVAPElement(PriceInTicks, BarIndex, &p_VAPElement, true, &FoundVAPDataIndex);
 
 	if (!ElementFound || p_VAPElement == nullptr)
 		return false;
 
 	*p_VAPElement += VolumeAtPrice;
+
+#if 0
+	//New calculated values
+
+	p_VAPElement->AskBidVolumeDifference
+		= p_VAPElement->GetAskVolume() - p_VAPElement->GetBidVolume();
+
+	// AskVolumeBidVolumeDiagonalDifference
+	{
+		t_VolumeAtPrice* p_VAPElementAbove = nullptr;
+		if (!GetVAPElementAtIndex
+			( BarIndex
+			, FoundVAPDataIndex + 1
+			, &p_VAPElementAbove
+			, true
+			)
+		)
+		{
+			p_VAPElementAbove = nullptr;
+		}
+
+		t_VolumeAtPrice* p_VAPElementBelow = nullptr;
+		if (!GetVAPElementAtIndex
+			( BarIndex
+			, FoundVAPDataIndex - 1
+			, &p_VAPElementBelow
+			, true
+			)
+		)
+		{
+			p_VAPElementBelow = nullptr;
+		}
+
+		c_SymbolData::CalculateAskVolumeBidVolumeDiagonalDifference
+			((p_VAPElementAbove != nullptr)
+				? std::make_optional(p_VAPElementAbove->GetAskVolume())
+				: std::nullopt
+			, p_VAPElement->GetBidVolume()
+			, p_VAPElement->GetAskVolume()
+			, (p_VAPElementBelow != nullptr)
+				? std::make_optional(p_VAPElementBelow->GetBidVolume())
+				: std::nullopt
+			, p_VAPElement->BidSideAskBidVolumeDiagonalDifference
+			, p_VAPElement->AskSideAskBidVolumeDiagonalDifference
+			);
+
+		p_VAPElement->AskBidVolumeDiagonalDifferenceDominant
+			= c_SymbolData::DetermineAskVolumeBidVolumeDifferenceDominant
+				( p_VAPElement->BidSideAskBidVolumeDiagonalDifference
+				, p_VAPElement->AskSideAskBidVolumeDiagonalDifference
+				);
+	}
+#endif
 
 	return true;
 }
@@ -920,13 +1036,67 @@ inline bool c_VAPContainerBase<t_VolumeAtPrice>::SubtractVolumeAtPrice
 {
 	t_VolumeAtPrice* p_VAPElement = nullptr;
 
+	unsigned int FoundVAPDataIndex = 0;
+
 	const bool ElementFound
-		= GetVAPElement(PriceInTicks, BarIndex, &p_VAPElement, true);
+		= GetVAPElement(PriceInTicks, BarIndex, &p_VAPElement, true, &FoundVAPDataIndex);
 
 	if (!ElementFound || p_VAPElement == nullptr)
 		return false;
 
 	*p_VAPElement -= VolumeAtPrice;
+
+#if 0
+	//New calculated values
+	p_VAPElement->AskBidVolumeDifference
+		= p_VAPElement->GetAskVolume() - p_VAPElement->GetBidVolume();
+
+	// AskVolumeBidVolumeDiagonalDifference
+	{
+		t_VolumeAtPrice* p_VAPElementAbove = nullptr;
+		if (!GetVAPElementAtIndex
+			( BarIndex
+			, FoundVAPDataIndex + 1
+			, &p_VAPElementAbove
+			, true
+			)
+		)
+		{
+			p_VAPElementAbove = nullptr;
+		}
+
+		t_VolumeAtPrice* p_VAPElementBelow = nullptr;
+		if (!GetVAPElementAtIndex
+			( BarIndex
+			, FoundVAPDataIndex - 1
+			, &p_VAPElementBelow
+			, true
+			)
+		)
+		{
+			p_VAPElementBelow = nullptr;
+		}
+
+		c_SymbolData::CalculateAskVolumeBidVolumeDiagonalDifference
+			((p_VAPElementAbove != nullptr)
+				? std::make_optional(p_VAPElementAbove->GetAskVolume())
+				: std::nullopt
+			, p_VAPElement->GetBidVolume()
+			, p_VAPElement->GetAskVolume()
+			, (p_VAPElementBelow != nullptr)
+				? std::make_optional(p_VAPElementBelow->GetBidVolume())
+				: std::nullopt
+			, p_VAPElement->BidSideAskBidVolumeDiagonalDifference
+			, p_VAPElement->AskSideAskBidVolumeDiagonalDifference
+			);
+
+		p_VAPElement->AskBidVolumeDiagonalDifferenceDominant
+			= c_SymbolData::DetermineAskVolumeBidVolumeDifferenceDominant
+				( p_VAPElement->BidSideAskBidVolumeDiagonalDifference
+				, p_VAPElement->AskSideAskBidVolumeDiagonalDifference
+				);
+	}
+#endif
 
 	return true;
 }
@@ -1254,17 +1424,17 @@ class c_VAPContainer
 	public:
 		c_VAPContainer(const unsigned int InitialAllocationElements = 1024);
 
-		unsigned int GetVolumeAtPrice
+		double GetVolumeAtPrice
 			( const unsigned int BarIndex
 			, const int PriceInTicks
 			) const;
 
-		unsigned int GetBidVolumeAtPrice
+		double GetBidVolumeAtPrice
 			( const unsigned int BarIndex
 			, const int PriceInTicks
 			) const;
 
-		unsigned int GetAskVolumeAtPrice
+		double GetAskVolumeAtPrice
 			( const unsigned int BarIndex
 			, const int PriceInTicks
 			) const;
@@ -1282,36 +1452,36 @@ inline c_VAPContainer::c_VAPContainer
 	Returns 0 if there is no element for the requested BarIndex and
 	PriceInTicks.
 ----------------------------------------------------------------------------*/
-inline unsigned int c_VAPContainer::GetVolumeAtPrice
+inline double c_VAPContainer::GetVolumeAtPrice
 ( const unsigned int BarIndex
 , const int PriceInTicks
 ) const
 {
-	return GetVAPElementAtPrice(BarIndex, PriceInTicks).Volume;
+	return GetVAPElementAtPrice(BarIndex, PriceInTicks).GetVolume();
 }
 
 /*============================================================================
 	Returns 0 if there is no element for the requested BarIndex and
 	PriceInTicks.
 ----------------------------------------------------------------------------*/
-inline unsigned int c_VAPContainer::GetBidVolumeAtPrice
+inline double c_VAPContainer::GetBidVolumeAtPrice
 ( const unsigned int BarIndex
 , const int PriceInTicks
 ) const
 {
-	return GetVAPElementAtPrice(BarIndex, PriceInTicks).BidVolume;
+	return GetVAPElementAtPrice(BarIndex, PriceInTicks).GetBidVolume();
 }
 
 /*============================================================================
 	Returns 0 if there is no element for the requested BarIndex and
 	PriceInTicks.
 ----------------------------------------------------------------------------*/
-inline unsigned int c_VAPContainer::GetAskVolumeAtPrice
+inline double c_VAPContainer::GetAskVolumeAtPrice
 ( const unsigned int BarIndex
 , const int PriceInTicks
 ) const
 {
-	return GetVAPElementAtPrice(BarIndex, PriceInTicks).AskVolume;
+	return GetVAPElementAtPrice(BarIndex, PriceInTicks).GetAskVolume();
 }
 
 /****************************************************************************/
@@ -1326,12 +1496,12 @@ class c_VolumeLevelAtPriceContainer
 			( const unsigned int InitialAllocationElements = 1024
 			);
 
-		unsigned int GetMaxVolumeAtPrice
+		double GetMaxVolumeAtPrice
 			( const unsigned int BarIndex
 			, const int PriceInTicks
 			) const;
 
-		unsigned int GetTotalVolumeAtPrice
+		double GetTotalVolumeAtPrice
 			( const unsigned int BarIndex
 			, const int PriceInTicks
 			) const;
@@ -1349,7 +1519,7 @@ inline c_VolumeLevelAtPriceContainer::c_VolumeLevelAtPriceContainer
 	Returns 0 if there is no element for the requested BarIndex and
 	PriceInTicks.
 ----------------------------------------------------------------------------*/
-inline unsigned int c_VolumeLevelAtPriceContainer::GetMaxVolumeAtPrice
+inline double c_VolumeLevelAtPriceContainer::GetMaxVolumeAtPrice
 ( const unsigned int BarIndex
 , const int PriceInTicks
 ) const
@@ -1361,7 +1531,7 @@ inline unsigned int c_VolumeLevelAtPriceContainer::GetMaxVolumeAtPrice
 	Returns 0 if there is no element for the requested BarIndex and
 	PriceInTicks.
 ----------------------------------------------------------------------------*/
-inline unsigned int c_VolumeLevelAtPriceContainer::GetTotalVolumeAtPrice
+inline double c_VolumeLevelAtPriceContainer::GetTotalVolumeAtPrice
 ( const unsigned int BarIndex
 , const int PriceInTicks
 ) const

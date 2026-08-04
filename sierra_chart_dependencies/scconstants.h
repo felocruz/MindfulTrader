@@ -73,8 +73,8 @@ enum DrawingTypeEnum : int32_t
 , DRAWING_TEXT = 6
 , DRAWING_CALCULATOR = 7
 , DRAWING_RETRACEMENT = 8
-, DRAWING_UNUSED = 9           // old fan drawing type
-, DRAWING_UNUSED_10 = 10
+, DRAWING_CHART_DOM_NOTE = 9// For Chart DOM notes column
+, DRAWING_TOOL_POINTER = 10	//Pointer. Only used by ACSIL to set active drawing tool.
 , DRAWING_PRICE_PROJECTION = 11
 , DRAWING_RECTANGLEHIGHLIGHT  = 12
 , DRAWING_ELLIPSEHIGHLIGHT = 13
@@ -86,8 +86,8 @@ enum DrawingTypeEnum : int32_t
 , DRAWING_CYCLE = 19
 , DRAWING_TIME_EXPANSION = 20
 , DRAWING_GANNGRID = 21
-, DRAWING_UNUSED_22 = 22   
-, DRAWING_UNUSED_23 = 23 
+, DRAWING_TOOL_CHART_VALUES = 22 //Chart Values. Only used by ACSIL to set active drawing tool.
+, DRAWING_TOOL_HAND = 23 //Hand. Only used by ACSIL to set active drawing tool.
 , DRAWING_ORDER_FILL = 24
 , DRAWING_ENTRYEXIT_CONNECTLINE = 25
 , DRAWING_RECTANGLE_EXT_HIGHLIGHT = 26
@@ -112,8 +112,10 @@ enum DrawingTypeEnum : int32_t
 , DRAWING_HORIZONTAL_LINE_NON_EXTENDED = 45
 , DRAWING_TRIANGLE = 46
 , DRAWING_ANGLED_ELLIPSE = 47
+, DRAWING_ANCHORED_VWAP = 48
 
 , SC_NUM_DRAWING_TYPE
+// Note: When adding new drawing tool need to add a new field code for the associated window placement  for the drawing properties window, when saving a Chartbook.
 };
 
 const double CHART_DRAWING_MAX_HORIZONTAL_AXIS_RELATIVE_POSITION = 150.0;
@@ -448,6 +450,49 @@ enum SubgraphDrawStyles
 , DRAWSTYLE_TRANSPARENT_TEXT_WITH_ALIGNMENT
 , DRAWSTYLE_BACKGROUND_ALL_REGIONS
 , DRAWSTYLE_DASH_CANDLESTICK_WIDTH
+, DRAWSTYLE_TRANSPARENT_TICK_SIZE_RECTANGLE
+
+/* These apply to the following two Draw Styles: Subgraph value controls vertical
+ positioning. 
+ Arrays[0]=Width in pixels.  If array is empty, the width is set through the study Subgraph line width.
+ Arrays[1]=Height in pixels. If the array is empty, the height is based upon the Tick Size height.  Refer to DRAWSTYLE_RIGHT_SIDE_TICK_SIZE_RECTANGLE
+ Arrays[2]=Alignment relative to chart bar (0=left, 1=right, 2=center)*/
+, DRAWSTYLE_CUSTOM_RECTANGLE
+, DRAWSTYLE_CUSTOM_RECTANGLE_TRANSPARENT
+
+/* For the following two Draw Styles the above description applies and the following:
+ Arrays[3] = Primary Color Fill Percentage(Example: 25 means that the primary color fills 25% of the left of the rectangle, the remainder is the secondary color)
+   Arrays[4] = Split orientation.  0 = horizontal, 1 = vertical
+*/
+, DRAWSTYLE_CUSTOM_RECTANGLE_TWO_COLORS
+, DRAWSTYLE_CUSTOM_RECTANGLE_TWO_COLORS_TRANSPARENT
+
+, DRAWSTYLE_BACKGROUND_ALL_REGIONS_TRANSPARENT
+
+//It is the same as DRAWSTYLE_CUSTOM_RECTANGLE_TWO_COLORS_* but for circle
+, DRAWSTYLE_CUSTOM_CIRCLE_TWO_COLORS
+, DRAWSTYLE_CUSTOM_CIRCLE_TWO_COLORS_TRANSPARENT
+
+/* For the following two Draw Styles:
+* 
+* These are implemented like DRAWSTYLE_TEXT with support for these additional arrays:
+* 
+A vertical offset based on text height is controlled through the sc.Subgraph[].Arrays[0][] array. A positive value offsets the text up by this set value times the text height. A negative value offsets the text down by this set value times the text type.  Use the same exact implementation as DRAWSTYLE_CUSTOM_VALUE_AT_Y
+
+ Text alignment is optionally controlled through the sc.Subgraph[].Arrays[1][] array. Can be one of: TA_LEFT, TA_RIGHT, TA_CENTER and one of TA_TOP, TA_BOTTOM separated by the bitwise OR operator |.*/
+, DRAWSTYLE_TEXT_WITH_OFFSET_ALIGNMENT
+, DRAWSTYLE_TRANSPARENT_TEXT_WITH_OFFSET_ALIGNMENT
+
+// DRAWSTYLE_BAR_LEFT_ALIGNED (Implemented the same as DRAWSTYLE_BAR, except that the right side of the rectangle is aligned to the center of the bar.)
+// DRAWSTYLE_BAR_RIGHT_ALIGNED (Implemented the same as DRAWSTYLE_BAR, except that the left side of the rectangle is aligned to the center of the bar plus one pixel so it does not overlap DRAWSTYLE_BAR_LEFT_ALIGNED.)
+, DRAWSTYLE_BAR_LEFT_ALIGNED
+, DRAWSTYLE_BAR_RIGHT_ALIGNED
+
+//Based on DRAWSTYLE_POINT_LEFT_OFFSET but it is aligned on left side of candle stick.
+, DRAWSTYLE_POINT_LEFT_OFFSET_CANDLESTICK
+, DRAWSTYLE_ARROW_RIGHT_LEFT_OFFSET_CANDLESTICK
+, DRAWSTYLE_DIAMOND_LEFT_OFFSET_CANDLESTICK
+
 , NUM_SUBGRAPH_STYLES
 };
 
@@ -511,6 +556,8 @@ enum SubgraphLineStyles : int16_t
 , LINESTYLE_ALTERNATE = 5
 };
 
+const int VERTICAL_TEXT_ORIENTATION_FOR_DRAW_STYLE = 128;	//0x80, mask 0xC0
+
 /*==========================================================================*/
 inline bool IsValidSubgraphLineStyle(const int16_t SubgraphLineStyle)
 {
@@ -560,38 +607,44 @@ inline SubgraphLineStyles SubgraphLineStyleFromInt
 	}
 }
 
-enum SubgraphLineLabelFlags
-{ LL_DISPLAY_NAME				= 0x00000001
-, LL_NAME_ALIGN_CENTER			= 0x00000002
-, LL_NAME_ALIGN_FAR_RIGHT		= 0x00000004
-, LL_NAME_ALIGN_ABOVE			= 0x00000008
-, LL_NAME_ALIGN_BELOW			= 0x00000010
-, LL_NAME_ALIGN_RIGHT			= 0x00000020
-, LL_NAME_ALIGN_VALUES_SCALE	= 0x00000040
-, LL_NAME_ALIGN_LEFT_EDGE		= 0x00000080
-, LL_DISPLAY_VALUE				= 0x00000100
-, LL_VALUE_ALIGN_CENTER			= 0x00000200
-, LL_VALUE_ALIGN_FAR_RIGHT		= 0x00000400
-, LL_VALUE_ALIGN_ABOVE			= 0x00000800
-, LL_VALUE_ALIGN_BELOW			= 0x00001000
-, LL_VALUE_ALIGN_RIGHT			= 0x00002000
-, LL_VALUE_ALIGN_VALUES_SCALE	= 0x00004000
-, LL_VALUE_ALIGN_LEFT_EDGE		= 0x00008000
-, LL_NAME_ALIGN_LEFT			= 0x00010000
-, LL_VALUE_ALIGN_LEFT			= 0x00020000
-, LL_NAME_REVERSE_COLORS		= 0x00040000
-, LL_VALUE_REVERSE_COLORS_INV	= 0x00080000  // This flag is inverted so that the default value of 0 means it is enabled.
-, LL_NAME_ALIGN_DOM_LABELS_COLUMN	= 0x00100000
-, LL_VALUE_ALIGN_DOM_LABELS_COLUMN	= 0x00200000
-, LL_DISPLAY_CUSTOM_VALUE_AT_Y = 0x00400000//LL_VALUE_* flags also applies to this value label
-, LL_NAME_ALIGN_LEFT_SIDE_VALUES_SCALE = 0x00800000
-, LL_VALUE_ALIGN_LEFT_SIDE_VALUES_SCALE = 0x01000000
-};
+// Subgraph Line Label Bit Flags
+constexpr uint32_t LL_DISPLAY_NAME                       = 0x00000001;
+constexpr uint32_t LL_NAME_ALIGN_CENTER                  = 0x00000002;
+constexpr uint32_t LL_NAME_ALIGN_FAR_RIGHT               = 0x00000004;
+constexpr uint32_t LL_NAME_ALIGN_ABOVE                   = 0x00000008;
+constexpr uint32_t LL_NAME_ALIGN_BELOW                   = 0x00000010;
+constexpr uint32_t LL_NAME_ALIGN_RIGHT                   = 0x00000020;
+constexpr uint32_t LL_NAME_ALIGN_VALUES_SCALE            = 0x00000040;
+constexpr uint32_t LL_NAME_ALIGN_LEFT_EDGE               = 0x00000080;
+constexpr uint32_t LL_DISPLAY_VALUE                      = 0x00000100;
+constexpr uint32_t LL_VALUE_ALIGN_CENTER                 = 0x00000200;
+constexpr uint32_t LL_VALUE_ALIGN_FAR_RIGHT              = 0x00000400;
+constexpr uint32_t LL_VALUE_ALIGN_ABOVE                  = 0x00000800;
+constexpr uint32_t LL_VALUE_ALIGN_BELOW                  = 0x00001000;
+constexpr uint32_t LL_VALUE_ALIGN_RIGHT                  = 0x00002000;
+constexpr uint32_t LL_VALUE_ALIGN_VALUES_SCALE           = 0x00004000;
+constexpr uint32_t LL_VALUE_ALIGN_LEFT_EDGE              = 0x00008000;
+constexpr uint32_t LL_NAME_ALIGN_LEFT                    = 0x00010000;
+constexpr uint32_t LL_VALUE_ALIGN_LEFT                   = 0x00020000;
+constexpr uint32_t LL_NAME_REVERSE_COLORS                = 0x00040000;
+constexpr uint32_t LL_VALUE_REVERSE_COLORS_INV           = 0x00080000;  // This flag is inverted so that the default value of 0 means it is enabled.
+constexpr uint32_t LL_NAME_ALIGN_DOM_LABELS_COLUMN_1     = 0x00100000;
+constexpr uint32_t LL_VALUE_ALIGN_DOM_LABELS_COLUMN_1    = 0x00200000;
+constexpr uint32_t LL_DISPLAY_CUSTOM_VALUE_AT_Y          = 0x00400000;  // LL_VALUE_* flags also applies to this value label.
+constexpr uint32_t LL_NAME_ALIGN_LEFT_SIDE_VALUES_SCALE  = 0x00800000;
+constexpr uint32_t LL_VALUE_ALIGN_LEFT_SIDE_VALUES_SCALE = 0x01000000;
+constexpr uint32_t LL_NAME_ALIGN_DOM_LABELS_COLUMN_2     = 0x02000000;
+constexpr uint32_t LL_VALUE_ALIGN_DOM_LABELS_COLUMN_2    = 0x04000000;
+constexpr uint32_t LL_NAME_ALIGN_DOM_LABELS_COLUMN_3     = 0x08000000;
+constexpr uint32_t LL_VALUE_ALIGN_DOM_LABELS_COLUMN_3    = 0x10000000;
 
-enum SubgraphNameAndValueDisplayFlags
-{ SNV_DISPLAY_IN_WINDOWS	= 0x00000001
-, SNV_DISPLAY_IN_DATA_LINE	= 0x00000002//No longer used as of version 2719
-};
+// Aliases for old names, to maintain compatibility with older code.
+constexpr uint32_t LL_NAME_ALIGN_DOM_LABELS_COLUMN = LL_NAME_ALIGN_DOM_LABELS_COLUMN_1;
+constexpr uint32_t LL_VALUE_ALIGN_DOM_LABELS_COLUMN = LL_VALUE_ALIGN_DOM_LABELS_COLUMN_1;
+
+// Subgraph Name Value Display Bit Flag
+constexpr uint16_t SNV_DISPLAY_IN_WINDOWS   = 0x0001;
+constexpr uint16_t SNV_DISPLAY_IN_DATA_LINE = 0x0002;  // No longer used as of version 2719.
 
 
 enum ChartDataTypeEnum : int32_t
@@ -906,7 +959,7 @@ const int ACSIL_DRAWING_MAX_LEVELS = 32;
 const int NUM_LINREG_TOOL_STD_DEVIATIONS = 12;
 
 
-// Constance for GraphDrawType. 
+// Constants for GraphDrawType. 
 // These values are written to a file and must not change for individual Graph Draw Type.
 enum GraphDrawTypeEnum
 { GDT_CUSTOM = 0
@@ -1112,6 +1165,7 @@ static const char* TIME_ZONE_NAME_STRINGS[NUM_TIME_ZONES] =
 , "Auckland (+12 NZST/+13 NZDT)"
 , "Other/Custom DST..."
 };
+
 static const char* TIME_ZONE_SHORT_NAME_STRINGS[NUM_TIME_ZONES] =
 { "N/A"
 , "HST"
@@ -1591,7 +1645,13 @@ const int OCO_GROUP_6 = 5;
 const int OCO_GROUP_7 = 6;
 const int OCO_GROUP_8 = 7;
 
-enum ReplayStatus {REPLAY_STOPPED = 0, REPLAY_RUNNING = 1, REPLAY_PAUSED = 2};
+enum ReplayStatus : int32_t
+{
+	REPLAY_STATUS_UNSET = -1
+	, REPLAY_STOPPED = 0
+	, REPLAY_RUNNING = 1
+	, REPLAY_PAUSED = 2
+};
 
 
 //Date-time to string constants
@@ -1613,6 +1673,7 @@ static const int FLAG_DT_SINGLE_SPACE				= 0x4000;
 
 static const int FLAG_DT_DATE_TIME_AS_TIME_DURATION_FORMAT = 0x8000;
 static const int FLAG_DT_MICROSECOND = 0x10000;
+static const int FLAG_DT_AM_PM = 0x20000;
 static const int FLAG_DT_COMPLETE_DATE = FLAG_DT_YEAR | FLAG_DT_MONTH | FLAG_DT_DAY;
 static const int FLAG_DT_COMPLETE_TIME = FLAG_DT_HOUR  | FLAG_DT_MINUTE |  FLAG_DT_SECOND;
 static const int FLAG_DT_COMPLETE_TIME_MS = FLAG_DT_HOUR | FLAG_DT_MINUTE | FLAG_DT_SECOND | FLAG_DT_MILLISECOND;
@@ -1673,6 +1734,12 @@ enum PeakValleyTypeEnum
 
 namespace n_ACSIL
 {
+	const int VWAP_IGNORE_TIME_PERIOD_TYPE_AND_LENGTH_INPUT_INDEX = 7;
+	const int VWAP_START_DATE_TIME_INPUT_INDEX = 11;
+	const int VWAP_DRAWN_WITH_ANCHORED_VWAP_TOOL_INPUT_INDEX = 20;
+	const int VWAP_FULL_RECALCULATE_INPUT_INDEX = 21;
+	const int VWAP_ANCHORED_VWAP_TOOL_ONLY_SHOW_ON_ORIGINAL_DRAWN_SYMBOL = 22;
+
 	enum DOMColumnTypeEnum
 	{ DOM_COLUMN_PRICE = 1
 	, DOM_COLUMN_BUY_ORDER = 2
@@ -1693,7 +1760,7 @@ namespace n_ACSIL
 	, DOM_COLUMN_ASK_MARKET_DEPTH_PULLING_STACKING = 17
 	, DOM_COLUMN_COMBINED_BID_ASK_MARKET_DEPTH_PULLING_STACKING = 18
 	, DOM_COLUMN_PROFIT_AND_LOSS = 19
-	, DOM_COLUMN_SUBGRAPH_LABELS = 20
+	, DOM_COLUMN_SUBGRAPH_LABELS_1 = 20
 	, DOM_COLUMN_GENERAL_PURPOSE_1 = 21
 	, DOM_COLUMN_GENERAL_PURPOSE_2 = 22
 	, DOM_COLUMN_BID_NUM_ORDERS = 23
@@ -1702,7 +1769,20 @@ namespace n_ACSIL
 	, DOM_COLUMN_ASK_MARKET_ORDERS = 26
 	, DOM_COLUMN_COMBINED_BID_ASK_MARKET_ORDERS = 27
 	, DOM_COLUMN_COMBINED_BID_ASK_NUM_ORDERS = 28
+	, DOM_COLUMN_CURRENT_TRADED_ASK_MINUS_BID_VOLUME_COLUMN = 29
+	, DOM_COLUMN_CURRENT_TRADED_DIAGONAL_ASK_MINUS_BID_VOLUME_COLUMN = 30
+	, DOM_COLUMN_WORKING_ORDERS_COLUMN = 31
+	, DOM_COLUMN_GENERAL_PURPOSE_3 = 32
+	, DOM_COLUMN_GENERAL_PURPOSE_4 = 33
+	, DOM_COLUMN_GENERAL_PURPOSE_5 = 34
+	, DOM_COLUMN_NOTES = 35
+	, DOM_COLUMN_SUBGRAPH_LABELS_2 = 36
+	, DOM_COLUMN_SUBGRAPH_LABELS_3 = 37
 	};
+
+	// Aliases for old names, to maintain compatibility with older code.
+	constexpr DOMColumnTypeEnum DOM_COLUMN_SUBGRAPH_LABELS
+		= DOM_COLUMN_SUBGRAPH_LABELS_1;
 
 	// These are intended to match exactly the DTC Protocol Security Types values.
 	enum DTCSecurityTypeEnum : int32_t
@@ -1827,7 +1907,7 @@ namespace n_ACSIL
 		, GRAPHICS_SETTING_RECENTER_LINE = 69
 		, GRAPHICS_SETTING_PNL_PLUS = 70
 		, GRAPHICS_SETTING_PNL_MINUS = 71
-		, GRAPHICS_SETTING_VALUES_SCALE_TEXT = 72
+		, GRAPHICS_SETTING_CHART_DOM_VALUES_SCALE_TEXT = 72
 		, GRAPHICS_SETTING_LAST_AT_BID_TEXT = 73
 		, GRAPHICS_SETTING_LAST_AT_ASK_TEXT = 74
 		, GRAPHICS_SETTING_LAST_PRICE_BACKGROUND_BID_TRADE = 75
@@ -1900,7 +1980,22 @@ namespace n_ACSIL
 		, GRAPHICS_SETTING_CHART_CHART_TRADING_POSITION_LINE_LONG_PROFIT = 142
 		, GRAPHICS_SETTING_CHART_CHART_TRADING_POSITION_LINE_SHORT_LOSS = 143
 		, GRAPHICS_SETTING_CHART_TRADE_WINDOW_BACKGROUND = 144
+		, GRAPHICS_SETTING_CHART_VALUES_SCALE_BACKGROUND = 145
+		, GRAPHICS_SETTING_CHART_TIME_SCALE_BACKGROUND = 146
+	};
 
+	enum GraphicsSettingsGlobalEnum : int32_t
+	{ GRAPHICS_SETTING_GLOBAL_MAIN_WINDOW_BACKGROUND_COLOR = 0
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_STATUS_COLOR_WAITING_TO_RECONNECT = 1
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_STATUS_COLOR_TEXT = 2
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_TEXT_CONTROL_TEXT_COLOR = 3
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_ENABLED_BUTTON_TEXT_COLOR = 4
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_DISABLED_BUTTON_TEXT_COLOR = 5
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_BUTTON_DEFAULT_BACKGROUND_COLOR = 6
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_BACKGROUND_COLOR = 7
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_STATUS_COLOR_NOT_CONNECTED = 8
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_STATUS_COLOR_CONNECTING = 9
+	, GRAPHICS_SETTINGS_GLOBAL_CONTROL_BAR_STATUS_COLOR_CONNECTED = 10
 	};
 
 	enum CustomDrawFunctionDrawOrderEnum : int32_t
@@ -1980,10 +2075,10 @@ typedef double t_MarketDataQuantity;//for volume and other quantity values relat
 
 struct s_MarketDepthEntry
 {
-	float Price = 0;
+	double Price = 0;
 	t_MarketDataQuantity Quantity = 0;
 	uint32_t NumOrders = 0;
-	float AdjustedPrice = 0;
+	double AdjustedPrice = 0;
 
 	s_MarketDepthEntry(int DummyValue = 0)
 	{

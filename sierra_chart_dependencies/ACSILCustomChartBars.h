@@ -4,6 +4,7 @@
 
 struct s_CustomChartBarInterface
 {
+	//New structure members must always be placed at the end!
 
 public:
 	s_CustomChartBarInterface();
@@ -21,7 +22,7 @@ public:
 	unsigned char BarHasBeenCutAtStartOfSession = 0;
 	unsigned char IsNewChartBar = 0;
 	unsigned char IsFirstBarOfChart = 0;//1 = When the first bar of the chart
-	float TickSize = 0.0f;
+	t_ChartArrayDataType TickSize = 0.0;
 
 	//The following are Output members
 	unsigned char StartNewBarFlag = 0;//Set to 1 to start a new chart bar. In this case NewFileRecord becomes part of the new chart bar.
@@ -30,7 +31,7 @@ public:
 
 	// Functions
 
-	float& GetChartBarValue(int SubgraphIndex, int BarIndex);
+	t_ChartArrayDataType& GetChartBarValue(int SubgraphIndex, int BarIndex);
 	const SCDateTime& GetChartBarDateTime(int BarIndex);
 	SCInputRef& GetInput(int InputIndex);
 
@@ -39,6 +40,8 @@ public:
 	double& GetPersistentDouble(int Key);
 	int64_t& GetPersistentInt64(int Key);
 	SCDateTime& GetPersistentSCDateTime(int Key);
+	void*& GetPersistentPointer(int Key);
+
 	void SetLoadingDataObjectPointer(void* p_LoadingDataObject)
 	{
 		m_p_LoadingDataObject = p_LoadingDataObject;
@@ -53,7 +56,7 @@ public:
 	void AddMessageToLog(const char* MessageText, int ShowLog);
 
 private:
-	float& (SCDLLCALL* Internal_GetChartBarValue)(void* p_LoadingDataObject, int SubgraphIndex, int BarIndex);
+	t_ChartArrayDataType& (SCDLLCALL* Internal_GetChartBarValue)(void* p_LoadingDataObject, int SubgraphIndex, int BarIndex);
 	const SCDateTime& (SCDLLCALL*Internal_GetChartBarDateTime)(void* p_LoadingDataObject, int BarIndex);
 	SCInputRef & (SCDLLCALL*Internal_GetInput)(void* p_LoadingDataObject, int InputIndex);
 
@@ -67,8 +70,8 @@ private:
 
 public:
 	//Additional Input members
-	float BidPrice = 0.0f;//The bid price associated with the last trade in NewFileRecord
-	float AskPrice = 0.0f;//The ask price associated with the last trade in NewFileRecord
+	t_ChartArrayDataType BidPrice = 0.0;//The bid price associated with the last trade in NewFileRecord
+	t_ChartArrayDataType AskPrice = 0.0;//The ask price associated with the last trade in NewFileRecord
 
 	const c_VAPContainer *VolumeAtPriceForBars = nullptr;
 
@@ -81,16 +84,22 @@ private:
 
 public:
 	//Additional Input members
-	uint64_t NewFileRecordIndex = UINT64_MAX;
+	uint64_t NewFileRecordIndex = UINT64_MAX;// This means an unset value
 	int IsBeginBarBuilding = 0;
 	int IsLoading = 0;
+	double OriginalIntradayRecordOpenValue = 0;
 
 private:
 	void (SCDLLCALL* InternalAddMessageToLog)(const char* MessageText, int ShowLog);
+
+	void*& (SCDLLCALL* Internal_GetPersistentPointer)(void* p_LoadingDataObject, int Key);
+
+	//New structure members must always be placed at the end here!
+
 };
 
 /*==========================================================================*/
-inline float& s_CustomChartBarInterface::GetChartBarValue(int SubgraphIndex, int BarIndex)
+inline t_ChartArrayDataType& s_CustomChartBarInterface::GetChartBarValue(int SubgraphIndex, int BarIndex)
 {
 	return Internal_GetChartBarValue(m_p_LoadingDataObject, SubgraphIndex, BarIndex);
 }
@@ -132,6 +141,12 @@ inline int64_t& s_CustomChartBarInterface::GetPersistentInt64(int Key)
 inline SCDateTime& s_CustomChartBarInterface::GetPersistentSCDateTime(int Key)
 {
 	return Internal_GetPersistentSCDateTime(m_p_LoadingDataObject, Key);
+}
+
+/*==========================================================================*/
+inline void*& s_CustomChartBarInterface::GetPersistentPointer(int Key)
+{
+	return Internal_GetPersistentPointer(m_p_LoadingDataObject, Key);
 }
 
 /*==========================================================================*/

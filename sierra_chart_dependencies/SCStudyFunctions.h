@@ -1,14 +1,14 @@
 #pragma once
 
-SCFloatArrayRef CCISMA_S(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, float Multiplier);
-SCFloatArrayRef CCI_S(SCFloatArrayRef In, SCFloatArrayRef MAOut, SCFloatArrayRef CCIOut, int Index, int Length, float Multiplier, unsigned int MovingAverageType);
+SCFloatArrayRef CCISMA_S(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, t_ChartArrayDataType Multiplier);
+SCFloatArrayRef CCI_S(SCFloatArrayRef In, SCFloatArrayRef MAOut, SCFloatArrayRef CCIOut, int Index, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType);
 float HighestHigh(SCFloatArrayRef In, int StartIndex, int Length);
 SCFloatArrayRef HighestHigh_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 SCFloatArrayRef Highest_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 float LowestLow(SCFloatArrayRef In, int StartIndex, int Length);
 SCFloatArrayRef Lowest_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 SCFloatArrayRef LowestLow_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
-float TrueRange(SCBaseDataRef BaseDataIn, int Index);
+t_ChartArrayDataType TrueRange(SCBaseDataRef BaseDataIn, int Index);
 SCFloatArrayRef TrueRange_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, int Index);
 SCFloatArrayRef AverageTrueRange_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef TROut, SCFloatArrayRef ATROut, int Index, int Length, unsigned int MovingAverageType);
 SCFloatArrayRef OnBalanceVolume_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, int Index);
@@ -38,54 +38,54 @@ SCFloatArrayRef TriangularMovingAverage_S(SCFloatArrayRef In, SCFloatArrayRef Ou
 SCFloatArrayRef VolumeWeightedMovingAverage_S(SCFloatArrayRef InPrice, SCFloatArrayRef InVolume, SCFloatArrayRef Out, int Index, int Length);
 SCFloatArrayRef MovingMedian_S(SCFloatArrayRef In, SCFloatArrayRef Out, SCFloatArrayRef Temp, int Index, int Length);
 void InternalStandardDeviation(SCFloatArrayRef in, float& out, int start_indx, int length);
-void GetStandardDeviation(SCFloatArrayRef In, float& Out, int StartIndex, int Length);
+void GetStandardDeviation(SCFloatArrayRef In, t_ChartArrayDataType& Out, int StartIndex, int Length);
 SCFloatArrayRef StandardDeviation_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
-SCFloatArrayRef Ergodic_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int LongEMALength, int ShortEMALength, float Multiplier,
-						  SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2, SCFloatArrayRef InternalArray3, SCFloatArrayRef InternalArray4, SCFloatArrayRef InternalArray5, SCFloatArrayRef InternalArray6);
+SCFloatArrayRef Ergodic_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int LongEMALength, int ShortEMALength, t_ChartArrayDataType Multiplier,
+						SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2, SCFloatArrayRef InternalArray3, SCFloatArrayRef InternalArray4, SCFloatArrayRef InternalArray5, SCFloatArrayRef InternalArray6);
 SCFloatArrayRef Keltner_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef In, SCFloatArrayRef KeltnerAverageOut, SCFloatArrayRef TopBandOut, SCFloatArrayRef BottomBandOut,
-						  int Index, int KeltnerMALength, unsigned int KeltnerMAType, int TrueRangeMALength, unsigned int TrueRangeMAType, float TopBandMultiplier, float BottomBandMultiplier,
-						  SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2);
-float WellesSum(float In, int Index, int Length, SCFloatArrayRef Out);
+						int Index, int KeltnerMALength, unsigned int KeltnerMAType, int TrueRangeMALength, unsigned int TrueRangeMAType, float TopBandMultiplier, float BottomBandMultiplier,
+						SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2);
+t_ChartArrayDataType WellesSum(t_ChartArrayDataType In, int Index, int Length, SCFloatArrayRef Out);
 SCFloatArrayRef WellesSum_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 void DirectionalMovementTrueRangeSummation(SCBaseDataRef BaseDataIn, int Index, int Length,
-										   SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
+										SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
 
 void DMI_S(SCBaseDataRef BaseDataIn,  int Index, int Length, int DisableRounding,
-		   SCFloatArrayRef PosDMIOut, SCFloatArrayRef NegDMIOut, SCFloatArrayRef DiffDMIOut,
-		   SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
+		SCFloatArrayRef PosDMIOut, SCFloatArrayRef NegDMIOut, SCFloatArrayRef DiffDMIOut,
+		SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
 
 SCFloatArrayRef DMIDiff_S(SCBaseDataRef BaseDataIn,
-						  int Index,
-						  int Length,
-						  SCFloatArrayRef Out,
-						  SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
+						int Index,
+						int Length,
+						SCFloatArrayRef Out,
+						SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM);
 
 SCFloatArrayRef ADX_S(SCBaseDataRef BaseDataIn,
-					  int Index,
-					  int DXLength, int DXMovAvgLength,
-					  SCFloatArrayRef Out,
-					  SCFloatArrayRef InternalTrueRangeSummation, 
-					  SCFloatArrayRef InternalPosDM,
-					  SCFloatArrayRef InternalNegDM,
-					  SCFloatArrayRef InternalDX);
+					int Index,
+					int DXLength, int DXMovAvgLength,
+					SCFloatArrayRef Out,
+					SCFloatArrayRef InternalTrueRangeSummation,
+					SCFloatArrayRef InternalPosDM,
+					SCFloatArrayRef InternalNegDM,
+					SCFloatArrayRef InternalDX);
 
 SCFloatArrayRef ADXR_S(SCBaseDataRef BaseDataIn,
-					   int Index,
-					   int DXLength, int DXMovAvgLength, int ADXRInterval,
-					   SCFloatArrayRef Out,
-					   SCFloatArrayRef InternalTrueRangeSummation, 
-					   SCFloatArrayRef InternalPosDM, 
-					   SCFloatArrayRef InternalNegDM, 
-					   SCFloatArrayRef InternalDX,
-					   SCFloatArrayRef InternalADX);
+					int Index,
+					int DXLength, int DXMovAvgLength, int ADXRInterval,
+					SCFloatArrayRef Out,
+					SCFloatArrayRef InternalTrueRangeSummation,
+					SCFloatArrayRef InternalPosDM,
+					SCFloatArrayRef InternalNegDM,
+					SCFloatArrayRef InternalDX,
+					SCFloatArrayRef InternalADX);
 
-SCFloatArrayRef RSI_S(SCFloatArrayRef In, 
-					  SCFloatArrayRef RsiOut, 
-					  SCFloatArrayRef UpSumsTemp, 
-					  SCFloatArrayRef DownSumsTemp, 
-					  SCFloatArrayRef SmoothedUpSumsTemp, 
-					  SCFloatArrayRef SmoothedDownSumsTemp,
-					  int Index, unsigned int AveragingType, int Length);
+SCFloatArrayRef RSI_S(SCFloatArrayRef In,
+					SCFloatArrayRef RsiOut,
+					SCFloatArrayRef UpSumsTemp,
+					SCFloatArrayRef DownSumsTemp,
+					SCFloatArrayRef SmoothedUpSumsTemp,
+					SCFloatArrayRef SmoothedDownSumsTemp,
+					int Index, unsigned int AveragingType, int Length);
 
 SCFloatArrayRef SmoothedMovingAverage_S(SCFloatArrayRef In, SCFloatArrayRef SmoothedAverageOut, int Index, int Length);
 
@@ -97,9 +97,9 @@ SCFloatArrayRef BollingerBands_S(SCFloatArrayRef In, SCFloatArrayRef Avg, SCFloa
 
 SCFloatArrayRef BollingerBands_StandardDeviationOfAverage_S(SCFloatArrayRef In, SCFloatArrayRef Avg, SCFloatArrayRef TopBand, SCFloatArrayRef BottomBand, SCFloatArrayRef StdDev, int Index, int  Length, float Multiplier, int MovAvgType);
 
-void Summation(SCFloatArrayRef in, float& out, int start_indx, int length);
+void Summation(SCFloatArrayRef in, t_ChartArrayDataType& out, int start_indx, int length);
 
-float GetSummation(SCFloatArrayRef In,int Index,int Length);
+t_ChartArrayDataType GetSummation(SCFloatArrayRef In,int Index,int Length);
 double GetMovingAverage(SCFloatArrayRef in, int start_indx, int length);
 
 double GetVariance(SCFloatArrayRef InData, int StartIndex, int Length);
@@ -111,30 +111,30 @@ SCFloatArrayRef ArmsEaseOfMovement_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef O
 SCFloatArrayRef ChaikinMoneyFlow_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, SCFloatArrayRef  InternalArray, int Index, int Length);
 SCFloatArrayRef Summation_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 SCFloatArrayRef Dispersion_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
-float GetDispersion(SCFloatArrayRef In, int Index, int Length);
+t_ChartArrayDataType GetDispersion(SCFloatArrayRef In, int Index, int Length);
 SCFloatArrayRef EnvelopePercent_S(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2,  float pct, int Index);
 
 SCFloatArrayRef VerticalHorizontalFilter_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
 SCFloatArrayRef RWI_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out1, SCFloatArrayRef Out2, 
-					  SCFloatArrayRef TrueRangeArray, SCFloatArrayRef LookBackLowArray, SCFloatArrayRef LookBackHighArray, int Index, int Length);
+					SCFloatArrayRef TrueRangeArray, SCFloatArrayRef LookBackLowArray, SCFloatArrayRef LookBackHighArray, int Index, int Length);
 
-SCFloatArrayRef UltimateOscillator_S(SCBaseDataRef BaseDataIn, 
-									 SCFloatArrayRef Out, 
-									 SCFloatArrayRef CalcE,
-									 SCFloatArrayRef CalcF,
-									 SCFloatArrayRef CalcG,
-									 SCFloatArrayRef CalcH,
-									 SCFloatArrayRef CalcI,
-									 SCFloatArrayRef CalcJ,
-									 SCFloatArrayRef CalcK,
-									 SCFloatArrayRef CalcL,
-									 SCFloatArrayRef CalcM,
-									 SCFloatArrayRef CalcN,
-									 SCFloatArrayRef CalcO,
-									 SCFloatArrayRef CalcP,
-									 SCFloatArrayRef CalcQ,
-									 int Index, const int Length1, const int Length2, const int Length3);
+SCFloatArrayRef UltimateOscillator_S(SCBaseDataRef BaseDataIn,
+									SCFloatArrayRef Out,
+									SCFloatArrayRef CalcE,
+									SCFloatArrayRef CalcF,
+									SCFloatArrayRef CalcG,
+									SCFloatArrayRef CalcH,
+									SCFloatArrayRef CalcI,
+									SCFloatArrayRef CalcJ,
+									SCFloatArrayRef CalcK,
+									SCFloatArrayRef CalcL,
+									SCFloatArrayRef CalcM,
+									SCFloatArrayRef CalcN,
+									SCFloatArrayRef CalcO,
+									SCFloatArrayRef CalcP,
+									SCFloatArrayRef CalcQ,
+									int Index, const int Length1, const int Length2, const int Length3);
 
 SCFloatArrayRef WilliamsAD_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, int Index);
 
@@ -145,15 +145,15 @@ int GetIslandReversal_S(SCBaseDataRef BaseDataIn, int Index);
 
 SCFloatArrayRef Oscillator_S(SCFloatArrayRef In1, SCFloatArrayRef In2, SCFloatArrayRef Out, int Index);
 
-float GetTrueHigh(SCBaseDataRef BaseDataIn, int Index);
+t_ChartArrayDataType GetTrueHigh(SCBaseDataRef BaseDataIn, int Index);
 
-float GetTrueLow(SCBaseDataRef BaseDataIn, int Index);
+t_ChartArrayDataType GetTrueLow(SCBaseDataRef BaseDataIn, int Index);
 
-float GetTrueRange(SCBaseDataRef BaseDataIn, int Index);
+t_ChartArrayDataType GetTrueRange(SCBaseDataRef BaseDataIn, int Index);
 
-float GetRange(SCBaseDataRef BaseDataIn, int Index); 
+t_ChartArrayDataType GetRange(SCBaseDataRef BaseDataIn, int Index);
 
-float GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length);
+t_ChartArrayDataType GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length);
 
 int NumberOfBarsSinceHighestValue(SCFloatArrayRef In, int Index, int Length);
 
@@ -172,13 +172,13 @@ SCFloatArrayRef ResettableZigZag_S(SCFloatArrayRef InputDataHigh, SCFloatArrayRe
 SCFloatArrayRef ResettableZigZag2_S(SCFloatArrayRef InputDataHigh, SCFloatArrayRef InputDataLow, SCFloatArrayRef ZigZagValues, SCFloatArrayRef ZigZagPeakType, SCFloatArrayRef ZigZagPeakIndex, int StartIndex, int Index, int NumberOfBars, float ReversalAmount, SCStudyInterfaceRef sc);
 
 
-float GetArrayValueAtNthOccurrence(SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence );
+t_ChartArrayDataType GetArrayValueAtNthOccurrence(SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence );
 
 SCFloatArrayRef AroonIndicator_S(SCFloatArrayRef FloatArrayInHigh, SCFloatArrayRef FloatArrayInLow, SCFloatArrayRef OutUp, SCFloatArrayRef OutDown, SCFloatArrayRef OutOscillator, int Index, int Length);
 
 SCFloatArrayRef Demarker_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, SCFloatArrayRef DemMax, SCFloatArrayRef DemMin, SCFloatArrayRef SmaDemMax, SCFloatArrayRef SmaDemMin, int Index, int Length);
 
-SCFloatArrayRef EnvelopeFixed_S(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2,  float FixedValue, int Index);
+SCFloatArrayRef EnvelopeFixed_S(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2, t_ChartArrayDataType FixedValue, int Index);
 
 
 int IsSwingHighAllowEqual_S(SCStudyInterfaceRef sc, int AllowEqual, int Index, int Length);
@@ -187,114 +187,114 @@ int IsSwingLowAllowEqual_S(SCStudyInterfaceRef sc, int AllowEqual, int Index, in
 SCFloatArrayRef AwesomeOscillator_S(SCFloatArrayRef In, SCFloatArrayRef Out, SCFloatArrayRef TempMA1, SCFloatArrayRef TempMA2, int Index, int Length1, int Length2);
 
 int CalculatePivotPoints
-(float PriorOpen
-, float PriorHigh
-, float PriorLow
-, float PriorClose
-, float CurrentOpen
-, float& PivotPoint
-, float& PivotPointHigh
-, float& PivotPointLow
- , float& R_5
- , float& R1, float& R1_5
- , float& R2, float& R2_5
- , float& R3
- , float& S_5
- , float& S1, float& S1_5
- , float& S2, float& S2_5
- , float& S3
- , float &R3_5
- , float &S3_5
- , float& R4
- , float& R4_5
- , float& S4
- , float& S4_5
- , float& R5
- , float& S5
- , float& R6
- , float& S6
- , float& R7
- , float& S7
- , float& R8
- , float& S8
- , float& R9
- , float& S9
- , float& R10
- , float& S10
- , int FormulaType
- );
+( t_ChartArrayDataType PriorOpen
+, t_ChartArrayDataType PriorHigh
+, t_ChartArrayDataType PriorLow
+, t_ChartArrayDataType PriorClose
+, t_ChartArrayDataType CurrentOpen
+, t_ChartArrayDataType& PivotPoint
+, t_ChartArrayDataType& PivotPointHigh
+, t_ChartArrayDataType& PivotPointLow
+, t_ChartArrayDataType& R_5
+, t_ChartArrayDataType& R1, t_ChartArrayDataType& R1_5
+, t_ChartArrayDataType& R2, t_ChartArrayDataType& R2_5
+, t_ChartArrayDataType& R3
+, t_ChartArrayDataType& S_5
+, t_ChartArrayDataType& S1, t_ChartArrayDataType& S1_5
+, t_ChartArrayDataType& S2, t_ChartArrayDataType& S2_5
+, t_ChartArrayDataType& S3
+, t_ChartArrayDataType&R3_5
+, t_ChartArrayDataType&S3_5
+, t_ChartArrayDataType& R4
+, t_ChartArrayDataType& R4_5
+, t_ChartArrayDataType& S4
+, t_ChartArrayDataType& S4_5
+, t_ChartArrayDataType& R5
+, t_ChartArrayDataType& S5
+, t_ChartArrayDataType& R6
+, t_ChartArrayDataType& S6
+, t_ChartArrayDataType& R7
+, t_ChartArrayDataType& S7
+, t_ChartArrayDataType& R8
+, t_ChartArrayDataType& S8
+, t_ChartArrayDataType& R9
+, t_ChartArrayDataType& S9
+, t_ChartArrayDataType& R10
+, t_ChartArrayDataType& S10
+, int FormulaType
+);
 
 int CalculateDailyOHLC
 ( SCStudyInterfaceRef sc
- , const SCDateTimeMS& CurrentBarTradingDayDate
- , int InNumberOfDaysBack
- , int InNumberOfDaysToCalculate
- , int InUseSaturdayData
- , int InUseThisIntradayChart
- , int InDailyChartNumber
- , SCGraphData& DailyChartData
- , SCDateTimeArray& DailyChartDateTimes
- , int UseDaySessionOnly
- , float& Open
- , float& High
- , float& Low
- , float& Close
- , float& Volume
- , int InIncludeFridayEveningSessionWithSundayEveningSession
- , int InUseSundayData
- );
+, const SCDateTimeMS& CurrentBarTradingDayDate
+, int InNumberOfDaysBack
+, int InNumberOfDaysToCalculate
+, int InUseSaturdayData
+, int InUseThisIntradayChart
+, int InDailyChartNumber
+, SCGraphData& DailyChartData
+, SCDateTimeArray& DailyChartDateTimes
+, int UseDaySessionOnly
+, t_ChartArrayDataType& Open
+, t_ChartArrayDataType& High
+, t_ChartArrayDataType& Low
+, t_ChartArrayDataType& Close
+, t_ChartArrayDataType& Volume
+, int InIncludeFridayEveningSessionWithSundayEveningSession
+, int InUseSundayData
+);
 
 int CalculateDailyPivotPoints
 (SCStudyInterfaceRef sc
- , int IntradayChartDate
- , int FormulaType
- , int DailyChartNumber
- , SCGraphData& DailyChartData
- , SCDateTimeArray& DailyChartDateTimeArray
- , int NumberOfDaysToCalculate
- , int UseSaturdayData
- , int UseThisChart
- , int UseManualValues
- , float UserOpen
- , float UserHigh
- , float UserLow
- , float UserClose
- , int UseDaySessionOnly
- , float& PivotPoint
- , float& PivotPointHigh
- , float& PivotPointLow
- , float& R_5
- , float& R1, float& R1_5
- , float& R2, float& R2_5
- , float& R3
- , float& S_5
- , float& S1, float& S1_5
- , float& S2, float& S2_5
- , float& S3
- , float & R3_5
- , float & S3_5
- , float& R4
- , float&R4_5
- , float& S4
- , float& S4_5
- , float& R5
- , float& S5
- , float& R6
- , float& S6
- , float& R7
- , float& S7
- , float& R8
- , float& S8
- , float& R9
- , float& S9
- , float& R10
- , float& S10
- , int UseDailyChartForSettlementOnly
- );
+, int IntradayChartDate
+, int FormulaType
+, int DailyChartNumber
+, SCGraphData& DailyChartData
+, SCDateTimeArray& DailyChartDateTimeArray
+, int NumberOfDaysToCalculate
+, int UseSaturdayData
+, int UseThisChart
+, int UseManualValues
+, t_ChartArrayDataType UserOpen
+, t_ChartArrayDataType UserHigh
+, t_ChartArrayDataType UserLow
+, t_ChartArrayDataType UserClose
+, int UseDaySessionOnly
+, t_ChartArrayDataType& PivotPoint
+, t_ChartArrayDataType& PivotPointHigh
+, t_ChartArrayDataType& PivotPointLow
+, t_ChartArrayDataType& R_5
+, t_ChartArrayDataType& R1, t_ChartArrayDataType& R1_5
+, t_ChartArrayDataType& R2, t_ChartArrayDataType& R2_5
+, t_ChartArrayDataType& R3
+, t_ChartArrayDataType& S_5
+, t_ChartArrayDataType& S1, t_ChartArrayDataType& S1_5
+, t_ChartArrayDataType& S2, t_ChartArrayDataType& S2_5
+, t_ChartArrayDataType& S3
+, t_ChartArrayDataType& R3_5
+, t_ChartArrayDataType& S3_5
+, t_ChartArrayDataType& R4
+, t_ChartArrayDataType&R4_5
+, t_ChartArrayDataType& S4
+, t_ChartArrayDataType& S4_5
+, t_ChartArrayDataType& R5
+, t_ChartArrayDataType& S5
+, t_ChartArrayDataType& R6
+, t_ChartArrayDataType& S6
+, t_ChartArrayDataType& R7
+, t_ChartArrayDataType& S7
+, t_ChartArrayDataType& R8
+, t_ChartArrayDataType& S8
+, t_ChartArrayDataType& R9
+, t_ChartArrayDataType& S9
+, t_ChartArrayDataType& R10
+, t_ChartArrayDataType& S10
+, int UseDailyChartForSettlementOnly
+);
 
 SCFloatArrayRef Slope_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index);
 
-SCFloatArrayRef CalculateAngle_S(SCFloatArrayRef InputArray, SCFloatArrayRef OutputArray, int Index, int Length, float ValuePerPoint);
+SCFloatArrayRef CalculateAngle_S(SCFloatArrayRef InputArray, SCFloatArrayRef OutputArray, int Index, int Length, t_ChartArrayDataType ValuePerPoint);
 
 SCFloatArrayRef DoubleStochastic_S(SCBaseDataRef BaseDataIn, SCFloatArrayRef Out, SCFloatArrayRef MovAvgIn, SCFloatArrayRef MovAvgOut, SCFloatArrayRef MovAvgIn2, SCFloatArrayRef Unused, int Index, int Length, int MovAvgLength, int MovAvgType);
 
@@ -332,7 +332,7 @@ SCFloatArrayRef CumulativeHurstExponent_S(SCFloatArrayRef In, SCFloatArrayRef Ou
 
 void CalculateHurstExponent(SCFloatArrayRef In_X, SCFloatArrayRef In_Y, double &HurstExponent, int Index, int Length);
 SCFloatArrayRef HurstExponentNew_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int LengthIndex);
-void GetMinMaxValuesFromArray(float* Array, int ArrayLength, float &MinValue, float &MaxValue);
+void GetMinMaxValuesFromArray(t_ChartArrayDataType* Array, int ArrayLength, t_ChartArrayDataType& MinValue, t_ChartArrayDataType& MaxValue);
 
 SCFloatArrayRef T3MovingAverage_S
 (SCFloatArrayRef InputArray
@@ -349,7 +349,7 @@ SCFloatArrayRef T3MovingAverage_S
 
 SCFloatArrayRef ExampleFunction_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
-SCFloatArrayRef ArnaudLegouxMovingAverage_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length, float Sigma, float Offset);
+SCFloatArrayRef ArnaudLegouxMovingAverage_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length, t_ChartArrayDataType Sigma, t_ChartArrayDataType Offset);
 
 SCFloatArrayRef ExponentialRegressionIndicator_S(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 

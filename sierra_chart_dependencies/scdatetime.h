@@ -296,7 +296,12 @@ inline int SECONDS_PART(const int64_t DateTime)
 {
 	// Round to the nearest second
 	const int64_t DateTimeAdjusted = ADJUST_ROUND_SECOND(DateTime);
-	int SecondsPart = (DateTimeAdjusted / MICROSECONDS_PER_SECOND) % SECONDS_PER_MINUTE;
+
+	int SecondsPart
+		= static_cast<int>
+			( (DateTimeAdjusted / MICROSECONDS_PER_SECOND)
+				% SECONDS_PER_MINUTE
+			);
 
 	if (DateTime < 0)
 		SecondsPart = -SecondsPart;
@@ -321,7 +326,11 @@ inline int SECONDS_PART(double DateTimeDouble)
 DEPRECATED("The MS_PART is deprecated. Use portable SCDateTime::GetMillisecond() instead.")
 inline int MS_PART(const int64_t DateTime)
 {
-	const int MillisecondsPart = (DateTime / MICROSECONDS_PER_MILLISECOND) % MILLISECONDS_PER_SECOND;
+	const int MillisecondsPart
+		= static_cast<int>
+			( (DateTime / MICROSECONDS_PER_MILLISECOND)
+				% MILLISECONDS_PER_SECOND
+			);
 
 	return MillisecondsPart;
 }
@@ -403,7 +412,7 @@ inline const char* GetShortNameForMonth(int Month)
 /*==========================================================================*/
 inline int GetMonthFromShortName(const char* ShortName)
 {
-	if (ShortName == NULL)
+	if (ShortName == nullptr)
 		return 0;
 	
 	for (int Month = JANUARY; Month <= DECEMBER; ++Month)
@@ -427,17 +436,23 @@ inline int GetMonthFromShortName(const char* ShortName)
 ----------------------------------------------------------------------------*/
 inline int GetMonthFromFuturesCode(char MonthCode)
 {
+	static constexpr char MONTH_FROM_CODE[26] = 
+		{ 0, 0, 0, 0, 0          // A-E (invalid) 
+		, 1, 2, 3, 0, 4          // F=Jan, G=Feb, H=Mar, I=invalid, J=Apr 
+		, 5, 0, 6, 7, 0          // K=May, L=invalid, M=Jun, N=Jul, O=invalid 
+		, 0, 8, 0, 0, 0          // P=invalid, Q=Aug, R=invalid, S=invalid, T=invalid 
+		, 9,10, 0,11, 0          // U=Sep, V=Oct, W=invalid, X=Nov, Y=invalid
+		,12                      // Z=Dec 
+		};
+
 	// Make uppercase
 	if (MonthCode >= 'a' && MonthCode <= 'z')
 		MonthCode += 'A' - 'a';
 	
-	for (int Month = JANUARY; Month <= DECEMBER; ++Month)
-	{
-		if (MonthCode == FUTURES_CODE_FOR_MONTH[Month])
-			return Month;
-	}
-	
-	return 0;
+	if (MonthCode < 'A' || MonthCode > 'Z') 
+		return 0;
+
+	return MONTH_FROM_CODE[MonthCode - 'A'];
 }
 
 /*==========================================================================*/
@@ -485,7 +500,7 @@ inline DayOfWeekEnum GetDayOfWeekFromInt(int DayOfWeek)
 /*==========================================================================*/
 inline DayOfWeekEnum GetDayOfWeekFromFullName(const char* FullName)
 {
-	if (FullName == NULL)
+	if (FullName == nullptr)
 		return DAY_OF_WEEK_NOT_SET;
 
 	for (int DayOfWeek = SUNDAY; DayOfWeek <= SATURDAY; ++DayOfWeek)
@@ -506,7 +521,7 @@ inline DayOfWeekEnum GetDayOfWeekFromFullName(const char* FullName)
 /*==========================================================================*/
 inline DayOfWeekEnum GetDayOfWeekFromShortName(const char* ShortName)
 {
-	if (ShortName == NULL)
+	if (ShortName == nullptr)
 		return DAY_OF_WEEK_NOT_SET;
 
 	for (int DayOfWeek = SUNDAY; DayOfWeek <= SATURDAY; ++DayOfWeek)
@@ -656,7 +671,9 @@ inline time_t SCDateTimeDoubleToUNIXTime(double DateTimeDouble)
 	if (IS_UNSET(DateTimeDouble))
 		return 0;
 
-	return (time_t)ADJUST((DateTimeDouble - SCDATETIME_UNIX_EPOCH) * SECONDS_PER_DAY);
+	return static_cast<time_t>
+		( ADJUST((DateTimeDouble - SCDATETIME_UNIX_EPOCH) * SECONDS_PER_DAY)
+		);
 }
 /*==========================================================================*/
 DEPRECATED("The SCDateTimeToFloatUNIXTime is deprecated. Use SCDateTime::ToFloatUNIXTime() instead.")
@@ -691,7 +708,8 @@ inline double UNIXTimeToSCDateTime(time_t UnixTime)
 	if (UnixTime == 0)
 		return DATETIME_UNSET_DOUBLE;
 
-	return (UnixTime) / static_cast<double>(SECONDS_PER_DAY) + SCDATETIME_UNIX_EPOCH;
+	return static_cast<double>(UnixTime) / SECONDS_PER_DAY
+		+ SCDATETIME_UNIX_EPOCH;
 }
 
 /*==========================================================================*/
@@ -785,7 +803,7 @@ inline int64_t YMDHMS_DATETIME(int Year, int Month, int Day, int Hour, int Minut
 
 	Month is 1 through 12
 ----------------------------------------------------------------------------*/
-inline void DATETIME_TO_YMDHMS_MS(int64_t DateTime, int& Year, int& Month, int& Day, int& Hour, int& Minute, int& Second, int& MillisecondOrMicrosecond, const bool GetMicroseconds = false)
+inline void DATETIME_TO_YMDHMS_MS(const int64_t DateTime, int& Year, int& Month, int& Day, int& Hour, int& Minute, int& Second, int& MillisecondOrMicrosecond, const bool GetMicroseconds = false)
 {
 	Year = Month = Day = Hour = Minute = Second = 0;
 
@@ -826,6 +844,8 @@ inline void DATETIME_TO_YMDHMS_MS(int64_t DateTime, int& Year, int& Month, int& 
 	int nDaysAbsolute = nAllDays + DAYS_BEFORE_SC_EPOCH;	// Add days from 1/1/0 to 12/30/1899
 
 	TempDateTime = abs(TempDateTime);
+
+	// This calculates the time component in microseconds as an integer
 	int64_t Time = TempDateTime % MICROSECONDS_PER_DAY;
 
 	const int NumberOfDaysin400Years = DaysSince1Jan0AtYearBeginning(400);
@@ -1067,6 +1087,10 @@ class SCDateTime
 		bool operator > (const SCDateTime& DateTime) const;
 		bool operator >= (const SCDateTime& DateTime) const;
 
+		#ifdef SCDATETIME_SUPPORT_CHRONO
+		operator std::chrono::system_clock::time_point() const;
+		#endif
+
 		void Clear();
 		void SetToMaximum();
 		bool IsMaximum() const;
@@ -1106,6 +1130,7 @@ class SCDateTime
 		int GetMicrosecond() const;
 		int GetMillisecond() const;
 		int GetDayOfWeek() const;
+		const char * GetDayOfWeekString() const;
 		int GetDayOfWeekMondayBased() const;
 		int GetQuarterNumber() const;
 		SCDateTime& SetToPriorSundayForDateTime(const SCDateTime& OriginalDateTime);
@@ -1163,6 +1188,7 @@ class SCDateTime
 		SCDateTime& SetDate(int Date);
 		SCDateTime& SetDate(const SCDateTime& Date);
 		SCDateTime& SetTime(int Time);
+		SCDateTime& SetTimeToMaximum();
 		SCDateTime& SetTimeFromSCDateTime(const SCDateTime& Time);
 		SCDateTime& SetDateYMD(int Year, int Month, int Day);
 		SCDateTime& SetTimeHMS(int Hour, int Minute, int Second);
@@ -1191,7 +1217,7 @@ class SCDateTime
 		SCDateTime& AddYears(int Years);
 		SCDateTime& SubtractYears(int Years);
 		SCDateTime& SetDayToLastDayInMonth();
-		SCDateTime& MultiplyTime(float Multiplier);
+		SCDateTime& MultiplyTime(double Multiplier);
 
 		time_t ToUNIXTime() const;
 		double ToFloatUNIXTime() const;
@@ -1379,14 +1405,30 @@ inline void SCDateTime::ValidateAsCorrectDateTime()
 	if (IsUnset())
 		return;
 
-	const char UpperByte = (m_dt >> (sizeof(m_dt) - 1) * 8) & 0xFF;
+	const char UpperByte
+		= static_cast<char>((m_dt >> (sizeof(m_dt) - 1) * 8) & 0xFF);
 	
 	// Upper byte between 0x3E and 0x41 means positive double values of DateTime between 1899 and 9999 years
 	// Upper byte between 0xBD and 0xC1 means negative double values of DateTime between -9999 and 1899 years
 	if ((0x3E <= UpperByte && UpperByte <= 0x41) || (-67 <= UpperByte && UpperByte <= -63))
 	{
-		*this = SCDateTime(*reinterpret_cast<double*>(&m_dt));
-		//Due to the fact that microseconds cannot be precisely represented with SCDateTime as a double, we need to remove them.  Otherwise, we will have erroneous microsecond values showing up.
+		// The current value needs to be interpreted as a double value, and
+		// then converted into the appropriate integer value.
+
+		// Note: This method of copying the bytes from the current integer
+		// value into the bytes of a double value, rather than using
+		// reinterpret_cast, is necessary to avoid valid strict-aliasing
+		// warnings.
+		double DoubleValue = 0.0;
+		static_assert(sizeof(DoubleValue) == sizeof(m_dt));
+		memcpy(&DoubleValue, &m_dt, sizeof(m_dt));
+
+		// Convert the double value into the correct internal value.
+		m_dt = SCDateTimeDoubleToSCDateTime(DoubleValue);
+
+		// Due to the fact that microseconds cannot be precisely represented
+		// with SCDateTime as a double, we need to remove them.  Otherwise,
+		// we will have erroneous microsecond values showing up.
 		RoundToNearestMillisecond();
 	}
 }
@@ -1541,6 +1583,14 @@ inline bool SCDateTime::operator >= (const SCDateTime& DateTime) const
 	return !this->operator <(DateTime);
 }
 
+#ifdef SCDATETIME_SUPPORT_CHRONO
+/*==========================================================================*/
+inline SCDateTime::operator std::chrono::system_clock::time_point() const
+{
+	return (SCDATETIME_EPOCH_SYSTEM_CLOCK + std::chrono::microseconds(m_dt));
+}
+#endif
+
 /*==========================================================================*/
 inline void SCDateTime::Clear()
 {
@@ -1677,7 +1727,8 @@ inline SCDateTime SCDateTime::GetTimeAsSCDateTimeMS() const
 /*==========================================================================*/
 inline double SCDateTime::GetTimeAsDouble() const
 {
-	return GetTimeAsSCDateTime().GetInternalDateTime() / static_cast<double>(MICROSECONDS_PER_DAY);
+	return static_cast<double>(GetTimeAsSCDateTime().GetInternalDateTime())
+		/ MICROSECONDS_PER_DAY;
 }
 
 /*==========================================================================*/
@@ -1783,6 +1834,18 @@ inline int SCDateTime::GetMillisecond() const
 inline int SCDateTime::GetDayOfWeek() const
 {
 	return DAY_OF_WEEK(GetDate());
+}
+
+/*==========================================================================*/
+// Returns DayOfWeekEnum
+inline const char* SCDateTime::GetDayOfWeekString() const
+{
+	const int DayOfWeek = GetDayOfWeek();
+
+	if (DayOfWeek < 0 || DayOfWeek >= DAYS_PER_WEEK)
+		return "";
+
+	return FULL_NAME_FOR_DAY_OF_WEEK[DayOfWeek];
 }
 
 /*==========================================================================*/
@@ -2134,9 +2197,20 @@ inline SCDateTime& SCDateTime::SetDate(const SCDateTime& Date)
 }
 
 /*==========================================================================*/
+// Time is in seconds.
 inline SCDateTime& SCDateTime::SetTime(int Time)
 {
 	m_dt += Time * MICROSECONDS_PER_SECOND - m_dt % MICROSECONDS_PER_DAY;
+	return *this;
+}
+
+/*==========================================================================*/
+inline SCDateTime& SCDateTime::SetTimeToMaximum()
+{
+	SetTime(0);
+	
+	m_dt += MICROSECONDS_PER_DAY - 1;
+
 	return *this;
 }
 
@@ -2336,9 +2410,9 @@ inline SCDateTime& SCDateTime::SetDayToLastDayInMonth()
 }
 
 /*==========================================================================*/
-inline SCDateTime& SCDateTime::MultiplyTime(float Multiplier)
+inline SCDateTime& SCDateTime::MultiplyTime(double Multiplier)
 {
-	m_dt = static_cast<int64_t>(ADJUST(m_dt * static_cast<double>(Multiplier)));
+	m_dt = static_cast<int64_t>(ADJUST(static_cast<double>(m_dt) * Multiplier));
 	return *this;
 }
 
@@ -2357,7 +2431,9 @@ inline double SCDateTime::ToFloatUNIXTime() const
 	if (IsUnset())
 		return 0.0;
 
-	return (m_dt - SCDATETIME_UNIX_EPOCH_DATE * MICROSECONDS_PER_DAY) / static_cast<double>(MICROSECONDS_PER_SECOND);
+	return static_cast<double>
+		( m_dt - SCDATETIME_UNIX_EPOCH_DATE * MICROSECONDS_PER_DAY
+		) / MICROSECONDS_PER_SECOND;
 }
 
 /*==========================================================================*/
@@ -2366,7 +2442,13 @@ inline int64_t SCDateTime::ToUNIXTimeInMilliseconds() const
 	if (IsUnset())
 		return 0;
 
-	return static_cast<int64_t>(ADJUST((m_dt - SCDATETIME_UNIX_EPOCH_DATE * MICROSECONDS_PER_DAY) / static_cast<double>(MICROSECONDS_PER_MILLISECOND)));
+	return static_cast<int64_t>
+		( ADJUST
+			( static_cast<double>
+				( m_dt - SCDATETIME_UNIX_EPOCH_DATE * MICROSECONDS_PER_DAY
+				) / MICROSECONDS_PER_MILLISECOND
+			)
+		);
 }
 
 /*==========================================================================*/
@@ -2384,7 +2466,8 @@ inline double SCDateTime::ToUNIXTimeWithMillisecondsFraction() const
 	if (IsUnset())
 		return DATETIME_UNSET_DOUBLE;
 
-	return ToUNIXTimeInMilliseconds() / static_cast<double>(MILLISECONDS_PER_SECOND);
+	return static_cast<double>(ToUNIXTimeInMilliseconds())
+		/ MILLISECONDS_PER_SECOND;
 }
 
 /*==========================================================================*/

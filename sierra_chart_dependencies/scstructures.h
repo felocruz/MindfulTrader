@@ -129,41 +129,54 @@ typedef void (SCDLLCALL* fp_ACSGDIFunction)(HWND WindowHandle, HDC DeviceContext
 
 /****************************************************************************/
 
+typedef float t_ChartArrayDataType;//TODO double
+typedef int t_Int32QuantityType;//TODO double
+typedef int64_t t_Int64QuantityType;//TODO double
+
+#define MAX_CHART_DATA_VALUE FLT_MAX
+#define MIN_CHART_DATA_VALUE FLT_MIN
+//#define MAX_CHART_DATA_VALUE DBL_MAX
+//#define MIN_CHART_DATA_VALUE DBL_MIN
+
+/****************************************************************************/
+
+// Changed in version 2894
 struct s_TimeAndSales
 {
 	SCDateTimeMS DateTime;// UTC
-	float Price = 0;
-	uint32_t Volume = 0;
-	float Bid = 0;
-	float Ask = 0;
-	uint32_t BidSize = 0;
-	uint32_t AskSize = 0;
+	double Price = 0;
+	double Volume = 0;
+	double Bid = 0;
+	double Ask = 0;
+	double BidSize = 0;
+	double AskSize = 0;
 
 	//This will always be a value >= 1.  It is unlikely to wrap around, but it could. It will never be 0.
 	uint32_t Sequence = 0;
 
 	int16_t UnbundledTradeIndicator = 0;
 	int16_t Type = 0;
-	uint32_t TotalBidDepth = 0;
-	uint32_t TotalAskDepth = 0;
+	double TotalBidDepth = 0;
+	double TotalAskDepth = 0;
 	int8_t TradeIndicator = 0;
 	uint16_t NumberOfTrades = 0;//Used for combining
 
-	s_TimeAndSales()
-	{
-	
-	}
 
-	explicit s_TimeAndSales(int Value)
-	{
-	
-	}
+	//s_TimeAndSales()
+	//{
+	//
+	//}
+
+	//explicit s_TimeAndSales(int Value)
+	//{
+	//
+	//}
 
 	s_TimeAndSales& operator *= (float Multiplier)
 	{
-		Price *= Multiplier;
-		Bid *= Multiplier;
-		Ask *= Multiplier;
+		SetPrice(GetPrice() * Multiplier);
+		SetBid(GetBid() * Multiplier);
+		SetAsk(GetAsk() * Multiplier);
 
 		return *this;
 	}
@@ -178,19 +191,143 @@ struct s_TimeAndSales
 		return  Sequence < Right.Sequence;
 	}
 
+	double GetPriceOrBidAsk() const
+	{
+		if (GetPrice() != 0)
+			return GetPrice();
+
+		if (GetBid() != 0 && GetAsk() != 0)
+			return (GetBid() + GetAsk()) / 2.0;
+
+		if (GetBid() != 0)
+			return GetBid();
+
+		return GetAsk();
+	}
+
+	/*======================================================================*/
 	double GetPrice() const
 	{
-		if (Price != 0)
-			return Price;
+		return Price;
+	}
 
-		if (Bid != 0 && Ask != 0)
-			return (Bid + Ask) / 2.0;
+	void SetPrice(double Value)
+	{
+		Price = Value;
+	}
 
-		if (Bid != 0)
-			return Bid;
+	/*======================================================================*/
+	double GetVolume() const
+	{
+		return Volume;
+	}
 
+	void SetVolume(double Value)
+	{
+		Volume = Value;
+	}
+
+	void AddVolume(double Value)
+	{
+		Volume += Value;
+	}
+
+	/*======================================================================*/
+	double GetBid() const
+	{
+		return Bid;
+	}
+
+	void SetBid(double Value)
+	{
+		Bid = Value;
+	}
+
+	void AddBid(double Value)
+	{
+		Bid += Value;
+	}
+
+	/*======================================================================*/
+	double GetAsk() const
+	{
 		return Ask;
 	}
+
+	void SetAsk(double Value)
+	{
+		Ask = Value;
+	}
+
+	void AddAsk(double Value)
+	{
+		Ask += Value;
+	}
+
+	/*======================================================================*/
+	double GetBidSize() const
+	{
+		return BidSize;
+	}
+
+	void SetBidSize(double Value)
+	{
+		BidSize = Value;
+	}
+
+	void AddBidSize(double Value)
+	{
+		BidSize += Value;
+	}
+
+	/*======================================================================*/
+	double GetAskSize() const
+	{
+		return AskSize;
+	}
+
+	void SetAskSize(double Value)
+	{
+		AskSize = Value;
+	}
+
+	void AddAskSize(double Value)
+	{
+		AskSize += Value;
+	}
+
+	/*======================================================================*/
+	double GetTotalBidDepth() const
+	{
+		return TotalBidDepth;
+	}
+
+	void SetTotalBidDepth(double Value)
+	{
+		TotalBidDepth = Value;
+	}
+
+	void AddTotalBidDepth(double Value)
+	{
+		TotalBidDepth += Value;
+	}
+
+	/*======================================================================*/
+	double GetTotalAskDepth() const
+	{
+		return TotalAskDepth;
+	}
+
+	void SetTotalAskDepth(double Value)
+	{
+		TotalAskDepth = Value;
+	}
+
+	void AddTotalAskDepth(double Value)
+	{
+		TotalAskDepth += Value;
+	}
+
 };
 
 class c_SCTimeAndSalesArray
@@ -427,7 +564,7 @@ class c_SCTimeAndSalesArray
 
 
 /****************************************************************************/
-
+// This structure, is used by user compiled code and new members must always be at the end and must be version checked before accessed.
 class s_UseTool
 {
 public: 
@@ -443,8 +580,8 @@ public:
 		int ExtendRight = -1;
 		int TransparencyLevel = -1;
 		int FourthIndex = -1;
-		float BeginValue = FLT_MIN;
-		float EndValue = FLT_MIN;
+		t_ChartArrayDataType BeginValue = MIN_CHART_DATA_VALUE;
+		t_ChartArrayDataType EndValue = MIN_CHART_DATA_VALUE;
 		int Region = -1;
 		uint32_t Color = DEFAULT_COLOR_VALUE;
 		uint64_t Unused_2 = 0;
@@ -452,7 +589,7 @@ public:
 		char ShowBeginMark = -1;
 		char ShowEndMark = -1;
 		int16_t IsSelected = 0;
-		float RetracementLevels[ACSIL_DRAWING_MAX_LEVELS] = {};
+		t_ChartArrayDataType RetracementLevels[ACSIL_DRAWING_MAX_LEVELS] = {};
 		SCDateTimeMS BeginDateTime;
 		SCDateTimeMS EndDateTime;
 		SCString Text;
@@ -481,7 +618,7 @@ public:
 		int DisplayHorizontalLineValue = -1;
 
 		SCDateTimeMS ThirdDateTime;
-		float ThirdValue = FLT_MIN;
+		t_ChartArrayDataType ThirdValue = MIN_CHART_DATA_VALUE;
 
 		int BeginIndex = -1;
 		int EndIndex = -1;
@@ -510,7 +647,7 @@ public:
 		int RoundToTickSize = -1;
 
 		int FixedSizeArrowHead = -1;
-		float ArrowHeadSize = -FLT_MAX;
+		t_ChartArrayDataType ArrowHeadSize = -MAX_CHART_DATA_VALUE;
 
 		int MarkerType = -1;
 		int MarkerSize = -1;
@@ -565,7 +702,7 @@ public:
 
 		int16_t NumCycles = -1;
 
-		float ExtendMultiplier = -1;
+		t_ChartArrayDataType ExtendMultiplier = -1;
 
 		int16_t DrawMidline = -1;
 
@@ -586,6 +723,25 @@ public:
 		// 2561
 		int8_t LevelShowState[ACSIL_DRAWING_MAX_LEVELS] = {};
 
+		// 2773
+		int DrawTextAtEnd = -1;
+
+		// 2784
+		int ShowNumberOfTrades = -1;
+
+		// 2820
+		int SplitTextToOppositeSide = -1;
+
+		// 2887
+		SCString SourceChartbook;
+
+		//2911
+		//int VerticalText = -1;
+
+		//2928
+		uint8_t IgnoreSlopeInCalculations = false;	//Calculator
+		uint8_t ShowArrowAtEndPoint = false; 	//Calculator
+
 		// Note: When adding new members, remember to update CopyAndUpdateUseToolStruct function.
 
 
@@ -593,7 +749,7 @@ public:
 		{
 			for (int Index = 0; Index < ACSIL_DRAWING_MAX_LEVELS; ++Index)
 			{
-				RetracementLevels[Index] = -FLT_MAX;
+				RetracementLevels[Index] = -MAX_CHART_DATA_VALUE;
 				LevelColor[Index] = DEFAULT_COLOR_VALUE;
 				LevelStyle[Index] = LINESTYLE_UNSET;
 				LevelWidth[Index] = -1;
@@ -720,6 +876,32 @@ public:
 			if (GetVersion() >= 2545)
 			{
 				UseHighResolutionForWindowRelativeCoordinates = DefaultUseTool.UseHighResolutionForWindowRelativeCoordinates;
+			}
+			
+			if (GetVersion() >= 2773)
+			{
+				DrawTextAtEnd = DefaultUseTool.DrawTextAtEnd;
+			}
+
+			if (GetVersion() >= 2784)
+			{
+				ShowNumberOfTrades = DefaultUseTool.ShowNumberOfTrades;
+			}
+
+			if (GetVersion() >= 2820)
+			{
+				SplitTextToOppositeSide = DefaultUseTool.SplitTextToOppositeSide;
+			}
+			
+			if (GetVersion() >= 2887)
+			{
+				SourceChartbook.Clear();
+			}
+
+			if (GetVersion() >= 2928)
+			{
+				IgnoreSlopeInCalculations = DefaultUseTool.IgnoreSlopeInCalculations;
+				ShowArrowAtEndPoint = DefaultUseTool.ShowArrowAtEndPoint;
 			}
 		}
 
@@ -896,17 +1078,51 @@ struct s_ACSTrade
 	double FlatToFlatMaximumOpenPositionProfit = 0;
 	double FlatToFlatMaximumOpenPositionLoss = 0;
 	double Commission = 0;
+	
+	//2384
 	int IsTradeClosed = 0;
+	
+	//2458
 	SCString Note;
+
+	//2882
+	uint64_t EntryInternalOrderID = 0;
+	uint64_t ExitInternalOrderID = 0;
 
 	s_ACSTrade()
 	{
 
 	}
 
-	void Clear()
+	void Clear(int StudyVersion) // For the StudyVersion parameter use SC_DLL_VERSION.
 	{
-		*this = s_ACSTrade();
+		OpenDateTime.Clear();
+		CloseDateTime.Clear();
+		TradeType = 0; 
+		TradeQuantity = 0;
+		MaxClosedQuantity = 0;
+		MaxOpenQuantity = 0;
+		EntryPrice = 0;
+		ExitPrice = 0;
+		Unused = 0;
+		TradeProfitLoss = 0;
+		MaximumOpenPositionLoss = 0;
+		MaximumOpenPositionProfit = 0;
+		FlatToFlatMaximumOpenPositionProfit = 0;
+		FlatToFlatMaximumOpenPositionLoss = 0;
+		Commission = 0;
+
+		if (StudyVersion >= 2384)
+			IsTradeClosed = 0;
+
+		if (StudyVersion >= 2458)
+			Note.Clear();
+
+		if (StudyVersion >= 2882)
+		{
+			EntryInternalOrderID = 0;
+			ExitInternalOrderID = 0;
+		}
 	}
 };
 
@@ -1196,6 +1412,11 @@ struct s_SCTradeOrder
 	// version 2347
 	SCTimeInForceEnum TimeInForce = SCT_TIF_UNSET;
 
+	//  Version 2779
+	int MoveToBreakEven1Type = MOVETO_BE_ACTION_TYPE_NONE;
+	int MoveToBreakEven2Type = MOVETO_BE_ACTION_TYPE_NONE;
+
+
 	s_SCTradeOrder()
 	{
 	}
@@ -1283,7 +1504,7 @@ struct s_SCPositionData
 
 struct s_GetOHLCOfTimePeriod
 {
-	s_GetOHLCOfTimePeriod(SCDateTime StartDateTime, SCDateTime EndDateTime, float& Open, float& High, float& Low, float& Close, float& NextOpen, int& NumberOfBars, SCDateTime& TotalTimeSpan)
+	s_GetOHLCOfTimePeriod(SCDateTime StartDateTime, SCDateTime EndDateTime, t_ChartArrayDataType& Open, t_ChartArrayDataType& High, t_ChartArrayDataType& Low, t_ChartArrayDataType& Close, t_ChartArrayDataType& NextOpen, int& NumberOfBars, SCDateTime& TotalTimeSpan)
 	:	m_Open(Open),
 		m_High(High),
 		m_Low(Low),
@@ -1298,11 +1519,11 @@ struct s_GetOHLCOfTimePeriod
 
 	SCDateTime m_StartDateTime;
 	SCDateTime m_EndDateTime;
-	float& m_Open;
-	float& m_High;
-	float& m_Low;
-	float& m_Close;
-	float& m_NextOpen;
+	t_ChartArrayDataType& m_Open;
+	t_ChartArrayDataType& m_High;
+	t_ChartArrayDataType& m_Low;
+	t_ChartArrayDataType& m_Close;
+	t_ChartArrayDataType& m_NextOpen;
 	int& m_NumberOfBars;
 	SCDateTime& m_TotalTimeSpan;
 };
@@ -1334,7 +1555,7 @@ class c_ArrayWrapper
 		{
 			ResetMembers();
 		}
-		explicit c_ArrayWrapper(int i)
+		explicit c_ArrayWrapper(int Unused)
 		{
 			ResetMembers();
 		}
@@ -1712,18 +1933,18 @@ typedef c_ArrayWrapper<uint16_t> SCUShortArray;
 typedef c_ArrayWrapper<unsigned int> SCUIntArray;
 typedef c_ArrayWrapper<unsigned int>& SCUIntArrayRef;
 typedef c_ArrayWrapper<SCUIntArray> SCUIntArrayArray;
-typedef c_ArrayWrapper<float> SCFloatArray;
+typedef c_ArrayWrapper<t_ChartArrayDataType> SCFloatArray;
 typedef c_ArrayWrapper<uint32_t> SCColorArray;
 typedef c_ArrayWrapper<uint32_t>& SCColorArrayRef;
 typedef c_ConstArrayWrapper<uint16_t> SCConstUShortArray;
 typedef c_ConstArrayWrapper<char> SCConstCharArray;
 
-typedef c_ArrayWrapper<float> SCConstFloatArray;
+typedef c_ArrayWrapper<t_ChartArrayDataType> SCConstFloatArray;
 
 typedef c_ArrayWrapper<SCFloatArray>& SCBaseDataRef;
-typedef c_ArrayWrapper<float>& SCFloatArrayRef;
-typedef c_ArrayWrapper<float>& SCConstFloatArrayRef;
-typedef const c_ArrayWrapper<float>& SCFloatArrayInRef;
+typedef c_ArrayWrapper<t_ChartArrayDataType>& SCFloatArrayRef;
+typedef c_ArrayWrapper<t_ChartArrayDataType>& SCConstFloatArrayRef;
+typedef const c_ArrayWrapper<t_ChartArrayDataType>& SCFloatArrayInRef;
 
 typedef c_ArrayWrapper<SCConstFloatArray> SCConstFloatArrayArray;
 typedef c_ArrayWrapper<SCFloatArray> SCFloatArrayArray;
@@ -1790,8 +2011,8 @@ struct s_SCSubgraph_260
 
 	SCString TextDrawStyleText;
 
-	float GradientAngleUnit = 0;
-	float GradientAngleMax = 0;
+	t_ChartArrayDataType GradientAngleUnit = 0;
+	t_ChartArrayDataType GradientAngleMax = 0;
 
 	SCString ShortName;
 	uint32_t StudySummaryCellBackgroundColor = 0;
@@ -1799,7 +2020,9 @@ struct s_SCSubgraph_260
 	uint32_t LabelsColor = 0;
 	unsigned char IncludeInSpreadsheet = 0;
 	unsigned char UseTransparentLabelBackground = 0;
-	char Reserve[40] = {};
+	int16_t ValueFormat = -1;// -1 = Unset
+
+	char Reserve[38] = {};
 
 	s_SCSubgraph_260()
 	{
@@ -1811,7 +2034,7 @@ struct s_SCSubgraph_260
 	
 	}
 
-	float& operator [] (int Index)
+	t_ChartArrayDataType& operator [] (int Index)
 	{
 		return Data[Index];
 	}
@@ -1845,7 +2068,7 @@ struct s_SCInput_145
 	union
 	{
 		unsigned int IndexValue;
-		float FloatValue;
+		float FloatValue; //Do not change to double
 		unsigned int BooleanValue;
 		struct
 		{
@@ -2889,7 +3112,7 @@ typedef s_SCInput_145& SCInputRef;
 
 struct s_Parabolic
 {
-	s_Parabolic(SCBaseDataRef BaseDataIn, SCSubgraphRef Out, SCDateTimeArrayRef BaseDateTimeIn, int Index, float InStartAccelFactor, float InAccelIncrement, float InMaxAccelFactor, unsigned int InAdjustForGap, int InputDataHighIndex = SC_HIGH, int InputDataLowIndex = SC_LOW)
+	s_Parabolic(SCBaseDataRef BaseDataIn, SCSubgraphRef Out, SCDateTimeArrayRef BaseDateTimeIn, int Index, t_ChartArrayDataType InStartAccelFactor, t_ChartArrayDataType InAccelIncrement, t_ChartArrayDataType InMaxAccelFactor, unsigned int InAdjustForGap, int InputDataHighIndex = SC_HIGH, int InputDataLowIndex = SC_LOW)
 		: m_BaseDataIn(BaseDataIn),
 		m_Out(Out),
 		m_BaseDateTimeIn(BaseDateTimeIn),
@@ -2907,20 +3130,20 @@ struct s_Parabolic
 	SCSubgraphRef m_Out;
 	SCDateTimeArrayRef m_BaseDateTimeIn;
 	int m_Index;
-	float m_InStartAccelFactor;
-	float m_InAccelIncrement;
-	float m_InMaxAccelFactor;
+	t_ChartArrayDataType m_InStartAccelFactor;
+	t_ChartArrayDataType m_InAccelIncrement;
+	t_ChartArrayDataType m_InMaxAccelFactor;
 	unsigned int m_InAdjustForGap;
 	int m_InputDataHighIndex;
 	int m_InputDataLowIndex;
 
-	inline float BaseDataHigh(int Index)
+	inline t_ChartArrayDataType BaseDataHigh(int Index)
 	{
 		return m_BaseDataIn[m_InputDataHighIndex][Index];
 
 	}
 
-	inline float BaseDataLow(int Index)
+	inline t_ChartArrayDataType BaseDataLow(int Index)
 	{
 		return m_BaseDataIn[m_InputDataLowIndex][Index];
 	}
@@ -2946,9 +3169,9 @@ struct s_NumericInformationGraphDrawTypeConfig
 	int SubgraphOrder[SC_SUBGRAPHS_AVAILABLE] = {};
 	bool ColorBackgroundBasedOnValuePercent = false;
 	int DetermineMaxMinForBackgroundColoringFrom = 0;
-	float HighestValue[SC_SUBGRAPHS_AVAILABLE] = {};
-	float LowestValue[SC_SUBGRAPHS_AVAILABLE] = {};
-	float PercentCompareThresholds[NUMBER_OF_THRESHOLDS] = {};
+	t_ChartArrayDataType HighestValue[SC_SUBGRAPHS_AVAILABLE] = {};
+	t_ChartArrayDataType LowestValue[SC_SUBGRAPHS_AVAILABLE] = {};
+	t_ChartArrayDataType PercentCompareThresholds[NUMBER_OF_THRESHOLDS] = {};
 	uint32_t Range3UpColor = COLOR_BLACK;
 	uint32_t Range2UpColor = COLOR_BLACK;
 	uint32_t Range1UpColor = COLOR_BLACK;
@@ -2961,8 +3184,8 @@ struct s_NumericInformationGraphDrawTypeConfig
 	uint32_t PullbackAndLabelsColor = COLOR_WHITE;
 	bool ColorPullbackBackgroundBasedOnPositiveNegative = false;
 	bool UseDefaultNumberFormattingForAllSubgraphs = false;
-	std::vector<float> DailyHighestValue[SC_SUBGRAPHS_AVAILABLE]; //cannot safely be used by ACSIL
-	std::vector<float> DailyLowestValue[SC_SUBGRAPHS_AVAILABLE]; //cannot safely be used by ACSIL
+	std::vector<t_ChartArrayDataType> DailyHighestValue[SC_SUBGRAPHS_AVAILABLE]; //cannot safely be used by ACSIL
+	std::vector<t_ChartArrayDataType> DailyLowestValue[SC_SUBGRAPHS_AVAILABLE]; //cannot safely be used by ACSIL
 	SCDateTimeMS DateTimeOfHigh;
 	SCDateTimeMS DateTimeOfLow;
 	int VolumeDisplayMultiplierIndex = 0;
@@ -3115,8 +3338,8 @@ struct s_LineUntilFutureIntersection
 	int EndBarIndex = 0;
 
 	int LineIDForBar = 0;
-	float LineValue = 0;
-	float LineValue2ForRange = 0;
+	t_ChartArrayDataType LineValue = 0;
+	t_ChartArrayDataType LineValue2ForRange = 0;
 	int UseLineValue2 = 0;
 	uint32_t LineColor = 0;
 	uint16_t LineWidth = 0;
@@ -3133,51 +3356,51 @@ struct s_StudyProfileInformation
 {
 	SCDateTime m_StartDateTime;
 	int64_t m_NumberOfTrades = 0;
-	int64_t m_Volume = 0;
-	int64_t m_BidVolume = 0;
-	int64_t m_AskVolume = 0;
+	t_Int64QuantityType m_Volume = 0;
+	t_Int64QuantityType m_BidVolume = 0;
+	t_Int64QuantityType m_AskVolume = 0;
 
 	int m_TotalTPOCount = 0;
 
-	float m_OpenPrice = 0;
-	float m_HighestPrice = 0;
-	float m_LowestPrice = 0;
-	float m_LastPrice = 0;
+	t_ChartArrayDataType m_OpenPrice = 0;
+	t_ChartArrayDataType m_HighestPrice = 0;
+	t_ChartArrayDataType m_LowestPrice = 0;
+	t_ChartArrayDataType m_LastPrice = 0;
 
-	float m_TPOMidpointPrice = 0;
-	float m_TPOMean = 0;
-	float m_TPOStdDev = 0;
-	float m_TPOErrorOfMean = 0;
-	float m_TPOPOCPrice = 0;
-	float m_TPOValueAreaHigh = 0;
-	float m_TPOValueAreaLow = 0;
+	t_ChartArrayDataType m_TPOMidpointPrice = 0;
+	t_ChartArrayDataType m_TPOMean = 0;
+	t_ChartArrayDataType m_TPOStdDev = 0;
+	t_ChartArrayDataType m_TPOErrorOfMean = 0;
+	t_ChartArrayDataType m_TPOPOCPrice = 0;
+	t_ChartArrayDataType m_TPOValueAreaHigh = 0;
+	t_ChartArrayDataType m_TPOValueAreaLow = 0;
 	int64_t m_TPOCountAbovePOC = 0;
 	int64_t m_TPOCountBelowPOC = 0;
 
-	float m_VolumeMidpointPrice = 0;
-	float m_VolumePOCPrice = 0;
-	float m_VolumeValueAreaHigh = 0;
-	float m_VolumeValueAreaLow = 0;
-	int64_t m_VolumeAbovePOC = 0;
-	int64_t m_VolumeBelowPOC = 0;
+	t_ChartArrayDataType m_VolumeMidpointPrice = 0;
+	t_ChartArrayDataType m_VolumePOCPrice = 0;
+	t_ChartArrayDataType m_VolumeValueAreaHigh = 0;
+	t_ChartArrayDataType m_VolumeValueAreaLow = 0;
+	t_Int64QuantityType m_VolumeAbovePOC = 0;
+	t_Int64QuantityType m_VolumeBelowPOC = 0;
 	double m_POCAboveBelowVolumeImbalancePercent = 0;
-	int64_t m_VolumeAboveLastPrice = 0;
-	int64_t m_VolumeBelowLastPrice = 0;
-	int64_t m_BidVolumeAbovePOC = 0;
-	int64_t m_BidVolumeBelowPOC = 0;
-	int64_t m_AskVolumeAbovePOC = 0;
-	int64_t m_AskVolumeBelowPOC = 0;
-	int64_t m_VolumeTimesPriceInTicks = 0;
+	t_Int64QuantityType m_VolumeAboveLastPrice = 0;
+	t_Int64QuantityType m_VolumeBelowLastPrice = 0;
+	t_Int64QuantityType m_BidVolumeAbovePOC = 0;
+	t_Int64QuantityType m_BidVolumeBelowPOC = 0;
+	t_Int64QuantityType m_AskVolumeAbovePOC = 0;
+	t_Int64QuantityType m_AskVolumeBelowPOC = 0;
+	t_Int64QuantityType m_VolumeTimesPriceInTicks = 0;
 	int64_t m_TradesTimesPriceInTicks = 0;
 	int64_t m_TradesTimesPriceSquaredInTicks = 0;
 
-	float m_IBRHighPrice = 0;
-	float m_IBRLowPrice = 0;
+	t_ChartArrayDataType m_IBRHighPrice = 0;
+	t_ChartArrayDataType m_IBRLowPrice = 0;
 
-	float m_OpeningRangeHighPrice = 0;
-	float m_OpeningRangeLowPrice = 0;
+	t_ChartArrayDataType m_OpeningRangeHighPrice = 0;
+	t_ChartArrayDataType m_OpeningRangeLowPrice = 0;
 
-	float m_VolumeWeightedAveragePrice = 0;
+	t_ChartArrayDataType m_VolumeWeightedAveragePrice = 0;
 	int m_MaxTPOBlocksCount = 0;
 
 	int m_TPOCountMaxDigits = 0;
@@ -3186,11 +3409,11 @@ struct s_StudyProfileInformation
 
 	bool m_EveningSession = false;
 
-	float m_AverageSubPeriodRange = 0;
+	t_ChartArrayDataType m_AverageSubPeriodRange = 0;
 	int32_t m_RotationFactor = 0;
 
-	int64_t m_VolumeAboveTPOPOC = 0;
-	int64_t m_VolumeBelowTPOPOC = 0;
+	t_Int64QuantityType m_VolumeAboveTPOPOC = 0;
+	t_Int64QuantityType m_VolumeBelowTPOPOC = 0;
 	SCDateTime m_EndDateTime;
 
 	uint32_t m_BeginIndex = 0;
@@ -3203,8 +3426,8 @@ struct s_TradeStatistics
 	double ClosedTradesTotalProfit = 0;
 	double ClosedTradesTotalLoss = 0;
 	double ProfitFactor = 0;
-	double EquityPeak = 0;
-	double EquityValley = 0;
+	double HighestCumulativeProfit = 0;
+	double LowestCumulativeLoss = 0;
 	double MaximumRunup = 0;
 	double MaximumDrawdown = 0;
 	double MaximumFlatToFlatTradeOpenProfit = 0;
@@ -3259,12 +3482,12 @@ struct s_TradeStatistics
 	int32_t TotalQuantity = 0;
 	int32_t WinningQuantity = 0;
 	int32_t LosingQuantity = 0;
-	float AverageQuantityPerTrade = 0;
-	float AverageQuantityPerFlatToFlatTrade = 0;
-	float AverageQuantityPerWinningTrade = 0;
-	float AverageQuantityPerFlatToFlatWinningTrade = 0;
-	float AverageQuantityPerLosingTrade = 0;
-	float AverageQuantityPerFlatToFlatLosingTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerFlatToFlatTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerWinningTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerFlatToFlatWinningTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerLosingTrade = 0;
+	t_ChartArrayDataType AverageQuantityPerFlatToFlatLosingTrade = 0;
 	int32_t LargestTradeQuantity = 0;
 	int32_t LargestFlatToFlatTradeQuantity = 0;
 	int32_t MaximumOpenPositionQuantity = 0;
@@ -3285,13 +3508,14 @@ struct s_TradeStatistics
 struct s_ChartReplayParameters
 {
 	int ChartNumber = 0;
-	float ReplaySpeed = 1;
+	t_ChartArrayDataType ReplaySpeed = 1;
 	SCDateTimeMS StartDateTime;
 	int SkipEmptyPeriods = 0;
 	n_ACSIL::ChartReplayModeEnum ReplayMode = REPLAY_MODE_UNSET;
 	int ClearExistingTradeSimulationDataForSymbolAndTradeAccount = 1;
 	n_ACSIL::ChartsToReplayEnum ChartsToReplay = CHARTS_TO_REPLAY_UNSET;
-	int ProcessingStepInSeconds = 0;
+	int ProcessingStepInSeconds_Old = 0;// Added in version 2644
+	t_ChartArrayDataType ProcessingStepInSeconds = 0;// Added in version 2815
 };
 
 struct s_AddStudy

@@ -11,35 +11,27 @@ const float LAST_SUB_TRADE_OF_UNBUNDLED_TRADE_VALUE = -1.99900197e+37F;
 
 struct s_IntradayRecord
 {
-	//--- Static Members ---------------------------------------------
-	
 	//--- Members ----------------------------------------------------
 
 	SCDateTimeMS DateTime;
 
-	float Open;
-	float High;
-	float Low;
-	float Close;
+	float Open = 0.0f;
+	float High = 0.0f;
+	float Low = 0.0f;
+	float Close = 0.0f;
 
-	uint32_t NumTrades;
-	uint32_t TotalVolume;
-	uint32_t BidVolume;
-	uint32_t AskVolume;
+	uint32_t NumTrades = 0;
+	uint32_t TotalVolume = 0;
+	uint32_t BidVolume = 0;
+	uint32_t AskVolume = 0;
 
 	//--- Methods ----------------------------------------------------
 
-	s_IntradayRecord();
-	s_IntradayRecord(int Value);
-
-	bool operator == (const s_IntradayRecord& Record) const;
-
-	s_IntradayRecord& operator = (const s_IntradayRecord& Record);
+	bool operator==(const s_IntradayRecord& Right) const;
 
 	s_IntradayRecord& operator += (const float Amount);
-	s_IntradayRecord& operator *= (const float Multiplier);
+	s_IntradayRecord& operator *= (const double Multiplier);
 	s_IntradayRecord& operator /= (const float Divisor);
-
 
 	void AddAdjustment
 		( const float Amount
@@ -74,71 +66,34 @@ struct s_IntradayFileHeader
 {
 	static const uint32_t UNIQUE_HEADER_ID = 0x44494353;  // "SCID"
 
-	uint32_t FileTypeUniqueHeaderID;  // "SCID"
-	uint32_t HeaderSize;
+	uint32_t FileTypeUniqueHeaderID = UNIQUE_HEADER_ID;  // "SCID"
+	uint32_t HeaderSize = sizeof(s_IntradayFileHeader);
 
-	uint32_t RecordSize;
-	uint16_t Version;
+	uint32_t RecordSize = sizeof(s_IntradayRecord);
+	uint16_t Version = 1;
 
-	uint16_t Unused1;
+	uint16_t Unused1 = 0;
 
-	uint32_t Unused2;
+	uint32_t Unused2 = 0;
 
-	char Reserve[36];
-
-
-	s_IntradayFileHeader()
-		: FileTypeUniqueHeaderID(UNIQUE_HEADER_ID)
-		, HeaderSize(sizeof(s_IntradayFileHeader))
-		, RecordSize(sizeof(s_IntradayRecord))
-		, Version(1)
-		, Unused1(0)
-		, Unused2(0)
-	{
-		memset(Reserve, 0, sizeof(Reserve));
-	}
+	char Reserve[36] = {};
 };
-
-
 
 /****************************************************************************/
 // s_IntradayRecord
 
 /*==========================================================================*/
-inline s_IntradayRecord::s_IntradayRecord()
+inline bool s_IntradayRecord::operator==(const s_IntradayRecord& Right) const
 {
-	Clear();
-}
-
-/*============================================================================
-This constructor is to support using this structure as an c_SCArray
-element.
-----------------------------------------------------------------------------*/
-inline s_IntradayRecord::s_IntradayRecord(int Value)
-{
-	Clear();
-}
-
-/*==========================================================================*/
-inline bool s_IntradayRecord::operator ==
-(const s_IntradayRecord& Record
-	) const
-{
-	return memcmp(this, &Record, sizeof(s_IntradayRecord)) == 0;
-}
-
-/*==========================================================================*/
-inline s_IntradayRecord&
-s_IntradayRecord::operator =
-(const s_IntradayRecord& Record
-	)
-{
-	if (&Record == this)
-		return *this;
-
-	memcpy(this, &Record, sizeof(s_IntradayRecord));
-
-	return *this;
+	return DateTime == Right.DateTime
+		&& Open == Right.Open
+		&& High == Right.High
+		&& Low == Right.Low
+		&& Close == Right.Close
+		&& NumTrades == Right.NumTrades
+		&& TotalVolume == Right.TotalVolume
+		&& BidVolume == Right.BidVolume
+		&& AskVolume == Right.AskVolume;
 }
 
 /*==========================================================================*/
@@ -157,14 +112,14 @@ s_IntradayRecord::operator += (const float Amount)
 
 /*==========================================================================*/
 inline s_IntradayRecord&
-s_IntradayRecord::operator *= (const float Multiplier)
+s_IntradayRecord::operator *= (const double Multiplier)
 {
 	if (!IsSingleTradeWithBidAsk())
-		Open *= Multiplier;
+		Open *= static_cast<float>(Multiplier);
 
-	High *= Multiplier;
-	Low *= Multiplier;
-	Close *= Multiplier;
+	High *= static_cast<float>(Multiplier);
+	Low *= static_cast<float>(Multiplier);
+	Close *= static_cast<float>(Multiplier);
 
 	return *this;
 }
@@ -222,15 +177,7 @@ inline bool s_IntradayRecord::IsEmpty() const
 /*==========================================================================*/
 inline void s_IntradayRecord::Clear()
 {
-	DateTime.Clear();
-	Open = 0.0f;
-	High = 0.0f;
-	Low = 0.0f;
-	Close = 0.0f;
-	NumTrades = 0;
-	TotalVolume = 0;
-	BidVolume = 0;
-	AskVolume = 0;
+	*this = {};
 }
 
 /*==========================================================================*/

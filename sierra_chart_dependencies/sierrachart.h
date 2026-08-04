@@ -7,7 +7,7 @@
 // SC_DLL_VERSION gets updated only when there have been changes to the DLL
 // study interface.  This will be set to the Sierra Chart version number
 // that includes the changes made to the interface.
-#define SC_DLL_VERSION 2762
+#define SC_DLL_VERSION 2927
 
 
 const int MINIMUM_DLL_VERSION = 2155;
@@ -44,14 +44,14 @@ struct s_sc
 	void SetFunctionPointers();//Only implemented internally within Sierra Chart
 
 	//Non static functions
-	int CompareOpenToHighLow(float Open, float High, float Low, int ValueFormat)
+	int CompareOpenToHighLow(t_ChartArrayDataType Open, t_ChartArrayDataType High, t_ChartArrayDataType Low, int ValueFormat)
 	{
-		float OpenToHighDiff = High - Open;
-		float OpenToLowDiff = Open - Low;
+		t_ChartArrayDataType OpenToHighDiff = High - Open;
+		t_ChartArrayDataType OpenToLowDiff = Open - Low;
 
-		if (FormattedEvaluate(OpenToHighDiff, ValueFormat, LESS_OPERATOR, OpenToLowDiff, ValueFormat))
+		if (FormattedEvaluateUsingDoubles(OpenToHighDiff, ValueFormat, LESS_OPERATOR, OpenToLowDiff, ValueFormat))
 			return 1; //Open closer to High
-		else if (FormattedEvaluate(OpenToHighDiff, ValueFormat, GREATER_OPERATOR, OpenToLowDiff, ValueFormat))
+		else if (FormattedEvaluateUsingDoubles(OpenToHighDiff, ValueFormat, GREATER_OPERATOR, OpenToLowDiff, ValueFormat))
 			return -1; //Open closer to Low
 
 		return 0; //must be equal distance
@@ -112,9 +112,9 @@ struct s_sc
 			return BHCS_BAR_HAS_NOT_CLOSED;
 	}
 
-	float GetHighest(SCFloatArrayRef In, int Index, int Length)
+	t_ChartArrayDataType GetHighest(SCFloatArrayRef In, int Index, int Length)
 	{
-		float High = -FLT_MAX;
+		t_ChartArrayDataType High = -MAX_CHART_DATA_VALUE;
 
 		// Get the high starting at Index going back by Length in the In array
 		for (int SrcIndex = Index; SrcIndex > Index - Length; --SrcIndex)
@@ -129,14 +129,14 @@ struct s_sc
 		return High;
 	}
 
-	float GetHighest(SCFloatArrayRef In, int Length)
+	t_ChartArrayDataType GetHighest(SCFloatArrayRef In, int Length)
 	{
 		return GetHighest( In, Index,  Length);
 	}
 
-	float GetLowest(SCFloatArrayRef In, int Index, int Length)
+	t_ChartArrayDataType GetLowest(SCFloatArrayRef In, int Index, int Length)
 	{
-		float Low = FLT_MAX;
+		t_ChartArrayDataType Low = MAX_CHART_DATA_VALUE;
 
 		// Get the low starting at Index going back by Length in the In array
 		for (int SrcIndex = Index; SrcIndex > Index - Length; --SrcIndex)
@@ -150,14 +150,14 @@ struct s_sc
 
 		return Low;
 	}
-	float GetLowest(SCFloatArrayRef In,int Length)
+	t_ChartArrayDataType GetLowest(SCFloatArrayRef In,int Length)
 	{
 		return GetLowest( In, Index, Length);
 	}
 
 	int GetIndexOfHighestValue(SCFloatArrayRef In, int Index, int Length)
 	{
-		float High = -FLT_MAX;
+		t_ChartArrayDataType High = -MAX_CHART_DATA_VALUE;
 
 		int IndexAtHighest = 0;
 		// Get the high starting at Index going back by Length in the In array
@@ -184,7 +184,7 @@ struct s_sc
 
 	int GetIndexOfLowestValue(SCFloatArrayRef In, int Index, int Length)
 	{
-		float Low = FLT_MAX;
+		t_ChartArrayDataType Low = MAX_CHART_DATA_VALUE;
 
 		int IndexAtLowest = 0;
 		// Get the high starting at Index going back by Length in the In array
@@ -215,10 +215,10 @@ struct s_sc
 
 	int CrossOver(SCFloatArrayRef First, SCFloatArrayRef Second, int Index)
 	{
-		float X1 = First[Index-1];
-		float X2 = First[Index];
-		float Y1 = Second[Index-1];
-		float Y2 = Second[Index];
+		t_ChartArrayDataType X1 = First[Index-1];
+		t_ChartArrayDataType X2 = First[Index];
+		t_ChartArrayDataType Y1 = Second[Index-1];
+		t_ChartArrayDataType Y2 = Second[Index];
 
 		if (X2 != Y2)  // The following is not useful if X2 and Y2 are equal
 		{
@@ -331,22 +331,22 @@ struct s_sc
 		return Temp;
 	}
 
-	SCFloatArrayRef CCI(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, float Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
+	SCFloatArrayRef CCI(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
 	{
 		return InternalCCI(In, SMAOut, CCIOut, Index, Length, Multiplier, MovingAverageType);
 	}
 
-	SCFloatArrayRef CCI(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Length, float Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
+	SCFloatArrayRef CCI(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
 	{
 		return InternalCCI(In, SMAOut, CCIOut, Index, Length, Multiplier, MovingAverageType);
 	}
 
-	SCFloatArrayRef CCI(SCFloatArrayRef In, SCSubgraphRef Out, int Index, int Length, float Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
+	SCFloatArrayRef CCI(SCFloatArrayRef In, SCSubgraphRef Out, int Index, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
 	{
 		return InternalCCI(In, Out.Arrays[0], Out, Index, Length, Multiplier, MovingAverageType);
 	}
 
-	SCFloatArrayRef CCI(SCFloatArrayRef In, SCSubgraphRef Out, int Length, float Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
+	SCFloatArrayRef CCI(SCFloatArrayRef In, SCSubgraphRef Out, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType = MOVAVGTYPE_SIMPLE)
 	{
 		return InternalCCI(In, Out.Arrays[0], Out, Index, Length, Multiplier, MovingAverageType);
 	}
@@ -519,13 +519,13 @@ struct s_sc
 							InternalTrueRangeSummation, InternalPosDM, InternalNegDM, InternalDX, InternalADX);
 	}
 
-	SCFloatArrayRef Ergodic(SCFloatArrayRef In, SCSubgraphRef Out, int Index, int LongEMALength, int ShortEMALength, float Multiplier)
+	SCFloatArrayRef Ergodic(SCFloatArrayRef In, SCSubgraphRef Out, int Index, int LongEMALength, int ShortEMALength, t_ChartArrayDataType Multiplier)
 	{
 		return Internal_Ergodic( In,  Out,  Index,  LongEMALength,  ShortEMALength,  Multiplier,
 			Out.Arrays[0],  Out.Arrays[1],  Out.Arrays[2],  Out.Arrays[3],  Out.Arrays[4],  Out.Arrays[5]);
 	}
 
-	SCFloatArrayRef Ergodic(SCFloatArrayRef In, SCSubgraphRef Out, int LongEMALength, int ShortEMALength, float Multiplier)
+	SCFloatArrayRef Ergodic(SCFloatArrayRef In, SCSubgraphRef Out, int LongEMALength, int ShortEMALength, t_ChartArrayDataType Multiplier)
 	{
 		return Internal_Ergodic( In,  Out,  Index,  LongEMALength,  ShortEMALength,  Multiplier,
 			Out.Arrays[0],  Out.Arrays[1],  Out.Arrays[2],  Out.Arrays[3],  Out.Arrays[4],  Out.Arrays[5]);
@@ -712,7 +712,7 @@ struct s_sc
 	}
 
 
-	int GetOHLCOfTimePeriod(const SCDateTime& StartDateTime, const SCDateTime& EndDateTime, float& Open, float& High, float& Low, float& Close, float& NextOpen, int& NumberOfBars, SCDateTime& r_TotalTimeSpan)
+	int GetOHLCOfTimePeriod(const SCDateTime& StartDateTime, const SCDateTime& EndDateTime, t_ChartArrayDataType& Open, t_ChartArrayDataType& High, t_ChartArrayDataType& Low, t_ChartArrayDataType& Close, t_ChartArrayDataType& NextOpen, int& NumberOfBars, SCDateTime& r_TotalTimeSpan)
 	{
 		s_GetOHLCOfTimePeriod GetOHLCOfTimePeriodData(StartDateTime, EndDateTime, Open, High, Low, Close, NextOpen, NumberOfBars, r_TotalTimeSpan);
 
@@ -720,7 +720,7 @@ struct s_sc
 
 	}
 
-	int GetOHLCOfTimePeriod(const SCDateTime& StartDateTime, const SCDateTime& EndDateTime, float& Open, float& High, float& Low, float& Close, float& NextOpen)
+	int GetOHLCOfTimePeriod(const SCDateTime& StartDateTime, const SCDateTime& EndDateTime, t_ChartArrayDataType& Open, t_ChartArrayDataType& High, t_ChartArrayDataType& Low, t_ChartArrayDataType& Close, t_ChartArrayDataType& NextOpen)
 	{
 		int NumberOfBars = 0;
 		SCDateTime TotalTimeSpan;
@@ -731,19 +731,19 @@ struct s_sc
 
 	}
 
-	int GetOHLCForDate(const SCDateTime& Date, float& Open, float& High, float& Low, float& Close)
+	int GetOHLCForDate(const SCDateTime& Date, t_ChartArrayDataType& Open, t_ChartArrayDataType& High, t_ChartArrayDataType& Low, t_ChartArrayDataType& Close)
 	{
 		return Internal_GetOHLCForDate(Date, Open, High, Low, Close);
 	}
 	
 	//Parameters reviewed for safety with different compilers
-	int GetOpenHighLowCloseVolumeForDate(const SCDateTime& Date, float& r_Open, float& r_High, float& r_Low, float& r_Close, float& r_Volume)
+	int GetOpenHighLowCloseVolumeForDate(const SCDateTime& Date, t_ChartArrayDataType& r_Open, t_ChartArrayDataType& r_High, t_ChartArrayDataType& r_Low, t_ChartArrayDataType& r_Close, t_ChartArrayDataType& r_Volume)
 	{
 		return Internal_GetOpenHighLowCloseVolumeForDate(Date, r_Open, r_High, r_Low, r_Close, r_Volume);
 	}
 
 	//Parameters reviewed for safety with different compilers
-	int GetOpenHighLowCloseVolumeForDate(const SCDateTime& Date, float& r_Open, float& r_High, float& r_Low, float& r_Close, float& r_Volume, int IncludeFridayEveningSessionWithSundayEveningSession)
+	int GetOpenHighLowCloseVolumeForDate(const SCDateTime& Date, t_ChartArrayDataType& r_Open, t_ChartArrayDataType& r_High, t_ChartArrayDataType& r_Low, t_ChartArrayDataType& r_Close, t_ChartArrayDataType& r_Volume, int IncludeFridayEveningSessionWithSundayEveningSession)
 	{
 		return Internal_GetOpenHighLowCloseVolumeForDate2(Date, r_Open, r_High, r_Low, r_Close, r_Volume, IncludeFridayEveningSessionWithSundayEveningSession);
 	}
@@ -818,12 +818,12 @@ struct s_sc
 		return InternalEnvelopePercent(In, Out, Out.Arrays[0], pct, Index);
 	}
 
-	SCFloatArrayRef EnvelopeFixed(SCFloatArrayRef In, SCSubgraphRef Out, float FixedValue, int Index)
+	SCFloatArrayRef EnvelopeFixed(SCFloatArrayRef In, SCSubgraphRef Out, t_ChartArrayDataType FixedValue, int Index)
 	{
 		return InternalEnvelopeFixed(In, Out, Out.Arrays[0], FixedValue, Index);
 	}
 
-	SCFloatArrayRef EnvelopeFixed(SCFloatArrayRef In, SCSubgraphRef Out, float FixedValue)
+	SCFloatArrayRef EnvelopeFixed(SCFloatArrayRef In, SCSubgraphRef Out, t_ChartArrayDataType FixedValue)
 	{
 		return InternalEnvelopeFixed(In, Out, Out.Arrays[0], FixedValue, Index);
 	}
@@ -952,42 +952,42 @@ struct s_sc
 		return InternalNumberOfBarsSinceHighestValue( in,  Index,  Length);
 	}
 
-	float GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length)
+	t_ChartArrayDataType GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length)
 	{
-		float value;
+		t_ChartArrayDataType value;
 		value = InternalGetCorrelationCoefficient( In1,  In2,  Index,  Length);
 		return value;
 	}
-	float GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Length)
+	t_ChartArrayDataType GetCorrelationCoefficient(SCFloatArrayRef In1, SCFloatArrayRef In2, int Length)
 	{
-		float value;
+		t_ChartArrayDataType value;
 		value = InternalGetCorrelationCoefficient( In1,  In2,  Index,  Length);
 		return value;
 	}
 
-	float GetTrueRange(SCBaseDataRef ChartBaseDataIn, int Index)
+	t_ChartArrayDataType GetTrueRange(SCBaseDataRef ChartBaseDataIn, int Index)
 	{
 		return InternalGetTrueRange( ChartBaseDataIn,  Index);
 	}
-	float GetTrueRange(SCBaseDataRef ChartBaseDataIn)
+	t_ChartArrayDataType GetTrueRange(SCBaseDataRef ChartBaseDataIn)
 	{
 		return InternalGetTrueRange( ChartBaseDataIn,  Index);
 	}
 
-	float GetTrueLow(SCBaseDataRef ChartBaseDataIn, int Index)
+	t_ChartArrayDataType GetTrueLow(SCBaseDataRef ChartBaseDataIn, int Index)
 	{
 		return InternalGetTrueLow( ChartBaseDataIn,  Index);
 	}
-	float GetTrueLow(SCBaseDataRef ChartBaseDataIn)
+	t_ChartArrayDataType GetTrueLow(SCBaseDataRef ChartBaseDataIn)
 	{
 		return InternalGetTrueLow( ChartBaseDataIn,  Index);
 	}
 
-	float GetTrueHigh(SCBaseDataRef ChartBaseDataIn, int Index)
+	t_ChartArrayDataType GetTrueHigh(SCBaseDataRef ChartBaseDataIn, int Index)
 	{
 		return InternalGetTrueHigh( ChartBaseDataIn,  Index);
 	}
-	float GetTrueHigh(SCBaseDataRef ChartBaseDataIn)
+	t_ChartArrayDataType GetTrueHigh(SCBaseDataRef ChartBaseDataIn)
 	{
 		return InternalGetTrueHigh( ChartBaseDataIn,  Index);
 	}
@@ -1087,11 +1087,11 @@ struct s_sc
 		return InternalVHF( In,  Out,  Index,  Length);
 	}
 
-	float GetDispersion(SCFloatArrayRef In, int Index, int Length)
+	t_ChartArrayDataType GetDispersion(SCFloatArrayRef In, int Index, int Length)
 	{
 		return InternalGetDispersion( In,  Index,  Length);
 	}
-	float GetDispersion(SCFloatArrayRef In, int Length)
+	t_ChartArrayDataType GetDispersion(SCFloatArrayRef In, int Length)
 	{
 		return InternalGetDispersion( In,  Index,  Length);
 	}
@@ -1132,11 +1132,11 @@ struct s_sc
 		return InternalCumulativeSummation( In,  Out,  Index);
 	}
 
-	float GetSummation(SCFloatArrayRef In,int Index,int Length)
+	t_ChartArrayDataType GetSummation(SCFloatArrayRef In,int Index,int Length)
 	{
 		return InternalGetSummation( In, Index, Length);
 	}
-	float GetSummation(SCFloatArrayRef In,int Length)
+	t_ChartArrayDataType GetSummation(SCFloatArrayRef In,int Length)
 	{
 		return InternalGetSummation( In, Index, Length);
 	}
@@ -1287,12 +1287,12 @@ struct s_sc
 		return InternalExponentialMovAvg( In,  Out,  Index,  Length);
 	}
 
-	float ArrayValueAtNthOccurrence (SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence )
+	t_ChartArrayDataType ArrayValueAtNthOccurrence (SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence )
 	{
 		return InternalArrayValueAtNthOccurrence (TrueFalseIn, ValueArrayIn, Index, NthOccurrence );
 	}
 
-	float ArrayValueAtNthOccurrence (SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int NthOccurrence )
+	t_ChartArrayDataType ArrayValueAtNthOccurrence (SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int NthOccurrence )
 	{
 		return InternalArrayValueAtNthOccurrence (TrueFalseIn, ValueArrayIn, Index, NthOccurrence );
 	}
@@ -1422,8 +1422,8 @@ struct s_sc
 		for(int IndexOffset = 1; IndexOffset <= Length; IndexOffset++)
 		{
 
-			if (FormattedEvaluate(In[Index],  BasedOnGraphValueFormat, LESS_EQUAL_OPERATOR,In[Index - IndexOffset], BasedOnGraphValueFormat)
-				|| FormattedEvaluate(In[Index],  BasedOnGraphValueFormat, LESS_EQUAL_OPERATOR,In[Index + IndexOffset], BasedOnGraphValueFormat) )
+			if (FormattedEvaluateUsingDoubles(In[Index],  BasedOnGraphValueFormat, LESS_EQUAL_OPERATOR,In[Index - IndexOffset], BasedOnGraphValueFormat)
+				|| FormattedEvaluateUsingDoubles(In[Index],  BasedOnGraphValueFormat, LESS_EQUAL_OPERATOR,In[Index + IndexOffset], BasedOnGraphValueFormat) )
 			{
 				return 0;
 			}
@@ -1442,8 +1442,8 @@ struct s_sc
 		for(int IndexOffset = 1; IndexOffset <= Length; IndexOffset++)
 		{
 
-			if (FormattedEvaluate(In[Index],  BasedOnGraphValueFormat, GREATER_EQUAL_OPERATOR,In[Index - IndexOffset], BasedOnGraphValueFormat)
-				|| FormattedEvaluate(In[Index],  BasedOnGraphValueFormat, GREATER_EQUAL_OPERATOR,In[Index + IndexOffset], BasedOnGraphValueFormat) )
+			if (FormattedEvaluateUsingDoubles(In[Index],  BasedOnGraphValueFormat, GREATER_EQUAL_OPERATOR,In[Index - IndexOffset], BasedOnGraphValueFormat)
+				|| FormattedEvaluateUsingDoubles(In[Index],  BasedOnGraphValueFormat, GREATER_EQUAL_OPERATOR,In[Index + IndexOffset], BasedOnGraphValueFormat) )
 			{
 				return 0;
 			}
@@ -1513,13 +1513,13 @@ struct s_sc
 		return InternalCumulativeDeltaTickVolume(ChartBaseDataIn, Out.Arrays[0], Out.Arrays[1], Out.Arrays[2], Out, Index, ResetCumulativeCalculation);
 	}
 
-	int Round(float Number)
+	int Round(double Number)
 	{
 		int IntegerResult = static_cast <int>(Number);
 
-		if ((Number > 0.0f) && ((Number - IntegerResult) >= 0.5f))
+		if ((Number > 0.0) && ((Number - IntegerResult) >= 0.5))
 			return ++IntegerResult;
-		else if ((Number < 0.0f) && ((Number - IntegerResult) <= -0.5f))
+		else if ((Number < 0.0) && ((Number - IntegerResult) <= -0.5))
 			return --IntegerResult;
 
 		return IntegerResult;
@@ -2142,7 +2142,7 @@ struct s_sc
 		if (CreateNeeded)
 		{
 			Tool.BeginDateTime = HorizontalPosition;
-			Tool.BeginValue = static_cast<float>(VerticalPosition);
+			Tool.BeginValue = static_cast<t_ChartArrayDataType>(VerticalPosition);
 		}
 
 		Tool.UseRelativeVerticalValues = 1;
@@ -2201,7 +2201,7 @@ struct s_sc
 		else
 			Tool.BeginDateTime = -3;
 
-		Tool.BeginValue = static_cast<float>(VerticalPosition);
+		Tool.BeginValue = static_cast<t_ChartArrayDataType>(VerticalPosition);
 
 		Tool.UseRelativeVerticalValues = 1;
 		Tool.Color = Subgraph.PrimaryColor;
@@ -2237,7 +2237,7 @@ struct s_sc
 	}
 
 	/*==========================================================================*/
-	double CreateDoublePrecisionPrice(const float PriceValue)
+	double CreateDoublePrecisionPrice(const double PriceValue)
 	{
 		return Round(PriceValue / TickSize)*TickSize;
 	}
@@ -2466,7 +2466,7 @@ struct s_sc
 
 	int (SCDLLCALL* DeleteACSChartDrawing)(int ChartNumber, int Tool, int LineNumber);
 
-	void * ChartWindowHandle = NULL;
+	void * ChartWindowHandle = nullptr;
 	unsigned int ProcessIdentifier = 0;
 	int LastCallToFunction = 0;
 
@@ -2549,7 +2549,7 @@ struct s_sc
 
 	SCString& (SCDLLCALL* FormatString)(SCString& Out, const char* Format, ...);
 
-	const s_SCBasicSymbolData* SymbolData = NULL;
+	const s_SCBasicSymbolData* SymbolData = nullptr;
 
 	int CalculationPrecedence = 0;
 
@@ -2573,7 +2573,7 @@ struct s_sc
 
 	SCFloatArrayRef (SCDLLCALL* InternalStdDeviation)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
-	SCFloatArrayRef (SCDLLCALL* InternalCCISMA)(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, float Multiplier);
+	SCFloatArrayRef (SCDLLCALL* InternalCCISMA)(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, t_ChartArrayDataType Multiplier);
 
 	SCFloatArrayRef (SCDLLCALL* InternalHighest)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
@@ -2599,7 +2599,7 @@ struct s_sc
 
 	int (SCDLLCALL* GetUserDrawnChartDrawing)(int ChartNumber, int DrawingType, s_UseTool& ChartDrawing, int DrawingIndex);
 
-	SCFloatArrayRef (SCDLLCALL* Internal_Ergodic)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int LongEMALength, int ShortEMALength, float Multiplier,
+	SCFloatArrayRef (SCDLLCALL* Internal_Ergodic)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int LongEMALength, int ShortEMALength, t_ChartArrayDataType Multiplier,
 		SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2, SCFloatArrayRef InternalArray3, SCFloatArrayRef InternalArray4, SCFloatArrayRef InternalArray5, SCFloatArrayRef InternalArray6);
 
 	SCFloatArrayRef (SCDLLCALL* Internal_Keltner)(SCBaseDataRef ChartBaseDataIn, SCFloatArrayRef In, SCFloatArrayRef KeltnerAverageOut, SCFloatArrayRef TopBandOut, SCFloatArrayRef BottomBandOut,	int Index, int KeltnerMALength, unsigned int KeltnerMAType, int TrueRangeMALength, unsigned int TrueRangeMAType, float TopBandMultiplier, float BottomBandMultiplier,SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2);
@@ -2634,7 +2634,7 @@ struct s_sc
 		SCFloatArrayRef Out,
 		SCFloatArrayRef InternalTrueRangeSummation, SCFloatArrayRef InternalPosDM, SCFloatArrayRef InternalNegDM, SCFloatArrayRef InternalDX, SCFloatArrayRef InternalADX);
 
-	int FileRecordIndexOfLastDataRecordInChart = 0;
+	int FileRecordIndexOfLastDataRecordInChart_Old = 0;
 
 	//The return value for this function must be implemented as a four byte integer, because a Boolean type may not be implemented the same way on all compilers and can cause corruptions.
 	int (SCDLLCALL* InternalFormattedEvaluate)(float Value1, unsigned int Value1Format,
@@ -2655,7 +2655,7 @@ struct s_sc
 
 	SCSubgraph260Array Subgraph;
 
-	float TickSize = 0;
+	t_ChartArrayDataType TickSize = 0;
 
 	SCFloatArrayRef (SCDLLCALL* InternalHullMovingAverage)(SCFloatArrayRef In, SCFloatArrayRef Out, SCFloatArrayRef InternalArray1, SCFloatArrayRef InternalArray2, SCFloatArrayRef InternalArray3, int Index, int Length);
 
@@ -2665,17 +2665,17 @@ struct s_sc
 
 	SCFloatArrayRef (SCDLLCALL* Internal_SmoothedMovingAverage)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
-	float (SCDLLCALL* InternalGetSummation)(SCFloatArrayRef In,int Index,int Length);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetSummation)(SCFloatArrayRef In,int Index,int Length);
 
 	SCFloatArrayRef (SCDLLCALL* InternalMACD)(SCFloatArrayRef In, SCFloatArrayRef FastMAOut, SCFloatArrayRef SlowMAOut, SCFloatArrayRef MACDOut, SCFloatArrayRef MACDMAOut, SCFloatArrayRef MACDDiffOut, int Index, int FastMALength, int SlowMALength, int MACDMALength, int MovAvgType);
 
-	void (SCDLLCALL* GetMainGraphVisibleHighAndLow)(float& High, float& Low);
+	void (SCDLLCALL* GetMainGraphVisibleHighAndLow)(t_ChartArrayDataType& High, t_ChartArrayDataType& Low);
 
 	SCFloatArrayRef (SCDLLCALL* InternalTEMA)(SCFloatArrayRef In, SCFloatArrayRef Out, SCFloatArrayRef InternalArray1,SCFloatArrayRef InternalArray2,SCFloatArrayRef InternalArray3, int Index, int  Length);
 
 	SCFloatArrayRef (SCDLLCALL* InternalBollingerBands)(SCFloatArrayRef In, SCFloatArrayRef Avg, SCFloatArrayRef TopBand,SCFloatArrayRef BottomBand,SCFloatArrayRef StdDev, int Index, int Length,float Multiplier,int MovAvgType);
 
-	int (SCDLLCALL* Internal_GetOHLCForDate)(const SCDateTime& Date, float& Open, float& High, float& Low, float& Close);
+	int (SCDLLCALL* Internal_GetOHLCForDate)(const SCDateTime& Date, t_ChartArrayDataType& Open, t_ChartArrayDataType& High, t_ChartArrayDataType& Low, t_ChartArrayDataType& Close);
 
 	int ReplayStatus = 0;
 
@@ -2704,7 +2704,7 @@ struct s_sc
 
 	SCFloatArrayRef (SCDLLCALL* InternalDispersion)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
 
-	float (SCDLLCALL* InternalGetDispersion)(SCFloatArrayRef In, int Index, int Length);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetDispersion)(SCFloatArrayRef In, int Index, int Length);
 
 	SCFloatArrayRef (SCDLLCALL* InternalEnvelopePercent)(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2,  float pct, int Index);
 	SCFloatArrayRef (SCDLLCALL* InternalVHF)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length);
@@ -2732,10 +2732,10 @@ struct s_sc
 	SCFloatArrayRef (SCDLLCALL* InternalWilliamsR)(SCBaseDataRef ChartBaseDataIn, SCFloatArrayRef Out, int Index, int Length);
 	int (SCDLLCALL* InternalGetIslandReversal)(SCBaseDataRef ChartBaseDataIn, int Index);
 	SCFloatArrayRef (SCDLLCALL* InternalOscillator)(SCFloatArrayRef In1, SCFloatArrayRef In2, SCFloatArrayRef Out, int Index);
-	float (SCDLLCALL* InternalGetTrueHigh)(SCBaseDataRef ChartBaseDataIn, int Index);
-	float (SCDLLCALL* InternalGetTrueLow)(SCBaseDataRef ChartBaseDataIn, int Index);
-	float (SCDLLCALL* InternalGetTrueRange)(SCBaseDataRef ChartBaseDataIn, int Index);
-	float (SCDLLCALL* InternalGetCorrelationCoefficient)(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetTrueHigh)(SCBaseDataRef ChartBaseDataIn, int Index);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetTrueLow)(SCBaseDataRef ChartBaseDataIn, int Index);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetTrueRange)(SCBaseDataRef ChartBaseDataIn, int Index);
+	t_ChartArrayDataType (SCDLLCALL* InternalGetCorrelationCoefficient)(SCFloatArrayRef In1, SCFloatArrayRef In2, int Index, int Length);
 
 	int (SCDLLCALL* InternalNumberOfBarsSinceHighestValue)(SCFloatArrayRef in, int Index, int Length);
 	int (SCDLLCALL* InternalNumberOfBarsSinceLowestValue)(SCFloatArrayRef in, int Index, int Length);
@@ -2788,18 +2788,19 @@ struct s_sc
 
 	int StartTimeOfDay = 0;
 
-	float (SCDLLCALL* InternalArrayValueAtNthOccurrence)(SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence );
+	t_ChartArrayDataType (SCDLLCALL* InternalArrayValueAtNthOccurrence)(SCFloatArrayRef TrueFalseIn, SCFloatArrayRef ValueArrayIn, int Index, int NthOccurrence );
 
 	SCFloatArrayRef (SCDLLCALL* Internal_Demarker)(SCBaseDataRef ChartBaseDataIn, SCFloatArrayRef Out, SCFloatArrayRef DemMax, SCFloatArrayRef DemMin, SCFloatArrayRef SmaDemMax, SCFloatArrayRef SmaDemMin, int Index, int Length);
 
 	int SupportAttachedOrdersForTrading = 0;
 
 	int GlobalTradeSimulationIsOn = 0;
+
 	int ChartTradeModeEnabled = 0;
 
 	int CancelAllOrdersOnEntriesAndReversals = 0;
 
-	SCFloatArrayRef (SCDLLCALL* InternalEnvelopeFixed)(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2,  float FixedValue, int Index);
+	SCFloatArrayRef (SCDLLCALL* InternalEnvelopeFixed)(SCFloatArrayRef In, SCFloatArrayRef Out1, SCFloatArrayRef Out2, t_ChartArrayDataType FixedValue, int Index);
 
 	float CurrencyValuePerTick = 0.0f;
 
@@ -2810,6 +2811,7 @@ struct s_sc
 	uint16_t ChartBarSpacing = 0;
 
 	int (SCDLLCALL* InternalIsSwingHigh)(SCFloatArrayRef In, int Index, int Length);
+
 	int (SCDLLCALL* InternalIsSwingLow)(SCFloatArrayRef In, int Index, int Length);
 
 	SCFloatArrayRef (SCDLLCALL* InternalZigZag2)(SCFloatArrayRef InputDataHigh, SCFloatArrayRef InputDataLow, SCFloatArrayRef ZigZagValues, SCFloatArrayRef ZigZagPeakType, SCFloatArrayRef ZigZagPeakIndex, int Index, int NumberOfBars, float ReversalAmount);
@@ -2827,16 +2829,23 @@ struct s_sc
 	int CancelAllWorkingOrdersOnExit = 0;
 
 	int (SCDLLCALL* SessionStartTime)();
+	
 	int (SCDLLCALL* IsDateTimeInSession)(const SCDateTime& DateTime);
+	
 	int (SCDLLCALL* TradingDayStartsInPreviousDate)();
+	
 	int (SCDLLCALL* GetTradingDayDate)(const SCDateTime& DateTime);
+	
 	SCDateTime (SCDLLCALL* GetStartDateTimeForTradingDate)(const SCDateTime& TradingDate);
+	
 	SCDateTime (SCDLLCALL* GetTradingDayStartDateTimeOfBar)(const SCDateTime& BarDateTime);
+	
 	int (SCDLLCALL* SecondsSinceStartTime)(const SCDateTime& BarDateTime);
 
 	int HideStudy = 0;
 
 	float ScaleValueOffset = 0.0f;
+
 	float AutoScalePaddingPercentage = 0.0f;
 
 	SCString (SCDLLCALL* GetChartName)(int ChartNumber);
@@ -2905,7 +2914,9 @@ struct s_sc
 	SCDateTime LatestDateTimeForLastBar;
 
 	int GlobalDisplayStudySubgraphsNameAndValue = 0;
+	
 	int DisplayStudyName = 0;
+	
 	int DisplayStudyInputValues = 0;
 
 	double TradeServiceAccountBalance = 0.0;
@@ -2929,6 +2940,7 @@ struct s_sc
 	int IsAutoTradingEnabled = 0;
 
 	int CurrentlySelectedDrawingTool = 0;
+	
 	int CurrentlySelectedDrawingToolState = 0;
 
 	int ServerConnectionState = 0;  // ServerConnectionStateEnum
@@ -2938,6 +2950,7 @@ struct s_sc
 	SCString GraphShortName;
 
 	void (SCDLLCALL* GetStudyArraysFromChartUsingID)(int ChartNumber, int StudyID, SCGraphData& GraphData);
+
 	int (SCDLLCALL* Internal_GetStudyIDByIndex)(int ChartNumber, int StudyIndex);
 
 	SCDateTime (SCDLLCALL* DateStringToSCDateTime)(const SCString& DateString);
@@ -2988,9 +3001,9 @@ struct s_sc
 
 	void* CreateRelayServer_NoLongerUsed = nullptr;
 
-	int  (SCDLLCALL* RelayNewSymbol)(const SCString& Symbol, int ValueFormat, float TickSize, const SCString& ServiceCode);
+	int  (SCDLLCALL* RelayNewSymbol)(const SCString& Symbol, int ValueFormat, t_ChartArrayDataType TickSize, const SCString& ServiceCode);
 
-	int  (SCDLLCALL* RelayTradeUpdate)(const SCString& Symbol, const SCDateTime& DateTime, float TradeValue, unsigned int TradeVolume, int WriteRecord);
+	int  (SCDLLCALL* RelayTradeUpdate)(const SCString& Symbol, const SCDateTime& DateTime, t_ChartArrayDataType TradeValue, unsigned int TradeVolume, int WriteRecord);
 
 	void (SCDLLCALL* RelayDataFeedAvailable)();
 	void (SCDLLCALL* RelayDataFeedUnavailable)();
@@ -3071,7 +3084,7 @@ struct s_sc
 
 	int (SCDLLCALL* BarIndexToXPixelCoordinate)(int Index);
 
-	int (SCDLLCALL* RegionValueToYPixelCoordinate)(float RegionValue, int ChartRegionNumber);
+	int (SCDLLCALL* RegionValueToYPixelCoordinate)(t_ChartArrayDataType RegionValue, int ChartRegionNumber);
 
 	int (SCDLLCALL* SetACSChartShortcutMenuItemDisplayed)(int ChartNumber, int MenuItemID, int DisplayItem);
 	int (SCDLLCALL* SetACSChartShortcutMenuItemEnabled) (int ChartNumber, int MenuItemID, int Enabled);
@@ -3120,7 +3133,7 @@ struct s_sc
 
 	SCString CustomChartTitleBarName;
 
-	SCFloatArrayRef (SCDLLCALL* InternalCCI)(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, float Multiplier, unsigned int MovingAverageType);
+	SCFloatArrayRef (SCDLLCALL* InternalCCI)(SCFloatArrayRef In, SCFloatArrayRef SMAOut, SCFloatArrayRef CCIOut, int Index, int Length, t_ChartArrayDataType Multiplier, unsigned int MovingAverageType);
 	int (SCDLLCALL* GetOrderFillArraySize)();
 	int (SCDLLCALL* GetOrderFillEntry)(unsigned int FillIndex, s_SCOrderFillData& FillData);
 
@@ -3217,7 +3230,7 @@ struct s_sc
 
 	double TradeServiceAvailableFundsForNewPositions = 0.0;
 
-	void (SCDLLCALL* GetAttachedOrderIDsForParentOrder)(int ParentInternalOrderID, int& TargetInternalOrderID, int& StopInternalOrderID);
+	void (SCDLLCALL* GetAttachedOrderIDsForParentOrder)(int ParentInternalOrderID, int& r_TargetInternalOrderID, int& r_StopInternalOrderID);
 
 	int FlagToReloadChartData = 0;
 
@@ -3237,12 +3250,11 @@ struct s_sc
 
 	int (SCDLLCALL* GetFirstNearestIndexForTradingDayDate)(int ChartNumber, int TradingDayDate);
 
-	int (SCDLLCALL* Internal_GetOpenHighLowCloseVolumeForDate)(const SCDateTime& Date, float& r_Open, float& r_High, float& r_Low, float& r_Close, float& r_Volume);
+	int (SCDLLCALL* Internal_GetOpenHighLowCloseVolumeForDate)(const SCDateTime& Date, t_ChartArrayDataType& r_Open, t_ChartArrayDataType& r_High, t_ChartArrayDataType& r_Low, t_ChartArrayDataType& r_Close, t_ChartArrayDataType& r_Volume);
 
 	const char * (SCDLLCALL* GetStudySubgraphName)(int StudyID, int SubgraphIndex);
 
 	SCDateTime (SCDLLCALL* TimeStringToSCDateTime)(const SCString& TimeString);
-
 
 	int (SCDLLCALL* ChangeACSChartShortcutMenuItemText)(int ChartNumber, int MenuIdentifier, const char* NewMenuText);
 
@@ -3250,14 +3262,13 @@ struct s_sc
 
 	SCDateTime (SCDLLCALL* DateStringDDMMYYYYToSCDateTime)(const SCString& DateString);
 
-	float PointAndFigureXOGraphDrawTypeBoxSize = 0.0f;
+	t_ChartArrayDataType PointAndFigureXOGraphDrawTypeBoxSize = 0.0;
 
 	int (SCDLLCALL* SaveChartbook)();
 
 	c_VAPContainer* VolumeAtPriceForStudy = nullptr;
 
 	SCDateTime CurrentDateTimeForReplay;
-
 
 	void (SCDLLCALL* InternalHeikinAshi)(SCBaseDataRef ChartBaseDataIn,  int Index, int Length,  SCFloatArrayRef OpenOut, SCFloatArrayRef HighOut,  SCFloatArrayRef LowOut, SCFloatArrayRef LastOut , int SetCloseToCurrentPriceAtLastBar);
 
@@ -3291,7 +3302,7 @@ struct s_sc
 	int (SCDLLCALL* AddLineUntilFutureIntersection)
 		( int StartBarIndex
 		, int LineIDForBar
-		, float LineValue
+		, t_ChartArrayDataType LineValue
 		, uint32_t LineColor
 		, uint16_t LineWidth
 		, uint16_t LineStyle
@@ -3300,8 +3311,8 @@ struct s_sc
 		, const SCString& NameLabel
 		);
 
-	int (SCDLLCALL* GetBidMarketDepthStackPullValueAtPrice)(float Price);
-	int (SCDLLCALL* GetAskMarketDepthStackPullValueAtPrice)(float Price);
+	int (SCDLLCALL* GetBidMarketDepthStackPullValueAtPrice)(t_ChartArrayDataType Price);
+	int (SCDLLCALL* GetAskMarketDepthStackPullValueAtPrice)(t_ChartArrayDataType Price);
 
 	int (SCDLLCALL* SetChartWindowState)(int ChartNumber, int WindowState);
 
@@ -3335,21 +3346,21 @@ struct s_sc
 
 	SCString (SCDLLCALL* SCDataFeedSymbol)();
 
-	unsigned int (SCDLLCALL* GetRecentBidVolumeAtPrice)(float Price);
-	unsigned int (SCDLLCALL* GetRecentAskVolumeAtPrice)(float Price);
+	unsigned int (SCDLLCALL* GetRecentBidVolumeAtPrice)(t_ChartArrayDataType Price);
+	unsigned int (SCDLLCALL* GetRecentAskVolumeAtPrice)(t_ChartArrayDataType Price);
 
 	SCFloatArrayRef(SCDLLCALL* InternalResettableZigZag)(SCFloatArrayRef InputDataHigh, SCFloatArrayRef InputDataLow, SCFloatArrayRef  ZigZagValues, SCFloatArrayRef ZigZagPeakType, SCFloatArrayRef ZigZagPeakIndex, int StartIndex, int Index, float ReversalPercent, float ReversalAmount, SCStudyInterfaceRef sc);
 	SCFloatArrayRef(SCDLLCALL* InternalResettableZigZag2)(SCFloatArrayRef InputDataHigh, SCFloatArrayRef InputDataLow, SCFloatArrayRef ZigZagValues, SCFloatArrayRef ZigZagPeakType, SCFloatArrayRef ZigZagPeakIndex, int StartIndex, int Index, int NumberOfBars, float ReversalAmount, SCStudyInterfaceRef sc);
 
 	int BaseGraphConstantRangeScaleMode = CONST_RANGE_MODE_AUTO_CENTER_LAST_BAR;
 
-	int (SCDLLCALL* GetStudyPeakValleyLine)(int ChartNumber, int StudyID, float& PeakValleyLinePrice, int& PeakValleyType, int& StartIndex, int& PeakValleyExtensionChartColumnEndIndex, int ProfileIndex, int PeakValleyIndex);
+	int (SCDLLCALL* GetStudyPeakValleyLine)(int ChartNumber, int StudyID, t_ChartArrayDataType& PeakValleyLinePrice, int& PeakValleyType, int& StartIndex, int& PeakValleyExtensionChartColumnEndIndex, int ProfileIndex, int PeakValleyIndex);
 
-	int (SCDLLCALL* GetStudyLineUntilFutureIntersection)(int ChartNumber, int StudyID, int BarIndex, int LineIndex, int& LineIDForBar, float& LineValue, int& ExtensionLineChartColumnEndIndex);
+	int (SCDLLCALL* GetStudyLineUntilFutureIntersection)(int ChartNumber, int StudyID, int BarIndex, int LineIndex, int& LineIDForBar, t_ChartArrayDataType& LineValue, int& ExtensionLineChartColumnEndIndex);
 
 	SCDateTimeArray BaseDataEndDateTime;  // From the base graph
 
-	int (SCDLLCALL* Internal_GetOpenHighLowCloseVolumeForDate2)(const SCDateTime& Date, float& r_Open, float& r_High, float& r_Low, float& r_Close, float& r_Volume, int IncludeFridayEveningSessionWithSundayEveningSession);
+	int (SCDLLCALL* Internal_GetOpenHighLowCloseVolumeForDate2)(const SCDateTime& Date, t_ChartArrayDataType& r_Open, t_ChartArrayDataType& r_High, t_ChartArrayDataType& r_Low, t_ChartArrayDataType& r_Close, t_ChartArrayDataType& r_Volume, int IncludeFridayEveningSessionWithSundayEveningSession);
 
 	int (SCDLLCALL* GetUserDrawnDrawingByLineNumber)(int ChartNumber, int LineNumber, s_UseTool& ChartDrawing);
 
@@ -3415,8 +3426,8 @@ struct s_sc
 	int (SCDLLCALL* GetDOMColumnLeftCoordinate)(n_ACSIL::DOMColumnTypeEnum DOMColumn);
 	int (SCDLLCALL* GetDOMColumnRightCoordinate)(n_ACSIL::DOMColumnTypeEnum DOMColumn);
 
-	uint32_t (SCDLLCALL* GetCurrentTradedBidVolumeAtPrice)(float Price);
-	uint32_t (SCDLLCALL* GetCurrentTradedAskVolumeAtPrice)(float Price);
+	uint32_t (SCDLLCALL* GetCurrentTradedBidVolumeAtPrice)(t_ChartArrayDataType Price);
+	uint32_t (SCDLLCALL* GetCurrentTradedAskVolumeAtPrice)(t_ChartArrayDataType Price);
 
 	double  (SCDLLCALL* ConvertCurrencyValueToCommonCurrency)(double CurrencyValue, const SCString& SourceSymbol, SCString& OutputCurrency);
 
@@ -3428,7 +3439,7 @@ struct s_sc
 
 	int (SCDLLCALL* ReadIntradayFileRecordForBarIndexAndSubIndex)(int BarIndex, int SubRecordIndex, s_IntradayRecord& r_Record, IntradayFileLockActionEnum IntradayFileLockAction);
 
-	SCFloatArrayRef(SCDLLCALL* Internal_CalculateAngle)(SCFloatArrayRef InputArray, SCFloatArrayRef OutputArray, int Index, int Length, float ValuePerPoint);
+	SCFloatArrayRef(SCDLLCALL* Internal_CalculateAngle)(SCFloatArrayRef InputArray, SCFloatArrayRef OutputArray, int Index, int Length, t_ChartArrayDataType ValuePerPoint);
 
 	int NumberOfForwardColumns = 0;
 
@@ -3573,7 +3584,7 @@ struct s_sc
 
 	void (SCDLLCALL* SetTradeWindowTextTag)(const SCString& TextTag);
 
-	int (SCDLLCALL* GetStudyLineUntilFutureIntersectionByIndex)(int ChartNumber, int StudyID, int Index, int& r_LineIDForBar, int& r_StartIndex, float& r_LineValue, int& r_ExtensionLineChartColumnEndIndex);
+	int (SCDLLCALL* GetStudyLineUntilFutureIntersectionByIndex)(int ChartNumber, int StudyID, int Index, int& r_LineIDForBar, int& r_StartIndex, t_ChartArrayDataType& r_LineValue, int& r_ExtensionLineChartColumnEndIndex);
 
 	int (SCDLLCALL* GetTradingKeyboardShortcutsEnableState)();
 	void (SCDLLCALL* SetTradingKeyboardShortcutsEnableState)(int State);
@@ -3581,11 +3592,11 @@ struct s_sc
 	int (SCDLLCALL* GetFlatToFlatTradeListSize)();
 	int (SCDLLCALL* GetFlatToFlatTradeListEntry)(unsigned int TradeIndex, s_ACSTrade& TradeEntry);
 
-	int (SCDLLCALL* StartChartReplay)(int ChartNumber, float ReplaySpeed, const SCDateTime& StartDateTime);
+	int (SCDLLCALL* StartChartReplay)(int ChartNumber, t_ChartArrayDataType ReplaySpeed, const SCDateTime& StartDateTime);
 	int (SCDLLCALL* StopChartReplay)(int ChartNumber);
 	int (SCDLLCALL* PauseChartReplay)(int ChartNumber);
 	int (SCDLLCALL* ResumeChartReplay)(int ChartNumber);
-	int (SCDLLCALL* ChangeChartReplaySpeed)(int ChartNumber, float ReplaySpeed);
+	int (SCDLLCALL* ChangeChartReplaySpeed)(int ChartNumber, t_ChartArrayDataType ReplaySpeed);
 	
 	int (SCDLLCALL* GetStudyProfileInformation)(const int StudyID, const int ProfileIndex, n_ACSIL::s_StudyProfileInformation& StudyProfileInformation);
 
@@ -3627,9 +3638,9 @@ struct s_sc
 	double (SCDLLCALL* GetBidMarketDepthStackPullSum)();
 	double (SCDLLCALL* GetAskMarketDepthStackPullSum)();
 
-	float (SCDLLCALL* GetChartReplaySpeed)(int ChartNumber);
+	t_ChartArrayDataType(SCDLLCALL* GetChartReplaySpeed)(int ChartNumber);
 
-	int32_t (SCDLLCALL* GetYValueForChartDrawingAtBarIndex)(const int32_t ChartNumber, const int32_t IsUserDrawn, const int32_t LineNumber, const int32_t LineIndex, const int32_t BarIndex1, int32_t BarIndex2, float& YValue1, float& YValue2);
+	int32_t (SCDLLCALL* GetYValueForChartDrawingAtBarIndex)(const int32_t ChartNumber, const int32_t IsUserDrawn, const int32_t LineNumber, const int32_t LineIndex, const int32_t BarIndex1, int32_t BarIndex2, t_ChartArrayDataType& YValue1, t_ChartArrayDataType& YValue2);
 
 	int& (SCDLLCALL* GetPersistentIntFast)(int32_t Index);
 	float& (SCDLLCALL* GetPersistentFloatFast)(int32_t Index);
@@ -3646,7 +3657,7 @@ struct s_sc
 	
 	int (SCDLLCALL* GetNumLinesUntilFutureIntersection)(int ChartNumber, int StudyID);
 
-	int (SCDLLCALL* GetPointOfControlAndValueAreaPricesForBar)(int BarIndex, double& r_PointOfControl, double& r_ValueAreaHigh, double& r_ValueAreaLow, float ValueAreaPercentage);
+	int (SCDLLCALL* GetPointOfControlAndValueAreaPricesForBar)(int BarIndex, double& r_PointOfControl, double& r_ValueAreaHigh, double& r_ValueAreaLow, t_ChartArrayDataType ValueAreaPercentage);
 
 	void (SCDLLCALL* GetBarPeriodParametersForChart)(int ChartNumber, n_ACSIL::s_BarPeriod& r_BarPeriod);
 
@@ -3658,13 +3669,14 @@ struct s_sc
 
 	// 2210
 	//Derived from c_VAPContainerBase<s_VolumeLevelAtPrice>
-	c_VolumeLevelAtPriceContainer* p_VolumeLevelAtPriceForBars = NULL;
+	c_VolumeLevelAtPriceContainer* p_VolumeLevelAtPriceForBars = nullptr;
 
 	// 2212
 	int (SCDLLCALL* IsLastBarClosedBasedOnElapsedTime)(const int ChartNumber);
 
 	// 2214 
 	int (SCDLLCALL* GetBidMarketLimitOrdersForPrice)(const int PriceInTicks, const int ArraySize, n_ACSIL::s_MarketOrderData* p_MarketOrderDataArray);
+
 	int (SCDLLCALL* GetAskMarketLimitOrdersForPrice)(const int PriceInTicks, const int ArraySize, n_ACSIL::s_MarketOrderData* p_MarketOrderDataArray);
 
 	// 2244
@@ -3681,7 +3693,7 @@ struct s_sc
 	int (SCDLLCALL* SetInvertUnderlyingChartData)(int InvertData);
 
 	// 2261
-	SCFloatArrayRef (SCDLLCALL* InternalArnaudLegouxMovingAverage)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length, float Sigma, float Offset);
+	SCFloatArrayRef (SCDLLCALL* InternalArnaudLegouxMovingAverage)(SCFloatArrayRef In, SCFloatArrayRef Out, int Index, int Length, t_ChartArrayDataType Sigma, t_ChartArrayDataType Offset);
 
 	int (SCDLLCALL* FlattenAndCancelAllOrdersForSymbolAndNonSimTradeAccount)(const SCString& Symbol, const SCString& TradeAccount);
 
@@ -3774,9 +3786,11 @@ struct s_sc
 
 	// 2484
 	int (SCDLLCALL* GetChartStudyInputChartStudySubgraphValues)(int ChartNumber, int StudyID, int InputIndex, s_ChartStudySubgraphValues& r_ChartStudySubgraphValues);
+
 	int (SCDLLCALL* SetChartStudyInputChartStudySubgraphValues)(int ChartNumber, int StudyID, int InputIndex, s_ChartStudySubgraphValues ChartStudySubgraphValues);
 
 	uint32_t (SCDLLCALL* GetStudyInternalIdentifier)(int ChartNumber, int StudyID, SCString& r_StudyName);
+
 	int (SCDLLCALL* GetChartStudyInputType)(int ChartNumber, int StudyID, int InputIndex);
 	
 	int (SCDLLCALL* GetBuiltInStudyName)(const int InternalStudyIdentifier, SCString& r_StudyName);
@@ -3819,17 +3833,17 @@ struct s_sc
 	int32_t (SCDLLCALL* GetChartStudyGraphRegion)(int32_t ChartNumber, int32_t StudyID);
 	int32_t (SCDLLCALL* SetChartStudyGraphRegion)(int32_t ChartNumber, int32_t StudyID, int32_t GraphRegion);
 
-	float (SCDLLCALL* GetChartStudyConstantRangeScaleAmount)(int32_t ChartNumber, int32_t StudyID);
-	int32_t (SCDLLCALL* SetChartStudyConstantRangeScaleAmount)(int32_t ChartNumber, int32_t StudyID, const float ScaleConstRange);
+	t_ChartArrayDataType(SCDLLCALL* GetChartStudyConstantRangeScaleAmount)(int32_t ChartNumber, int32_t StudyID);
+	int32_t (SCDLLCALL* SetChartStudyConstantRangeScaleAmount)(int32_t ChartNumber, int32_t StudyID, const t_ChartArrayDataType ScaleConstRange);
 
-	float (SCDLLCALL* GetChartStudyScaleIncrement)(int32_t ChartNumber, int32_t StudyID);
-	int32_t (SCDLLCALL* SetChartStudyScaleIncrement)(int32_t ChartNumber, int32_t StudyID, const float ScaleIncrement);
+	t_ChartArrayDataType(SCDLLCALL* GetChartStudyScaleIncrement)(int32_t ChartNumber, int32_t StudyID);
+	int32_t (SCDLLCALL* SetChartStudyScaleIncrement)(int32_t ChartNumber, int32_t StudyID, const t_ChartArrayDataType ScaleIncrement);
 
-	float (SCDLLCALL* GetChartStudyUserDefinedScaleRangeTop)(int32_t ChartNumber, int32_t StudyID);
-	int32_t (SCDLLCALL* SetChartStudyUserDefinedScaleRangeTop)(int32_t ChartNumber, int32_t StudyID, const float ScaleRangeTop);
+	t_ChartArrayDataType(SCDLLCALL* GetChartStudyUserDefinedScaleRangeTop)(int32_t ChartNumber, int32_t StudyID);
+	int32_t (SCDLLCALL* SetChartStudyUserDefinedScaleRangeTop)(int32_t ChartNumber, int32_t StudyID, const t_ChartArrayDataType ScaleRangeTop);
 
-	float (SCDLLCALL* GetChartStudyUserDefinedScaleRangeBottom)(int32_t ChartNumber, int32_t StudyID);
-	int32_t (SCDLLCALL* SetChartStudyUserDefinedScaleRangeBottom)(int32_t ChartNumber, int32_t StudyID, const float ScaleRangeBottom);
+	t_ChartArrayDataType(SCDLLCALL* GetChartStudyUserDefinedScaleRangeBottom)(int32_t ChartNumber, int32_t StudyID);
+	int32_t (SCDLLCALL* SetChartStudyUserDefinedScaleRangeBottom)(int32_t ChartNumber, int32_t StudyID, const t_ChartArrayDataType ScaleRangeBottom);
 
 	int32_t (SCDLLCALL* GetChartStudyScaleRangeType)(int32_t ChartNumber, int32_t StudyID);
 	int32_t (SCDLLCALL* SetChartStudyScaleRangeType)(int32_t ChartNumber, int32_t StudyID, const ScaleRangeTypeEnum ScaleRangeType);
@@ -3837,8 +3851,8 @@ struct s_sc
 	int32_t (SCDLLCALL* GetChartStudyScaleType)(int32_t ChartNumber, int32_t StudyID);
 	int32_t (SCDLLCALL* SetChartStudyScaleType)(int32_t ChartNumber, int32_t StudyID, int32_t ScaleType);
 
-	float (SCDLLCALL* GetChartStudyScaleValueOffset)(int32_t ChartNumber, int32_t StudyID);
-	int32_t (SCDLLCALL* SetChartStudyScaleValueOffset)(int32_t ChartNumber, int32_t StudyID, const float ScaleValueOffset);
+	t_ChartArrayDataType(SCDLLCALL* GetChartStudyScaleValueOffset)(int32_t ChartNumber, int32_t StudyID);
+	int32_t (SCDLLCALL* SetChartStudyScaleValueOffset)(int32_t ChartNumber, int32_t StudyID, const t_ChartArrayDataType ScaleValueOffset);
 
 	int32_t (SCDLLCALL* GetChartStudyDisplayAsMainPriceGraph)(int32_t ChartNumber, int32_t StudyID);
 	int32_t (SCDLLCALL* SetChartStudyDisplayAsMainPriceGraph)(int32_t ChartNumber, int32_t StudyID, const int32_t DisplayAsMainPriceGraph);
@@ -3979,7 +3993,12 @@ struct s_sc
 
 		int32_t (SCDLLCALL* DrawFrameControl)(n_ACSIL::s_GraphicsRectangle& r_Rectangle, const uint32_t Type, const uint32_t State);
 
-		int8_t Reserve[256] = {};
+		//Added at version 2910
+		int32_t (SCDLLCALL* FillRectangleWithColorTransparent)(const n_ACSIL::s_GraphicsRectangle& Rectangle, const n_ACSIL::s_GraphicsColor& Color, const uint8_t TransparentLevel);
+
+		int32_t(SCDLLCALL* DrawRectangleTransparent)(int32_t LeftRect, int32_t TopRect, int32_t RightRect, int32_t BottomRect, const uint8_t TransparentLevel);
+
+		int8_t Reserve[240] = {};
 
 	} Graphics;
 
@@ -4056,11 +4075,51 @@ struct s_sc
 	int32_t (SCDLLCALL* IsDataExportAllowed)();
 
 	// 2755
-	int32_t(SCDLLCALL* SetVolumeAtPriceMultiplierForChart)(const uint32_t Multiplier, const int32_t ChartNumber);
+	int32_t (SCDLLCALL* SetVolumeAtPriceMultiplierForChart)(const uint32_t Multiplier, const int32_t ChartNumber);
 
 	// 2762
-	int (SCDLLCALL* GetStudyCount)(int ChartNumber);
-	int (SCDLLCALL* GetContinuousContractSymbolForBarIndex)(int BarIndex, SCString& r_Symbol);
+	int32_t (SCDLLCALL* GetStudyCount)(int ChartNumber);
+	int32_t (SCDLLCALL* GetContinuousContractSymbolForBarIndex)(int BarIndex, SCString& r_Symbol);
+
+	// 2781
+	int32_t (SCDLLCALL* DeleteChartDrawingByDrawnStudyInstanceID)(int32_t StudyInstanceID);
+
+	// 2827
+	int32_t (SCDLLCALL* SetChartSymbol)(int32_t ChartNumber, const SCString& Symbol, const SCString& TradeAndCurrentQuoteSymbol);
+
+	// 2846
+	int32_t(SCDLLCALL* ClearSubgraphDataColorArray)(int32_t SubgraphIndex);
+
+	int32_t (SCDLLCALL* GetCurrentUserDrawnChartDrawing)(int32_t ChartNumber, s_UseTool& r_ChartDrawing);
+
+	// 2848
+	int32_t ProcessStudyUnsetInputs = 0;
+
+	// 2850
+	int32_t (SCDLLCALL* GetChartDrawingByDrawnStudyInstanceID)(int32_t StudyInstanceID, int32_t CheckCurrentChartDrawing, s_UseTool& r_ChartDrawing);
+
+	// 2860
+	int32_t (SCDLLCALL* SetLimitPriceDisplayedToNRightCharacters)(int32_t ChartNumber, int32_t NumRightCharacters);
+	
+	// 2876
+	int32_t (SCDLLCALL* GetMarketDepthCombineIncrementInTicks)(int32_t ChartNumber);
+	int32_t (SCDLLCALL* SetMarketDepthCombineIncrementInTicks)(int32_t ChartNumber, int32_t NumberOfTicks);
+	int32_t (SCDLLCALL* GetChartSettingsMaximumMarketDepthLevels)(int32_t ChartNumber);
+	int32_t (SCDLLCALL* SetChartSettingsMaximumMarketDepthLevels)(int32_t ChartNumber, int32_t NumberOfLevels);
+
+	//2885
+	int64_t FileRecordIndexOfLastDataRecordInChart = 0;
+
+	//2893
+	int32_t (SCDLLCALL* GetIsTradingLocked)(const SCString& TradeAccount);
+
+	//2900
+	int32_t (SCDLLCALL* SetGlobalGraphicsSetting)(n_ACSIL::GraphicsSettingsGlobalEnum GlobalGraphicsSetting, uint32_t ColorValue);
+
+	//2927
+	int32_t (SCDLLCALL* SetActiveDrawingTool)(int32_t ChartNumber, DrawingTypeEnum DrawingType, int32_t AllowChangeOfToolInOtherCharts);
+
+	int32_t (SCDLLCALL* GetOrderAllocationToTradeAccounts)(int32_t ChartNumber);
 
 
 	// When adding new functions that use arrays as parameters, always use
