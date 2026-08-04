@@ -95,7 +95,14 @@ namespace MindfulTrader {
             // If strictly partially filled, only copy what we have.
             m_sortBuffer.clear();
             if (m_isFull) {
-                m_sortBuffer = m_buffer; // Copy all
+                m_sortBuffer.assign(m_buffer.begin(), m_buffer.end()); // Copy all -- .assign() guarantees no
+                                                                        // reallocation when capacity (reserved
+                                                                        // in the constructor) is already
+                                                                        // sufficient, unlike operator=, whose
+                                                                        // reallocation behavior on unequal sizes
+                                                                        // is implementation-defined (docs/superpowers/plans/
+                                                                        // 2026-08-04-phase1-hardening.md Task 4;
+                                                                        // lbrnet/logs/rc_gemini.log GEMINI_BRIEF_082 §1.4).
             } else {
                 m_sortBuffer.insert(m_sortBuffer.end(), m_buffer.begin(), m_buffer.begin() + m_headIndex);
             }
