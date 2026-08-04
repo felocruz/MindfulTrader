@@ -47,6 +47,20 @@ namespace MindfulTrader {
          * Updates Short-term (P), Long-term (Q), and Lempel-Ziv buffers.
          */
         void AddObservation(double logReturn) {
+            // Rolling volatility estimate (EMA of |logReturn|), used by MapToBin() to
+            // standardize returns into sigma-scores instead of comparing against a
+            // fixed, hardcoded assumed sigma (docs/superpowers/plans/2026-08-04-phase1-hardening.md
+            // Task 2; lbrnet/logs/rc_gemini.log GEMINI_BRIEF_082 §1.2). Alpha is tied to
+            // WINDOW_SIZE_P (the same short-term regime window already used elsewhere in
+            // this class) for a consistent, non-arbitrary responsiveness.
+            const double absReturn = std::abs(logReturn);
+            constexpr double kVolatilityEmaAlpha = 2.0 / (static_cast<double>(WINDOW_SIZE_P) + 1.0);
+            if (m_emaAbsLogReturn <= 0.0) {
+                m_emaAbsLogReturn = absReturn;
+            } else {
+                m_emaAbsLogReturn = kVolatilityEmaAlpha * absReturn + (1.0 - kVolatilityEmaAlpha) * m_emaAbsLogReturn;
+            }
+
             // Update Long-Term Window (Q) - Baseline
             double oldValQ = m_bufferQ[m_headIndexQ];
             m_bufferQ[m_headIndexQ] = logReturn;
@@ -130,6 +144,7 @@ namespace MindfulTrader {
             m_headIndexLZ = 0;
             m_countP = 0;
             m_countQ = 0;
+            m_emaAbsLogReturn = 0.0;
         }
 
         /**
@@ -323,39 +338,46 @@ namespace MindfulTrader {
         size_t m_headIndexLZ;
         size_t m_countP;
         size_t m_countQ;
+        double m_emaAbsLogReturn = 0.0;   // rolling volatility estimate (Task 2, phase1-hardening plan)
 
         /**
          * @brief Maps a log return to one of 10 bins.
          * Uses a rough approximation of standard deviation boundaries.
          */
         size_t MapToBin(double val) const {
-            // ES scale approximation: 16 ticks (0.25) is huge.
-            // Log return of 0.0001 is ~5 ticks on 5000 price.
-            // Bins logic:
-            // 0: < -4 sigma
-            // 1: -4 to -2
+            // Volatility-standardize before binning: replaces the old fixed,
+            // hardcoded "assumed sigma ~ 0.0002 (2bps) for 1-minute" approximation
+            // with a live rolling estimate, so entropy reflects distribution
+            // STRUCTURE (randomness vs. organization), not the current volatility
+            // regime (docs/superpowers/plans/2026-08-04-phase1-hardening.md Task 2;
+            // lbrnet/logs/rc_gemini.log GEMINI_BRIEF_082 §1.2). Bin thresholds are
+            // the SAME sigma-multiple boundaries as before (this class's original
+            // comment already documented them in sigma terms); only the value being
+            // compared against them changed from a fixed assumption to a live estimate.
+            // Bins:
+            // 0: < -5 sigma
+            // 1: -5 to -2
             // 2: -2 to -1
             // 3: -1 to -0.5
             // 4: -0.5 to 0
             // 5: 0 to 0.5
             // 6: 0.5 to 1
             // 7: 1 to 2
-            // 8: 2 to 4
-            // 9: > 4 sigma
-            // Assuming simplified sigma ~ 0.0002 (2bps) for 1-minute.
-            // We'll use a standardized scaler: val * 10000 (basis points).
+            // 8: 2 to 5
+            // 9: > 5 sigma
+            constexpr double kMinSigma = 1e-6;  // floor to avoid division blowup at cold-start/flat-market
+            const double sigma = (m_emaAbsLogReturn > kMinSigma) ? m_emaAbsLogReturn : kMinSigma;
+            const double sigmaScore = val / sigma;
 
-            double bps = val * 10000.0;
-
-            if (bps < -5.0) return 0;
-            if (bps < -2.0) return 1;
-            if (bps < -1.0) return 2;
-            if (bps < -0.5) return 3;
-            if (bps < 0.0)  return 4;
-            if (bps < 0.5)  return 5;
-            if (bps < 1.0)  return 6;
-            if (bps < 2.0)  return 7;
-            if (bps < 5.0)  return 8;
+            if (sigmaScore < -5.0) return 0;
+            if (sigmaScore < -2.0) return 1;
+            if (sigmaScore < -1.0) return 2;
+            if (sigmaScore < -0.5) return 3;
+            if (sigmaScore < 0.0)  return 4;
+            if (sigmaScore < 0.5)  return 5;
+            if (sigmaScore < 1.0)  return 6;
+            if (sigmaScore < 2.0)  return 7;
+            if (sigmaScore < 5.0)  return 8;
             return 9;
         }
 
