@@ -858,6 +858,7 @@ Run: `./build_dll.sh --no-clean`.
 
 **Files:**
 - Modify: `src/IndicatorManager.cpp` (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`)
+- Modify: `src/BackTesterStudy.cpp` (its own `IndicatorState`-building function, ~lines 1240-1290 — confirmed WIP/unused, safe to change; see Step 3)
 
 **Interfaces:**
 - Consumes: fully-populated `m_packed` (every key migrated by Tasks 5-8).
@@ -883,21 +884,27 @@ PopulateIndicatorState(*event->indicators);
 
 This removes the `OSCILLATOR_310` special case (lines 435-444) as dead code by construction — there is no longer a per-indicator virtual call anywhere in this path for either consumer, so there is nothing left to special-case. Add a regression comment at the deletion site explaining why: `PopulateIndicatorState` (Step 1) now reads `m_packed` directly, has no virtual dispatch, and is shared by both `Event.indicators` and `TrainingEvent.indicators` — removing the last place a per-indicator virtual call happens.
 
-- [ ] **Step 3: Rewrite `CheckTrigger`**
+- [ ] **Step 3: Unify `src/BackTesterStudy.cpp`'s own `IndicatorState`-building function as a third caller of `PopulateIndicatorState`**
+
+Task 2's audit found a THIRD independent `IndicatorState`-building function in `src/BackTesterStudy.cpp` (~lines 1240-1290), used by the backtest-artifact path, calling `GetIndicator<T>()` on leaf objects directly — the same duplication pattern Steps 1-2 just eliminated for the live/training paths, plus it currently populates a few fields (`zn_trend`/`dx_trend`, the 4 correlation derivatives) that neither other path does today. `BackTesterStudy.cpp` is confirmed work-in-progress and not used in production (user, 2026-08-05) — this is not a live-parity risk, but it does call `GetIndicator<T>()` on leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed (Task 11 Step 1's own reference-check would otherwise correctly block on it).
+
+Replace this function's body with the same call used in Step 2 — build a local `MTS::Schema::IndicatorState` and call `PopulateIndicatorState(state)` — rather than hand-porting its individual `GetIndicator<T>()` calls to the new API one by one. This is a net improvement, not just a mechanical port: `zn_trend`/`dx_trend`/the correlation derivatives become populated the same way for all three consumers instead of only this one, for free. Confirm with a diff that no field this function used to populate is silently dropped — if `PopulateIndicatorState`'s switch doesn't yet cover `zn_trend`/`dx_trend`/the 4 correlation derivatives (it doesn't, per Task 2's audit — they're `NotPacked`, deliberately deferred), note this explicitly as an accepted, documented behavior change for a WIP/unused file, not a silent regression.
+
+- [ ] **Step 4: Rewrite `CheckTrigger`**
 
 Since trigger logic (`ShouldTrigger()`) for the ~9 entered/exited-transition families depends on comparing current vs. previous PUBLISHED value — which `m_packed` already tracks via `GetI8`/`GetPrevI8` — reimplement each family's trigger condition as a small free function or inline check keyed by `IndicatorKey`, operating on `m_packed.GetI8(pos)`/`GetPrevI8(pos)` directly. This generalizes the existing `CheckTrigger`'s "Phase 1.2 Static Metaprogramming Dispatcher" pattern (already devirtualized, already a hand-written switch) — same shape, new data source.
 
-- [ ] **Step 4: Remove the dual-write parity assertion (Task 4) entirely — no old path remains to compare against**
+- [ ] **Step 5: Remove the dual-write parity assertion (Task 4) entirely — no old path remains to compare against**
 
-- [ ] **Step 5: Build and verify**
+- [ ] **Step 6: Build and verify**
 
 Run: `./build_dll.sh --no-clean`. If a replay/backtest environment is available, run one to confirm no crash and no behavior regression around what used to be the `OSCILLATOR_310` special case.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/IndicatorManager.cpp
-git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorState/GetTrainingEventT against packed arrays, root-cause eliminate OSCILLATOR_310 vtable crash from both loops"
+git add src/IndicatorManager.cpp src/BackTesterStudy.cpp
+git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorState/GetTrainingEventT/BackTesterStudy against packed arrays, root-cause eliminate OSCILLATOR_310 vtable crash from all three loops"
 ```
 
 ---
