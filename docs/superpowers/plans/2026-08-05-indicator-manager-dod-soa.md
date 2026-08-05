@@ -1,0 +1,930 @@
+# IndicatorManager DOD/SoA Evolution (Phase II) Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Evolve `IndicatorManager`/`Indicator` from a hand-written heterogeneous `IndicatorStore` + virtual-dispatch pointer array into packed SoA storage with compile-time devirtualized access, root-causing the live `OSCILLATOR_310` virtual-dispatch crash, while keeping `IndicatorManager` as the sole facade callers interact with.
+
+**Architecture:** Two new pure, header-only components (`IndicatorLayout.h`'s descriptor table, `IndicatorPackedState.h`'s packed arrays) are introduced and unit-tested standalone, then wired into `IndicatorManager` as a dual-write alongside the existing `IndicatorStore` (parity-verified, zero behavior change), then call sites are migrated indicator-family by indicator-family, then the hot-path dispatch (`CheckTrigger`, `PopulateIndicatorState`) is rewritten against the packed arrays directly, and finally the old heterogeneous store and virtual hierarchy are deleted.
+
+**Tech Stack:** C++17, Sierra Chart ACSIL, FlatBuffers (schema unchanged this phase), standalone-`g++` unit tests (`tests/cpp/*.cpp`), `./build_dll.sh` for ACSIL-dependent build verification.
+
+**Design spec this plan implements:** `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md` (approved 2026-08-04, corrected 2026-08-05 after independent verification of a Gemini review round — see spec §3.1 and `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_085`/`GEMINI_REVIEW_085`).
+
+## Global Constraints
+
+- `IndicatorManager` remains the sole facade. No code outside `IndicatorManager` ever reads/writes the packed arrays directly.
+- `m_prevI8`/`m_prevF32` are both required — they are read by `ShouldTrigger()`-family logic for entered/exited transition detection (spec §3.1), not just dirty-bit comparison. Never remove them as a "simplification."
+- C++ packed-array order matches `IndicatorState`'s existing FlatBuffer schema field order (floats block, then int8 block). No `../schema/mts_schema.fbs` edits in this plan.
+- No heap allocation in any per-tick hot path (`GetValue`/`SetValue`, `CheckTrigger`, `PopulateIndicatorState`).
+- No virtual dispatch survives in the final state's indicator read/write/serialize hot path.
+- `HmmStateIndicator`, `PredictionState`, `MarketClimateIndicator` are out of scope — already owned by `InferenceManager`, not `IndicatorStore`.
+- Every new pure logic file gets a standalone `tests/cpp/test_*.cpp` (hand-rolled `g++` compile, no mocking framework — this codebase's established convention). ACSIL-dependent changes are build-verified only via `./build_dll.sh --no-clean`.
+- `README-AI.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md` are mirrors — update all four together per the Documentation Sync Contract whenever one changes.
+
+---
+
+## File Structure
+
+| File | Responsibility |
+|---|---|
+| `include/IndicatorLayout.h` (new) | `kIndicatorLayout` descriptor table (`IndicatorKey` -> block/position) + compile-time `IndicatorTraits<Key>`. Pure, no Sierra Chart deps beyond the `IndicatorKey` enum itself. |
+| `include/IndicatorPackedState.h` (new) | The 4 packed arrays (`currentI8`/`prevI8`/`currentF32`/`prevF32`) + `dirtyMask`, plus `GetValue`/`SetValue`/`Reset` operating on raw positions. Pure, no Sierra Chart deps, no dependency on `IndicatorLayout.h` (position-based, key-agnostic — `IndicatorManager` composes the two). |
+| `tests/cpp/test_indicator_layout.cpp` (new) | Completeness/no-duplicate-position tests for `kIndicatorLayout`. |
+| `tests/cpp/test_indicator_packed_state.cpp` (new) | Get/Set/dirty-bit/Reset tests for `IndicatorPackedState`. |
+| `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; eventually loses `IndicatorStore`/`m_indicators`/`GetIndicator<T>()`. |
+| `include/Indicator.h` / `src/Indicator.cpp` (modified) | `Indicator<T>::Update()` gains a packed-slot pointer for dual-write (one generic change). Compute methods progressively extracted to free functions. Eventually loses `BaseIndicator`, `Indicator<T>`, and all leaf classes. |
+| `src/TripleScreen1.cpp`, `TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp` (modified) | Call sites migrated from `GetIndicator<T>(key)->Value()`/`->SetX(...)` to `indMgr.GetValue<Key>()`/`indMgr.SetValue<Key>(ComputeX(...))`, family by family. |
+| `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (modified) | Stale `IndicatorManager` description corrected. |
+
+---
+
+### Task 1: Correct the stale `IndicatorManager` documentation
+
+**Files:**
+- Modify: `CLAUDE.md:120`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (same section, all four mirrors)
+
+**Interfaces:** None — documentation only, zero code risk. This is the lowest-hanging fruit in the whole plan: no dependencies, no build required, immediate accuracy win.
+
+- [ ] **Step 1: Find the stale line in all four mirror docs**
+
+Run: `grep -n "std::array<Indicator" CLAUDE.md README-AI.md .github/copilot-instructions.md GEMINI.md`
+
+Expected: one match per file, all describing `IndicatorManager` the same (stale) way.
+
+- [ ] **Step 2: Replace the stale description in each of the 4 files**
+
+Old text (each file):
+```
+- **`IndicatorManager`** uses DOD: `std::array<Indicator, IndicatorKey::COUNT>` — always use `IndicatorKey` enum lookups, never string hashes or map lookups
+```
+
+New text (each file):
+```
+- **`IndicatorManager`** currently uses a hand-written heterogeneous `IndicatorStore` (~44 differently-typed named members) plus a separate `std::array<BaseIndicator*, MAX_INDICATORS>` pointer-index array for O(1) `IndicatorKey`-enum lookup (`GetIndicator<T>(key)`, never string hashes or map lookups) — this is being migrated to true packed-array (SoA) storage with compile-time devirtualized access; see `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md`.
+```
+
+- [ ] **Step 3: Verify all four files now agree**
+
+Run: `grep -n "IndicatorManager.*currently uses a hand-written" CLAUDE.md README-AI.md .github/copilot-instructions.md GEMINI.md`
+Expected: 4 matches, one per file.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add CLAUDE.md README-AI.md .github/copilot-instructions.md GEMINI.md
+git commit -m "docs: correct stale IndicatorManager architecture description"
+```
+
+---
+
+### Task 2: Audit — produce the `IndicatorLayout.h` descriptor table
+
+**Files:**
+- Create: `include/IndicatorLayout.h`
+- Create: `tests/cpp/test_indicator_layout.cpp`
+
+**Interfaces:**
+- Produces: `enum class StorageBlock : uint8_t { Int8, Float32, NotPacked }`; `struct IndicatorDescriptor { IndicatorKey key; StorageBlock block; size_t position; }`; `constexpr std::array<IndicatorDescriptor, ...> kIndicatorLayout` (one row per published scalar — some keys contribute 0 rows, some contribute 2). `NotPacked` covers keys that are legitimately out of scope for this migration (see Step 1) — they still get a row so every `IndicatorKey` value is accounted for, they just resolve to neither array.
+
+This is the audit this plan's later tasks depend on. It must resolve two things precisely, not approximately:
+
+1. **Which `IndicatorKey` values are genuinely `NotPacked`** (out of scope): `HMM_STATE`, `MARKET_CLIMATE`, `PREDICTION_STATE` (owned by `InferenceManager`, confirmed in spec §2 non-goals); `PREV_HIGH_KEY`, `PREV_LOW_KEY`, `PREV_DAY_HIGH_KEY`, `PREV_DAY_LOW_KEY`, `PREV_FOUR_BAR_HIGH_KEY`, `PREV_FOUR_BAR_LOW_KEY` (confirm these are served by `IndicatorManager`'s separate `DailyCache`/`GetCachedPrevDayHigh()`-style plain getters, not `IndicatorStore`, by grepping their usage — if confirmed, `NotPacked`); `UNKNOWN` (sentinel, `NotPacked`).
+2. **The `IndicatorState`-vs-`TrainingEventT` duality.** `include/Indicator.h:1020-1074`'s `MapIndicatorKeyToTrainingEvent` function is the existing ground-truth for which keys map directly to an `IndicatorState` int8 field via `ind.mutate_X(...)` (e.g. `LONG_MACD` -> `mutate_long_macd`). Several leaf classes' own `AddToTrainingEventFB` overrides write a SECOND value — but not always to `IndicatorState`: some write to `event.indicators->mutate_X_quality(...)` (an `IndicatorState` struct field — e.g. `KANGAROO_TAIL` -> `kangaroo_tail_quality`, confirmed at `Indicator.h:1434-1443`, and the same pattern for `TURTLE_SOUP`/`MOMENTUM_PINBALL`/`ELDER_BREAKOUT`/`NR7`/`CORR_ES_ZN`/`CORR_ES_DX`), while others write to a **top-level `TrainingEventT` field that is NOT part of `IndicatorState`** (e.g. `Macd::AddToTrainingEventFB` sets `event.interm_macd_norm` directly, not `event.indicators->mutate_interm_macd_norm`, at `Indicator.h:1125-1128`; similarly `VolumeIndicator` -> `event.volume_ratio_percent`/`event.volume_imbalance`, `ATRProximityIndicator` -> `event.atr_10`, `PriceMetricsIndicator` -> `event.close_percentile`, `NhNlSignalIndicator` -> `event.nh_nl_daily`, `Impulse` -> `event.indicators->mutate_impulse_run_length` which **is** in `IndicatorState`). Read `../schema/mts_schema.fbs`'s full `TrainingEvent` table definition (not just `IndicatorState`) to confirm which of these top-level `TrainingEventT` fields are genuinely separate scalar fields on that table versus something else. `kIndicatorLayout` covers only what's needed for the LIVE wire path (`Event.indicators: IndicatorState`, published every tick) — fields that exist solely on `TrainingEventT` for offline training-data export and are NOT part of `IndicatorState` are out of scope for the packed arrays (`NotPacked`); they keep being set the way they are today (from the leaf's own working-state POD, per spec §3.4) until/unless a future phase addresses training-only fields.
+
+- [ ] **Step 1: Enumerate every `IndicatorKey` (0-53) against `MapIndicatorKeyToTrainingEvent`'s switch (`Indicator.h:1042-1073`) and every leaf class's own `AddToTrainingEventFB` override**
+
+For each key, record: does it appear in the switch (-> `IndicatorState` int8 field, block `Int8`)? Does its owning leaf class override `AddToTrainingEventFB` with an EXTRA `event.indicators->mutate_X(...)` call (-> a second row, block `Float32`)? Does its owning leaf override write to a `TrainingEventT` top-level field instead (-> `NotPacked` for that companion value, until a later phase)? Is it one of the `DailyCache`/`InferenceManager`-owned keys (-> `NotPacked`)?
+
+Cross-reference `../schema/mts_schema.fbs`'s `IndicatorState` struct (`:219-285`) field-by-field against this enumeration — every int8/float field in that struct must end up with exactly one `Int8`/`Float32` row pointing at it; every field NOT accounted for by a leaf class today is a gap to flag (do not guess — note it and move on, this audit's job is to produce ground truth, not to invent behavior).
+
+- [ ] **Step 2: Write `include/IndicatorLayout.h`**
+
+```cpp
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+#include "Indicator.h"  // IndicatorKey
+
+namespace mts {
+
+enum class StorageBlock : uint8_t { Int8, Float32, NotPacked };
+
+struct IndicatorDescriptor {
+    IndicatorKey  key;
+    StorageBlock  block;
+    size_t        position;  // index within the block's array; 0 when block == NotPacked
+};
+
+// One row per published scalar tied to a *live* IndicatorState field. Some keys
+// contribute a second row (their companion quality/norm/correlation float) —
+// see Step 1's audit for which. Keys with no live IndicatorState field at all
+// (InferenceManager-owned, DailyCache-owned, or TrainingEventT-only companions
+// not yet part of IndicatorState) get a single NotPacked row so every
+// IndicatorKey value is accounted for exactly once per row-count.
+//
+// Produced by the Task 2 audit (docs/superpowers/plans/2026-08-05-indicator-manager-dod-soa.md).
+//
+// CONFIRMED rows below (verified directly against include/Indicator.h:1042-1073's
+// MapIndicatorKeyToTrainingEvent switch, and against each named leaf class's own
+// AddToTrainingEventFB override, during plan research) — Step 1 should sanity-check
+// these, not re-derive them from scratch, then resolve every UNCONFIRMED key.
+inline constexpr std::array<IndicatorDescriptor, /* N, see UNCONFIRMED below */> kIndicatorLayout = {{
+    // -- Confirmed Int8-block rows (present in MapIndicatorKeyToTrainingEvent's switch,
+    //    Indicator.h:1043-1071; positions are assignment order, renumber if Step 1 finds
+    //    a reason to reorder to match IndicatorState's own field order more closely) --
+    { IndicatorKey::LONG_MACD,               StorageBlock::Int8, 0 },
+    { IndicatorKey::LONG_FI13_SIGNAL,         StorageBlock::Int8, 1 },
+    { IndicatorKey::LONG_MACD_DIVERGENCE,     StorageBlock::Int8, 2 },
+    { IndicatorKey::LONG_IMP,                 StorageBlock::Int8, 3 },
+    { IndicatorKey::INTERM_STOCHASTIC,        StorageBlock::Int8, 4 },
+    { IndicatorKey::RASCHKE_STRATEGY_SETUP,   StorageBlock::Int8, 5 },
+    { IndicatorKey::RASCHKE_TACTICAL_TRIGGER, StorageBlock::Int8, 6 },
+    { IndicatorKey::RSI,                      StorageBlock::Int8, 7 },
+    { IndicatorKey::INTERM_FI2_SIGNAL,        StorageBlock::Int8, 8 },
+    { IndicatorKey::EMA_PROXIMITY,            StorageBlock::Int8, 9 },
+    { IndicatorKey::PRICE_METRICS,            StorageBlock::Int8, 10 },
+    { IndicatorKey::INTERM_MACD_DIVERGENCE,   StorageBlock::Int8, 11 },
+    { IndicatorKey::INTERM_IMP,               StorageBlock::Int8, 12 },
+    { IndicatorKey::INTERM_MACD,              StorageBlock::Int8, 13 },
+    { IndicatorKey::STRUCTURE_TEST,           StorageBlock::Int8, 14 },
+    { IndicatorKey::VOLUME_SIGNAL,            StorageBlock::Int8, 15 },
+    { IndicatorKey::ATR_PROXIMITY,            StorageBlock::Int8, 16 },
+    // DAILY_BIAS writes BOTH daily_bias AND daily_bias_enum from the same intValue()
+    // (Indicator.h:1060-1063) — two IndicatorState int8 fields, one source value.
+    // Step 1: confirm both fields are genuinely meant to always be identical (if so,
+    // one packed slot + writing it to both mutators at serialization time is enough;
+    // if they can legitimately diverge, this key needs two Int8 rows instead of one).
+    { IndicatorKey::DAILY_BIAS,               StorageBlock::Int8, 17 },
+    { IndicatorKey::KANGAROO_TAIL,            StorageBlock::Int8, 18 },
+    { IndicatorKey::TURTLE_SOUP,              StorageBlock::Int8, 19 },
+    { IndicatorKey::MOMENTUM_PINBALL,         StorageBlock::Int8, 20 },
+    { IndicatorKey::ELDER_BREAKOUT,           StorageBlock::Int8, 21 },
+    { IndicatorKey::NR7,                      StorageBlock::Int8, 22 },
+    { IndicatorKey::NH_NL_SIGNAL,             StorageBlock::Int8, 23 },
+    { IndicatorKey::OSCILLATOR_310,           StorageBlock::Int8, 24 },  // confirmed NO companion override at all (Indicator.h:2526-2566) — the OSCILLATOR_310 crash-fix target
+    { IndicatorKey::TIME_OF_DAY,              StorageBlock::Int8, 25 },
+
+    // -- Confirmed Float32-block companion rows (leaf class's own AddToTrainingEventFB
+    //    override writes an EXTRA event.indicators->mutate_X_quality(...) call, confirmed
+    //    to be a real IndicatorState struct field, not a TrainingEventT-only field) --
+    { IndicatorKey::KANGAROO_TAIL,    StorageBlock::Float32, 0 },  // kangaroo_tail_quality, Indicator.h:1434-1443
+    { IndicatorKey::TURTLE_SOUP,      StorageBlock::Float32, 1 },  // turtle_soup_quality, Indicator.h:1490-1497 (verify exact line at implementation time)
+    { IndicatorKey::MOMENTUM_PINBALL, StorageBlock::Float32, 2 },  // momentum_pinball_quality
+    { IndicatorKey::ELDER_BREAKOUT,   StorageBlock::Float32, 3 },  // elder_breakout_quality
+    { IndicatorKey::NR7,              StorageBlock::Float32, 4 },  // nr7_quality
+    // CorrelationIndicator (direct BaseIndicator subclass, not Indicator<T>) writes
+    // corr_es_zn/corr_es_dx directly by key comparison, not via the switch — confirmed
+    // at Indicator.h:2662-2674ish (verify exact line at implementation time).
+    { IndicatorKey::CORR_ES_ZN, StorageBlock::Float32, 5 },
+    { IndicatorKey::CORR_ES_DX, StorageBlock::Float32, 6 },
+
+    // -- Confirmed NotPacked (InferenceManager-owned, out of scope per spec §2) --
+    { IndicatorKey::HMM_STATE,        StorageBlock::NotPacked, 0 },
+    { IndicatorKey::MARKET_CLIMATE,   StorageBlock::NotPacked, 0 },
+    { IndicatorKey::PREDICTION_STATE, StorageBlock::NotPacked, 0 },
+    { IndicatorKey::UNKNOWN,          StorageBlock::NotPacked, 0 },
+
+    // -- UNCONFIRMED — this is Step 1's actual remaining audit work. Each of these
+    //    needs its owning leaf class (or DailyCache/other owner) read directly to
+    //    determine block/position, exactly like the confirmed rows above were:
+    //    LONG_MKT_ACTION, SHORT_MKT_ACTION, SIDE, MARKET_SYMBOL, OVERNIGHT_EXIT,
+    //    HURST_EXPONENT, PREV_HIGH_KEY, PREV_LOW_KEY, PREV_DAY_HIGH_KEY,
+    //    PREV_DAY_LOW_KEY, PREV_FOUR_BAR_HIGH_KEY, PREV_FOUR_BAR_LOW_KEY,
+    //    THREE_LINE_OSCILLATOR, THREE_LINE_OSCILLATOR_PREV, ZN_TREND, DX_TREND,
+    //    CORR_ES_ZN_DELTA, CORR_ES_ZN_ACCEL, CORR_ES_DX_DELTA, CORR_ES_DX_ACCEL, VWAP.
+    //    Known discrepancy to document (not silently resolve) while auditing: Macd's
+    //    own AddToTrainingEventFB override (Indicator.h:1125-1128) unconditionally
+    //    writes `event.interm_macd_norm = m_zScore` regardless of whether the specific
+    //    Macd instance's Key() is LONG_MACD or INTERM_MACD (the Macd class is
+    //    instantiated for both) — whichever populates last silently wins. This field is
+    //    on TrainingEventT, not IndicatorState, so it's NotPacked either way for this
+    //    phase, but flag the discrepancy in the audit's writeup regardless.
+}};
+
+constexpr size_t kIndicatorLayoutCount = kIndicatorLayout.size();
+
+// Total slots needed in each block — computed once, used to size IndicatorPackedState's arrays.
+constexpr size_t CountBlock(StorageBlock target) {
+    size_t maxPos = 0;
+    bool any = false;
+    for (const auto& d : kIndicatorLayout) {
+        if (d.block == target) {
+            any = true;
+            if (d.position + 1 > maxPos) maxPos = d.position + 1;
+        }
+    }
+    return any ? maxPos : 0;
+}
+
+constexpr size_t kIndicatorLayoutI8Count  = CountBlock(StorageBlock::Int8);
+constexpr size_t kIndicatorLayoutF32Count = CountBlock(StorageBlock::Float32);
+
+}  // namespace mts
+```
+
+The `<FULL TABLE>` placeholder above is intentionally the one piece of content this step produces from Step 1's audit — this is the audit's deliverable, not a plan placeholder to leave unresolved; the implementer fills every row from what Step 1 found, with no row guessed.
+
+- [ ] **Step 3: Write `tests/cpp/test_indicator_layout.cpp`**
+
+```cpp
+#include "IndicatorLayout.h"
+
+#include <cstdio>
+#include <set>
+
+using namespace mts;
+
+namespace {
+int g_failures = 0;
+void check(const char* name, bool ok) {
+    if (ok) { std::printf("  PASS  %s\n", name); }
+    else { ++g_failures; std::printf("  FAIL  %s\n", name); }
+}
+}  // namespace
+
+int main() {
+    std::printf("IndicatorLayout tests\n");
+
+    // Every row's position is unique within its own block (no two int8 rows
+    // claim the same slot; same for float32).
+    {
+        std::set<size_t> i8Positions, f32Positions;
+        bool noCollision = true;
+        for (const auto& d : kIndicatorLayout) {
+            if (d.block == StorageBlock::Int8) {
+                if (!i8Positions.insert(d.position).second) noCollision = false;
+            } else if (d.block == StorageBlock::Float32) {
+                if (!f32Positions.insert(d.position).second) noCollision = false;
+            }
+        }
+        check("no_position_collisions_within_a_block", noCollision);
+    }
+
+    // Positions within each block are a dense 0..N-1 range (no gaps) — required
+    // for the packed arrays to actually be densely packed, not sparse.
+    {
+        std::set<size_t> i8Positions, f32Positions;
+        for (const auto& d : kIndicatorLayout) {
+            if (d.block == StorageBlock::Int8) i8Positions.insert(d.position);
+            else if (d.block == StorageBlock::Float32) f32Positions.insert(d.position);
+        }
+        bool i8Dense = i8Positions.empty() || (*i8Positions.rbegin() == i8Positions.size() - 1);
+        bool f32Dense = f32Positions.empty() || (*f32Positions.rbegin() == f32Positions.size() - 1);
+        check("int8_positions_are_dense", i8Dense);
+        check("float32_positions_are_dense", f32Dense);
+    }
+
+    // kIndicatorLayoutI8Count/F32Count match the actual distinct position counts.
+    check("i8_count_matches_layout", kIndicatorLayoutI8Count > 0);
+    check("f32_count_matches_layout", kIndicatorLayoutF32Count > 0);
+
+    std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
+                g_failures, g_failures == 1 ? "" : "s");
+    return g_failures == 0 ? 0 : 1;
+}
+```
+
+- [ ] **Step 4: Run the test, verify it passes**
+
+Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_layout.cpp -o /tmp/test_layout && /tmp/test_layout`
+Expected: `ALL PASS (0 failures)`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add include/IndicatorLayout.h tests/cpp/test_indicator_layout.cpp
+git commit -m "feat(indicator-manager): audit IndicatorKey layout, add kIndicatorLayout descriptor table"
+```
+
+---
+
+### Task 3: `IndicatorPackedState` — the pure packed-array core
+
+**Files:**
+- Create: `include/IndicatorPackedState.h`
+- Create: `tests/cpp/test_indicator_packed_state.cpp`
+
+**Interfaces:**
+- Consumes: `mts::kIndicatorLayoutI8Count`, `mts::kIndicatorLayoutF32Count` (Task 2).
+- Produces: `class IndicatorPackedState` with `int8_t GetI8(size_t pos) const`, `void SetI8(size_t pos, int8_t v, uint64_t keyBit)`, `float GetF32(size_t pos) const`, `void SetF32(size_t pos, float v, uint64_t keyBit)`, `bool IsDirty(uint64_t keyBit) const`, `uint64_t DirtyMask() const`, `void ClearDirtyMask()`, `void Reset(const std::array<int8_t, N_I8>& defaultsI8, const std::array<float, N_F32>& defaultsF32)`. Position-based and key-agnostic — it knows nothing about `IndicatorKey`; `IndicatorManager` (Task 4) is what maps a key to a position via `kIndicatorLayout` and calls these by position.
+
+This is deliberately position-based, not key-based — keeping `IndicatorLayout.h` (the key<->position mapping) and `IndicatorPackedState.h` (the raw storage) as two independently testable, single-responsibility units, composed by `IndicatorManager` (Task 4).
+
+- [ ] **Step 1: Write the failing tests first**
+
+```cpp
+// tests/cpp/test_indicator_packed_state.cpp
+#include "IndicatorPackedState.h"
+
+#include <cstdio>
+
+using namespace mts;
+
+namespace {
+int g_failures = 0;
+void check(const char* name, bool ok) {
+    if (ok) { std::printf("  PASS  %s\n", name); }
+    else { ++g_failures; std::printf("  FAIL  %s\n", name); }
+}
+}  // namespace
+
+int main() {
+    std::printf("IndicatorPackedState tests\n");
+
+    {
+        IndicatorPackedState<4, 2> state;
+        check("cold_start_i8_is_zero", state.GetI8(0) == 0);
+        check("cold_start_f32_is_zero", state.GetF32(0) == 0.0f);
+        check("cold_start_dirty_mask_is_zero", state.DirtyMask() == 0);
+    }
+
+    // Setting a value that actually changes sets the dirty bit AND updates prev.
+    {
+        IndicatorPackedState<4, 2> state;
+        constexpr uint64_t kBit = 1ULL << 3;
+        state.SetI8(0, 5, kBit);
+        check("set_i8_updates_current", state.GetI8(0) == 5);
+        check("set_i8_sets_dirty_bit", (state.DirtyMask() & kBit) != 0);
+        check("set_i8_updates_prev_to_old_value", state.GetPrevI8(0) == 0);
+    }
+
+    // Setting the SAME value again does not re-flip the dirty bit's meaning of
+    // "changed since last clear" — but it must not corrupt prev either.
+    {
+        IndicatorPackedState<4, 2> state;
+        constexpr uint64_t kBit = 1ULL << 3;
+        state.SetI8(0, 5, kBit);
+        state.ClearDirtyMask();
+        state.SetI8(0, 5, kBit);  // same value again
+        check("setting_same_value_again_does_not_set_dirty_bit", (state.DirtyMask() & kBit) == 0);
+        check("prev_still_reflects_last_real_change", state.GetPrevI8(0) == 0);
+    }
+
+    // Float path mirrors the int8 path.
+    {
+        IndicatorPackedState<4, 2> state;
+        constexpr uint64_t kBit = 1ULL << 7;
+        state.SetF32(1, 3.5f, kBit);
+        check("set_f32_updates_current", state.GetF32(1) == 3.5f);
+        check("set_f32_sets_dirty_bit", (state.DirtyMask() & kBit) != 0);
+        check("set_f32_updates_prev_to_old_value", state.GetPrevF32(1) == 0.0f);
+    }
+
+    // Reset restores compile-time defaults and clears dirty state for touched keys.
+    {
+        IndicatorPackedState<4, 2> state;
+        constexpr uint64_t kBit = 1ULL << 3;
+        state.SetI8(0, 5, kBit);
+        std::array<int8_t, 4> defaultsI8 = {9, 0, 0, 0};
+        std::array<float, 2> defaultsF32 = {0.0f, 0.0f};
+        state.Reset(defaultsI8, defaultsF32);
+        check("reset_restores_i8_default", state.GetI8(0) == 9);
+        check("reset_restores_i8_prev_to_default_too", state.GetPrevI8(0) == 9);
+        check("reset_clears_dirty_mask", state.DirtyMask() == 0);
+    }
+
+    std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
+                g_failures, g_failures == 1 ? "" : "s");
+    return g_failures == 0 ? 0 : 1;
+}
+```
+
+- [ ] **Step 2: Run to verify it fails (header doesn't exist yet)**
+
+Run: `g++ -std=c++17 -I include tests/cpp/test_indicator_packed_state.cpp -o /tmp/test_pack`
+Expected: compile error, `IndicatorPackedState.h` not found.
+
+- [ ] **Step 3: Write `include/IndicatorPackedState.h`**
+
+```cpp
+#pragma once
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+
+namespace mts {
+
+// Pure, header-only, key-agnostic packed storage for all published indicator
+// values. N_I8/N_F32 are the exact block sizes from IndicatorLayout.h's audit
+// (docs/superpowers/plans/2026-08-05-indicator-manager-dod-soa.md, Task 2/3).
+// Position-based: the caller (IndicatorManager) maps an IndicatorKey to a
+// position via kIndicatorLayout and calls these by position — this class knows
+// nothing about IndicatorKey at all.
+//
+// m_prevI8/m_prevF32 are NOT a dirty-bit convenience that could be dropped —
+// they are read by ShouldTrigger()-style entered/exited transition logic for
+// at least 9 indicator families (see the design spec, §3.1). Do not remove them.
+template <size_t N_I8, size_t N_F32>
+class IndicatorPackedState {
+public:
+    int8_t GetI8(size_t pos) const { return m_currentI8[pos]; }
+    int8_t GetPrevI8(size_t pos) const { return m_prevI8[pos]; }
+    float GetF32(size_t pos) const { return m_currentF32[pos]; }
+    float GetPrevF32(size_t pos) const { return m_prevF32[pos]; }
+
+    void SetI8(size_t pos, int8_t value, uint64_t keyBit) {
+        if (value != m_currentI8[pos]) {
+            m_prevI8[pos] = m_currentI8[pos];
+            m_currentI8[pos] = value;
+            m_dirtyMask |= keyBit;
+        }
+    }
+
+    void SetF32(size_t pos, float value, uint64_t keyBit) {
+        if (value != m_currentF32[pos]) {
+            m_prevF32[pos] = m_currentF32[pos];
+            m_currentF32[pos] = value;
+            m_dirtyMask |= keyBit;
+        }
+    }
+
+    bool IsDirty(uint64_t keyBit) const { return (m_dirtyMask & keyBit) != 0; }
+    uint64_t DirtyMask() const { return m_dirtyMask; }
+    void ClearDirtyMask() { m_dirtyMask = 0; }
+
+    void Reset(const std::array<int8_t, N_I8>& defaultsI8,
+               const std::array<float, N_F32>& defaultsF32) {
+        m_currentI8 = defaultsI8;
+        m_prevI8 = defaultsI8;
+        m_currentF32 = defaultsF32;
+        m_prevF32 = defaultsF32;
+        m_dirtyMask = 0;
+    }
+
+private:
+    alignas(64) std::array<int8_t, N_I8>  m_currentI8{};
+    alignas(64) std::array<int8_t, N_I8>  m_prevI8{};
+    alignas(64) std::array<float,  N_F32> m_currentF32{};
+    alignas(64) std::array<float,  N_F32> m_prevF32{};
+    uint64_t m_dirtyMask = 0;
+};
+
+}  // namespace mts
+```
+
+- [ ] **Step 4: Run the tests, verify they pass**
+
+Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_packed_state.cpp -o /tmp/test_pack && /tmp/test_pack`
+Expected: `ALL PASS (0 failures)`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add include/IndicatorPackedState.h tests/cpp/test_indicator_packed_state.cpp
+git commit -m "feat(indicator-manager): add pure IndicatorPackedState packed-array core"
+```
+
+---
+
+### Task 4: Wire dual-write into `IndicatorManager` (primary value only, no call-site changes)
+
+**Files:**
+- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp`
+- Modify: `include/Indicator.h` (one generic change to `Indicator<T>::Update()`)
+
+**Interfaces:**
+- Consumes: `mts::IndicatorPackedState<mts::kIndicatorLayoutI8Count, mts::kIndicatorLayoutF32Count>` (Task 3), `mts::kIndicatorLayout` (Task 2).
+- Produces: `IndicatorManager::m_packed` (private member); a debug-only parity assertion. No public API changes yet — every existing caller keeps working unmodified.
+
+This is the highest-leverage low-risk step: one change to a single shared base-class method (`Indicator<T>::Update()`) makes every indicator using that template dual-write automatically, with no per-indicator or per-call-site changes. Only the small set of leaf classes with a companion float NOT covered by `Indicator<T>::Update()` (their own quality-score/norm setters) need one line each — deferred to this task's Step 4, using Task 2's audit to know exactly which classes those are.
+
+- [ ] **Step 1: Add a packed-slot pointer to `Indicator<T>`**
+
+In `include/Indicator.h`, inside `template <typename T> class Indicator : public BaseIndicator`:
+
+```cpp
+protected:
+    IndicatorKey m_key;
+    T m_defaultValue;
+    T m_value;
+    T m_prevValue;
+    uint64_t* m_dirty_mask_ptr = nullptr;
+    int8_t* m_packedSlotI8 = nullptr;  // dual-write target during Phase II migration; nullptr = not yet wired
+
+public:
+    // ... existing methods unchanged ...
+
+    void SetPackedSlotPointer(int8_t* slot) { m_packedSlotI8 = slot; }
+
+    void Update(const T& newValue) {
+        if (newValue != m_value) {
+            m_prevValue = m_value;
+            m_value = newValue;
+            if (m_dirty_mask_ptr) {
+                *m_dirty_mask_ptr |= KeyBit();
+            }
+            if (m_packedSlotI8) {
+                *m_packedSlotI8 = static_cast<int8_t>(newValue);
+            }
+        }
+    }
+```
+
+- [ ] **Step 2: Add `m_packed` to `IndicatorManager` and wire slot pointers at construction**
+
+In `include/IndicatorManager.h`'s private section, alongside the existing `IndicatorStore m_store;`:
+
+```cpp
+mts::IndicatorPackedState<mts::kIndicatorLayoutI8Count, mts::kIndicatorLayoutF32Count> m_packed;
+```
+
+Add `#include "IndicatorLayout.h"` and `#include "IndicatorPackedState.h"` near the existing `#include "Indicator.h"`.
+
+In `src/IndicatorManager.cpp`'s constructor, immediately after the existing `m_indicators[key] = &m_store.x` assignment lines, add one `SetPackedSlotPointer` call per int8-block entry in `kIndicatorLayout` (from Task 2's audit), e.g.:
+
+```cpp
+m_store.long_macd.SetPackedSlotPointer(&m_packedRawI8[/* position from kIndicatorLayout for LONG_MACD */]);
+```
+
+(Exact positions come from Task 2's completed `kIndicatorLayout` — this step is mechanical once that table exists: one line per `Int8`-block row, using the row's own `position`.)
+
+Since `IndicatorPackedState` doesn't expose raw array pointers (by design — it's the caller's job to go through `SetI8`/`GetI8` by position, not poke the array directly), add a package-private accessor for this specific wiring purpose only:
+
+```cpp
+// In IndicatorPackedState<N_I8, N_F32>, public section:
+int8_t* RawI8Pointer(size_t pos) { return &m_currentI8[pos]; }
+```
+
+Add a test in `tests/cpp/test_indicator_packed_state.cpp` confirming `*state.RawI8Pointer(0) = 7; check(state.GetI8(0) == 7)` — the raw pointer and the accessor must reference the same storage.
+
+- [ ] **Step 3: Add a debug-only parity assertion**
+
+In `src/IndicatorManager.cpp`, in whatever function runs once per tick after indicator updates settle (locate the existing per-tick update path — likely near where `HasSignificantChange()`/`m_dirty_mask` is read), add:
+
+```cpp
+#ifndef NDEBUG
+void IndicatorManager::AssertPackedStateParity() const {
+    for (const auto& desc : mts::kIndicatorLayout) {
+        if (desc.block != mts::StorageBlock::Int8) continue;
+        auto* base = m_indicators[static_cast<size_t>(desc.key)];
+        if (!base) continue;
+        const int8_t oldPathValue = static_cast<int8_t>(base->intValue());
+        const int8_t newPathValue = m_packed.GetI8(desc.position);
+        assert(oldPathValue == newPathValue && "IndicatorPackedState dual-write parity violation");
+    }
+}
+#endif
+```
+
+Call it once per tick, right after the point where all indicator updates for that tick have been applied (do not call it mid-update — only after both paths have had a chance to settle for the tick).
+
+- [ ] **Step 4: Wire the companion-float leaf classes' own setters (from Task 2's audit)**
+
+For each `Int8`-block key whose leaf class ALSO has a `Float32`-block companion row confirmed by Task 2's audit (e.g. `KANGAROO_TAIL`'s `m_qualityScore`, set inside `KangarooTail::SetContext(...)` — verify the exact setter name/location per leaf, they differ), add one dual-write line at the point the companion field is actually assigned, mirroring Step 1's pattern:
+
+```cpp
+// KangarooTail::SetContext(...), after m_qualityScore is computed/assigned:
+if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
+```
+
+This requires the same `SetPackedSlotPointer`-style plumbing added to each such leaf class specifically (they don't share a common template method for their companion field the way primary values share `Indicator<T>::Update()`), wired in the constructor alongside Step 2's `Int8` wiring, using the row's `Float32`-block position from `kIndicatorLayout`.
+
+- [ ] **Step 5: Build and confirm parity holds**
+
+Run: `./build_dll.sh --no-clean`
+Expected: build succeeds; no behavior change (dual-write is purely additive — nothing reads `m_packed` externally yet). If a debug build is exercised via replay, confirm the parity assertion never fires.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add include/Indicator.h include/IndicatorManager.h src/IndicatorManager.cpp
+git commit -m "feat(indicator-manager): dual-write into IndicatorPackedState alongside IndicatorStore"
+```
+
+---
+
+### Task 5: First proof-of-pattern migration — `Side` (trivially simple, single scalar, no companion field)
+
+**Files:**
+- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (add `GetValue<Key>()`/`SetValue<Key>()`)
+- Modify: whichever call site(s) currently reference `IndicatorKey::SIDE` (locate via `grep -rn "IndicatorKey::SIDE" src/`)
+
+**Interfaces:**
+- Produces: `template <IndicatorKey Key> auto IndicatorManager::GetValue() const`, `template <IndicatorKey Key> void IndicatorManager::SetValue(...)` — the first two real, working instances of the compile-time API from the design spec §3.3, proven against the simplest possible case before extending to anything with more surface area.
+
+`Side` (`Indicator<TradeSideEnum>`, `include/Indicator.h:1199-1206`) has no compute method beyond the generic `Update()` and no companion float — it is the lowest-risk possible first cutover.
+
+- [ ] **Step 1: Add lookup helpers to `IndicatorLayout.h` — designed up front for keys with TWO rows**
+
+`kIndicatorLayout` (Task 2) has ~15 keys that contribute two rows (one `Int8`, one `Float32` — e.g. `LONG_MACD`/`INTERM_MACD` per Task 6, `KANGAROO_TAIL` et al. per Task 8). A lookup keyed by `IndicatorKey` alone cannot tell those two rows apart. Design the lookup with an explicit `(Key, Block)` form from the start, plus a convenience single-row form for the majority of keys that only ever have one row:
+
+```cpp
+// include/IndicatorLayout.h, appended:
+
+// Explicit form — always unambiguous, required for any key with two rows.
+constexpr IndicatorDescriptor DescriptorFor(IndicatorKey key, StorageBlock block) {
+    for (const auto& d : kIndicatorLayout) {
+        if (d.key == key && d.block == block) return d;
+    }
+    return IndicatorDescriptor{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+}
+
+// Convenience form for single-row keys only — resolves to NotPacked (triggering
+// a static_assert at the call site) if the key has zero or two rows, so a
+// two-row key can never silently resolve to "whichever row happens to come
+// first in the array."
+constexpr IndicatorDescriptor UniqueDescriptorFor(IndicatorKey key) {
+    IndicatorDescriptor found{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+    int matchCount = 0;
+    for (const auto& d : kIndicatorLayout) {
+        if (d.key == key) { found = d; ++matchCount; }
+    }
+    return (matchCount == 1) ? found : IndicatorDescriptor{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+}
+```
+
+- [ ] **Step 2: Add `GetValue`/`SetValue` (single-row and explicit-block overloads) to `IndicatorManager`**
+
+```cpp
+// include/IndicatorManager.h, public section:
+
+// Single-row form — the common case (SIDE, and every other one-row key).
+template <IndicatorKey Key>
+auto GetValue() const {
+    constexpr auto desc = mts::UniqueDescriptorFor(Key);
+    static_assert(desc.block != mts::StorageBlock::NotPacked,
+                  "IndicatorKey has zero or two rows — use GetValue<Key, Block>() instead");
+    if constexpr (desc.block == mts::StorageBlock::Int8) {
+        return m_packed.GetI8(desc.position);
+    } else {
+        return m_packed.GetF32(desc.position);
+    }
+}
+
+template <IndicatorKey Key, typename V>
+void SetValue(V value) {
+    constexpr auto desc = mts::UniqueDescriptorFor(Key);
+    static_assert(desc.block != mts::StorageBlock::NotPacked,
+                  "IndicatorKey has zero or two rows — use SetValue<Key, Block>() instead");
+    constexpr uint64_t keyBit = 1ULL << static_cast<uint64_t>(Key);
+    if constexpr (desc.block == mts::StorageBlock::Int8) {
+        m_packed.SetI8(desc.position, static_cast<int8_t>(value), keyBit);
+    } else {
+        m_packed.SetF32(desc.position, static_cast<float>(value), keyBit);
+    }
+}
+
+// Explicit-block form — required for the ~15 two-row keys (Tasks 6, 8). Task 6
+// is this overload's first real caller; do not defer designing it until then.
+template <IndicatorKey Key, mts::StorageBlock Block>
+auto GetValue() const {
+    constexpr auto desc = mts::DescriptorFor(Key, Block);
+    static_assert(desc.block != mts::StorageBlock::NotPacked, "no row for this (key, block) pair");
+    if constexpr (Block == mts::StorageBlock::Int8) {
+        return m_packed.GetI8(desc.position);
+    } else {
+        return m_packed.GetF32(desc.position);
+    }
+}
+
+template <IndicatorKey Key, mts::StorageBlock Block, typename V>
+void SetValue(V value) {
+    constexpr auto desc = mts::DescriptorFor(Key, Block);
+    static_assert(desc.block != mts::StorageBlock::NotPacked, "no row for this (key, block) pair");
+    constexpr uint64_t keyBit = 1ULL << static_cast<uint64_t>(Key);
+    if constexpr (Block == mts::StorageBlock::Int8) {
+        m_packed.SetI8(desc.position, static_cast<int8_t>(value), keyBit);
+    } else {
+        m_packed.SetF32(desc.position, static_cast<float>(value), keyBit);
+    }
+}
+```
+
+- [ ] **Step 3: Cut over `SIDE`'s call site(s)**
+
+Locate the exact call site(s) via `grep -rn "IndicatorKey::SIDE" src/ include/`. Change from the `GetIndicator<Side>(IndicatorKey::SIDE)->Update(newSide)` / `->Value()` pattern to:
+
+```cpp
+indMgr.SetValue<IndicatorKey::SIDE>(newSide);
+// ... and reads:
+const auto side = indMgr.GetValue<IndicatorKey::SIDE>();
+```
+
+Since `TradeSideEnum` is not `int8_t`/`float` directly, confirm the exact enum's underlying type is `int8_t`-compatible (check `enum class TradeSideEnum : int8_t` or equivalent in `Indicator.h`) — if the underlying type differs, the `static_cast`s in Step 2 need the caller to cast back to the enum type at the call site (`static_cast<TradeSideEnum>(indMgr.GetValue<IndicatorKey::SIDE>())`), matching the design spec §3.3's typed-accessor intent; if this friction is real (not just theoretical), note it — Task 6 revisits it once a second example (with a real companion field) is in hand, to decide whether `IndicatorTraits<Key>` should carry the true enum return type (spec §3.3's stated intent) rather than leaving casts at call sites.
+
+- [ ] **Step 4: Remove `SIDE`'s dual-write assertion coverage (it's now single-source-of-truth)**
+
+In `AssertPackedStateParity()` (Task 4, Step 3), the `SIDE` row's comparison is now comparing the new path against itself once the old `m_store.side`/`m_indicators[SIDE]` accessor is no longer being updated by any live call site. Either remove `SIDE` from the parity loop, or confirm the old `Side` object is still updated by nothing and its value is now frozen/irrelevant. Prefer explicit removal from the parity loop with a comment noting `SIDE` is cut over.
+
+- [ ] **Step 5: Build and verify**
+
+Run: `./build_dll.sh --no-clean`
+Expected: build succeeds; behavior unchanged (same value, same semantics, different physical storage).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add include/IndicatorLayout.h include/IndicatorManager.h src/IndicatorManager.cpp <call-site files>
+git commit -m "feat(indicator-manager): cut SIDE over to packed-array GetValue/SetValue (proof of pattern)"
+```
+
+---
+
+### Task 6: Second proof-of-pattern migration — `Macd` (stateful compute extraction; single packed row + one preserved `NotPacked` companion)
+
+**Files:**
+- Modify: `include/Indicator.h`, `src/Indicator.cpp` (extract `Macd::SetFromChart`'s compute logic to a free function)
+- Modify: call site(s) referencing `IndicatorKey::LONG_MACD`/`INTERM_MACD` (`grep -rn "IndicatorKey::LONG_MACD\|IndicatorKey::INTERM_MACD" src/`)
+
+**Interfaces:**
+- Consumes: Task 5's `GetValue<Key>()`/`SetValue<Key>()`.
+- Produces: a free function `MacdResult ComputeMacd(MacdState& state, double macdDiffValue)` returning `{ MacdEnum signal; float zScore; }`, replacing `Macd::SetFromChart`'s body. Proves the "needs running history" shape most of the remaining simple indicators share. Does NOT prove the two-row `(Key, Block)` API — `Macd`'s companion turned out to be `NotPacked` (see Step 3) — that gets its first real exercise in Task 8.
+
+- [ ] **Step 1: Extract `Macd::SetFromChart`'s body into a free function**
+
+Read the full current `Macd::SetFromChart` (`src/Indicator.cpp:72-...`) and `Macd`'s private state (`m_macdHistory`, `m_historyIdx`, `m_historyCount`, `kLookback`) before starting — this step's exact diff depends on that full body, which must be read fresh at implementation time (do not guess it from this plan; it was only partially quoted during spec/plan research).
+
+Shape to produce (mirroring the `VwapState`/`ComputeVwap` convention from the design spec §3.5):
+
+```cpp
+// include/IndicatorComputations.h (new, or fold into IndicatorLayout.h's neighborhood — implementer's call, keep it pure)
+struct MacdState {
+    static constexpr int kLookback = /* current Macd::kLookback value */;
+    std::array<double, kLookback> history{};
+    int historyIdx = 0;
+    int historyCount = 0;
+};
+
+struct MacdResult {
+    MacdEnum signal;
+    float zScore;
+};
+
+MacdResult ComputeMacd(MacdState& state, double macdDiffValue);
+```
+
+- [ ] **Step 2: Write a standalone test for `ComputeMacd` before wiring it in**
+
+Create `tests/cpp/test_indicator_computations.cpp` (this becomes the home for all such extracted compute functions across Tasks 6/8/9 — one growing file, not one per indicator, matching how `StudyHelperFunctions.h`'s free functions are already organized in this codebase). Cover: cold start (fewer than 5 history samples -> `zScore == 0`), a known-in-advance sequence producing a specific z-score (hand-computed), and a sign-change in `macdDiffValue` producing the expected `MacdEnum` transition.
+
+- [ ] **Step 3: Cut `Macd`'s call site(s) over**
+
+`Macd`'s z-score companion (`m_zScore`, written to `event.interm_macd_norm`) is `NotPacked` per Task 2's audit (it's a `TrainingEventT`-only field, not a real `IndicatorState` field — unlike `KangarooTail`'s quality score, which IS in `IndicatorState`). So `LONG_MACD`/`INTERM_MACD` are **single-row** keys for the packed arrays — this task proves the "stateful compute extraction" pattern (running history in an explicit state struct), not the two-row `(Key, Block)` API from Task 5 Step 1/2. The two-row API's first real exercise is Task 8 (`KANGAROO_TAIL` et al.), which do have confirmed `IndicatorState` `Float32` companions.
+
+Replace the `GetIndicator<Macd>(IndicatorKey::LONG_MACD)->SetFromChart(MACD_Diff, Index)` pattern with:
+
+```cpp
+const auto result = ComputeMacd(m_longMacdState, MACD_Diff[Index]);
+indMgr.SetValue<IndicatorKey::LONG_MACD>(result.signal);
+```
+
+`result.zScore` is NOT written through `IndicatorManager` — it stays `NotPacked` this phase. See Step 4 below for what happens to it once `Macd`'s leaf class (its only current write-path) is deleted in Task 10.
+
+Where `MacdState` (the running history) needs to live: as a member of whatever owns the call site today (mirroring how `m_longMacdState` would replace `m_store.long_macd`'s object identity) — confirm with a grep of the current call site's enclosing scope before deciding exactly where.
+
+- [ ] **Step 4: Preserve the `NotPacked` companion write (`interm_macd_norm`) — do not let it silently disappear in Task 10**
+
+Today, `event.interm_macd_norm = m_zScore` is written from inside `Macd::AddToTrainingEventFB` — an override on the very leaf class Task 10 deletes. If nothing replaces this write, `interm_macd_norm` silently stops being populated once Task 10 lands, a real training-data regression. Add `result.zScore` to whatever call site currently triggers `PopulateIndicatorState`'s training-event export path, writing it directly (`event.interm_macd_norm = result.zScore;`) from the call site or from `PopulateIndicatorState` itself once Task 9 rewrites it — NOT from a `Macd` object, since none will exist after Task 10. Note this same requirement applies to every other `NotPacked`, `TrainingEventT`-only companion found during Task 2's audit (`volume_ratio_percent`, `volume_imbalance`, `atr_10`, `close_percentile`, `nh_nl_daily`, and whatever else the audit's `UNCONFIRMED` sweep turns up) — Task 8 and Task 9 must each carry their own forward-plan for these, not assume they're someone else's problem. Track the full list explicitly in Task 9's own notes once Task 2/6/8 have each contributed their findings.
+
+- [ ] **Step 4: Build and verify**
+
+Run: `./build_dll.sh --no-clean` and re-run `tests/cpp/test_indicator_computations.cpp`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add include/Indicator.h src/Indicator.cpp include/IndicatorComputations.h tests/cpp/test_indicator_computations.cpp <call-site files>
+git commit -m "feat(indicator-manager): extract ComputeMacd free function, cut LONG_MACD/INTERM_MACD over to packed arrays (proof of two-row pattern)"
+```
+
+---
+
+### Task 7: Bulk-migrate the remaining simple int8-only indicators
+
+**Files:**
+- Modify: `include/Indicator.h`, `src/Indicator.cpp` (extract remaining compute methods)
+- Modify: `include/IndicatorComputations.h`, `tests/cpp/test_indicator_computations.cpp` (grow)
+- Modify: call sites in `src/TripleScreen1.cpp`, `TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp`
+
+**Interfaces:**
+- Consumes: the proven pattern from Tasks 5-6, `kIndicatorLayout`'s full row list (Task 2).
+
+Apply Task 5's (single-row) or Task 6's (two-row) pattern, exactly as proven, to every remaining `Int8`-block-only `IndicatorKey` from `kIndicatorLayout` that Task 2's audit confirmed has no `Float32` companion row. Do not invent a new pattern per indicator — every one of these gets the same mechanical treatment: extract its compute method to a free function (with an explicit state struct if it's stateful, per `ComputeMacd`'s shape; stateless if it genuinely only needs its arguments, per the design spec §3.5's `ComputeImpulseFromColor` example), migrate its call site(s) to `GetValue<Key>()`/`SetValue<Key>()`, remove it from the parity-assertion loop once cut over, verify build.
+
+- [ ] **Step 1: List the exact remaining keys**
+
+Run against Task 2's completed `kIndicatorLayout`: every row with `block == Int8` and no matching `Float32` row for the same `key`, minus `SIDE` (Task 5) and `LONG_MACD`/`INTERM_MACD` (Task 6). This is the task's real scope — enumerate it from the actual table, not from this plan's guesses about which indicators are "simple" (several, like `Impulse`, turned out to have more internal state than expected during spec/plan research — trust the audit, not prior assumptions).
+
+- [ ] **Step 2: Migrate each one, one commit per indicator family (not one giant commit)**
+
+For each key from Step 1: read its current leaf class and compute method in full (`include/Indicator.h`/`src/Indicator.cpp`) before writing its free-function version — do not assume its shape matches `Macd`'s or `Impulse`'s just because it's in the same file region. Extract compute logic, add a test to `test_indicator_computations.cpp`, migrate its call site(s), verify build, remove from parity loop, commit. Repeat per key.
+
+- [ ] **Step 3: Final build check for this task**
+
+Run: `./build_dll.sh --no-clean` after the last indicator in this task's scope is migrated.
+Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_computations.cpp -o /tmp/test_comp && /tmp/test_comp` — expect `ALL PASS`.
+
+---
+
+### Task 8: Bulk-migrate the float-valued / quality-score / companion-float indicators
+
+**Files:**
+- Modify: `include/Indicator.h`, `src/Indicator.cpp`
+- Modify: `include/IndicatorComputations.h`, `tests/cpp/test_indicator_computations.cpp`
+- Modify: call sites (same files as Task 7)
+
+**Interfaces:**
+- Consumes: Task 6's proven two-row pattern.
+
+Covers the confirmed `Float32`-companion two-row keys from `kIndicatorLayout` not already done in Task 6: `KANGAROO_TAIL`, `TURTLE_SOUP`, `MOMENTUM_PINBALL`, `ELDER_BREAKOUT`, `NR7`, `CORR_ES_ZN`, `CORR_ES_DX` (all confirmed against real `IndicatorState` fields during plan research — see Task 2's `kIndicatorLayout` comments for exact citations).
+
+**Do not assume the same is true for `VOLUME_SIGNAL`, `ATR_PROXIMITY`, `PRICE_METRICS`, `NH_NL_SIGNAL`, or `LONG_IMP`.** Each of these has a leaf-class override that writes an EXTRA companion value (`volume_ratio_percent`/`volume_imbalance`, `atr_10`, `close_percentile`, `nh_nl_daily`, `impulse_run_length` respectively) — but during plan research these were found written as `event.X = ...` (a `TrainingEventT` top-level field) rather than `event.indicators->mutate_X(...)` (a real `IndicatorState` struct field), the same `TrainingEventT`-only pattern as `Macd`'s `interm_macd_norm` (flagged as `NotPacked` in Task 2). The one confirmed exception: `impulse_run_length` for `LONG_IMP` IS a real `IndicatorState` int8 field (`ind.mutate_impulse_run_length(...)`, confirmed in the schema), so `LONG_IMP` is a two-`Int8`-row key (not an `Int8`+`Float32` pair) if Task 2 confirms it belongs in this migration at all — check Task 2's completed table for each of these five keys' actual resolved `block` before writing any compute function for them; do not re-derive their classification here.
+
+For `KangarooTail`/`TurtleSoup`/`MomentumPinball`/`ElderBreakout`/`NR7` specifically: each has internal, never-published working state (`m_atSupportLevel`, `m_hurst`, `m_screenAligned`, etc. — the design spec §3.4 "working-state exception"). Their extracted compute functions take that working state as an explicit small struct parameter (same convention as `MacdState`), and the struct itself is NOT part of the packed arrays — only the resulting published enum + quality float are.
+
+- [ ] **Step 1: List the exact remaining keys, same method as Task 7 Step 1**
+
+- [ ] **Step 2: Migrate each one, working-state-aware, one commit per indicator family**
+
+Same procedure as Task 7 Step 2, with the added requirement: for each of the 5 pattern-quality indicators, design its working-state struct explicitly (list every field the current leaf class has beyond `m_value`/`m_prevValue`/the quality score — e.g. `KangarooTailWorkingState { bool atSupportLevel; bool atResistanceLevel; }`), confirm nothing in that struct is read from outside the compute function + `IndicatorManager` (if something is — e.g. a getter used elsewhere in `TripleScreenX.cpp` — that getter's call site needs to move to wherever the working-state struct now lives, flag it rather than silently drop it).
+
+- [ ] **Step 3: Preserve every `NotPacked` companion write found in this task's scope, same as Task 6 Step 4**
+
+For `VOLUME_SIGNAL`, `ATR_PROXIMITY`, `PRICE_METRICS`, `NH_NL_SIGNAL` (and `LONG_IMP`'s `impulse_run_length` if Task 2 resolves it as a second `Int8` row rather than in scope for a different task): if their companion write is confirmed `NotPacked` (`TrainingEventT`-only), it currently happens inside a leaf class's `AddToTrainingEventFB` override that Task 10 deletes. Add each one's value to whatever now calls the compute function, writing it directly onto `event` (mirroring Task 6 Step 4's `event.interm_macd_norm = result.zScore;` pattern) — do not let any of these silently stop being populated. Maintain the running list of `NotPacked` companions still needing this treatment; Task 9 Step 1 is where they all get finally accounted for.
+
+- [ ] **Step 4: Final build check**
+
+Run: `./build_dll.sh --no-clean`.
+
+---
+
+### Task 9: Rewrite `CheckTrigger` and `PopulateIndicatorState` against the packed arrays directly
+
+**Files:**
+- Modify: `src/IndicatorManager.cpp` (`CheckTrigger`, `PopulateIndicatorState`)
+
+**Interfaces:**
+- Consumes: fully-populated `m_packed` (every key migrated by Tasks 5-8).
+
+This is where `OSCILLATOR_310`'s virtual-dispatch crash workaround is root-cause eliminated — the polymorphic `m_indicators[i]->AddToTrainingEventFB(*event)` loop (`src/IndicatorManager.cpp:425-448`) that carries the crash-guard special case is deleted entirely, not special-cased further.
+
+- [ ] **Step 1: Rewrite `PopulateIndicatorState` as two straight-line loops**
+
+Replace the polymorphic-pointer loop with direct iteration over `m_packed`'s two blocks, using `kIndicatorLayout` to know which `IndicatorState` mutator each position corresponds to (a `switch` on `IndicatorKey` calling the right `ind.mutate_X(...)`, analogous to today's `MapIndicatorKeyToTrainingEvent` but reading from `m_packed.GetI8(pos)`/`GetF32(pos)` instead of a virtual `intValue()` call — no `BaseIndicator*`, no vtable, no `m_indicators` array). Remove the `OSCILLATOR_310` special case entirely; add a regression comment explaining WHY it's safe to remove (no virtual dispatch remains in this path at all).
+
+Before touching this function, collect the full, final list of `NotPacked`, `TrainingEventT`-only companion writes flagged across Task 2 (`interm_macd_norm` and whatever the `UNCONFIRMED` sweep turned up), Task 6 Step 4, and Task 8 Step 3. Confirm every single one of them has an explicit new write site (per those tasks' own steps) before this task deletes anything in Task 10 — this is the last checkpoint before their only remaining write-path (the leaf classes) is deleted for good.
+
+- [ ] **Step 2: Rewrite `CheckTrigger`**
+
+Since trigger logic (`ShouldTrigger()`) for the ~9 entered/exited-transition families depends on comparing current vs. previous PUBLISHED value — which `m_packed` already tracks via `GetI8`/`GetPrevI8` — reimplement each family's trigger condition as a small free function or inline check keyed by `IndicatorKey`, operating on `m_packed.GetI8(pos)`/`GetPrevI8(pos)` directly. This generalizes the existing `CheckTrigger`'s "Phase 1.2 Static Metaprogramming Dispatcher" pattern (already devirtualized, already a hand-written switch) — same shape, new data source.
+
+- [ ] **Step 3: Remove the dual-write parity assertion (Task 4) entirely — no old path remains to compare against**
+
+- [ ] **Step 4: Build and verify**
+
+Run: `./build_dll.sh --no-clean`. If a replay/backtest environment is available, run one to confirm no crash and no behavior regression around what used to be the `OSCILLATOR_310` special case.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/IndicatorManager.cpp
+git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorState against packed arrays, root-cause eliminate OSCILLATOR_310 vtable crash"
+```
+
+---
+
+### Task 10: Remove the old heterogeneous store and virtual hierarchy
+
+**Files:**
+- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (delete `IndicatorStore m_store`, `std::array<BaseIndicator*, ...> m_indicators`, `GetIndicator<T>()` and all its explicit template instantiations)
+- Modify: `include/Indicator.h`, `src/Indicator.cpp` (delete `BaseIndicator`, `Indicator<T>`, all ~38 leaf classes, `MapIndicatorKeyToTrainingEvent`)
+
+**Interfaces:** None produced — this task only removes now-dead code, once Tasks 5-9 have migrated every live call site off it.
+
+- [ ] **Step 1: Confirm zero remaining references before deleting anything**
+
+Run: `grep -rn "GetIndicator<\|IndicatorStore\|BaseIndicator" src/ include/ | grep -v "IndicatorManager.h:.*// removed\|IndicatorPackedState.h\|IndicatorLayout.h"`
+Expected: no matches outside the files being deleted in this task. If anything remains, stop — a call site was missed in Tasks 5-9, go back and migrate it before proceeding (do not delete code a live caller still needs).
+
+- [ ] **Step 2: Delete `IndicatorStore`, `m_indicators`, `GetIndicator<T>()` from `IndicatorManager.h`/`.cpp`**
+
+- [ ] **Step 3: Delete `BaseIndicator`, `Indicator<T>`, all leaf classes, `MapIndicatorKeyToTrainingEvent` from `Indicator.h`/`.cpp`**
+
+`Indicator.h`/`.cpp` should shrink dramatically — verify with `wc -l include/Indicator.h src/Indicator.cpp` before and after; if the file still contains anything beyond enum definitions (`IndicatorKey`, the per-indicator value enums like `MacdEnum`/`ImpulseEnum`/etc., which callers and `IndicatorComputations.h` still need) and small free-standing helper types, something was missed.
+
+- [ ] **Step 4: Build and run every standalone test**
+
+```bash
+./build_dll.sh --no-clean
+g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_layout.cpp -o /tmp/t1 && /tmp/t1
+g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_packed_state.cpp -o /tmp/t2 && /tmp/t2
+g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_computations.cpp -o /tmp/t3 && /tmp/t3
+```
+Expected: all succeed/pass.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add include/IndicatorManager.h src/IndicatorManager.cpp include/Indicator.h src/Indicator.cpp
+git commit -m "refactor(indicator-manager): remove IndicatorStore/BaseIndicator hierarchy, migration complete"
+```
+
+---
+
+### Task 11: Final whole-branch review
+
+Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 10's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in the hot path; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched.
