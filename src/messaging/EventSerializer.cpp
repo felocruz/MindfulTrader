@@ -217,7 +217,6 @@ EventSerializer::ContextSnapshot EventSerializer::SnapshotContext(const Indicato
         snapshot.market_climate = climateInd ? climateInd->intValue() : 0;
 
 
-        const auto* osc = manager.GetIndicator<Oscillator310>(IndicatorKey::OSCILLATOR_310);
         const auto* corrEsZn = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN);
         const auto* corrEsDx = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX);
         const auto* znTrend = manager.GetIndicator<CrossMarketTrend>(IndicatorKey::ZN_TREND);
@@ -227,7 +226,9 @@ EventSerializer::ContextSnapshot EventSerializer::SnapshotContext(const Indicato
         const auto* corrEsDxDelta = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX_DELTA);
         const auto* corrEsDxAccel = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX_ACCEL);
 
-        snapshot.oscillator_310 = osc ? static_cast<int8_t>(osc->intValue()) : 0;
+        // DOD/SoA migration (Task 7): read straight from the packed array — no
+        // pointer, no null check, always a valid value.
+        snapshot.oscillator_310 = manager.GetValue<IndicatorKey::OSCILLATOR_310>();
         snapshot.corr_es_zn = corrEsZn ? corrEsZn->Value() : 0.0f;
         snapshot.corr_es_dx = corrEsDx ? corrEsDx->Value() : 0.0f;
         snapshot.zn_trend = znTrend ? static_cast<int8_t>(znTrend->intValue()) : 0;

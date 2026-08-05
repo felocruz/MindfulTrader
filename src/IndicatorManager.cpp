@@ -346,6 +346,10 @@ void IndicatorManager::AssertPackedStateParity() const {
         if (desc.key == IndicatorKey::INTERM_STOCHASTIC) continue;
         if (desc.key == IndicatorKey::RASCHKE_STRATEGY_SETUP) continue;
         if (desc.key == IndicatorKey::RASCHKE_TACTICAL_TRIGGER) continue;
+        // OSCILLATOR_310's only external read (EventSerializer::SnapshotContext)
+        // cut over to GetValue<Key>() (Task 7). Same "no longer meaningful"
+        // rationale.
+        if (desc.key == IndicatorKey::OSCILLATOR_310) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
