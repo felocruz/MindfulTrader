@@ -2,9 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Evolve `IndicatorManager`/`Indicator` from a hand-written heterogeneous `IndicatorStore` + virtual-dispatch pointer array into packed SoA storage with compile-time devirtualized access, root-causing the live `OSCILLATOR_310` virtual-dispatch crash, while keeping `IndicatorManager` as the sole facade callers interact with.
+**Goal:** Evolve `IndicatorManager`/`Indicator` from a hand-written heterogeneous `IndicatorStore` + virtual-dispatch pointer array into packed SoA storage with compile-time devirtualized access for every read/trigger/serialize hot path, root-causing the live `OSCILLATOR_310` virtual-dispatch crash, while keeping `IndicatorManager` as the sole facade callers interact with.
 
-**Architecture:** Two new pure, header-only components (`IndicatorLayout.h`'s descriptor table, `IndicatorPackedState.h`'s packed arrays) are introduced and unit-tested standalone, then wired into `IndicatorManager` as a dual-write alongside the existing `IndicatorStore` (parity-verified, zero behavior change), then call sites are migrated indicator-family by indicator-family, then the hot-path dispatch (`CheckTrigger`, `PopulateIndicatorState`) is rewritten against the packed arrays directly, and finally the old heterogeneous store and virtual hierarchy are deleted.
+**Architecture:** Two new pure, header-only components (`IndicatorLayout.h`'s descriptor table, `IndicatorPackedState.h`'s packed arrays) are introduced and unit-tested standalone, then wired into `IndicatorManager` as a dual-write alongside the existing `IndicatorStore` (parity-verified, zero behavior change), then call sites are migrated indicator-family by indicator-family, then the hot-path dispatch (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`) is rewritten against the packed arrays directly, then every remaining genuinely-migratable read call site (scattered across `IndicatorManager.cpp` itself, `EventSerializer.cpp`, `BackTesterStudy.cpp`, `StudyHelperFunctions.cpp`, and two Triple Screen files) is cut over, and finally the small set of fully-dead orphan indicator classes is deleted.
+
+**Revised end-state (Tasks 11-16, added 2026-08-05 after Task 11's original Step 1 safety check falsified its own premise):** the original plan assumed Tasks 5-10 had migrated every live call site off `GetIndicator<T>()`. A full inventory of the ~85 remaining call sites proved otherwise, for reasons that are architectural, not oversights:
+- **~40 call sites in `TripleScreen1/2/3.cpp` are write-only** (`Update()`, `SetOHLC()`, `SetMetrics()`, `SetFromChart()`, ...) — the producer side of the dual-write pattern. `GetValue<Key>()` is read-only by design; migrating these would mean extracting all remaining indicators' compute logic into free functions (the Task 6/`Macd` pattern) and calling `SetValue<Key>(ComputeX(...))` directly from Triple Screen — a rewrite of ~30 indicators' internals, not a call-site swap, and explicitly out of scope for this plan (see below).
+- **~18 call sites read keys Task 2's audit already, deliberately, marked `StorageBlock::NotPacked`** (`ZN_TREND`/`DX_TREND`, `CORR_*_DELTA`/`CORR_*_ACCEL`, `HURST_EXPONENT`, `LONG_MKT_ACTION`/`SHORT_MKT_ACTION`, `VWAP`, `OVERNIGHT_EXIT`) — there is no packed slot to migrate to; reopening that would mean reopening an already-approved Task 2 decision.
+- **A handful read companion fields that were never packed at all** (`GetVolumeImbalance()`, `MacdValue()`, `PrevFastLine()`, `GetDailyValue()`) — real values, but not the classification enum or named quality/norm/correlation companion Task 2 chose to pack.
+- **Two sites are blocked by a genuine API gap**: `INTERM_IMP` has two rows in the *same* Int8 block (position 12 and position 26), and `DescriptorFor(key, block)` can only resolve to the first — Task 11 below adds a dedicated accessor to close this one gap.
+
+Given this, the plan's end-state is now an intentional **hybrid architecture**: the packed arrays are the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 companion exports) — true DOD where it matters for performance and correctness — while `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and the majority of the ~38 leaf classes remain permanently as the write-side compute engine and the home for `NotPacked` values, per the design spec's own "true DOD while maintaining OOD goodness" framing. Task 15 (originally "delete the entire hierarchy") is rescoped to delete only what's now provably 100% dead. A full write-side rewrite remains possible as a future Phase III but is explicitly out of scope here (user decision, 2026-08-05).
 
 **Tech Stack:** C++17, Sierra Chart ACSIL, FlatBuffers (schema unchanged this phase), standalone-`g++` unit tests (`tests/cpp/*.cpp`), `./build_dll.sh` for ACSIL-dependent build verification.
 
@@ -16,8 +24,9 @@
 - `m_prevI8`/`m_prevF32` are both required — they are read by `ShouldTrigger()`-family logic for entered/exited transition detection (spec §3.1), not just dirty-bit comparison. Never remove them as a "simplification."
 - C++ packed-array order matches `IndicatorState`'s existing FlatBuffer schema field order (floats block, then int8 block). No `../schema/mts_schema.fbs` edits in this plan.
 - No heap allocation in any per-tick hot path (`GetValue`/`SetValue`, `CheckTrigger`, `PopulateIndicatorState`).
-- No virtual dispatch survives in the final state's indicator read/write/serialize hot path.
+- No virtual dispatch survives in `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT` — the read/trigger/serialize hot path. (Revised 2026-08-05: this never meant Triple Screen's write-side calls, which were always concrete-typed `GetIndicator<T>()` pointers, not `BaseIndicator*` polymorphic dispatch — Tasks 11-16 make this scope explicit rather than leaving it ambiguous.)
 - `HmmStateIndicator`, `PredictionState`, `MarketClimateIndicator` are out of scope — already owned by `InferenceManager`, not `IndicatorStore`.
+- (Added 2026-08-05, Tasks 11-16) The hybrid end-state is intentional, not a shortfall: `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and most leaf classes remain permanently as the write-side compute engine and the home for `StorageBlock::NotPacked` values. Only call sites doing a genuine packed-value *read* migrate to `GetValue<Key>()`; write-only call sites and `NotPacked`-key call sites are explicitly left alone and documented, never silently "discovered as blocked" without a note.
 - Every new pure logic file gets a standalone `tests/cpp/test_*.cpp` (hand-rolled `g++` compile, no mocking framework — this codebase's established convention). ACSIL-dependent changes are build-verified only via `./build_dll.sh --no-clean`.
 - `README-AI.md`, `.github/copilot-instructions.md`, `CLAUDE.md`, `GEMINI.md` are mirrors — update all four together per the Documentation Sync Contract whenever one changes.
 
@@ -31,9 +40,10 @@
 | `include/IndicatorPackedState.h` (new) | The 4 packed arrays (`currentI8`/`prevI8`/`currentF32`/`prevF32`) + `dirtyMask`, plus `GetValue`/`SetValue`/`Reset` operating on raw positions. Pure, no Sierra Chart deps, no dependency on `IndicatorLayout.h` (position-based, key-agnostic — `IndicatorManager` composes the two). |
 | `tests/cpp/test_indicator_layout.cpp` (new) | Completeness/no-duplicate-position tests for `kIndicatorLayout`. |
 | `tests/cpp/test_indicator_packed_state.cpp` (new) | Get/Set/dirty-bit/Reset tests for `IndicatorPackedState`. |
-| `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; eventually loses `IndicatorStore`/`m_indicators`/`GetIndicator<T>()`. |
-| `include/Indicator.h` / `src/Indicator.cpp` (modified) | `Indicator<T>::Update()` gains a packed-slot pointer for dual-write (one generic change). Compute methods progressively extracted to free functions. Eventually loses `BaseIndicator`, `Indicator<T>`, and all leaf classes. |
-| `src/TripleScreen1.cpp`, `TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp` (modified) | Call sites migrated from `GetIndicator<T>(key)->Value()`/`->SetX(...)` to `indMgr.GetValue<Key>()`/`indMgr.SetValue<Key>(ComputeX(...))`, family by family. |
+| `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; Task 11 gains `GetImpulseRunLength()` and migrates 4 internal call sites; Task 15 deletes only the 4 fully-dead orphan classes' `GetIndicator<T>()` instantiations, `IndicatorStore`/`m_indicators`/`GetIndicator<T>()` itself and the other ~34 leaf classes remain (see revised end-state above). |
+| `include/Indicator.h` / `src/Indicator.cpp` (modified) | `Indicator<T>::Update()` gains a packed-slot pointer for dual-write (one generic change). Compute methods progressively extracted to free functions (Macd only, Task 6). Task 15 deletes only the 4 fully-dead orphan leaf classes (`Ema`, `HmmStateIndicator`, `MarketClimateIndicator`, `AdxIndicator`); `BaseIndicator`, `Indicator<T>`, and the remaining ~34 leaf classes stay permanently. |
+| `src/TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp` (modified, Task 14) | The 5 remaining genuine *read* call sites (not write sites — see revised end-state) migrated from `GetIndicator<T>(key)->Value()` to `indMgr.GetValue<Key>()`/`indMgr.GetValue<Key, Block>()`. |
+| `src/messaging/EventSerializer.cpp` (modified, Task 12), `src/BackTesterStudy.cpp` (modified, Task 13) | Remaining Float32-companion/`impulse_run_length` reads migrated to `GetValue<Key, Block>()`/`GetImpulseRunLength()`. |
 | `src/messaging/EventSerializer.cpp` (modified) | Live-`Event`-building companion-value reads (`->GetVolumeRatio()`, `->GetATR10()`, etc.) replaced with reads from a single per-tick `TickCompanionValues` struct, shared with the training path — removes a whole class of live/training duplication discovered while answering a direct question about OOP-vs-DOD mixing (Task 10). |
 | `src/messaging/EventSerializerV2.cpp`/`.h` (deleted) | Confirmed dead: absent from `CMakeLists.txt`, unused, contains a hardcoded `add_atr_10(0.0f)` bug. Removed as part of Task 10. |
 | `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (modified) | Stale `IndicatorManager` description corrected. |
@@ -1031,26 +1041,439 @@ git commit -m "fix(indicator-manager): unify live/training/backtest companion-va
 
 ---
 
-### Task 11: Remove the old heterogeneous store and virtual hierarchy
+### Task 11: Fix the `INTERM_IMP` same-block collision; migrate `IndicatorManager.cpp`'s own internal call sites
+
+**Context:** `INTERM_IMP` is the one key in `kIndicatorLayout` with two rows in the *same* block (Int8 position 12, the classification enum; Int8 position 26, the `impulse_run_length` companion — see `include/IndicatorLayout.h:53,83`). `DescriptorFor(key, block)` disambiguates only by `(key, block)`, so it always resolves to the first array match (position 12); position 26 is unreachable through `GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>()`. This task adds one dedicated accessor for this one irreducible case (not a generalized third `StorageBlock` axis — there is exactly one key that needs this, and a named special case is simpler and more honest than generalizing the descriptor system for it). It also cuts over the 6 internal `IndicatorManager.cpp` call sites that Tasks 7-9 didn't touch (they aren't inside `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`'s own body, so Task 9's rewrite skipped them) plus 2 direct-`m_store`-field reads inside `GetTrainingEventT` that bypass `GetIndicator<T>()` entirely (found while tracing this task, not caught by the original `GetIndicator<\|IndicatorStore\|BaseIndicator` grep).
 
 **Files:**
-- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (delete `IndicatorStore m_store`, `std::array<BaseIndicator*, ...> m_indicators`, `GetIndicator<T>()` and all its explicit template instantiations)
-- Modify: `include/Indicator.h`, `src/Indicator.cpp` (delete `BaseIndicator`, `Indicator<T>`, all ~38 leaf classes, `MapIndicatorKeyToTrainingEvent`)
+- Modify: `include/IndicatorManager.h` (add `GetImpulseRunLength()`)
+- Modify: `src/IndicatorManager.cpp` (`CheckWarmupStatus`, `SyncFeatureVector`, `getScreen1EntryText`, `getScreen2EntryText`, `GetTrainingEventT`)
+- Test: `tests/cpp/test_indicator_layout.cpp` (add one check)
 
-**Interfaces:** None produced — this task only removes now-dead code, once Tasks 5-10 have migrated every live call site off it.
+**Interfaces:**
+- Produces: `IndicatorManager::GetImpulseRunLength() const -> int8_t` — reads `m_packed.GetI8(26)` directly (the `impulse_run_length` companion position, per `kIndicatorLayout`'s row `{ IndicatorKey::INTERM_IMP, StorageBlock::Int8, 26 }`). Tasks 12 and 13 call this.
 
-- [ ] **Step 1: Confirm zero remaining references before deleting anything**
+- [ ] **Step 1: Add `GetImpulseRunLength()` to `IndicatorManager.h`**
 
-Run: `grep -rn "GetIndicator<\|IndicatorStore\|BaseIndicator" src/ include/ | grep -v "IndicatorManager.h:.*// removed\|IndicatorPackedState.h\|IndicatorLayout.h"`
-Expected: no matches outside the files being deleted in this task. If anything remains, stop — a call site was missed in Tasks 5-10, go back and migrate it before proceeding (do not delete code a live caller still needs).
+Add next to the existing `GetValue<Key, Block>()` overload (`include/IndicatorManager.h:178-187`):
 
-- [ ] **Step 2: Delete `IndicatorStore`, `m_indicators`, `GetIndicator<T>()` from `IndicatorManager.h`/`.cpp`**
+```cpp
+    // indicator-manager-dod-soa plan, Task 11: INTERM_IMP is the one key with
+    // two rows in the SAME block (Int8 @12 classification, Int8 @26
+    // impulse_run_length companion) -- DescriptorFor(key, block) can only
+    // resolve to the first match, so this one key needs a dedicated,
+    // hand-verified position rather than the generic templates above.
+    int8_t GetImpulseRunLength() const { return m_packed.GetI8(26); }
+```
 
-- [ ] **Step 3: Delete `BaseIndicator`, `Indicator<T>`, all leaf classes, `MapIndicatorKeyToTrainingEvent` from `Indicator.h`/`.cpp`**
+- [ ] **Step 2: Migrate `CheckWarmupStatus` (`src/IndicatorManager.cpp:604-613`)**
 
-`Indicator.h`/`.cpp` should shrink dramatically — verify with `wc -l include/Indicator.h src/Indicator.cpp` before and after; if the file still contains anything beyond enum definitions (`IndicatorKey`, the per-indicator value enums like `MacdEnum`/`ImpulseEnum`/etc., which callers and `IndicatorComputations.h` still need) and small free-standing helper types, something was missed.
+Replace:
+```cpp
+    // Phase 2b: Validate FI2Signal is computing (soft warning, not blocking)
+    const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
+    if (fi2Indicator && fi2Indicator->intValue() == 0 && m_warmupBarCount > MIN_WARMUP_BARS) {
+        // Note: FI2 can legitimately be NEUTRAL during ranging markets
+        // This is a soft warning, not a hard block like RSI
+        Logger::getInstance().log(
+            "INFO: FI2Signal at NEUTRAL after " + std::to_string(m_warmupBarCount) +
+            " bars. Verify Force Index calculation is active."
+        );
+    }
+```
+with:
+```cpp
+    // Phase 2b: Validate FI2Signal is computing (soft warning, not blocking)
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const int fi2Value = static_cast<int>(GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>());
+    if (fi2Value == 0 && m_warmupBarCount > MIN_WARMUP_BARS) {
+        // Note: FI2 can legitimately be NEUTRAL during ranging markets
+        // This is a soft warning, not a hard block like RSI
+        Logger::getInstance().log(
+            "INFO: FI2Signal at NEUTRAL after " + std::to_string(m_warmupBarCount) +
+            " bars. Verify Force Index calculation is active."
+        );
+    }
+```
 
-- [ ] **Step 4: Build and run every standalone test**
+- [ ] **Step 3: Migrate `SyncFeatureVector` (`src/IndicatorManager.cpp:953-958`)**
+
+Replace:
+```cpp
+    const auto fi13Indicator = GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
+    const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
+
+    targetVector.push_back(fi13Indicator ? fi13Indicator->ZScore() : 0.0f);                              // 22: long_fi13_norm
+    targetVector.push_back(fi2Indicator ? static_cast<float>(fi2Indicator->intValue()) : 0.0f);            // 23: interm_fi2_norm
+```
+with:
+```cpp
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointers, no null checks, always valid values.
+    const float fi13Norm = GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>();
+    const int fi2Value = GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>();
+
+    targetVector.push_back(fi13Norm);                          // 22: long_fi13_norm
+    targetVector.push_back(static_cast<float>(fi2Value));      // 23: interm_fi2_norm
+```
+
+- [ ] **Step 4: Migrate `getScreen1EntryText` (`src/IndicatorManager.cpp:1142-1159`)**
+
+Replace the whole function body with:
+```cpp
+std::string IndicatorManager::getScreen1EntryText() {
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointers, no null checks, always valid values. (Previously returned
+    // "NA" if either leaf object was null; packed reads can't be null, so
+    // that branch is gone — both keys are guaranteed constructed by the time
+    // this is called, same as every other already-migrated accessor here.)
+    const int longMacdValue = static_cast<int>(GetValue<IndicatorKey::LONG_MACD>());
+    const int longFI13Value = static_cast<int>(GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Int8>());
+
+    char buffer[32] = {0};
+    std::snprintf(buffer, sizeof(buffer), "%d|%d", longMacdValue, longFI13Value);
+    return std::string(buffer);
+}
+```
+
+- [ ] **Step 5: Migrate `getScreen2EntryText` (`src/IndicatorManager.cpp:1161-1182`)**
+
+Replace the whole function body with:
+```cpp
+std::string IndicatorManager::getScreen2EntryText() {
+    // DOD/SoA migration (Task 11): all four fields now read straight from
+    // the packed array — no pointers, no null checks, always valid values.
+    char buffer[48] = {0};
+    std::snprintf(
+        buffer,
+        sizeof(buffer),
+        "%d|%d|%d|%d",
+        static_cast<int>(GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>()),
+        static_cast<int>(GetValue<IndicatorKey::INTERM_STOCHASTIC>()),
+        static_cast<int>(GetValue<IndicatorKey::RASCHKE_STRATEGY_SETUP>()),
+        static_cast<int>(GetValue<IndicatorKey::RASCHKE_TACTICAL_TRIGGER>())
+    );
+    return std::string(buffer);
+}
+```
+
+- [ ] **Step 6: Migrate `GetTrainingEventT`'s two direct-`m_store`-field reads (`src/IndicatorManager.cpp:809,814`)**
+
+These bypass `GetIndicator<T>()` entirely (direct `m_store.X` member access) so the Step-1-successor grep in Task 15 won't catch them — fix now while in this neighborhood. Replace:
+```cpp
+    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
+```
+with:
+```cpp
+    event->indicators->mutate_impulse_run_length(GetImpulseRunLength());
+```
+and replace:
+```cpp
+    event->interm_macd_norm = m_store.interm_macd.ZScore();
+```
+with:
+```cpp
+    event->interm_macd_norm = GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>();
+```
+
+- [ ] **Step 7: Add a layout test for the new accessor**
+
+Add to `tests/cpp/test_indicator_layout.cpp`:
+```cpp
+    check("INTERM_IMP has two Int8 rows (12 and 26), both reachable in principle",
+          mts::DescriptorFor(mts::IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8).position == 12 &&
+          CountRows(mts::IndicatorKey::INTERM_IMP) == 2);
+```
+(If this file has no existing `CountRows` helper, add one: a small loop over `kIndicatorLayout` counting matches for a given key — mirrors `UniqueDescriptorFor`'s own match-counting loop in `IndicatorLayout.h`.)
+
+- [ ] **Step 8: Build and test**
+
+```bash
+./build_dll.sh --no-clean
+g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_layout.cpp -o /tmp/t1 && /tmp/t1
+```
+Expected: both succeed.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add include/IndicatorManager.h src/IndicatorManager.cpp tests/cpp/test_indicator_layout.cpp
+git commit -m "refactor(indicator-manager): migrate internal call sites off GetIndicator<T>(), add GetImpulseRunLength()"
+```
+
+---
+
+### Task 12: Migrate `EventSerializer.cpp`'s remaining genuine reads
+
+**Files:**
+- Modify: `src/messaging/EventSerializer.cpp`
+
+**Interfaces:**
+- Consumes: `IndicatorManager::GetImpulseRunLength()` (Task 11).
+
+- [ ] **Step 1: Replace lines 118-126**
+
+Replace:
+```cpp
+        // Robust z-score floats (Taleb fat-tail safe: median/MAD normalization)
+        const auto* fi2 = manager.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
+        indicators.mutate_interm_fi2_norm(fi2 ? fi2->ZScore() : 0.0f);
+        const auto* intermMacd = manager.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
+        indicators.mutate_interm_macd_norm(intermMacd ? intermMacd->ZScore() : 0.0f);
+        const auto* fi13 = manager.GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
+        indicators.mutate_long_fi13_norm(fi13 ? fi13->ZScore() : 0.0f);
+        const auto* intermImpulse = manager.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
+        indicators.mutate_impulse_run_length(static_cast<int8_t>(intermImpulse ? intermImpulse->RunLength() : 0));
+```
+with:
+```cpp
+        // Robust z-score floats (Taleb fat-tail safe: median/MAD normalization).
+        // DOD/SoA migration (Task 12): read straight from the packed array —
+        // no pointers, no null checks, always valid values.
+        indicators.mutate_interm_fi2_norm(manager.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
+        indicators.mutate_interm_macd_norm(manager.GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>());
+        indicators.mutate_long_fi13_norm(manager.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
+        indicators.mutate_impulse_run_length(manager.GetImpulseRunLength());
+```
+
+Leave lines 210-232 (`ZN_TREND`/`DX_TREND`/`CORR_ES_ZN_DELTA`/`CORR_ES_ZN_ACCEL`/`CORR_ES_DX_DELTA`/`CORR_ES_DX_ACCEL`) exactly as they are — all six are `StorageBlock::NotPacked` by Task 2's deliberate audit decision; there is nothing to migrate.
+
+- [ ] **Step 2: Build**
+
+```bash
+./build_dll.sh --no-clean
+```
+Expected: succeeds. (This file has no standalone `g++` test — it's ACSIL/FlatBuffer-dependent, build-verified only, per this plan's established convention.)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/messaging/EventSerializer.cpp
+git commit -m "refactor(event-serializer): migrate remaining Float32-companion reads off GetIndicator<T>()"
+```
+
+---
+
+### Task 13: Migrate `BackTesterStudy.cpp`'s remaining minimal-fix candidates
+
+**Context:** `BackTesterStudy.cpp` is confirmed work-in-progress/unused (user, this session) — prior tasks (9, 10) already applied minimal, non-redesigning fixes here rather than full rewrites. This task follows the same pattern: swap the 9 call sites that are genuine Float32-companion/`impulse_run_length` reads; leave everything else (the `TIME_OF_DAY` write at line 884, the four `NotPacked` correlation-delta/accel reads) untouched.
+
+**Files:**
+- Modify: `src/BackTesterStudy.cpp`
+
+**Interfaces:**
+- Consumes: `IndicatorManager::GetImpulseRunLength()` (Task 11).
+
+- [ ] **Step 1: Replace `BuildEntryIndicatorState`'s lines 1253-1266**
+
+Replace:
+```cpp
+    // Quality scores (float)
+    { const auto* p = im.GetIndicator<KangarooTail>(IndicatorKey::KANGAROO_TAIL);    state.mutate_kangaroo_tail_quality(p ? p->QualityScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<TurtleSoup>(IndicatorKey::TURTLE_SOUP);        state.mutate_turtle_soup_quality(p ? p->QualityScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<MomentumPinball>(IndicatorKey::MOMENTUM_PINBALL); state.mutate_momentum_pinball_quality(p ? p->QualityScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<ElderBreakout>(IndicatorKey::ELDER_BREAKOUT);  state.mutate_elder_breakout_quality(p ? p->QualityScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<NR7>(IndicatorKey::NR7);                       state.mutate_nr7_quality(p ? p->QualityScore() : 0.0f); }
+
+    // Normalized (Z-score) floats
+    { const auto* p = im.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL); state.mutate_interm_fi2_norm(p ? p->ZScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);            state.mutate_interm_macd_norm(p ? p->ZScore() : 0.0f); }
+    { const auto* p = im.GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL); state.mutate_long_fi13_norm(p ? p->ZScore() : 0.0f); }
+
+    // Impulse run length
+    { const auto* p = im.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP); state.mutate_impulse_run_length(p ? static_cast<int8_t>(p->RunLength()) : int8_t{0}); }
+```
+with:
+```cpp
+    // DOD/SoA migration (Task 13): read straight from the packed array — no
+    // pointers, no null checks, always valid values.
+    // Quality scores (float)
+    state.mutate_kangaroo_tail_quality(im.GetValue<IndicatorKey::KANGAROO_TAIL, mts::StorageBlock::Float32>());
+    state.mutate_turtle_soup_quality(im.GetValue<IndicatorKey::TURTLE_SOUP, mts::StorageBlock::Float32>());
+    state.mutate_momentum_pinball_quality(im.GetValue<IndicatorKey::MOMENTUM_PINBALL, mts::StorageBlock::Float32>());
+    state.mutate_elder_breakout_quality(im.GetValue<IndicatorKey::ELDER_BREAKOUT, mts::StorageBlock::Float32>());
+    state.mutate_nr7_quality(im.GetValue<IndicatorKey::NR7, mts::StorageBlock::Float32>());
+
+    // Normalized (Z-score) floats
+    state.mutate_interm_fi2_norm(im.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
+    state.mutate_interm_macd_norm(im.GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>());
+    state.mutate_long_fi13_norm(im.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
+
+    // Impulse run length
+    state.mutate_impulse_run_length(im.GetImpulseRunLength());
+```
+
+- [ ] **Step 2: Replace lines 1269-1270 (leave 1271-1274 untouched)**
+
+Replace:
+```cpp
+    { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN);       state.mutate_corr_es_zn(p ? p->Value() : 0.0f); }
+    { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX);       state.mutate_corr_es_dx(p ? p->Value() : 0.0f); }
+```
+with:
+```cpp
+    state.mutate_corr_es_zn(im.GetValue<IndicatorKey::CORR_ES_ZN>());
+    state.mutate_corr_es_dx(im.GetValue<IndicatorKey::CORR_ES_DX>());
+```
+
+Leave the four `CORR_ES_ZN_DELTA`/`CORR_ES_ZN_ACCEL`/`CORR_ES_DX_DELTA`/`CORR_ES_DX_ACCEL` lines immediately below, and the `TIME_OF_DAY` write at line 884, exactly as they are — all `NotPacked` or write-only; not this task's concern.
+
+- [ ] **Step 3: Build**
+
+```bash
+./build_dll.sh --no-clean
+```
+Expected: succeeds.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/BackTesterStudy.cpp
+git commit -m "refactor(backtester-study): migrate minimal-fix Float32-companion reads off GetIndicator<T>()"
+```
+
+---
+
+### Task 14: Migrate the last scattered genuine reads (`StudyHelperFunctions.cpp`, `TripleScreen2.cpp`, `TripleScreen3.cpp`)
+
+**Files:**
+- Modify: `src/StudyHelperFunctions.cpp`, `src/TripleScreen2.cpp`, `src/TripleScreen3.cpp`
+
+- [ ] **Step 1: `StudyHelperFunctions.cpp` — replace the `intermMacd` declaration and its 3 reads**
+
+`DetectRaschkeStrategySetup` (starts line 684) currently declares `intermMacd` at line 741 and reads `intermMacd->Value()` three times (lines 1006, 1027, 1224). Replace line 741:
+```cpp
+    auto intermMacd = IndicatorManager::Instance().GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
+```
+with nothing (delete the line — there is no pointer left to hold once all three reads below are direct packed reads).
+
+Replace (line 1005-1006):
+```cpp
+    if (intermMacd) {
+        MacdEnum macdValue = intermMacd->Value();
+```
+with:
+```cpp
+    {
+        // DOD/SoA migration (Task 14): read straight from the packed array —
+        // no pointer, no null check, always a valid value.
+        MacdEnum macdValue = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
+```
+(the closing `}` for this block is unchanged — only the guard condition and the value fetch change, not the block's structure or contents).
+
+Replace (line 1024, preserving the real bounds guard — only the nullability half of the condition drops):
+```cpp
+    if (intermMacd && sc.Index >= GHOST_LOOKBACK) {
+```
+with:
+```cpp
+    if (sc.Index >= GHOST_LOOKBACK) {
+```
+and replace line 1027:
+```cpp
+        const MacdEnum currentMacd = intermMacd->Value();
+```
+with:
+```cpp
+        const MacdEnum currentMacd = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
+```
+
+Replace (line 1223-1224):
+```cpp
+    if (intermMacd) {
+        MacdEnum macdValue = intermMacd->Value();
+```
+with:
+```cpp
+    {
+        MacdEnum macdValue = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
+```
+
+Leave `intermMarketAction` (line 740) and its `[[unlikely]]` early-return null-check (lines 743-745) exactly as they are — `SHORT_MKT_ACTION` is `NotPacked`, and that early return gates the whole rest of the function (a real fail-fast policy, not a value-read guard); not this task's concern.
+
+- [ ] **Step 2: `TripleScreen2.cpp` — replace lines 927-931**
+
+Replace:
+```cpp
+    auto longMacd = indFI.GetIndicator<Macd>(IndicatorKey::LONG_MACD);
+    MacdEnum macd = MacdEnum::AT_ZERO; // default safe value (neutral)
+    if (longMacd) {
+        macd = longMacd->Value();
+    }
+```
+with:
+```cpp
+    // DOD/SoA migration (Task 14): read straight from the packed array — no
+    // pointer, no null check, always a valid value (previously defaulted to
+    // MacdEnum::AT_ZERO if the leaf object was null; packed reads can't be
+    // null, so that fallback is gone).
+    MacdEnum macd = static_cast<MacdEnum>(indFI.GetValue<IndicatorKey::LONG_MACD>());
+```
+
+- [ ] **Step 3: `TripleScreen3.cpp` — split the mixed read/write use at lines 719-725 and 794-795**
+
+The `GetIndicator<TimeOfDayIndicator>()` call at line 719 must stay (it feeds the mutating `SetFromDateTime()` write at line 724 — out of this task's scope, write-only). Only the separate pure-read use further down needs to change. Replace (lines 794-795):
+```cpp
+            const TimeOfDayEnum sess = timeOfDayIndicator ? timeOfDayIndicator->Value()
+                                                          : TimeOfDayEnum::OVERNIGHT_HOLD;
+```
+with:
+```cpp
+            // DOD/SoA migration (Task 14): read straight from the packed
+            // array — no null check, always a valid value (mirrors the
+            // already-migrated pattern at this file's line ~1592).
+            const TimeOfDayEnum sess = static_cast<TimeOfDayEnum>(indMgr.GetValue<IndicatorKey::TIME_OF_DAY>());
+```
+
+- [ ] **Step 4: Build**
+
+```bash
+./build_dll.sh --no-clean
+```
+Expected: succeeds.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/StudyHelperFunctions.cpp src/TripleScreen2.cpp src/TripleScreen3.cpp
+git commit -m "refactor(triple-screen): migrate last scattered genuine reads off GetIndicator<T>()"
+```
+
+---
+
+### Task 15: Delete the fully-dead orphan indicator classes; document the permanent hybrid architecture
+
+**Context:** This was originally "delete the entire `IndicatorStore`/`BaseIndicator` hierarchy." Tasks 11-14 proved that's not achievable without a much larger write-side rewrite (see the plan header's "Revised end-state" section) — `TripleScreen1/2/3.cpp`'s ~40 write-only call sites and the ~18 `NotPacked`-key reads have no `GetValue<>()` substitute and are staying by design. What Tasks 11-14 DID prove fully dead are 4 classes with zero live callers anywhere, independent of the packed/`NotPacked` question — `Ema` (no `IndicatorKey` even exists for it), `HmmStateIndicator`/`MarketClimateIndicator` (moved to `InferenceManager`, per `IndicatorManager.h:263`'s own comment), and `AdxIndicator` (only reference anywhere is a commented-out line, `TripleScreen1.cpp:269`, and `IndicatorKey::ADX_14` doesn't exist). This task deletes exactly those 4, and replaces the old "confirm zero remaining references" gate with one that accepts the documented permanent set instead of expecting it to be empty.
+
+**Files:**
+- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (delete the `Ema`/`HmmStateIndicator`/`MarketClimateIndicator`/`AdxIndicator` explicit `GetIndicator<T>()` instantiations and their `IndicatorStore` member declarations)
+- Modify: `include/Indicator.h`, `src/Indicator.cpp` (delete the 4 dead leaf classes)
+- Modify: `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (document the hybrid architecture per the Documentation Sync Contract — all four together)
+
+**Interfaces:** None produced — this task only removes provably-dead code and documents the architecture that Tasks 1-14 actually arrived at.
+
+- [ ] **Step 1: Confirm the 4 target classes are genuinely dead**
+
+Run: `grep -rn "GetIndicator<Ema>\|GetIndicator<HmmStateIndicator>\|GetIndicator<MarketClimateIndicator>\|GetIndicator<AdxIndicator>\|\bEma\b\|HmmStateIndicator\|MarketClimateIndicator\|AdxIndicator" src/ include/ | grep -v "IndicatorManager.h:.*// removed\|IndicatorLayout.h\|IndicatorPackedState.h"`
+Expected: matches only inside `IndicatorManager.h`/`.cpp` (the `IndicatorStore` member + explicit instantiation for each) and `Indicator.h`/`.cpp` (the class definitions themselves), plus the one commented-out `AdxIndicator` line in `TripleScreen1.cpp:269` (leave that comment as-is — it's already inert). If anything else turns up, stop and investigate before deleting — this task's whole premise is that these 4 are the only ones with zero live callers.
+
+- [ ] **Step 2: Delete the 4 classes' `IndicatorStore` members and explicit instantiations from `IndicatorManager.h`/`.cpp`**
+
+Remove each class's field from the `IndicatorStore` struct (`include/IndicatorManager.h:224+`) and its `template ClassName* IndicatorManager::GetIndicator<ClassName>(IndicatorKey key) const;` line (`src/IndicatorManager.cpp:1463,1485,1486,1497`).
+
+- [ ] **Step 3: Delete the 4 leaf class definitions from `Indicator.h`/`.cpp`**
+
+Delete `Ema`, `HmmStateIndicator`, `MarketClimateIndicator`, `AdxIndicator` and any constructor wiring for them in `IndicatorManager`'s constructor.
+
+- [ ] **Step 4: Document the permanent hybrid architecture in the 4 mirror docs**
+
+In each of `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md`, add a short note under the `IndicatorManager` description (wherever Task 1 corrected it): the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) are the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 exports); `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and its leaf classes remain permanently as (a) the write-side compute engine Triple Screen calls into every tick, and (b) the read path for keys Task 2's audit marked `StorageBlock::NotPacked`. This is not a partially-finished migration — it is the intended end-state per the design spec's "true DOD while maintaining OOD goodness" framing. A full write-side rewrite (extracting all remaining indicators' compute logic to free functions, as Task 6 did for `Macd`) remains possible as a future initiative but is out of scope here.
+
+- [ ] **Step 5: Build and run every standalone test**
 
 ```bash
 ./build_dll.sh --no-clean
@@ -1060,15 +1483,17 @@ g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_computations.cp
 ```
 Expected: all succeed/pass.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add include/IndicatorManager.h src/IndicatorManager.cpp include/Indicator.h src/Indicator.cpp
-git commit -m "refactor(indicator-manager): remove IndicatorStore/BaseIndicator hierarchy, migration complete"
+git add include/IndicatorManager.h src/IndicatorManager.cpp include/Indicator.h src/Indicator.cpp CLAUDE.md README-AI.md .github/copilot-instructions.md GEMINI.md
+git commit -m "refactor(indicator-manager): delete 4 fully-dead orphan indicator classes, document permanent hybrid architecture"
 ```
 
 ---
 
-### Task 12: Final whole-branch review
+### Task 16: Final whole-branch review
 
-Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 11's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in the hot path; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched. Additionally verify Task 10's specific claim: `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` each now have exactly ONE implementation feeding both `Event` and `TrainingEvent`, not two.
+Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 15's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched. Additionally verify: Task 10's claim that `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` each now have exactly ONE implementation feeding both `Event` and `TrainingEvent`; Task 11's `GetImpulseRunLength()` is used everywhere `impulse_run_length` is read (grep for any remaining `RunLength()` call outside `Indicator.h` itself); Tasks 12-14 didn't silently touch any write-only or `NotPacked` call site beyond what their steps specified; Task 15 deleted only the 4 named dead classes and nothing else still referenced anywhere. Finally, spot-check that the plan's own remaining `GetIndicator<T>()` call sites (the ~40 write sites plus the ~18 `NotPacked` reads) are each traceable to one of this plan's own findings — no new, undocumented `GetIndicator<T>()` caller should exist that this plan didn't account for.
+
+(Process note for whoever runs this review: this plan's implementers self-reported test counts inaccurately in Tasks 7, 8, and 10 — always all-pass, but the printed totals were wrong each time, caught only by an independent `grep -c 'check("'`. Re-verify the final total the same way rather than trusting the last report.)
