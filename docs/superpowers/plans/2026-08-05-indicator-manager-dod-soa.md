@@ -34,6 +34,8 @@
 | `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; eventually loses `IndicatorStore`/`m_indicators`/`GetIndicator<T>()`. |
 | `include/Indicator.h` / `src/Indicator.cpp` (modified) | `Indicator<T>::Update()` gains a packed-slot pointer for dual-write (one generic change). Compute methods progressively extracted to free functions. Eventually loses `BaseIndicator`, `Indicator<T>`, and all leaf classes. |
 | `src/TripleScreen1.cpp`, `TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp` (modified) | Call sites migrated from `GetIndicator<T>(key)->Value()`/`->SetX(...)` to `indMgr.GetValue<Key>()`/`indMgr.SetValue<Key>(ComputeX(...))`, family by family. |
+| `src/messaging/EventSerializer.cpp` (modified) | Live-`Event`-building companion-value reads (`->GetVolumeRatio()`, `->GetATR10()`, etc.) replaced with reads from a single per-tick `TickCompanionValues` struct, shared with the training path — removes a whole class of live/training duplication discovered while answering a direct question about OOP-vs-DOD mixing (Task 10). |
+| `src/messaging/EventSerializerV2.cpp`/`.h` (deleted) | Confirmed dead: absent from `CMakeLists.txt`, unused, contains a hardcoded `add_atr_10(0.0f)` bug. Removed as part of Task 10. |
 | `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (modified) | Stale `IndicatorManager` description corrected. |
 
 ---
@@ -772,13 +774,13 @@ const auto result = ComputeMacd(m_longMacdState, MACD_Diff[Index]);
 indMgr.SetValue<IndicatorKey::LONG_MACD>(result.signal);
 ```
 
-`result.zScore` is NOT written through `IndicatorManager` — it stays `NotPacked` this phase. See Step 4 below for what happens to it once `Macd`'s leaf class (its only current write-path) is deleted in Task 10.
+`result.zScore` is NOT written through `IndicatorManager` — it stays `NotPacked` this phase. See Step 4 below, and Task 10 (which now owns the durable fix — see that task's rationale), for what happens to it once `Macd`'s leaf class (its only current write-path) is deleted in Task 11.
 
 Where `MacdState` (the running history) needs to live: as a member of whatever owns the call site today (mirroring how `m_longMacdState` would replace `m_store.long_macd`'s object identity) — confirm with a grep of the current call site's enclosing scope before deciding exactly where.
 
-- [ ] **Step 4: Preserve the `NotPacked` companion write (`interm_macd_norm`) — do not let it silently disappear in Task 10**
+- [ ] **Step 4: Preserve the `NotPacked` companion write (`interm_macd_norm`) — do not let it silently disappear in Task 11**
 
-Today, `event.interm_macd_norm = m_zScore` is written from inside `Macd::AddToTrainingEventFB` — an override on the very leaf class Task 10 deletes. If nothing replaces this write, `interm_macd_norm` silently stops being populated once Task 10 lands, a real training-data regression. Add `result.zScore` to whatever call site currently triggers `PopulateIndicatorState`'s training-event export path, writing it directly (`event.interm_macd_norm = result.zScore;`) from the call site or from `PopulateIndicatorState` itself once Task 9 rewrites it — NOT from a `Macd` object, since none will exist after Task 10. Note this same requirement applies to every other `NotPacked`, `TrainingEventT`-only companion found during Task 2's audit (`volume_ratio_percent`, `volume_imbalance`, `atr_10`, `close_percentile`, `nh_nl_daily`, and whatever else the audit's `UNCONFIRMED` sweep turns up) — Task 8 and Task 9 must each carry their own forward-plan for these, not assume they're someone else's problem. Track the full list explicitly in Task 9's own notes once Task 2/6/8 have each contributed their findings.
+Today, `event.interm_macd_norm = m_zScore` is written from inside `Macd::AddToTrainingEventFB` — an override on the very leaf class Task 11 deletes. As an immediate stopgap in this task, add `result.zScore` to whatever call site currently triggers the training-event export path, writing it directly (`event.interm_macd_norm = result.zScore;`) — NOT from a `Macd` object, since none will exist after Task 11. Task 10 is where this gets its durable home (the `TickCompanionValues` struct) alongside the other companions found there; this step just ensures nothing regresses in the gap between this task and Task 10 landing. Note this same requirement applies to every other `NotPacked`, `TrainingEventT`-only companion found during Task 2's audit (`volume_ratio_percent`, `volume_imbalance`, `atr_10`, `close_percentile`, `nh_nl_daily`, and whatever else the audit's `UNCONFIRMED` sweep turns up) — Task 8 has the same stopgap obligation for its own scope.
 
 - [ ] **Step 4: Build and verify**
 
@@ -844,7 +846,7 @@ Same procedure as Task 7 Step 2, with the added requirement: for each of the 5 p
 
 - [ ] **Step 3: Preserve every `NotPacked` companion write found in this task's scope, same as Task 6 Step 4**
 
-For `VOLUME_SIGNAL`, `ATR_PROXIMITY`, `PRICE_METRICS`, `NH_NL_SIGNAL` (and `LONG_IMP`'s `impulse_run_length` if Task 2 resolves it as a second `Int8` row rather than in scope for a different task): if their companion write is confirmed `NotPacked` (`TrainingEventT`-only), it currently happens inside a leaf class's `AddToTrainingEventFB` override that Task 10 deletes. Add each one's value to whatever now calls the compute function, writing it directly onto `event` (mirroring Task 6 Step 4's `event.interm_macd_norm = result.zScore;` pattern) — do not let any of these silently stop being populated. Maintain the running list of `NotPacked` companions still needing this treatment; Task 9 Step 1 is where they all get finally accounted for.
+For `VOLUME_SIGNAL`, `ATR_PROXIMITY`, `PRICE_METRICS`, `NH_NL_SIGNAL` (and `LONG_IMP`'s `impulse_run_length` if Task 2 resolves it as a second `Int8` row rather than in scope for a different task): if their companion write is confirmed `NotPacked` (`TrainingEventT`-only), the source leaf object stops being updated the moment THIS task cuts its primary-value call site over — its companion getter (`->GetVolumeRatio()`, `->GetATR10()`, etc.) would then return stale, frozen data immediately, not "eventually" once Task 11 deletes the class. As an immediate stopgap (same pattern as Task 6 Step 4), add each one's value to whatever now calls the compute function, writing it directly onto `event`. Task 10 gives these their durable home in `TickCompanionValues`; Task 9 Step 1 is the last checkpoint confirming every one of them has a working stopgap or the Task 10 replacement already in place before Task 11 deletes the leaf classes for good.
 
 - [ ] **Step 4: Final build check**
 
@@ -852,53 +854,139 @@ Run: `./build_dll.sh --no-clean`.
 
 ---
 
-### Task 9: Rewrite `CheckTrigger` and `PopulateIndicatorState` against the packed arrays directly
+### Task 9: Rewrite `CheckTrigger`, `PopulateIndicatorState`, AND `GetTrainingEventT`'s indicator loop against the packed arrays directly
 
 **Files:**
-- Modify: `src/IndicatorManager.cpp` (`CheckTrigger`, `PopulateIndicatorState`)
+- Modify: `src/IndicatorManager.cpp` (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`)
 
 **Interfaces:**
 - Consumes: fully-populated `m_packed` (every key migrated by Tasks 5-8).
 
-This is where `OSCILLATOR_310`'s virtual-dispatch crash workaround is root-cause eliminated — the polymorphic `m_indicators[i]->AddToTrainingEventFB(*event)` loop (`src/IndicatorManager.cpp:425-448`) that carries the crash-guard special case is deleted entirely, not special-cased further.
+**Correction from this task's original scoping:** the `OSCILLATOR_310` crash-guard actually lives inside `GetTrainingEventT()`'s own indicator loop (`src/IndicatorManager.cpp:425-448`, calling `m_indicators[i]->AddToTrainingEventFB(*event)`), which is a SEPARATE function from `PopulateIndicatorState` — the two populate two different `IndicatorState` instances (`TrainingEvent.indicators` vs. `Event.indicators` respectively) via two independently-written mechanisms today (`PopulateIndicatorState` already avoids virtual dispatch for the switch itself, using `static_cast<IndicatorKey>(i)`, but still calls one virtual method per indicator, `ExtractInt8AndClearDirty()`, at line 882 — a second, currently-unprotected virtual-dispatch site on the exact same `Oscillator310` object, just not yet observed crashing). Root-causing the crash means fixing **both** loops, not just `PopulateIndicatorState`.
 
 - [ ] **Step 1: Rewrite `PopulateIndicatorState` as two straight-line loops**
 
-Replace the polymorphic-pointer loop with direct iteration over `m_packed`'s two blocks, using `kIndicatorLayout` to know which `IndicatorState` mutator each position corresponds to (a `switch` on `IndicatorKey` calling the right `ind.mutate_X(...)`, analogous to today's `MapIndicatorKeyToTrainingEvent` but reading from `m_packed.GetI8(pos)`/`GetF32(pos)` instead of a virtual `intValue()` call — no `BaseIndicator*`, no vtable, no `m_indicators` array). Remove the `OSCILLATOR_310` special case entirely; add a regression comment explaining WHY it's safe to remove (no virtual dispatch remains in this path at all).
+Replace the polymorphic-pointer-based value extraction (`indicator->ExtractInt8AndClearDirty()`, line 882) with direct iteration over `m_packed`'s two blocks, using `kIndicatorLayout` to know which `IndicatorState` mutator each position corresponds to (reading `m_packed.GetI8(pos)`/`GetF32(pos)` directly — no `BaseIndicator*`, no vtable, no `m_indicators` array). The `switch`-on-`IndicatorKey` structure already in this function can stay largely as-is; only the value source changes.
 
-Before touching this function, collect the full, final list of `NotPacked`, `TrainingEventT`-only companion writes flagged across Task 2 (`interm_macd_norm` and whatever the `UNCONFIRMED` sweep turned up), Task 6 Step 4, and Task 8 Step 3. Confirm every single one of them has an explicit new write site (per those tasks' own steps) before this task deletes anything in Task 10 — this is the last checkpoint before their only remaining write-path (the leaf classes) is deleted for good.
+Before touching this function, collect the full, final list of `NotPacked`, `TrainingEventT`-only companion writes flagged across Task 2 (`interm_macd_norm` and whatever the `UNCONFIRMED` sweep turned up), Task 6 Step 4, and Task 8 Step 3. Confirm every single one of them has an explicit new write site (per those tasks' own steps) before Task 11 deletes anything — this is the last checkpoint before their only remaining write-path (the leaf classes) is deleted for good.
 
-- [ ] **Step 2: Rewrite `CheckTrigger`**
+- [ ] **Step 2: Replace `GetTrainingEventT`'s indicator loop with a call to the now-rewritten `PopulateIndicatorState`**
+
+Both loops ultimately populate an `IndicatorState` struct — `PopulateIndicatorState` for `Event.indicators`, this one for `TrainingEvent.indicators`. Rather than maintaining two independent devirtualized implementations (which is exactly the kind of duplication Task 10 addresses more broadly for companion values — this is the same class of problem, one layer up), delete the loop at lines 425-448 entirely and replace it with:
+
+```cpp
+if (!event->indicators) {
+    event->indicators = std::make_unique<MTS::Schema::IndicatorState>();
+}
+PopulateIndicatorState(*event->indicators);
+```
+
+This removes the `OSCILLATOR_310` special case (lines 435-444) as dead code by construction — there is no longer a per-indicator virtual call anywhere in this path for either consumer, so there is nothing left to special-case. Add a regression comment at the deletion site explaining why: `PopulateIndicatorState` (Step 1) now reads `m_packed` directly, has no virtual dispatch, and is shared by both `Event.indicators` and `TrainingEvent.indicators` — removing the last place a per-indicator virtual call happens.
+
+- [ ] **Step 3: Rewrite `CheckTrigger`**
 
 Since trigger logic (`ShouldTrigger()`) for the ~9 entered/exited-transition families depends on comparing current vs. previous PUBLISHED value — which `m_packed` already tracks via `GetI8`/`GetPrevI8` — reimplement each family's trigger condition as a small free function or inline check keyed by `IndicatorKey`, operating on `m_packed.GetI8(pos)`/`GetPrevI8(pos)` directly. This generalizes the existing `CheckTrigger`'s "Phase 1.2 Static Metaprogramming Dispatcher" pattern (already devirtualized, already a hand-written switch) — same shape, new data source.
 
-- [ ] **Step 3: Remove the dual-write parity assertion (Task 4) entirely — no old path remains to compare against**
+- [ ] **Step 4: Remove the dual-write parity assertion (Task 4) entirely — no old path remains to compare against**
 
-- [ ] **Step 4: Build and verify**
+- [ ] **Step 5: Build and verify**
 
 Run: `./build_dll.sh --no-clean`. If a replay/backtest environment is available, run one to confirm no crash and no behavior regression around what used to be the `OSCILLATOR_310` special case.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/IndicatorManager.cpp
-git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorState against packed arrays, root-cause eliminate OSCILLATOR_310 vtable crash"
+git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorState/GetTrainingEventT against packed arrays, root-cause eliminate OSCILLATOR_310 vtable crash from both loops"
 ```
 
 ---
 
-### Task 10: Remove the old heterogeneous store and virtual hierarchy
+### Task 10: Unify live/training companion-value population in `EventSerializer.cpp`; fix the confirmed dead-write bug; delete dead `EventSerializerV2.cpp`
+
+**Files:**
+- Modify: `src/messaging/EventSerializer.cpp`
+- Modify: `src/IndicatorManager.cpp` (the `WriteTrainingRootSharedFields` call site inside `GetTrainingEventT`, around line 480-529)
+- Delete: `src/messaging/EventSerializerV2.cpp`, `include/messaging/EventSerializerV2.h` (confirm these are absent from `CMakeLists.txt` before deleting — they are today)
+
+**Interfaces:**
+- Consumes: the free `Compute*()` functions and result structs from Tasks 6-8 (`MacdResult`, `KangarooTailResult`, etc. — whatever each indicator's migration task actually produced for its companion values).
+
+**Why this task exists:** independent investigation (not from the design spec — found while answering a direct question about live/training mixing) confirmed two real, distinct defects beyond what Tasks 1-9 address:
+
+1. **Duplicated companion-value gathering.** `EventSerializer.cpp` (live `Event` path, called from `SCStudies.cpp` via `PublishEventOnChange`/`PublishEventSnapshot`) and `GetTrainingEventT`'s `WriteTrainingRootSharedFields` call (training `TrainingEvent` path, called from `EventDataCollectorStudy.cpp`) each independently call getters (`->GetVolumeRatio()`, `->GetDailyValue()`, `->GetATR10()`, `->GetClosePercentile()`, etc.) on the same indicator objects, gathering the same conceptual values via two unrelated, independently-maintained blocks of code (`EventSerializer.cpp:74-147ish`, `IndicatorManager.cpp:480-513`).
+2. **A confirmed dead-write bug.** Inside `GetTrainingEventT`, the (now-Task-9-rewritten) indicator population happens first, followed later in the same function by `WriteTrainingRootSharedFields` (`IndicatorManager.cpp:514-529`), which **overwrites** `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily` with independently re-fetched (or, for `close_percentile`, independently *recomputed from raw OHLC*) values. Whatever the leaf classes' own companion-value logic produced for these four fields is silently discarded a few lines later, in the same function. `close_percentile`'s two implementations (`PriceMetricsIndicator`'s cached percentile vs. `(close-low)/range` recomputed inline) are not guaranteed to agree.
+
+- [ ] **Step 1: Define one per-tick companion-values struct, populated once, from the Task 6-8 compute functions' own results**
+
+```cpp
+// include/IndicatorComputations.h, appended (or a new small header if this grows large):
+struct TickCompanionValues {
+    int8_t side = 0;
+    int8_t marketSymbol = 0;
+    int8_t overnightExit = 0;
+    float nhNlDaily = 0.0f;
+    float prevHigh = 0.0f;
+    float prevLow = 0.0f;
+    float prevDayHigh = 0.0f;
+    float prevDayLow = 0.0f;
+    float prevFourBarHigh = 0.0f;
+    float prevFourBarLow = 0.0f;
+    float closePercentile = 0.0f;
+    float volumeRatioPercent = 0.0f;
+    float volumeImbalance = 0.0f;
+    float atr10 = 0.0f;
+};
+```
+
+This mirrors `EventRootSharedSlice`/`TrainingRootSharedSlice`'s existing field list (confirmed identical across both — that part of the codebase already got this right for the WRITE step; this task fixes the READ/GATHER step feeding both). Populate it from whichever of Tasks 6-8's compute-function results already produced these values (e.g. `closePercentile` comes from `PriceMetricsIndicator`'s replacement compute function's result, `volumeRatioPercent`/`volumeImbalance` from `VolumeIndicator`'s, `atr10` from `ATRProximityIndicator`'s) — do not recompute anything here; this struct only carries values already computed exactly once elsewhere.
+
+- [ ] **Step 2: Populate `TickCompanionValues` once per tick in `IndicatorManager`, before either serializer runs**
+
+Add a method (or a member updated during the same per-tick pass that already calls each migrated indicator's compute function): `const TickCompanionValues& IndicatorManager::GetTickCompanionValues() const`. Wire each `Set`/compute call site from Tasks 6-8 to also store its result's companion field into this struct at the same time it calls `SetValue<Key>(...)` — one extra assignment per already-touched call site, not a new pass over anything.
+
+- [ ] **Step 3: `EventSerializer.cpp` reads from `GetTickCompanionValues()` instead of calling getters on indicator objects**
+
+Replace the block at `EventSerializer.cpp:74-147`ish (every `manager.GetIndicator<T>(key)->GetX()` call feeding `WriteEventRootSharedFields`/`indicators.mutate_X_quality(...)`/`indicators.mutate_X_norm(...)`) with reads from `manager.GetTickCompanionValues()`. This is also forced, not optional: `GetIndicator<T>()` and the leaf types it returns no longer exist after Task 11 — this step must land before Task 11, and after it lands, `EventSerializer.cpp` has zero remaining references to any leaf class.
+
+- [ ] **Step 4: Fix the dead-write bug — `GetTrainingEventT`'s `WriteTrainingRootSharedFields` call reads from the SAME struct, does not recompute anything**
+
+Replace `IndicatorManager.cpp`'s lines ~480-513 (the independent `GetIndicator<T>(key)->GetX()` calls and the inline `closePercentile = (currentClose - currentLow) / barRange` recomputation) with a single read: `const auto& companions = GetTickCompanionValues();`, then build `TrainingRootSharedSlice` directly from `companions`' fields. `close_percentile` now has exactly one implementation, used by both consumers — the recompute-from-raw-OHLC version is deleted, not kept as a fallback.
+
+- [ ] **Step 5: Delete `EventSerializerV2.cpp`/`.h`**
+
+Confirm absence from `CMakeLists.txt` and zero includes anywhere (`grep -rn "EventSerializerV2" src/ include/ CMakeLists.txt`), then delete both files. This is unrelated dead code discovered adjacent to this task's own files, not part of the live/training duplication fix itself, but cheap and directly relevant to avoid leaving a second, subtly-buggy (`add_atr_10(0.0f)` hardcoded) "which serializer is real" trap sitting next to the one this task just cleaned up.
+
+- [ ] **Step 6: Build and verify**
+
+```bash
+./build_dll.sh --no-clean
+grep -rn "GetIndicator<" src/messaging/EventSerializer.cpp src/IndicatorManager.cpp
+```
+Expected: build succeeds; the `grep` for `GetIndicator<` in these two specific call sites returns nothing (both now read from `TickCompanionValues` exclusively). If a replay/backtest environment is available, spot-check that a live-published `Event` and a training-collected `TrainingEvent` from the same tick agree on `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` — they were structurally guaranteed to potentially disagree before this task, and are structurally guaranteed to agree now.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add include/IndicatorComputations.h src/messaging/EventSerializer.cpp src/IndicatorManager.cpp
+git rm src/messaging/EventSerializerV2.cpp include/messaging/EventSerializerV2.h
+git commit -m "fix(indicator-manager): unify live/training companion-value population, fix close_percentile dead-write bug, remove dead EventSerializerV2"
+```
+
+---
+
+### Task 11: Remove the old heterogeneous store and virtual hierarchy
 
 **Files:**
 - Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (delete `IndicatorStore m_store`, `std::array<BaseIndicator*, ...> m_indicators`, `GetIndicator<T>()` and all its explicit template instantiations)
 - Modify: `include/Indicator.h`, `src/Indicator.cpp` (delete `BaseIndicator`, `Indicator<T>`, all ~38 leaf classes, `MapIndicatorKeyToTrainingEvent`)
 
-**Interfaces:** None produced — this task only removes now-dead code, once Tasks 5-9 have migrated every live call site off it.
+**Interfaces:** None produced — this task only removes now-dead code, once Tasks 5-10 have migrated every live call site off it.
 
 - [ ] **Step 1: Confirm zero remaining references before deleting anything**
 
 Run: `grep -rn "GetIndicator<\|IndicatorStore\|BaseIndicator" src/ include/ | grep -v "IndicatorManager.h:.*// removed\|IndicatorPackedState.h\|IndicatorLayout.h"`
-Expected: no matches outside the files being deleted in this task. If anything remains, stop — a call site was missed in Tasks 5-9, go back and migrate it before proceeding (do not delete code a live caller still needs).
+Expected: no matches outside the files being deleted in this task. If anything remains, stop — a call site was missed in Tasks 5-10, go back and migrate it before proceeding (do not delete code a live caller still needs).
 
 - [ ] **Step 2: Delete `IndicatorStore`, `m_indicators`, `GetIndicator<T>()` from `IndicatorManager.h`/`.cpp`**
 
@@ -925,6 +1013,6 @@ git commit -m "refactor(indicator-manager): remove IndicatorStore/BaseIndicator 
 
 ---
 
-### Task 11: Final whole-branch review
+### Task 12: Final whole-branch review
 
-Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 10's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in the hot path; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched.
+Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 11's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in the hot path; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched. Additionally verify Task 10's specific claim: `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` each now have exactly ONE implementation feeding both `Event` and `TrainingEvent`, not two.
