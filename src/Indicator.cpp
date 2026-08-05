@@ -259,6 +259,7 @@ void FI13Signal::setFromChart(double forceValue)
         m_zScore = (denom > 1e-12)
             ? static_cast<float>((forceValue - median) / denom)
             : 0.0f;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_zScore; }
     }
 }
 
@@ -307,6 +308,7 @@ void FI2Signal::setFromChart(const double force, MacdEnum longMacd)
         m_zScore = (denom > 1e-12)
             ? static_cast<float>((m_force - median) / denom)
             : 0.0f;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_zScore; }
     }
 
     // --- Enum classification (unchanged) ---

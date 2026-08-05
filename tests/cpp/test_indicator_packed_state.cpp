@@ -67,6 +67,19 @@ int main() {
         check("reset_clears_dirty_mask", state.DirtyMask() == 0);
     }
 
+    // RawI8Pointer/RawF32Pointer (Task 4 dual-write wiring) must alias the
+    // same storage as the Get/Set-by-position accessors.
+    {
+        IndicatorPackedState<4, 2> state;
+        *state.RawI8Pointer(0) = 7;
+        check("raw_i8_pointer_aliases_current_storage", state.GetI8(0) == 7);
+    }
+    {
+        IndicatorPackedState<4, 2> state;
+        *state.RawF32Pointer(1) = 2.5f;
+        check("raw_f32_pointer_aliases_current_storage", state.GetF32(1) == 2.5f);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

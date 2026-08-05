@@ -13,6 +13,8 @@
 #include "MindfulTraderConstants.h"
 #include "sierrachart.h"
 #include "Indicator.h"
+#include "IndicatorLayout.h"
+#include "IndicatorPackedState.h"
 
 // DataCollector removed (Jan 24, 2026 - event pipeline now handled by EventDataCollectorStudy)
 
@@ -137,6 +139,15 @@ private:
     // Bypasses vtable lookup for hot-path dirty checking
     bool CheckTrigger(size_t index) const;
 
+#ifndef NDEBUG
+    // Debug-only safety net for the Task 4 dual-write (indicator-manager-dod-soa
+    // plan): verifies every Int8-block primary value in m_packed matches the
+    // legacy m_store/m_indicators path. Called once per tick after that tick's
+    // indicator updates have settled. Should never fire — nothing depends on
+    // m_packed's correctness yet except this assertion itself.
+    void AssertPackedStateParity() const;
+#endif
+
     // Phase 1.1: Flat Heterogeneous Store (Avoids allocation/vtable indirection)
     struct IndicatorStore {
         // Screen 1
@@ -193,6 +204,11 @@ private:
         CorrelationIndicator corr_es_dx_delta{IndicatorKey::CORR_ES_DX_DELTA};
         CorrelationIndicator corr_es_dx_accel{IndicatorKey::CORR_ES_DX_ACCEL};
     } m_store;
+
+    // Phase II DOD/SoA migration (indicator-manager-dod-soa plan, Task 4):
+    // dual-write target alongside m_store above. Nothing reads through this
+    // yet — purely additive until a later task migrates callers off m_store.
+    mts::IndicatorPackedState<mts::kIndicatorLayoutI8Count, mts::kIndicatorLayoutF32Count> m_packed;
 
     // Fast O(1) Lookup Table (Raw Pointers to m_store members, no ownership)
     std::array<BaseIndicator*, static_cast<size_t>(IndicatorKey::MAX_INDICATORS)> m_indicators;

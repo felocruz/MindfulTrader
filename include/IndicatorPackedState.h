@@ -53,6 +53,13 @@ public:
         m_dirtyMask = 0;
     }
 
+    // Package-private accessors for IndicatorManager's constructor-time
+    // dual-write wiring only (indicator-manager-dod-soa plan, Task 4). Callers
+    // outside that wiring should go through SetI8/GetI8/SetF32/GetF32 by
+    // position, not poke the arrays directly.
+    int8_t* RawI8Pointer(size_t pos) { return &m_currentI8[pos]; }
+    float* RawF32Pointer(size_t pos) { return &m_currentF32[pos]; }
+
 private:
     alignas(64) std::array<int8_t, N_I8>  m_currentI8{};
     alignas(64) std::array<int8_t, N_I8>  m_prevI8{};

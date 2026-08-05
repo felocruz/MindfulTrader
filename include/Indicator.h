@@ -890,6 +890,10 @@ protected:
     T m_value;
     T m_prevValue;
     uint64_t* m_dirty_mask_ptr = nullptr;
+    // Dual-write target during the DOD/SoA migration (indicator-manager-dod-soa
+    // plan, Task 4): nullptr = not yet wired. Written alongside m_value inside
+    // Update() below; nothing reads through this pointer yet.
+    int8_t* m_packedSlotI8 = nullptr;
 
     uint64_t KeyBit() const {
         return 1ULL << static_cast<uint64_t>(m_key);
@@ -921,6 +925,10 @@ public:
         m_dirty_mask_ptr = maskPtr;
     }
 
+    // Dual-write target during Phase II migration (indicator-manager-dod-soa
+    // plan, Task 4). nullptr = not yet wired into IndicatorManager::m_packed.
+    void SetPackedSlotPointer(int8_t* slot) { m_packedSlotI8 = slot; }
+
     void Update(const T& newValue) {
 
         if (newValue != m_value) {
@@ -928,6 +936,9 @@ public:
             m_value = newValue;
             if (m_dirty_mask_ptr) {
                 *m_dirty_mask_ptr |= KeyBit();
+            }
+            if (m_packedSlotI8) {
+                *m_packedSlotI8 = static_cast<int8_t>(newValue);
             }
         }
     }
@@ -1277,6 +1288,13 @@ public:
 
     float ZScore() const { return m_zScore; }
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one. Written inside setFromChart() (Indicator.cpp),
+    // where m_zScore is actually computed.
+    using Indicator<FI13Enum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     // v5.6: Serialize enum + robust z-score of FI-13 EMA magnitude
     void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
         Indicator<FI13Enum>::AddToTrainingEventFB(event);
@@ -1295,6 +1313,7 @@ private:
     int   m_historyCount{0};
     int   m_historyIdx{0};
     float m_zScore{0.0f};
+    float* m_packedSlotF32 = nullptr;
 };
 
 class FI2Signal : public Indicator<FI2Enum>
@@ -1304,6 +1323,13 @@ public:
     void setFromChart(const double value, MacdEnum longMacd);
 
     float ZScore() const { return m_zScore; }
+
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one. Written inside setFromChart() (Indicator.cpp),
+    // where m_zScore is actually computed.
+    using Indicator<FI2Enum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
 
     // v5.3: Serialize enum + robust z-score magnitude
     void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
@@ -1327,6 +1353,7 @@ private:
     int   m_historyCount{0};
     int   m_historyIdx{0};
     float m_zScore{0.0f};
+    float* m_packedSlotF32 = nullptr;
 };
 
 class RaschkeStrategyIndicator : public Indicator<RaschkeStrategySetup>
@@ -1362,11 +1389,18 @@ public:
     bool AtSupportLevel() const { return m_atSupportLevel; }
     bool AtResistanceLevel() const { return m_atResistanceLevel; }
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one.
+    using Indicator<KangarooTailEnum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     void SetMetrics(float tailToBody, float tailToATR, float closePos, float quality) {
         m_tailToBodyRatio = tailToBody;
         m_tailToATR = tailToATR;
         m_closePosition = closePos;
         m_qualityScore = quality;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
     }
 
     void SetContext(bool atSupport, bool atResistance) {
@@ -1391,6 +1425,7 @@ private:
     float m_qualityScore = 0.0f;
     bool m_atSupportLevel = false;
     bool m_atResistanceLevel = false;
+    float* m_packedSlotF32 = nullptr;
 };
 
 class TurtleSoup : public Indicator<TurtleSoupEnum>
@@ -1416,11 +1451,18 @@ public:
     float Hurst() const { return m_hurst; }  // Hurst exponent at pattern formation
     bool ScreenAligned() const { return m_screenAligned; }  // Screen1 regime matches pattern direction
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one.
+    using Indicator<TurtleSoupEnum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     void SetMetrics(float penetrationDist, float closeDist, float closePos, float quality) {
         m_penetrationDistance = penetrationDist;
         m_closeDistance = closeDist;
         m_closePosition = closePos;
         m_qualityScore = quality;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
     }
 
     void SetContext(bool atDailyHigh, bool atDailyLow, float hurst, bool screenAligned) {
@@ -1448,6 +1490,7 @@ private:
     bool m_atDailyLow = false;  // Pattern at support (bullish context)
     float m_hurst = 0.0f;  // Hurst exponent (>0.55 = persistent, avoid soup in strong trend)
     bool m_screenAligned = false;  // Screen1 regime supports pattern direction
+    float* m_packedSlotF32 = nullptr;
 };
 
 class MomentumPinball : public Indicator<MomentumPinballEnum>
@@ -1474,12 +1517,19 @@ public:
     bool MacdHRising() const { return m_macdHRising; }  // MACD-H rising (bullish) or falling (bearish)
     bool ScreenAligned() const { return m_screenAligned; }  // Screen1 regime matches pattern direction
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one.
+    using Indicator<MomentumPinballEnum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     void SetMetrics(float rsiDelta, float stochDepth, bool impulseJustChanged, float volumeSpike, float quality) {
         m_rsiDelta = rsiDelta;
         m_stochDepth = stochDepth;
         m_impulseJustChanged = impulseJustChanged;
         m_volumeSpike = volumeSpike;
         m_qualityScore = quality;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
     }
 
     void SetContext(bool hasFI2Pullback, bool macdHRising, bool screenAligned) {
@@ -1506,6 +1556,7 @@ private:
     bool m_hasFI2Pullback = false;  // FI2 shows pullback (bullish) or rally (bearish)
     bool m_macdHRising = false;  // MACD-H momentum direction
     bool m_screenAligned = false;  // Screen1 regime supports pattern direction
+    float* m_packedSlotF32 = nullptr;
 };
 
 class ElderBreakout : public Indicator<ElderBreakoutEnum>
@@ -1533,6 +1584,12 @@ public:
     bool ImpulseAligned() const { return m_impulseAligned; }  // Impulse color matches breakout direction
     bool ScreenAligned() const { return m_screenAligned; }  // Screen1 regime matches breakout direction
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4). Brings the base template's int8 overload into scope
+    // alongside this float one.
+    using Indicator<ElderBreakoutEnum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     void SetMetrics(float breakoutDist, float hurst, float volumeSpike, int consolidationBars, bool isGap, float quality) {
         m_breakoutDistance = breakoutDist;
         m_hurst = hurst;
@@ -1540,6 +1597,7 @@ public:
         m_consolidationBars = consolidationBars;
         m_isGap = isGap;
         m_qualityScore = quality;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
     }
 
     void SetContext(bool channelSqueeze, bool impulseAligned, bool screenAligned) {
@@ -1567,6 +1625,7 @@ private:
     bool m_channelSqueeze = false;  // Keltner bands narrowing (ATR declining)
     bool m_impulseAligned = false;  // Impulse color supports breakout direction
     bool m_screenAligned = false;  // Screen1 regime supports breakout direction
+    float* m_packedSlotF32 = nullptr;
 };
 
 class NR7 : public Indicator<NR7Enum>
@@ -1585,6 +1644,10 @@ private:
     bool m_impulseAligned;          // Impulse positioned to break out?
     bool m_screenAligned;           // Screen1 regime predicts direction?
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4).
+    float* m_packedSlotF32 = nullptr;
+
 public:
     NR7(IndicatorKey key_)
         : Indicator(key_, NR7Enum::NONE),
@@ -1593,6 +1656,10 @@ public:
           m_consolidationBars(0), m_qualityScore(0.0f),
           m_volumeDecline(false), m_impulseAligned(false),
           m_screenAligned(false) {}
+
+    // Brings the base template's int8 overload into scope alongside this float one.
+    using Indicator<NR7Enum>::SetPackedSlotPointer;
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
 
     // v5.0: Trigger on pattern entry OR exit (prevents ghost patterns)
     bool ShouldTrigger() const override {
@@ -1621,6 +1688,7 @@ public:
         m_volumeSpike = volumeSpike;
         m_consolidationBars = consolidationBars;
         m_qualityScore = qualityScore;
+        if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
     }
 
     void SetContext(bool volumeDecline, bool impulseAligned, bool screenAligned) {
@@ -2537,6 +2605,7 @@ private:
     uint64_t* m_dirty_mask_ptr;
     float m_correlation;      // Raw correlation value (-1.0 to 1.0)
     float m_prevCorrelation;
+    float* m_packedSlotF32 = nullptr;
 
 public:
     CorrelationIndicator(IndicatorKey key_)
@@ -2565,12 +2634,19 @@ public:
     // v5.0: Correlations are passive (Tier 3) - never trigger, only piggyback
     bool ShouldTrigger() const override { return false; }
 
+    // Companion Float32-block dual-write target (indicator-manager-dod-soa
+    // plan, Task 4): nullptr = not yet wired.
+    void SetPackedSlotPointer(float* slot) { m_packedSlotF32 = slot; }
+
     void Update(float newCorrelation) {
         if (newCorrelation != m_correlation) {
             m_prevCorrelation = m_correlation;  // Always sync - clears dirty state naturally
             m_correlation = newCorrelation;
             if (m_dirty_mask_ptr) {
                 *m_dirty_mask_ptr |= (1ULL << static_cast<uint64_t>(m_key));
+            }
+            if (m_packedSlotF32) {
+                *m_packedSlotF32 = m_correlation;
             }
         }
     }
