@@ -335,223 +335,13 @@ enum class PriceActionEnum : int8_t
 // This duplicate was for backward compatibility. Use the primary definition above.
 // DO NOT use this - it's only kept for reference. Delete if compilation succeeds.
 
-/**
- * KangarooTailEnum: Elder's price-action reversal pattern (pattern detection layer).
- *
- * Kangaroo tail = long shadow (wick) showing rejection of price extreme.
- *
- * Bullish: Long lower tail, close near high
- * - Bears pushed price down, buyers aggressively rejected and closed high
- * - "Stop-loss hunters flushed out, now reverse"
- * - Most powerful at support levels or after MACD divergence
- *
- * Bearish: Long upper tail, close near low
- * - Bulls pushed price up, sellers aggressively rejected and closed low
- * - Most powerful at resistance levels
- *
- * Elder's Criteria:
- * - Tail ≥ 2× body size (2.5-4× = strong, >4× = extreme)
- * - Tail ≥ 0.5× ATR (must be meaningful relative to volatility)
- * - Close in upper 75% of range (bullish) or lower 25% (bearish)
- * - Screen3 (15-min) primary use: Precise entry confirmation
- *
- * Integration with RaschkeTacticalTrigger:
- * - KangarooTailEnum = Pattern detection (WEAK/STRONG/EXTREME granularity)
- * - RaschkeTacticalTrigger = Entry decision (KANGAROO_TAIL_BUY/SELL action)
- * - Entry logic: if (tail == STRONG/EXTREME + context valid) → tactical trigger
- */
-enum class KangarooTailEnum : int8_t
-{
-    NONE = 0,
-
-    // Bullish patterns (long lower tail)
-    BULLISH_WEAK = 1,          // Tail 2.0-2.5× body, moderate buyer rejection
-    BULLISH_STRONG = 2,        // Tail 2.5-4× body, strong buyer rejection
-    BULLISH_EXTREME = 3,       // Tail >4× body + >1× ATR, extreme buyer power
-
-    // Bearish patterns (long upper tail)
-    BEARISH_WEAK = -1,         // Tail 2.0-2.5× body, moderate seller rejection
-    BEARISH_STRONG = -2,       // Tail 2.5-4× body, strong seller rejection
-    BEARISH_EXTREME = -3       // Tail >4× body + >1× ATR, extreme seller power
-};
-
-/**
- * TurtleSoupEnum: Linda Raschke's false breakout reversal pattern (pattern detection layer).
- *
- * Turtle Soup = Price breaks recent extreme (4-day high/low), then closes back inside range.
- * This is a "stop hunt" or "false breakout" pattern where professionals trap amateurs.
- *
- * Bullish: Price breaks below 4-day low, closes back above it
- * - Amateurs stopped out at breakdown, professionals enter long
- * - "Soup" = Turtles (breakout traders) get eaten by sharks (counter-trend traders)
- * - Most powerful when 4-day low is near daily/weekly support
- *
- * Bearish: Price breaks above 4-day high, closes back below it
- * - Amateurs stopped out at breakout, professionals enter short
- * - Most powerful when 4-day high is near daily/weekly resistance
- *
- * Raschke's Criteria:
- * - Penetration: Price must break 4-day extreme by meaningful distance (≥0.1× ATR)
- * - Close-back: Close must return inside range by meaningful distance (≥0.1× ATR)
- * - WEAK: Penetration 0.1-0.3× ATR, moderate false breakout
- * - STRONG: Penetration 0.3-0.5× ATR, close near opposite extreme (≥40% of bar range)
- * - EXTREME: Penetration >0.5× ATR, close at bar extreme (≥80% of range), often with volume spike
- * - Screen3 (15-min) primary use: Precise entry timing
- *
- * Integration with RaschkeTacticalTrigger:
- * - TurtleSoupEnum = Pattern detection (WEAK/STRONG/EXTREME granularity)
- * - RaschkeTacticalTrigger = Entry decision (TURTLE_SOUP_BUY/SELL action)
- * - Entry logic: if (soup == STRONG/EXTREME + quality ≥0.6 + at daily high/low) → tactical trigger
- *
- * Source: "Street Smarts" by Linda Raschke (1995), Chapter 8: The Turtle Soup Pattern
- * Defined in: include/Indicator.h
- * Computed by: StudyHelperFunctions::DetectTurtleSoup()
- * Used by: TripleScreen3.cpp::scsf_Screen3_TurtleSoup() (15-min bars)
- */
-enum class TurtleSoupEnum : int8_t
-{
-    NONE = 0,
-
-    // Bullish patterns (break below 4-day low, close back inside)
-    BULLISH_WEAK = 1,          // Penetration 0.1-0.3× ATR, moderate stop hunt
-    BULLISH_STRONG = 2,        // Penetration 0.3-0.5× ATR, close near high (strong reversal)
-    BULLISH_EXTREME = 3,       // Penetration >0.5× ATR, close ≥80% of range (professional trap)
-
-    // Bearish patterns (break above 4-day high, close back inside)
-    BEARISH_WEAK = -1,         // Penetration 0.1-0.3× ATR, moderate stop hunt
-    BEARISH_STRONG = -2,       // Penetration 0.3-0.5× ATR, close near low (strong reversal)
-    BEARISH_EXTREME = -3       // Penetration >0.5× ATR, close ≤20% of range (professional trap)
-};
-
-/**
- * MomentumPinballEnum: Linda Raschke's momentum-based mean-reversion pattern (pattern detection layer).
- *
- * Momentum Pinball = RSI cross + Stochastic extreme = early reversal signal
- * Named "Pinball" because price bounces off extreme (like pinball off bumper)
- *
- * Bullish: RSI3 crosses above RSI10 + Stochastic oversold (<20)
- * - Momentum shifts from down to up (RSI cross)
- * - Price at extreme (Stochastic <20)
- * - "Catch the bounce off support" — Raschke
- * - Most powerful after FI2 pullback + fresh Impulse green
- *
- * Bearish: RSI3 crosses below RSI10 + Stochastic overbought (>80)
- * - Momentum shifts from up to down (RSI cross)
- * - Price at extreme (Stochastic >80)
- * - Most powerful after FI2 rally + fresh Impulse red
- *
- * Raschke's Strength Classification:
- * - WEAK: Fresh cross, stoch barely extreme (15-20 or 80-85), no volume
- * - STRONG: Strong RSI delta (≥5 pts), stoch deep (10-15 or 85-90), FI2 aligned
- * - EXTREME: Fresh Impulse change + deep stoch (<10 or >90) + volume spike (≥1.5× avg)
- *
- * Integration with RaschkeTacticalTrigger:
- * - MomentumPinballEnum = Pattern detection (WEAK/STRONG/EXTREME granularity)
- * - RaschkeTacticalTrigger = Entry decision (MOMENTUM_PINBALL_BUY/SELL action)
- * - Entry logic: if (pinball == STRONG/EXTREME + quality ≥0.6) → tactical trigger
- */
-enum class MomentumPinballEnum : int8_t
-{
-    NONE = 0,
-
-    // Bullish patterns (RSI3 > RSI10 + Stochastic oversold)
-    BULLISH_WEAK = 1,          // Fresh cross, stoch 15-20, marginal setup
-    BULLISH_STRONG = 2,        // RSI delta ≥5, stoch 10-15, FI2 pullback
-    BULLISH_EXTREME = 3,       // Fresh Impulse green + stoch <10 + volume spike
-
-    // Bearish patterns (RSI3 < RSI10 + Stochastic overbought)
-    BEARISH_WEAK = -1,         // Fresh cross, stoch 80-85, marginal setup
-    BEARISH_STRONG = -2,       // RSI delta ≤-5, stoch 85-90, FI2 rally
-    BEARISH_EXTREME = -3       // Fresh Impulse red + stoch >90 + volume spike
-};
-
-/**
- * ElderBreakoutEnum: Dr. Elder/Linda Raschke Keltner Channel breakout pattern (pattern detection layer).
- *
- * Elder Breakout = Price closes beyond Keltner Channel band = volatility expansion signal
- * Named after Dr. Elder's use of volatility channels (Keltner = 20-period EMA ± 2.5× ATR)
- *
- * Bullish: Close above upper Keltner band
- * - Price breaks out of normal volatility range (upside expansion)
- * - Most powerful after consolidation at upper band (5+ bars)
- * - "Channel squeeze then expansion" — Elder/Raschke
- * - Best when Impulse GREEN + Hurst rising + Screen1 bullish
- *
- * Bearish: Close below lower Keltner band
- * - Price breaks out of normal volatility range (downside expansion)
- * - Most powerful after consolidation at lower band
- * - Best when Impulse RED + Hurst rising + Screen1 bearish
- *
- * Raschke's Strength Classification:
- * - WEAK: Barely beyond band (0.1-0.5× ATR), marginal breakout
- * - STRONG: Clear breakout (>0.5× ATR) + volume 1.5× avg + Hurst >0.55
- * - EXTREME: Large breakout (>1× ATR or gap) + 2-3× volume + after 5+ bar consolidation
- *
- * Context Enhancement:
- * - Channel squeeze: Bands narrowing (ATR compression) before breakout
- * - Impulse alignment: Impulse color matches breakout direction
- * - Screen1 support: Weekly trend confirms breakout direction
- *
- * Integration with RaschkeTacticalTrigger:
- * - ElderBreakoutEnum = Pattern detection (WEAK/STRONG/EXTREME granularity)
- * - RaschkeTacticalTrigger = Entry decision (ELDER_BREAKOUT_BUY/SELL action)
- * - Entry logic: if (breakout == STRONG/EXTREME + quality ≥0.6) → tactical trigger
- */
-enum class ElderBreakoutEnum : int8_t
-{
-    NONE = 0,
-
-    // Bullish patterns (close above upper Keltner band)
-    BULLISH_WEAK = 1,          // Barely beyond band (0.1-0.5× ATR)
-    BULLISH_STRONG = 2,        // Clear breakout (>0.5× ATR) + volume + Hurst >0.55
-    BULLISH_EXTREME = 3,       // Large breakout (>1× ATR or gap) + surge volume + consolidation
-
-    // Bearish patterns (close below lower Keltner band)
-    BEARISH_WEAK = -1,         // Barely beyond band (0.1-0.5× ATR)
-    BEARISH_STRONG = -2,       // Clear breakout (>0.5× ATR) + volume + Hurst >0.55
-    BEARISH_EXTREME = -3       // Large breakout (>1× ATR or gap) + surge volume + consolidation
-};
-
-/**
- * NR7Enum: Narrow Range 7 - Compression pattern where bar range is smallest over past 7 bars.
- *
- * Named after Linda Raschke's compression breakout pattern.
- * Range = High - Low; NR7 = bar with smallest range over 7-bar lookback.
- *
- * Theory: "Volatility compression precedes expansion. When price consolidates in a tight range,
- *         the spring coils tighter. When it breaks, the expansion follows." — Raschke
- *
- * WEAK: Range 95-100% of 7-bar average (barely narrowest)
- * - Close to the 7-bar average, barely qualifies as compression
- * - High probability of failure or fizzle
- * - Base quality: 0.15
- *
- * STRONG: Range 85-95% of 7-bar average + volume declining (good compression signal)
- * - Solid compression with volume drying up
- * - Best when after multi-bar consolidation
- * - Base quality: 0.25
- *
- * EXTREME: Range <80% of 7-bar average + volume very low + consolidation (nuclear setup)
- * - Extremely tight range (compression extreme)
- * - Volume drying up completely (low participation)
- * - After 3+ bars at band (spring fully coiled)
- * - Base quality: 0.4
- *
- * Context Enhancement (Raschke's additions):
- * - Volume decline (+0.2): Volume drying up confirms compression
- * - Impulse aligned (+0.1): Impulse color will confirm breakout direction
- * - Screen1 aligned (+0.1): Weekly trend predicts breakout direction
- *
- * Quote: "NR7 is the compression pattern I use most. It's selective enough to filter
- *        whipsaws but common enough to trade regularly." — Linda Raschke
- */
-enum class NR7Enum : int8_t
-{
-    NONE = 0,
-    WEAK = 1,               // Range 95-100% of 7-bar average
-    STRONG = 2,             // Range 85-95% + volume declining
-    EXTREME = 3             // Range <80% + volume dry + consolidation
-};
+// KangarooTailEnum/TurtleSoupEnum/MomentumPinballEnum/ElderBreakoutEnum/NR7Enum
+// (extracted so they're ACSIL-independent; see IndicatorComputations.h) — same
+// rationale as MacdEnum/ImpulseEnum/VolumeEnum's extraction elsewhere in this
+// file (indicator-manager-dod-soa plan, Task 8): DetectKangarooTail/
+// DetectTurtleSoup/DetectMomentumPinball/DetectElderBreakout/DetectNR7's return
+// types must be the real enums, and that header must stay includable with no
+// sierrachart.h on the path.
 
 enum class RSI : int8_t
 {
@@ -1322,6 +1112,18 @@ public:
     RaschkeTacticalIndicator(IndicatorKey key_) : Indicator(key_, RaschkeTacticalTrigger::NONE) { }
 };
 
+// Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
+// §3.4): only the published enum (packed Int8) and m_qualityScore (packed
+// Float32) are read by any live caller outside this class (confirmed via a
+// full-repo grep of every getter below at Task 8 time — none are called from
+// outside KangarooTail itself). m_tailToBodyRatio/m_tailToATR/m_closePosition/
+// m_atSupportLevel/m_atResistanceLevel are set via SetMetrics()/SetContext()
+// from TripleScreen3.cpp but never read back; they stay as plain member
+// fields here rather than moving into the packed arrays or a dedicated
+// compute-function struct (there is no compute function that consumes them —
+// DetectKangarooTail in IndicatorComputations.h only produces the enum +
+// quality/ratio/position outputs; the support/resistance context is computed
+// independently in TripleScreen3.cpp and passed in via SetContext()).
 class KangarooTail : public Indicator<KangarooTailEnum>
 {
 public:
@@ -1382,6 +1184,13 @@ private:
     float* m_packedSlotF32 = nullptr;
 };
 
+// Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
+// §3.4): only the published enum and m_qualityScore are read by any live
+// caller outside this class (confirmed via full-repo grep). m_penetrationDistance/
+// m_closeDistance/m_closePosition/m_atDailyHigh/m_atDailyLow/m_hurst/
+// m_screenAligned are set via SetMetrics()/SetContext() but never read back;
+// same rationale as KangarooTail above — no compute function consumes them as
+// a parameter, so no struct is introduced for them.
 class TurtleSoup : public Indicator<TurtleSoupEnum>
 {
 public:
@@ -1447,6 +1256,12 @@ private:
     float* m_packedSlotF32 = nullptr;
 };
 
+// Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
+// §3.4): only the published enum and m_qualityScore are read by any live
+// caller outside this class (confirmed via full-repo grep). m_rsiDelta/
+// m_stochDepth/m_impulseJustChanged/m_volumeSpike/m_hasFI2Pullback/
+// m_macdHRising/m_screenAligned are set via SetMetrics()/SetContext() but
+// never read back; same rationale as KangarooTail above.
 class MomentumPinball : public Indicator<MomentumPinballEnum>
 {
 public:
@@ -1513,6 +1328,12 @@ private:
     float* m_packedSlotF32 = nullptr;
 };
 
+// Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
+// §3.4): only the published enum and m_qualityScore are read by any live
+// caller outside this class (confirmed via full-repo grep). m_breakoutDistance/
+// m_hurst/m_volumeSpike/m_consolidationBars/m_isGap/m_channelSqueeze/
+// m_impulseAligned/m_screenAligned are set via SetMetrics()/SetContext() but
+// never read back; same rationale as KangarooTail above.
 class ElderBreakout : public Indicator<ElderBreakoutEnum>
 {
 public:
@@ -1582,6 +1403,12 @@ private:
     float* m_packedSlotF32 = nullptr;
 };
 
+// Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
+// §3.4): only the published enum and m_qualityScore are read by any live
+// caller outside this class (confirmed via full-repo grep). m_currentRange/
+// m_avg7BarRange/m_rangePercentile/m_volumeSpike/m_consolidationBars/
+// m_volumeDecline/m_impulseAligned/m_screenAligned are set via SetMetrics()/
+// SetContext() but never read back; same rationale as KangarooTail above.
 class NR7 : public Indicator<NR7Enum>
 {
 private:

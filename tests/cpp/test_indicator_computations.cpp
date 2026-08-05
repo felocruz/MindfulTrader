@@ -271,6 +271,148 @@ int main() {
           ComputeOscillator310Cross(/*fastLine=*/1.0f, /*slowLine=*/0.5f,
                                      /*prevFastLine=*/1.0f, /*prevSlowLine=*/0.5f) == Oscillator310CrossEnum::NEUTRAL);
 
+    std::printf("\nIndicatorComputations (KangarooTail/TurtleSoup/MomentumPinball/"
+                "ElderBreakout/NR7) tests\n");
+
+    // --- DetectKangarooTail --------------------------------------------
+    {
+        // Bullish: long lower tail (>=1.5x body), tail >=0.3x ATR, close in
+        // upper 60% of range. open=100, close=101 (body=1), low=95 (lower
+        // tail=5, ratio=5.0 -> >=4.0 body-ratio tier), high=101.2, atr=2.0
+        // (tailToATR = 5/2 = 2.5 -> >=1.0, so both EXTREME conditions hold).
+        float ratio = 0.0f, tailAtr = 0.0f, closePos = 0.0f, quality = 0.0f;
+        KangarooTailEnum e = DetectKangarooTail(100.0f, 101.2f, 95.0f, 101.0f, 2.0f,
+                                                  ratio, tailAtr, closePos, quality);
+        check("kangaroo_tail_bullish_extreme", e == KangarooTailEnum::BULLISH_EXTREME);
+        check("kangaroo_tail_quality_in_range", quality > 0.0f && quality <= 1.0f);
+    }
+    {
+        // No pattern: doji-ish bar, no meaningful tail.
+        float ratio = 0.0f, tailAtr = 0.0f, closePos = 0.0f, quality = 0.0f;
+        KangarooTailEnum e = DetectKangarooTail(100.0f, 100.5f, 99.5f, 100.1f, 2.0f,
+                                                  ratio, tailAtr, closePos, quality);
+        check("kangaroo_tail_none_when_flat", e == KangarooTailEnum::NONE);
+    }
+    {
+        // Invalid input (high <= low) -> NONE, outputs zeroed.
+        float ratio = 1.0f, tailAtr = 1.0f, closePos = 1.0f, quality = 1.0f;
+        KangarooTailEnum e = DetectKangarooTail(100.0f, 99.0f, 99.0f, 99.0f, 2.0f,
+                                                  ratio, tailAtr, closePos, quality);
+        check("kangaroo_tail_invalid_range_is_none", e == KangarooTailEnum::NONE);
+        check("kangaroo_tail_invalid_range_zeroes_quality", quality == 0.0f);
+    }
+
+    // --- DetectTurtleSoup ------------------------------------------------
+    {
+        // Bullish: low breaks below 4-day low, close recovers back above it.
+        // fourDayLow=100, low=98 (penetration=2/4=0.5x ATR exactly, not >0.5
+        // so this lands STRONG via the >=0.3 leg, not EXTREME), close=103
+        // (closeBack=3/4=0.75x ATR -> deep recovery bonus), high=103.5 ->
+        // closePosition=(103-98)/5.5=0.909 (upper, STRONG needs >=0.60).
+        // fourDayHigh=110 (well away, so the bearish branch can't fire too).
+        float pen = 0.0f, closeDist = 0.0f, closePos = 0.0f, quality = 0.0f;
+        TurtleSoupEnum e = DetectTurtleSoup(100.0f, 103.5f, 98.0f, 103.0f,
+                                              110.0f, 100.0f, 4.0f,
+                                              pen, closeDist, closePos, quality);
+        check("turtle_soup_bullish_pattern_detected",
+              e == TurtleSoupEnum::BULLISH_STRONG || e == TurtleSoupEnum::BULLISH_EXTREME);
+        check("turtle_soup_quality_in_range", quality > 0.0f && quality <= 1.0f);
+    }
+    {
+        // No breakout at all -> NONE.
+        float pen = 0.0f, closeDist = 0.0f, closePos = 0.0f, quality = 0.0f;
+        TurtleSoupEnum e = DetectTurtleSoup(100.0f, 101.0f, 99.0f, 100.5f,
+                                              105.0f, 95.0f, 4.0f,
+                                              pen, closeDist, closePos, quality);
+        check("turtle_soup_none_when_inside_range", e == TurtleSoupEnum::NONE);
+    }
+
+    // --- DetectMomentumPinball -------------------------------------------
+    {
+        // Fresh bullish RSI cross (prev RSI3<=RSI10, now RSI3>RSI10) with
+        // stoch < 20 (oversold) -> bullish pinball.
+        float rsiDelta = 0.0f, stochDepth = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        bool impulseChanged = false;
+        MomentumPinballEnum e = DetectMomentumPinball(
+            /*rsi3=*/25.0f, /*rsi10=*/20.0f, /*prevRSI3=*/18.0f, /*prevRSI10=*/20.0f,
+            /*stochK=*/12.0f, /*impulseColor=*/1, /*prevImpulseColor=*/1,
+            /*volume=*/100.0, /*avgVolume=*/100.0,
+            rsiDelta, stochDepth, impulseChanged, volSpike, quality);
+        check("momentum_pinball_bullish_on_fresh_cross_oversold",
+              e == MomentumPinballEnum::BULLISH_STRONG || e == MomentumPinballEnum::BULLISH_WEAK ||
+              e == MomentumPinballEnum::BULLISH_EXTREME);
+        check("momentum_pinball_rsi_delta_matches", near(rsiDelta, 5.0f));
+    }
+    {
+        // No cross (RSI3/RSI10 relationship unchanged) -> NONE regardless of
+        // stochastic extremity.
+        float rsiDelta = 0.0f, stochDepth = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        bool impulseChanged = false;
+        MomentumPinballEnum e = DetectMomentumPinball(
+            25.0f, 20.0f, 24.0f, 19.0f,
+            12.0f, 1, 1,
+            100.0, 100.0,
+            rsiDelta, stochDepth, impulseChanged, volSpike, quality);
+        check("momentum_pinball_none_without_fresh_cross", e == MomentumPinballEnum::NONE);
+    }
+
+    // --- DetectElderBreakout ---------------------------------------------
+    {
+        // Bullish breakout: close clears upper band by 0.6x ATR, volume
+        // spike 1.6x, hurst 0.6 (persistent) -> STRONG tier.
+        float dist = 0.0f, hurstOut = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        int consolOut = 0;
+        bool gapOut = false;
+        ElderBreakoutEnum e = DetectElderBreakout(
+            /*close=*/106.0f, /*upperBand=*/105.0f, /*lowerBand=*/95.0f,
+            /*atr=*/1.67f, /*hurst=*/0.6f,
+            /*volume=*/160.0, /*avgVolume=*/100.0,
+            /*consolidationBars=*/3, /*isGap=*/false,
+            dist, hurstOut, volSpike, consolOut, gapOut, quality);
+        check("elder_breakout_bullish_strong", e == ElderBreakoutEnum::BULLISH_STRONG);
+        check("elder_breakout_quality_in_range", quality > 0.0f && quality <= 1.0f);
+    }
+    {
+        // Close inside both bands -> NONE.
+        float dist = 0.0f, hurstOut = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        int consolOut = 0;
+        bool gapOut = false;
+        ElderBreakoutEnum e = DetectElderBreakout(
+            100.0f, 105.0f, 95.0f, 1.0f, 0.5f, 100.0, 100.0, 0, false,
+            dist, hurstOut, volSpike, consolOut, gapOut, quality);
+        check("elder_breakout_none_when_inside_bands", e == ElderBreakoutEnum::NONE);
+    }
+
+    // --- DetectNR7 ---------------------------------------------------------
+    {
+        // Current range (1.0) narrower than all of the last 7 bars' ranges
+        // (avg 2.0) -> narrowest, percentile 0.5 -> EXTREME tier (<0.80).
+        std::vector<float> ranges(7, 2.0f);
+        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(/*currentHigh=*/101.0f, /*currentLow=*/100.0f, ranges,
+                                /*volume=*/100.0, /*avgVolume=*/100.0,
+                                /*consolidationBars=*/2,
+                                curRange, avgRange, pct, volSpike, quality);
+        check("nr7_extreme_on_deep_compression", e == NR7Enum::EXTREME);
+        check("nr7_quality_in_range", quality > 0.0f && quality <= 1.0f);
+    }
+    {
+        // Current range NOT narrowest (some prior bar was tighter) -> NONE.
+        std::vector<float> ranges = {0.5f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f};
+        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(101.0f, 100.0f, ranges, 100.0, 100.0, 2,
+                                curRange, avgRange, pct, volSpike, quality);
+        check("nr7_none_when_not_narrowest", e == NR7Enum::NONE);
+    }
+    {
+        // Fewer than 7 range samples -> NONE (insufficient lookback).
+        std::vector<float> ranges = {1.0f, 1.0f, 1.0f};
+        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(101.0f, 100.0f, ranges, 100.0, 100.0, 2,
+                                curRange, avgRange, pct, volSpike, quality);
+        check("nr7_none_when_insufficient_lookback", e == NR7Enum::NONE);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;
