@@ -884,11 +884,13 @@ PopulateIndicatorState(*event->indicators);
 
 This removes the `OSCILLATOR_310` special case (lines 435-444) as dead code by construction — there is no longer a per-indicator virtual call anywhere in this path for either consumer, so there is nothing left to special-case. Add a regression comment at the deletion site explaining why: `PopulateIndicatorState` (Step 1) now reads `m_packed` directly, has no virtual dispatch, and is shared by both `Event.indicators` and `TrainingEvent.indicators` — removing the last place a per-indicator virtual call happens.
 
-- [ ] **Step 3: Unify `src/BackTesterStudy.cpp`'s own `IndicatorState`-building function as a third caller of `PopulateIndicatorState`**
+- [ ] **Step 3: Unify `src/BackTesterStudy.cpp`'s `BuildEntryIndicatorState()` as a third caller of `PopulateIndicatorState`**
 
-Task 2's audit found a THIRD independent `IndicatorState`-building function in `src/BackTesterStudy.cpp` (~lines 1240-1290), used by the backtest-artifact path, calling `GetIndicator<T>()` on leaf objects directly — the same duplication pattern Steps 1-2 just eliminated for the live/training paths, plus it currently populates a few fields (`zn_trend`/`dx_trend`, the 4 correlation derivatives) that neither other path does today. `BackTesterStudy.cpp` is confirmed work-in-progress and not used in production (user, 2026-08-05) — this is not a live-parity risk, but it does call `GetIndicator<T>()` on leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed (Task 11 Step 1's own reference-check would otherwise correctly block on it).
+Task 2's audit found `src/BackTesterStudy.cpp` has a static free function, `BuildEntryIndicatorState()` (~line 1223), building a full `MTS::Schema::IndicatorState` snapshot for the `.btst` `TradeRecord` message by calling `GetIndicator<T>()` on leaf objects directly — the same duplication pattern Steps 1-2 just eliminated for the live/training paths, plus it currently populates a few fields (`zn_trend`/`dx_trend`, the 4 correlation derivatives) that neither other path does today. Confirmed work-in-progress, unused in production (user, 2026-08-05) — not a live-parity risk, but it calls leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed.
 
-Replace this function's body with the same call used in Step 2 — build a local `MTS::Schema::IndicatorState` and call `PopulateIndicatorState(state)` — rather than hand-porting its individual `GetIndicator<T>()` calls to the new API one by one. This is a net improvement, not just a mechanical port: `zn_trend`/`dx_trend`/the correlation derivatives become populated the same way for all three consumers instead of only this one, for free. Confirm with a diff that no field this function used to populate is silently dropped — if `PopulateIndicatorState`'s switch doesn't yet cover `zn_trend`/`dx_trend`/the 4 correlation derivatives (it doesn't, per Task 2's audit — they're `NotPacked`, deliberately deferred), note this explicitly as an accepted, documented behavior change for a WIP/unused file, not a silent regression.
+Replace this function's body with the same call used in Step 2 — build a local `MTS::Schema::IndicatorState` and call `PopulateIndicatorState(state)` — rather than hand-porting its individual `GetIndicator<T>()` calls to the new API one by one. This is a net improvement, not just a mechanical port: `zn_trend`/`dx_trend`/the correlation derivatives become populated the same way for all three consumers instead of only this one, for free. Confirm with a diff that no field this function used to populate is silently dropped — if `PopulateIndicatorState`'s switch doesn't yet cover `zn_trend`/`dx_trend`/the 4 correlation derivatives (it doesn't, per Task 2's audit — they're `NotPacked`, deliberately deferred), note this explicitly as an accepted, documented behavior change for a WIP/unused file, not a silent regression. **Preserve the existing `intValue()`-not-`ExtractInt8AndClearDirty()` choice's intent** (a read-only snapshot must not clear live dirty flags as a side effect) — `PopulateIndicatorState`'s rewritten Step-1 form already reads `m_packed` directly with no dirty-clearing side effect at all, so this property carries over automatically; just confirm it in the diff, don't re-derive it.
+
+Note for Task 10: `src/BackTesterStudy.cpp` has a SECOND, separate `GetIndicator<T>()` call site (~line 1751, inside the function that records full context at trade entry) pulling `VolumeIndicator`/`PriceMetricsIndicator`/`ATRProximityIndicator` companion getters into a `g_entryContext` struct's own scalar fields — this is a companion-value duplication, not an `IndicatorState`-struct duplication, so it's Task 10's category of fix, not this one's. Do not touch it here.
 
 - [ ] **Step 4: Rewrite `CheckTrigger`**
 
@@ -909,11 +911,12 @@ git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorSt
 
 ---
 
-### Task 10: Unify live/training companion-value population in `EventSerializer.cpp`; fix the confirmed dead-write bug; delete dead `EventSerializerV2.cpp`
+### Task 10: Unify live/training/backtest companion-value population in `EventSerializer.cpp`; fix the confirmed dead-write bug; delete dead `EventSerializerV2.cpp`
 
 **Files:**
 - Modify: `src/messaging/EventSerializer.cpp`
 - Modify: `src/IndicatorManager.cpp` (the `WriteTrainingRootSharedFields` call site inside `GetTrainingEventT`, around line 480-529)
+- Modify: `src/BackTesterStudy.cpp` (the `g_entryContext` companion-value call site, ~line 1751 — a third consumer found while investigating this same duplication category; see Step 5)
 - Delete: `src/messaging/EventSerializerV2.cpp`, `include/messaging/EventSerializerV2.h` (confirm these are absent from `CMakeLists.txt` before deleting — they are today)
 
 **Interfaces:**
@@ -960,24 +963,28 @@ Replace the block at `EventSerializer.cpp:74-147`ish (every `manager.GetIndicato
 
 Replace `IndicatorManager.cpp`'s lines ~480-513 (the independent `GetIndicator<T>(key)->GetX()` calls and the inline `closePercentile = (currentClose - currentLow) / barRange` recomputation) with a single read: `const auto& companions = GetTickCompanionValues();`, then build `TrainingRootSharedSlice` directly from `companions`' fields. `close_percentile` now has exactly one implementation, used by both consumers — the recompute-from-raw-OHLC version is deleted, not kept as a fallback.
 
-- [ ] **Step 5: Delete `EventSerializerV2.cpp`/`.h`**
+- [ ] **Step 5: `src/BackTesterStudy.cpp`'s second `GetIndicator<T>()` call site (~line 1751) becomes the third caller of `GetTickCompanionValues()`**
+
+Task 9 Step 3 already migrated this file's `BuildEntryIndicatorState()` (an `IndicatorState`-struct duplication, that task's category of fix). This is a *different* call site in the same file — inside the function that records full context at trade entry — pulling `VolumeIndicator::GetVolumeRatio()`/`GetVolumeImbalance()`, `PriceMetricsIndicator::GetClosePercentile()`, and `ATRProximityIndicator::GetATR10()` directly into a `g_entryContext` struct's own scalar fields (`volumeRatioAtEntry`, `volumeImbalanceAtEntry`, `closePercentileAtEntry`, `atr10PriceAtEntry`) — a companion-value duplication, this task's category. Replace those four individual `GetIndicator<T>()` calls with reads from `manager.GetTickCompanionValues()` (Step 2's struct), same pattern as Step 3. Confirmed work-in-progress/unused (user, 2026-08-05) — not a live-parity risk, but it calls leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed.
+
+- [ ] **Step 6: Delete `EventSerializerV2.cpp`/`.h`**
 
 Confirm absence from `CMakeLists.txt` and zero includes anywhere (`grep -rn "EventSerializerV2" src/ include/ CMakeLists.txt`), then delete both files. This is unrelated dead code discovered adjacent to this task's own files, not part of the live/training duplication fix itself, but cheap and directly relevant to avoid leaving a second, subtly-buggy (`add_atr_10(0.0f)` hardcoded) "which serializer is real" trap sitting next to the one this task just cleaned up.
 
-- [ ] **Step 6: Build and verify**
+- [ ] **Step 7: Build and verify**
 
 ```bash
 ./build_dll.sh --no-clean
-grep -rn "GetIndicator<" src/messaging/EventSerializer.cpp src/IndicatorManager.cpp
+grep -rn "GetIndicator<" src/messaging/EventSerializer.cpp src/IndicatorManager.cpp src/BackTesterStudy.cpp
 ```
-Expected: build succeeds; the `grep` for `GetIndicator<` in these two specific call sites returns nothing (both now read from `TickCompanionValues` exclusively). If a replay/backtest environment is available, spot-check that a live-published `Event` and a training-collected `TrainingEvent` from the same tick agree on `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` — they were structurally guaranteed to potentially disagree before this task, and are structurally guaranteed to agree now.
+Expected: build succeeds; the `grep` for `GetIndicator<` in these three call sites returns nothing (all now read from `TickCompanionValues` exclusively). If a replay/backtest environment is available, spot-check that a live-published `Event` and a training-collected `TrainingEvent` from the same tick agree on `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` — they were structurally guaranteed to potentially disagree before this task, and are structurally guaranteed to agree now.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add include/IndicatorComputations.h src/messaging/EventSerializer.cpp src/IndicatorManager.cpp
+git add include/IndicatorComputations.h src/messaging/EventSerializer.cpp src/IndicatorManager.cpp src/BackTesterStudy.cpp
 git rm src/messaging/EventSerializerV2.cpp include/messaging/EventSerializerV2.h
-git commit -m "fix(indicator-manager): unify live/training companion-value population, fix close_percentile dead-write bug, remove dead EventSerializerV2"
+git commit -m "fix(indicator-manager): unify live/training/backtest companion-value population, fix close_percentile dead-write bug, remove dead EventSerializerV2"
 ```
 
 ---
