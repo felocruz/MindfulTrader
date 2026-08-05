@@ -807,11 +807,10 @@ enum class NhNlSignalEnum : int8_t {
  * - BULLISH_CROSS: Fast line crossed above slow line (bullish signal)
  * - BEARISH_CROSS: Fast line crossed below slow line (bearish signal)
  */
-enum class Oscillator310CrossEnum : int8_t {
-    NEUTRAL = 0,
-    BULLISH_CROSS = 1,
-    BEARISH_CROSS = 2
-};
+// Oscillator310CrossEnum (extracted so it's ACSIL-independent; see
+// IndicatorComputations.h) — same rationale as MacdEnum/ImpulseEnum/VolumeEnum's
+// extraction above (indicator-manager-dod-soa plan, Task 7):
+// ComputeOscillator310Cross's return type must be the real Oscillator310CrossEnum.
 
 
 // A non-templated base class for polymorphism
@@ -2498,30 +2497,23 @@ public:
         , m_prevSlowLine(0.0f)
     {}
 
+    // indicator-manager-dod-soa plan, Task 7: the actual crossover detection
+    // is ComputeOscillator310Cross() (IndicatorComputations.h), a pure,
+    // stateless free function; this method stays as the ACSIL-only adapter
+    // owning the fastLine/slowLine/prev history.
     void UpdateOscillator(float fastLine, float slowLine) {
         m_prevFastLine = m_fastLine;
         m_prevSlowLine = m_slowLine;
         m_fastLine = fastLine;
         m_slowLine = slowLine;
 
-        // Detect cross and update indicator state
-        Update(DetectCross());
+        Update(ComputeOscillator310Cross(m_fastLine, m_slowLine, m_prevFastLine, m_prevSlowLine));
     }
 
     float FastLine() const { return m_fastLine; }
     float SlowLine() const { return m_slowLine; }
     float PrevFastLine() const { return m_prevFastLine; }
     float PrevSlowLine() const { return m_prevSlowLine; }
-
-    // Detect crossover state
-    Oscillator310CrossEnum DetectCross() const {
-        bool fastAboveNow = (m_fastLine > m_slowLine);
-        bool fastAbovePrev = (m_prevFastLine > m_prevSlowLine);
-
-        if (fastAboveNow && !fastAbovePrev) return Oscillator310CrossEnum::BULLISH_CROSS;
-        if (!fastAboveNow && fastAbovePrev) return Oscillator310CrossEnum::BEARISH_CROSS;
-        return Oscillator310CrossEnum::NEUTRAL;
-    }
 };
 
 // ============================================================================

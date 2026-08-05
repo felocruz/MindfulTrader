@@ -475,3 +475,30 @@ inline VolumeClassification ComputeVolumeClassification(float volumeZScore, floa
 
     return VolumeClassification{ classified, imbalance, totalVol };
 }
+
+// ============================================================================
+// Oscillator310 (indicator-manager-dod-soa plan, Task 7): pure crossover
+// detection, extracted from Oscillator310::DetectCross (Indicator.h,
+// pre-Task-7). Oscillator310CrossEnum moves here for the same
+// ACSIL-independence reason as MacdEnum/ImpulseEnum/VolumeEnum above.
+// Stateless — genuinely only needs its four arguments (design spec §3.5's
+// "stateless compute extraction" case), so no state struct is needed; the
+// caller (Oscillator310::UpdateOscillator) already owns the fastLine/
+// slowLine/prevFastLine/prevSlowLine history itself.
+// ============================================================================
+
+enum class Oscillator310CrossEnum : int8_t {
+    NEUTRAL = 0,
+    BULLISH_CROSS = 1,
+    BEARISH_CROSS = 2
+};
+
+inline Oscillator310CrossEnum ComputeOscillator310Cross(float fastLine, float slowLine,
+                                                          float prevFastLine, float prevSlowLine) {
+    const bool fastAboveNow = (fastLine > slowLine);
+    const bool fastAbovePrev = (prevFastLine > prevSlowLine);
+
+    if (fastAboveNow && !fastAbovePrev) return Oscillator310CrossEnum::BULLISH_CROSS;
+    if (!fastAboveNow && fastAbovePrev) return Oscillator310CrossEnum::BEARISH_CROSS;
+    return Oscillator310CrossEnum::NEUTRAL;
+}

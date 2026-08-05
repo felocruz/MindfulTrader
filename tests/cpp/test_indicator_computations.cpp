@@ -260,6 +260,17 @@ int main() {
         check("zero_total_volume_zero_imbalance", c.imbalance == 0.0f);
     }
 
+    std::printf("\nIndicatorComputations (Oscillator310) tests\n");
+    check("oscillator_bullish_cross",
+          ComputeOscillator310Cross(/*fastLine=*/1.0f, /*slowLine=*/0.5f,
+                                     /*prevFastLine=*/0.5f, /*prevSlowLine=*/1.0f) == Oscillator310CrossEnum::BULLISH_CROSS);
+    check("oscillator_bearish_cross",
+          ComputeOscillator310Cross(/*fastLine=*/0.5f, /*slowLine=*/1.0f,
+                                     /*prevFastLine=*/1.0f, /*prevSlowLine=*/0.5f) == Oscillator310CrossEnum::BEARISH_CROSS);
+    check("oscillator_neutral_no_cross",
+          ComputeOscillator310Cross(/*fastLine=*/1.0f, /*slowLine=*/0.5f,
+                                     /*prevFastLine=*/1.0f, /*prevSlowLine=*/0.5f) == Oscillator310CrossEnum::NEUTRAL);
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;
