@@ -227,4 +227,30 @@ constexpr size_t CountBlock(StorageBlock target) {
 constexpr size_t kIndicatorLayoutI8Count  = CountBlock(StorageBlock::Int8);
 constexpr size_t kIndicatorLayoutF32Count = CountBlock(StorageBlock::Float32);
 
+// ============================================================================
+// Task 5 (indicator-manager-dod-soa plan) — compile-time lookup helpers used
+// by IndicatorManager::GetValue<Key>()/SetValue<Key>() (design spec §3.3).
+// ============================================================================
+
+// Explicit form — always unambiguous, required for any key with two rows.
+constexpr IndicatorDescriptor DescriptorFor(IndicatorKey key, StorageBlock block) {
+    for (const auto& d : kIndicatorLayout) {
+        if (d.key == key && d.block == block) return d;
+    }
+    return IndicatorDescriptor{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+}
+
+// Convenience form for single-row keys only — resolves to NotPacked (triggering
+// a static_assert at the call site) if the key has zero or two rows, so a
+// two-row key can never silently resolve to "whichever row happens to come
+// first in the array."
+constexpr IndicatorDescriptor UniqueDescriptorFor(IndicatorKey key) {
+    IndicatorDescriptor found{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+    int matchCount = 0;
+    for (const auto& d : kIndicatorLayout) {
+        if (d.key == key) { found = d; ++matchCount; }
+    }
+    return (matchCount == 1) ? found : IndicatorDescriptor{ IndicatorKey::UNKNOWN, StorageBlock::NotPacked, 0 };
+}
+
 }  // namespace mts

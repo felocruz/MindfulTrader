@@ -126,6 +126,63 @@ public:
     // Populate the Zero-Copy IndicatorState struct
     void PopulateIndicatorState(MTS::Schema::IndicatorState& state) const;
 
+    // --- indicator-manager-dod-soa plan, Task 5: compile-time packed-array
+    // accessors (design spec §3.3). Two forms:
+    //   - Single-row form (the common case): resolves via
+    //     mts::UniqueDescriptorFor(Key), which only succeeds for keys with
+    //     exactly one packed row. Keys with zero or two rows fail the
+    //     static_assert below, directing the caller to the explicit-block form.
+    //   - Explicit-block form: required for the ~15 keys that contribute two
+    //     packed rows (one Int8, one Float32 companion) — Task 6 (Macd) is
+    //     this overload's first real caller.
+    template <IndicatorKey Key>
+    auto GetValue() const {
+        constexpr auto desc = mts::UniqueDescriptorFor(Key);
+        static_assert(desc.block != mts::StorageBlock::NotPacked,
+                      "IndicatorKey has zero or two rows — use GetValue<Key, Block>() instead");
+        if constexpr (desc.block == mts::StorageBlock::Int8) {
+            return m_packed.GetI8(desc.position);
+        } else {
+            return m_packed.GetF32(desc.position);
+        }
+    }
+
+    template <IndicatorKey Key, typename V>
+    void SetValue(V value) {
+        constexpr auto desc = mts::UniqueDescriptorFor(Key);
+        static_assert(desc.block != mts::StorageBlock::NotPacked,
+                      "IndicatorKey has zero or two rows — use SetValue<Key, Block>() instead");
+        constexpr uint64_t keyBit = 1ULL << static_cast<uint64_t>(Key);
+        if constexpr (desc.block == mts::StorageBlock::Int8) {
+            m_packed.SetI8(desc.position, static_cast<int8_t>(value), keyBit);
+        } else {
+            m_packed.SetF32(desc.position, static_cast<float>(value), keyBit);
+        }
+    }
+
+    template <IndicatorKey Key, mts::StorageBlock Block>
+    auto GetValue() const {
+        constexpr auto desc = mts::DescriptorFor(Key, Block);
+        static_assert(desc.block != mts::StorageBlock::NotPacked, "no row for this (key, block) pair");
+        if constexpr (Block == mts::StorageBlock::Int8) {
+            return m_packed.GetI8(desc.position);
+        } else {
+            return m_packed.GetF32(desc.position);
+        }
+    }
+
+    template <IndicatorKey Key, mts::StorageBlock Block, typename V>
+    void SetValue(V value) {
+        constexpr auto desc = mts::DescriptorFor(Key, Block);
+        static_assert(desc.block != mts::StorageBlock::NotPacked, "no row for this (key, block) pair");
+        constexpr uint64_t keyBit = 1ULL << static_cast<uint64_t>(Key);
+        if constexpr (Block == mts::StorageBlock::Int8) {
+            m_packed.SetI8(desc.position, static_cast<int8_t>(value), keyBit);
+        } else {
+            m_packed.SetF32(desc.position, static_cast<float>(value), keyBit);
+        }
+    }
+
 private:
     IndicatorManager();
     ~IndicatorManager() = default;
