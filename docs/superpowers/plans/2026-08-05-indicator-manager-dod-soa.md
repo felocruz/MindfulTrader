@@ -599,11 +599,13 @@ git commit -m "feat(indicator-manager): dual-write into IndicatorPackedState alo
 
 ---
 
-### Task 5: First proof-of-pattern migration — `Side` (trivially simple, single scalar, no companion field)
+### Task 5: First proof-of-pattern migration — `TIME_OF_DAY` (trivially simple, single scalar, no companion field)
+
+**Correction (found during implementation, 2026-08-05): `SIDE` does NOT belong to this task.** `SIDE` was originally chosen as the "trivially simple" exemplar, but Task 2's own audit correctly classifies it `NotPacked` — `side` lives only on `Event`/`TrainingEvent`'s TOP LEVEL (schema:990), not the nested `IndicatorState` struct the packed arrays mirror, so it has zero packed rows to migrate at all. Confirmed the underlying data flow is genuinely live and actively maintained (`src/SCStudies.cpp:436-437` and `src/BackTesterStudy.cpp:963-964` both call `sideIndicator->Update(...)` from `PositionManager::GetTradeSide()`/Sierra Chart's own position API, every tick) — it's real, just not this task's kind of field. `SIDE` is a `TickCompanionValues`-style top-level companion, Task 10's category (that struct already includes `side`/`marketSymbol`/`overnightExit`, mirroring `EventRootSharedSlice`/`TrainingRootSharedSlice`). `TIME_OF_DAY` replaces it as the exemplar: confirmed single `Int8`-block row (`kIndicatorLayout` position 25), no `ShouldTrigger()` override, no companion field, exactly one setter (`TimeOfDayIndicator::SetFromDateTime`, `include/Indicator.h:1983-1993`) — genuinely the simplest real case.
 
 **Files:**
-- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (add `GetValue<Key>()`/`SetValue<Key>()`)
-- Modify: whichever call site(s) currently reference `IndicatorKey::SIDE` (locate via `grep -rn "IndicatorKey::SIDE" src/`)
+- Modify: `include/IndicatorManager.h`, `src/IndicatorManager.cpp` (add `GetValue<Key>()`/`SetValue<Key>()` — DONE, see Task 5 ledger; this section's remaining work is the call-site cutover below)
+- Modify: whichever call site(s) currently reference `IndicatorKey::TIME_OF_DAY` (locate via `grep -rn "IndicatorKey::TIME_OF_DAY" src/`)
 
 **Interfaces:**
 - Produces: `template <IndicatorKey Key> auto IndicatorManager::GetValue() const`, `template <IndicatorKey Key> void IndicatorManager::SetValue(...)` — the first two real, working instances of the compile-time API from the design spec §3.3, proven against the simplest possible case before extending to anything with more surface area.
@@ -644,7 +646,7 @@ constexpr IndicatorDescriptor UniqueDescriptorFor(IndicatorKey key) {
 ```cpp
 // include/IndicatorManager.h, public section:
 
-// Single-row form — the common case (SIDE, and every other one-row key).
+// Single-row form — the common case (TIME_OF_DAY, and every other one-row key).
 template <IndicatorKey Key>
 auto GetValue() const {
     constexpr auto desc = mts::UniqueDescriptorFor(Key);
@@ -696,21 +698,23 @@ void SetValue(V value) {
 }
 ```
 
-- [ ] **Step 3: Cut over `SIDE`'s call site(s)**
+- [ ] **Step 3: Cut over `TIME_OF_DAY`'s call site(s)**
 
-Locate the exact call site(s) via `grep -rn "IndicatorKey::SIDE" src/ include/`. Change from the `GetIndicator<Side>(IndicatorKey::SIDE)->Update(newSide)` / `->Value()` pattern to:
+Locate the exact call site(s) via `grep -rn "IndicatorKey::TIME_OF_DAY" src/ include/`. Change from the `GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY)->SetFromDateTime(...)` / `->Value()` pattern to:
 
 ```cpp
-indMgr.SetValue<IndicatorKey::SIDE>(newSide);
+indMgr.SetValue<IndicatorKey::TIME_OF_DAY>(newTimeOfDay);
 // ... and reads:
-const auto side = indMgr.GetValue<IndicatorKey::SIDE>();
+const auto timeOfDay = indMgr.GetValue<IndicatorKey::TIME_OF_DAY>();
 ```
 
-Since `TradeSideEnum` is not `int8_t`/`float` directly, confirm the exact enum's underlying type is `int8_t`-compatible (check `enum class TradeSideEnum : int8_t` or equivalent in `Indicator.h`) — if the underlying type differs, the `static_cast`s in Step 2 need the caller to cast back to the enum type at the call site (`static_cast<TradeSideEnum>(indMgr.GetValue<IndicatorKey::SIDE>())`), matching the design spec §3.3's typed-accessor intent; if this friction is real (not just theoretical), note it — Task 6 revisits it once a second example (with a real companion field) is in hand, to decide whether `IndicatorTraits<Key>` should carry the true enum return type (spec §3.3's stated intent) rather than leaving casts at call sites.
+`TimeOfDayIndicator::SetFromDateTime` computes the `TimeOfDayEnum` value from an `SCDateTime` — that computation stays exactly where it is (it's already effectively free-function-shaped internally; Task 7 handles formally extracting it as a `Compute*` free function for the bulk-migration family it belongs to). This task only cuts over the resulting VALUE's storage and the call site that stores it, proving the packed-array API end to end — it does not need to touch `SetFromDateTime`'s own logic.
 
-- [ ] **Step 4: Remove `SIDE`'s dual-write assertion coverage (it's now single-source-of-truth)**
+Since `TimeOfDayEnum` is not `int8_t`/`float` directly, confirm the exact enum's underlying type is `int8_t`-compatible (check `enum class TimeOfDayEnum : int8_t` or equivalent in `Indicator.h`) — if the underlying type differs, the `static_cast`s in Step 2 need the caller to cast back to the enum type at the call site (`static_cast<TimeOfDayEnum>(indMgr.GetValue<IndicatorKey::TIME_OF_DAY>())`), matching the design spec §3.3's typed-accessor intent; if this friction is real (not just theoretical), note it — Task 6 revisits it once a second example is in hand, to decide whether `IndicatorTraits<Key>` should carry the true enum return type (spec §3.3's stated intent) rather than leaving casts at call sites.
 
-In `AssertPackedStateParity()` (Task 4, Step 3), the `SIDE` row's comparison is now comparing the new path against itself once the old `m_store.side`/`m_indicators[SIDE]` accessor is no longer being updated by any live call site. Either remove `SIDE` from the parity loop, or confirm the old `Side` object is still updated by nothing and its value is now frozen/irrelevant. Prefer explicit removal from the parity loop with a comment noting `SIDE` is cut over.
+- [ ] **Step 4: Remove `TIME_OF_DAY`'s dual-write assertion coverage (it's now single-source-of-truth)**
+
+In `AssertPackedStateParity()` (Task 4), the `TIME_OF_DAY` row's comparison is now comparing the new path against itself once the old `m_store.time_of_day`/`m_indicators[TIME_OF_DAY]` accessor is no longer being updated by any live call site. Either remove `TIME_OF_DAY` from the parity loop, or confirm the old `TimeOfDayIndicator` object is still updated by nothing and its value is now frozen/irrelevant. Prefer explicit removal from the parity loop with a comment noting `TIME_OF_DAY` is cut over.
 
 - [ ] **Step 5: Build and verify**
 
@@ -721,7 +725,7 @@ Expected: build succeeds; behavior unchanged (same value, same semantics, differ
 
 ```bash
 git add include/IndicatorLayout.h include/IndicatorManager.h src/IndicatorManager.cpp <call-site files>
-git commit -m "feat(indicator-manager): cut SIDE over to packed-array GetValue/SetValue (proof of pattern)"
+git commit -m "feat(indicator-manager): cut TIME_OF_DAY over to packed-array GetValue/SetValue (proof of pattern)"
 ```
 
 ---
@@ -839,7 +843,7 @@ Apply Task 5's (single-row) or Task 6's (two-row) pattern, exactly as proven, to
 
 - [ ] **Step 1: List the exact remaining keys**
 
-Run against Task 2's completed `kIndicatorLayout`: every row with `block == Int8` and no matching `Float32` row for the same `key`, minus `SIDE` (Task 5) and `LONG_MACD`/`INTERM_MACD` (Task 6). This is the task's real scope — enumerate it from the actual table, not from this plan's guesses about which indicators are "simple" (several, like `Impulse`, turned out to have more internal state than expected during spec/plan research — trust the audit, not prior assumptions).
+Run against Task 2's completed `kIndicatorLayout`: every row with `block == Int8` and no matching `Float32` row for the same `key`, minus `TIME_OF_DAY` (Task 5) and `LONG_MACD`/`INTERM_MACD` (Task 6). This is the task's real scope — enumerate it from the actual table, not from this plan's guesses about which indicators are "simple" (several, like `Impulse`, turned out to have more internal state than expected during spec/plan research — trust the audit, not prior assumptions).
 
 - [ ] **Step 2: Migrate each one, one commit per indicator family (not one giant commit)**
 
