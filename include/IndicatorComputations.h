@@ -236,3 +236,129 @@ inline MacdResult ComputeMacd(MacdState& state, double diffCurrent, double diffP
 
     return MacdResult{ newValue, zScore };
 }
+
+// ============================================================================
+// Impulse (indicator-manager-dod-soa plan, Task 7): pure classification +
+// derived-metrics computation, extracted from Impulse::SetFromColor
+// (src/Indicator.cpp, pre-Task-7). ImpulseEnum moves here for the same
+// ACSIL-independence reason MacdEnum did (Task 6) — this header must stay
+// includable with just `-I include`.
+//
+// GREEN/RED/BLUE are NOT duplicated here: Indicator.h already defines them as
+// plain `const int` (CreateRGB(...) results) BEFORE it includes this header,
+// so redeclaring them here would collide. ComputeImpulse instead takes them
+// as explicit int parameters (greenColor/redColor/blueColor) — the caller
+// (Impulse::SetFromColor) passes the real GREEN/RED/BLUE constants; the pure
+// function itself stays opaque to what those values actually are, exactly
+// like it already only takes `color`/`prevColor` as plain ints.
+// ============================================================================
+
+// Elite v2.3: Symmetric Scale [-4, +4]
+// Positive = Bullish momentum, Negative = Bearish momentum, Magnitude = Urgency/Strength
+// v5.1: BLUE_BULL/BLUE_BEAR split — fixes the "Blue Bug" where two opposite market states
+//       (EMA↑ MACD↓ vs EMA↓ MACD↑) mapped to the same neutral embedding index.
+enum class ImpulseEnum : int8_t
+{
+    // Bullish Spectrum (Positive)
+    GREEN_TO_BLUE_BEAR = 5,  // Green fading, maDiff reversed bearish — early short hint (floatValue: 0.10)
+    BLUE_BULL = 4,           // Bullish Blue: EMA rising, MACD falling (floatValue: 0.15)
+    GREEN = 3,               // Full Bullish Flow: MACD & EMA rising (floatValue: 1.0)
+    BLUE_TO_GREEN = 2,       // Bullish Ignition: High-scoring early entry (floatValue: 0.66)
+    GREEN_TO_BLUE_BULL = 1,  // Green fading, maDiff still bullish — structure intact (floatValue: 0.40)
+
+    // Equilibrium
+    BLUE = 0,                // True Neutral: maDiff ≈ 0 or legacy data (floatValue: 0.0)
+    UNDEFINED = 7,           // Not enough data (maps to 0.0)
+
+    // Bearish Spectrum (Negative)
+    RED_TO_BLUE_BEAR = -1,   // Red fading, maDiff still bearish — structure intact (floatValue: -0.40)
+    BLUE_TO_RED = -2,        // Bearish Ignition: High-scoring early entry (floatValue: -0.66)
+    RED = -3,                // Full Bearish Flow: MACD & EMA falling (floatValue: -1.0)
+    BLUE_BEAR = -4,          // Bearish Blue: EMA falling, MACD rising (floatValue: -0.15)
+    RED_TO_BLUE_BULL = -5    // Red fading, maDiff reversed bullish — early long hint (floatValue: -0.10)
+};
+
+// Running state carried between ticks. magnitude/runLength/colorHistory are
+// all feedback into the next call (magnitude -> next call's "previous
+// magnitude" for fatigue; runLength increments/resets; colorHistory is the
+// 16-bar bit-packed transition window) — Impulse::SetFromColor's former
+// m_magnitude/m_runLength/m_colorHistory private members, moved verbatim.
+struct ImpulseState {
+    float    magnitude     = 0.0f;
+    uint8_t  runLength     = 0;
+    uint16_t colorHistory  = 0;
+};
+
+struct ImpulseResult {
+    ImpulseEnum signal;
+    uint8_t     runLength;
+    float       magnitude;
+    float       fatigue;
+    float       transitionRate;
+};
+
+// Transcribed verbatim from Impulse::SetFromColor (src/Indicator.cpp, pre-Task-7).
+inline ImpulseResult ComputeImpulse(ImpulseState& state, int color, int prevColor,
+                                     float maDiff, float macdDiff, float atr,
+                                     int greenColor, int redColor, int blueColor) {
+    ImpulseEnum newValue = ImpulseEnum::UNDEFINED;
+
+    if (color == greenColor) {
+        newValue = (prevColor == blueColor) ? ImpulseEnum::BLUE_TO_GREEN : ImpulseEnum::GREEN;
+    } else if (color == redColor) {
+        newValue = (prevColor == blueColor) ? ImpulseEnum::BLUE_TO_RED : ImpulseEnum::RED;
+    } else if (color == blueColor) {
+        if (prevColor == greenColor) {
+            // v5.3 Event-driven split: maDiff polarity known at this tick,
+            // no need to wait for bar close.
+            newValue = (maDiff > 0.0f) ? ImpulseEnum::GREEN_TO_BLUE_BULL
+                                       : ImpulseEnum::GREEN_TO_BLUE_BEAR;
+        } else if (prevColor == redColor) {
+            newValue = (maDiff < 0.0f) ? ImpulseEnum::RED_TO_BLUE_BEAR
+                                       : ImpulseEnum::RED_TO_BLUE_BULL;
+        } else {
+            // v5.1 Blue Bug Fix: Determine blue polarity from EMA direction.
+            if (maDiff > 0.0f)
+                newValue = ImpulseEnum::BLUE_BULL;
+            else if (maDiff < 0.0f)
+                newValue = ImpulseEnum::BLUE_BEAR;
+            else
+                newValue = ImpulseEnum::BLUE;  // True neutral (maDiff exactly 0, rare)
+        }
+    }
+
+    // --- v5.2 Institutional-grade derived metrics ---
+
+    // 1. Magnitude: ATR-normalized momentum strength, clamped to [-1, +1].
+    //    Combines EMA slope and MACD-H slope into one continuous signal.
+    const float prevMagnitude = state.magnitude;
+    float magnitude;
+    if (atr > 0.00001f) {
+        const float maComponent = maDiff / atr;
+        const float macdComponent = macdDiff / atr;
+        magnitude = std::clamp((maComponent + macdComponent) * 0.5f, -1.0f, 1.0f);
+    } else {
+        magnitude = 0.0f;
+    }
+    state.magnitude = magnitude;
+
+    // 2. Fatigue: Δ(magnitude).  Positive = accelerating, negative = fading.
+    const float fatigue = magnitude - prevMagnitude;
+
+    // 3. Run length: consecutive bars in the same color bucket.
+    //    We bucket by raw color (GREEN/RED/BLUE), not by the refined enum.
+    const bool sameColor = (color == prevColor);
+    if (sameColor && state.runLength < 255) {
+        ++state.runLength;
+    } else if (!sameColor) {
+        state.runLength = 1;
+    }
+
+    // 4. Transition rate: fraction of recent 16 bars with a color change.
+    //    Shift history left, set bit-0 if color changed this bar.
+    state.colorHistory = static_cast<uint16_t>((state.colorHistory << 1) | (sameColor ? 0u : 1u));
+    // popcount via compiler intrinsic for the 16-bit window
+    const float transitionRate = static_cast<float>(__builtin_popcount(state.colorHistory)) / 16.0f;
+
+    return ImpulseResult{ newValue, state.runLength, magnitude, fatigue, transitionRate };
+}

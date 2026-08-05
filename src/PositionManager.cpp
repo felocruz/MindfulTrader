@@ -1707,8 +1707,12 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     }
 
     // === PHASE 2c: IMPULSE CENSORSHIP (matching Python labeler) ===
-    auto* impulseInd = IndicatorManager::Instance().GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
-    ImpulseEnum currentImpulse = impulseInd ? impulseInd->Value() : ImpulseEnum::UNDEFINED;
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value. INTERM_IMP is a two-row
+    // key (Int8 signal + impulse_run_length companion), so the explicit
+    // (Key, Block) form is required.
+    const ImpulseEnum currentImpulse = static_cast<ImpulseEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
 
     if ((isLongTrade && currentImpulse == ImpulseEnum::RED) ||
         (!isLongTrade && currentImpulse == ImpulseEnum::GREEN)) {
@@ -2522,8 +2526,12 @@ void PositionManager::ProcessManualTradeCommand(
     }
 
     // === PHASE 2c: IMPULSE CENSORSHIP ===
-    auto* impulseInd = IndicatorManager::Instance().GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
-    ImpulseEnum currentImpulse = impulseInd ? impulseInd->Value() : ImpulseEnum::UNDEFINED;
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value. INTERM_IMP is a two-row
+    // key (Int8 signal + impulse_run_length companion), so the explicit
+    // (Key, Block) form is required.
+    const ImpulseEnum currentImpulse = static_cast<ImpulseEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
 
     if ((isLong && currentImpulse == ImpulseEnum::RED) ||
         (!isLong && currentImpulse == ImpulseEnum::GREEN)) {

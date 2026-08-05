@@ -17,7 +17,9 @@
 // Elite v2.3: Named constants for feature vector defaults
 namespace FeatureDefaults {
     // NOTE: MAX_HMM_ENTROPY removed - now handled by HmmStateIndicator
-    constexpr float IMPULSE_NEUTRAL = 0.5f;       // Midpoint of [-1.0,1.0] range
+    // IMPULSE_NEUTRAL removed (indicator-manager-dod-soa plan, Task 7): LONG_IMP's
+    // read call site now goes through GetValue<Key>() directly, which is always
+    // valid (no pointer, no null-fallback default needed).
     constexpr float DAILY_BIAS_NEUTRAL = 0.5f;    // Midpoint when bias unknown
 }
 
@@ -322,6 +324,13 @@ void IndicatorManager::AssertPackedStateParity() const {
         // value against itself via the legacy object's still-live SetFromDateTime
         // write path. No longer a meaningful parity check; skip it.
         if (desc.key == IndicatorKey::TIME_OF_DAY) continue;
+        // LONG_IMP and INTERM_IMP's main signal row (position 12) cut over to
+        // GetValue<Key>()/GetValue<Key, Block>() (Task 7) — every live reader
+        // now goes through m_packed directly. Same "no longer meaningful"
+        // rationale as TIME_OF_DAY above. (INTERM_IMP's position-26
+        // impulse_run_length row is already skipped above, unaffected.)
+        if (desc.key == IndicatorKey::LONG_IMP) continue;
+        if (desc.key == IndicatorKey::INTERM_IMP && desc.position == 12) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
@@ -681,12 +690,13 @@ void IndicatorManager::SyncFeatureVector(std::vector<float>& targetVector) const
     // Elite v2.3: Use indicator floatValue() methods (indicators own normalization)
     const auto fi13Indicator = GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
     const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-    const auto longImpulseIndicator = GetIndicator<Impulse>(IndicatorKey::LONG_IMP);
     const auto dailyBiasIndicator = GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
 
     targetVector.push_back(fi13Indicator ? fi13Indicator->ZScore() : 0.0f);                              // 22: long_fi13_norm
     targetVector.push_back(fi2Indicator ? static_cast<float>(fi2Indicator->intValue()) : 0.0f);            // 23: interm_fi2_norm
-    targetVector.push_back(longImpulseIndicator ? static_cast<float>(longImpulseIndicator->intValue()) : FeatureDefaults::IMPULSE_NEUTRAL);  // 24: impulse_color
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    targetVector.push_back(static_cast<float>(GetValue<IndicatorKey::LONG_IMP>()));                       // 24: impulse_color
     targetVector.push_back(dailyBiasIndicator ? static_cast<float>(dailyBiasIndicator->intValue()) : FeatureDefaults::DAILY_BIAS_NEUTRAL);  // 25: daily_bias
 
     // ===== ZONE 8: Market Correlations (indices 26-28) =====

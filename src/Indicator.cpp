@@ -1,71 +1,22 @@
 #include "MindfulTrader_Precompiled.h"
 
 // --- Impulse ---
+// indicator-manager-dod-soa plan, Task 7: thin ACSIL-only adapter. The actual
+// classification/derived-metrics computation is ComputeImpulse()
+// (IndicatorComputations.h), a pure free function taking an explicit
+// ImpulseState& — GREEN/RED/BLUE (real color constants, defined in
+// Indicator.h) are passed through as plain ints so the free function stays
+// opaque to what they represent (mirrors ComputeMacd's decoupling from
+// SCSubgraphRef/Index, Task 6).
 void Impulse::SetFromColor(const int color, const int prevColor, const float maDiff, const float macdDiff, const float atr)
 {
-    ImpulseEnum newValue = ImpulseEnum::UNDEFINED;
+    const ImpulseResult result = ComputeImpulse(m_impulseState, color, prevColor, maDiff, macdDiff, atr, GREEN, RED, BLUE);
+    m_runLength = result.runLength;
+    m_magnitude = result.magnitude;
+    m_fatigue = result.fatigue;
+    m_transitionRate = result.transitionRate;
 
-    switch (color)
-    {
-    case GREEN:
-        newValue = (prevColor == BLUE) ? ImpulseEnum::BLUE_TO_GREEN : ImpulseEnum::GREEN;
-        break;
-    case RED:
-        newValue = (prevColor == BLUE) ? ImpulseEnum::BLUE_TO_RED : ImpulseEnum::RED;
-        break;
-    case BLUE:
-        if (prevColor == GREEN) {
-            // v5.3 Event-driven split: maDiff polarity known at this tick,
-            // no need to wait for bar close.
-            newValue = (maDiff > 0.0f) ? ImpulseEnum::GREEN_TO_BLUE_BULL
-                                       : ImpulseEnum::GREEN_TO_BLUE_BEAR;
-        } else if (prevColor == RED) {
-            newValue = (maDiff < 0.0f) ? ImpulseEnum::RED_TO_BLUE_BEAR
-                                       : ImpulseEnum::RED_TO_BLUE_BULL;
-        } else {
-            // v5.1 Blue Bug Fix: Determine blue polarity from EMA direction.
-            if (maDiff > 0.0f)
-                newValue = ImpulseEnum::BLUE_BULL;
-            else if (maDiff < 0.0f)
-                newValue = ImpulseEnum::BLUE_BEAR;
-            else
-                newValue = ImpulseEnum::BLUE;  // True neutral (maDiff exactly 0, rare)
-        }
-        break;
-    }
-
-    // --- v5.2 Institutional-grade derived metrics ---
-
-    // 1. Magnitude: ATR-normalized momentum strength, clamped to [-1, +1].
-    //    Combines EMA slope and MACD-H slope into one continuous signal.
-    m_prevMagnitude = m_magnitude;
-    if (atr > 0.00001f) {
-        float maComponent  = maDiff / atr;
-        float macdComponent = macdDiff / atr;
-        m_magnitude = std::clamp((maComponent + macdComponent) * 0.5f, -1.0f, 1.0f);
-    } else {
-        m_magnitude = 0.0f;
-    }
-
-    // 2. Fatigue: Δ(magnitude).  Positive = accelerating, negative = fading.
-    m_fatigue = m_magnitude - m_prevMagnitude;
-
-    // 3. Run length: consecutive bars in the same color bucket.
-    //    We bucket by raw color (GREEN/RED/BLUE), not by the refined enum.
-    bool sameColor = (color == prevColor);
-    if (sameColor && m_runLength < 255) {
-        ++m_runLength;
-    } else if (!sameColor) {
-        m_runLength = 1;
-    }
-
-    // 4. Transition rate: fraction of recent 16 bars with a color change.
-    //    Shift history left, set bit-0 if color changed this bar.
-    m_colorHistory = static_cast<uint16_t>((m_colorHistory << 1) | (sameColor ? 0u : 1u));
-    // popcount via compiler intrinsic for the 16-bit window
-    m_transitionRate = static_cast<float>(__builtin_popcount(m_colorHistory)) / 16.0f;
-
-    Update(newValue);
+    Update(result.signal);
 }
 
 // --- Macd ---

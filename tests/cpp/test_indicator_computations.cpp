@@ -93,6 +93,100 @@ int main() {
     check("macd_is_summer_excludes_spring_window", !MacdIsSummer(-2.0, -4.0, -5.0));
     check("macd_is_winter_excludes_spring_window", !MacdIsWinter(-2.0, -4.0, -5.0));
 
+    std::printf("\nIndicatorComputations (Impulse) tests\n");
+
+    // Opaque color constants for the tests -- ComputeImpulse doesn't care what
+    // the real values are, only that they're distinct (mirrors GREEN/RED/BLUE
+    // being passed through from Indicator.h's real CreateRGB(...) constants).
+    constexpr int kGreen = 1;
+    constexpr int kRed = 2;
+    constexpr int kBlue = 3;
+
+    // --- Color classification (one exercising test per branch) -----------
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kGreen, kBlue, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("blue_to_green", r.signal == ImpulseEnum::BLUE_TO_GREEN);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kGreen, kGreen, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("green_plain", r.signal == ImpulseEnum::GREEN);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kRed, kBlue, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("blue_to_red", r.signal == ImpulseEnum::BLUE_TO_RED);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kGreen, 0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("green_to_blue_bull", r.signal == ImpulseEnum::GREEN_TO_BLUE_BULL);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kGreen, -0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("green_to_blue_bear", r.signal == ImpulseEnum::GREEN_TO_BLUE_BEAR);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kRed, -0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("red_to_blue_bear", r.signal == ImpulseEnum::RED_TO_BLUE_BEAR);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kRed, 0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("red_to_blue_bull", r.signal == ImpulseEnum::RED_TO_BLUE_BULL);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kBlue, 0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("blue_bull_no_prior_color", r.signal == ImpulseEnum::BLUE_BULL);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kBlue, -0.5f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("blue_bear_no_prior_color", r.signal == ImpulseEnum::BLUE_BEAR);
+    }
+    {
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kBlue, kBlue, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("blue_true_neutral", r.signal == ImpulseEnum::BLUE);
+    }
+
+    // --- Derived metrics: magnitude/fatigue/runLength/transitionRate -----
+    {
+        // ATR <= 0 -> magnitude clamps to 0, regardless of maDiff/macdDiff.
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kGreen, kGreen, 5.0f, 5.0f, 0.0f, kGreen, kRed, kBlue);
+        check("zero_atr_zero_magnitude", r.magnitude == 0.0f);
+    }
+    {
+        // magnitude = clamp(((maDiff/atr) + (macdDiff/atr)) * 0.5, -1, 1)
+        // maDiff=2, macdDiff=2, atr=1 -> ((2+2)*0.5) = 2, clamped to 1.0.
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kGreen, kGreen, 2.0f, 2.0f, 1.0f, kGreen, kRed, kBlue);
+        check("magnitude_clamped_to_one", near(r.magnitude, 1.0f));
+        // fatigue = magnitude - prevMagnitude(0 on cold start) = 1.0
+        check("fatigue_from_cold_start", near(r.fatigue, 1.0f));
+    }
+    {
+        // Run length increments while color stays the same, resets to 1 on change.
+        ImpulseState state;
+        ImpulseResult r1 = ComputeImpulse(state, kGreen, kGreen, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        ImpulseResult r2 = ComputeImpulse(state, kGreen, kGreen, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        ImpulseResult r3 = ComputeImpulse(state, kRed, kGreen, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("run_length_increments", r1.runLength == 1 && r2.runLength == 2);
+        check("run_length_resets_on_color_change", r3.runLength == 1);
+    }
+    {
+        // Transition rate: fraction of last 16 bars with a color change.
+        // One change out of one bar -> 1/16.
+        ImpulseState state;
+        ImpulseResult r = ComputeImpulse(state, kGreen, kRed, 0.0f, 0.0f, 1.0f, kGreen, kRed, kBlue);
+        check("transition_rate_one_change", near(r.transitionRate, 1.0f / 16.0f));
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

@@ -194,30 +194,9 @@ inline const char* TradingEventTypeToString(TradingEventType eventType) {
     }
 }
 
-// Elite v2.3: Symmetric Scale [-4, +4]
-// Positive = Bullish momentum, Negative = Bearish momentum, Magnitude = Urgency/Strength
-// v5.1: BLUE_BULL/BLUE_BEAR split — fixes the "Blue Bug" where two opposite market states
-//       (EMA↑ MACD↓ vs EMA↓ MACD↑) mapped to the same neutral embedding index.
-enum class ImpulseEnum : int8_t
-{
-    // Bullish Spectrum (Positive)
-    GREEN_TO_BLUE_BEAR = 5,  // Green fading, maDiff reversed bearish — early short hint (floatValue: 0.10)
-    BLUE_BULL = 4,           // Bullish Blue: EMA rising, MACD falling (floatValue: 0.15)
-    GREEN = 3,               // Full Bullish Flow: MACD & EMA rising (floatValue: 1.0)
-    BLUE_TO_GREEN = 2,       // Bullish Ignition: High-scoring early entry (floatValue: 0.66)
-    GREEN_TO_BLUE_BULL = 1,  // Green fading, maDiff still bullish — structure intact (floatValue: 0.40)
-
-    // Equilibrium
-    BLUE = 0,                // True Neutral: maDiff ≈ 0 or legacy data (floatValue: 0.0)
-    UNDEFINED = 7,           // Not enough data (maps to 0.0)
-
-    // Bearish Spectrum (Negative)
-    RED_TO_BLUE_BEAR = -1,   // Red fading, maDiff still bearish — structure intact (floatValue: -0.40)
-    BLUE_TO_RED = -2,        // Bearish Ignition: High-scoring early entry (floatValue: -0.66)
-    RED = -3,                // Full Bearish Flow: MACD & EMA falling (floatValue: -1.0)
-    BLUE_BEAR = -4,          // Bearish Blue: EMA falling, MACD rising (floatValue: -0.15)
-    RED_TO_BLUE_BULL = -5    // Red fading, maDiff reversed bullish — early long hint (floatValue: -0.10)
-};
+// ImpulseEnum (extracted so it's ACSIL-independent; see IndicatorComputations.h) —
+// same rationale as MacdEnum's extraction below (indicator-manager-dod-soa
+// plan, Task 7): ComputeImpulse's return type must be the real ImpulseEnum.
 
 enum class EmaEnum : int8_t
 {
@@ -1034,8 +1013,12 @@ private:
     float    m_magnitude      = 0.0f;   // ATR-normalized momentum strength [-1, +1]
     float    m_fatigue        = 0.0f;   // Δ(magnitude): positive = accelerating, negative = fading
     float    m_transitionRate = 0.0f;   // Fraction of recent bars with color change [0, 1]
-    float    m_prevMagnitude  = 0.0f;   // Previous magnitude (for fatigue computation)
-    uint16_t m_colorHistory   = 0;      // 16-bar bit-packed history (1 = color changed)
+
+    // Running state (magnitude/runLength/colorHistory carried between ticks),
+    // extracted to ImpulseState (IndicatorComputations.h) so ComputeImpulse()
+    // can be a pure free function taking explicit state (indicator-manager-dod-soa
+    // plan, Task 7 — same treatment as Macd::m_macdState, Task 6).
+    ImpulseState m_impulseState;
 };
 
 class Ema : public Indicator<EmaEnum>

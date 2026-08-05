@@ -887,13 +887,15 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         float pinballQuality = 0.0f;
 
         // Get current Impulse color
+        // DOD/SoA migration (Task 7): read straight from the packed array — no
+        // pointer, no null check, always a valid value. INTERM_IMP is a
+        // two-row key (Int8 signal + impulse_run_length companion), so the
+        // explicit (Key, Block) form is required.
         int currentImpulseColor = 0;  // 0 = BLUE (neutral)
-        const auto impulseIndicator = indMgr.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
-        if (impulseIndicator) {
-            const ImpulseEnum impulseEnum = impulseIndicator->Value();
-            if (impulseEnum == ImpulseEnum::GREEN) currentImpulseColor = 1;
-            else if (impulseEnum == ImpulseEnum::RED) currentImpulseColor = -1;
-        }
+        const ImpulseEnum impulseEnum = static_cast<ImpulseEnum>(
+            indMgr.GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
+        if (impulseEnum == ImpulseEnum::GREEN) currentImpulseColor = 1;
+        else if (impulseEnum == ImpulseEnum::RED) currentImpulseColor = -1;
 
         // Get previous Impulse color from stored subgraph
         const int prevImpulseColor = static_cast<int>(Subgraph_PrevImpulseColor[sc.Index - 1]);
@@ -1119,10 +1121,14 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             }
 
             // Context 2: Impulse Aligned (+0.1)
+            // DOD/SoA migration (Task 7): read straight from the packed array — no
+            // pointer, no null check, always a valid value. INTERM_IMP is a
+            // two-row key (Int8 signal + impulse_run_length companion), so the
+            // explicit (Key, Block) form is required.
             bool impulseAligned = false;
-            auto impulseIndicator = indMgr.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
-            if (impulseIndicator) {
-                ImpulseEnum impulseEnum = impulseIndicator->Value();
+            {
+                const ImpulseEnum impulseEnum = static_cast<ImpulseEnum>(
+                    indMgr.GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
                 bool impulseGreen = (impulseEnum == ImpulseEnum::GREEN);
                 bool impulseRed = (impulseEnum == ImpulseEnum::RED);
 
@@ -1487,9 +1493,13 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
                 bool screenAligned = false;
 
                 // Context: Impulse alignment
-                auto* impulseIndicator = indMgr.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
-                if (impulseIndicator) {
-                    ImpulseEnum impulseState = impulseIndicator->Value();
+                // DOD/SoA migration (Task 7): read straight from the packed array — no
+                // pointer, no null check, always a valid value. INTERM_IMP is a
+                // two-row key (Int8 signal + impulse_run_length companion), so the
+                // explicit (Key, Block) form is required.
+                {
+                    const ImpulseEnum impulseState = static_cast<ImpulseEnum>(
+                        indMgr.GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
                     impulseAligned = (impulseState == ImpulseEnum::GREEN || impulseState == ImpulseEnum::RED);
                 }
 
