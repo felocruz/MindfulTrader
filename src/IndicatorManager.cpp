@@ -712,12 +712,6 @@ void IndicatorManager::SyncFeatureVector(std::vector<float>& targetVector) const
 // GENMINI GUARD: Prevents sends during full recalculation (buffering only)
 // ============================================================================
 bool IndicatorManager::PublishEventOnChange(SCStudyInterfaceRef sc) {
-#ifndef NDEBUG
-    // Called once per tick, after this tick's TripleScreen1/2/3 + SCStudies.cpp
-    // indicator updates have all settled (Task 4 dual-write safety net).
-    AssertPackedStateParity();
-#endif
-
     if (!HasSignificantChange()) {
         return false;  // No significant change, don't publish
     }
@@ -751,6 +745,14 @@ void IndicatorManager::PublishEventSnapshot(SCStudyInterfaceRef sc) {
 // - TrainingEvent (60+ fields) is written to .lbr file by EventDataCollectorStudy
 // ============================================================================
 bool IndicatorManager::SendEventFlatBuffer(SCStudyInterfaceRef sc, bool isSnapshot) {
+#ifndef NDEBUG
+    // Called once per tick, after this tick's TripleScreen1/2/3 + SCStudies.cpp
+    // indicator updates have all settled (Task 4 dual-write safety net).
+    // Shared by both PublishEventOnChange() and PublishEventSnapshot() so the
+    // assertion is reached on every live publish path, not just the delta path.
+    AssertPackedStateParity();
+#endif
+
     try {
         // Delegate to EventSerializer singleton for FlatBuffer serialization
         // - SerializeEvent() creates 84-field Event from indicator state
