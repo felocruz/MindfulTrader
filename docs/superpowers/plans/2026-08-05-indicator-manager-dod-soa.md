@@ -949,8 +949,9 @@ git commit -m "feat(indicator-manager): rewrite CheckTrigger/PopulateIndicatorSt
 
 **Files:**
 - Modify: `src/messaging/EventSerializer.cpp`
-- Modify: `src/IndicatorManager.cpp` (the `WriteTrainingRootSharedFields` call site inside `GetTrainingEventT`, around line 480-529)
-- Modify: `src/BackTesterStudy.cpp` (the `g_entryContext` companion-value call site, ~line 1751 — a third consumer found while investigating this same duplication category; see Step 5)
+- Modify: `src/IndicatorManager.cpp` (the `WriteTrainingRootSharedFields` call site inside `GetTrainingEventT`, around line 480-529; `side`'s population source per Step 2)
+- Modify: `src/SCStudies.cpp` (remove the `Side` mirror push-site, ~lines 436-437; see Step 3)
+- Modify: `src/BackTesterStudy.cpp` (remove its own `Side` mirror push-site, ~lines 963-964, per Step 3; and the `g_entryContext` companion-value call site, ~line 1751, per Step 6 — two separate fixes in the same file)
 - Delete: `src/messaging/EventSerializerV2.cpp`, `include/messaging/EventSerializerV2.h` (confirm these are absent from `CMakeLists.txt` before deleting — they are today)
 
 **Interfaces:**
@@ -989,36 +990,43 @@ This mirrors `EventRootSharedSlice`/`TrainingRootSharedSlice`'s existing field l
 
 Add a method (or a member updated during the same per-tick pass that already calls each migrated indicator's compute function): `const TickCompanionValues& IndicatorManager::GetTickCompanionValues() const`. Wire each `Set`/compute call site from Tasks 6-8 to also store its result's companion field into this struct at the same time it calls `SetValue<Key>(...)` — one extra assignment per already-touched call site, not a new pass over anything.
 
-- [ ] **Step 3: `EventSerializer.cpp` reads from `GetTickCompanionValues()` instead of calling getters on indicator objects**
+**Exception: `side` does not come from any indicator compute result.** Found during Task 5: `IndicatorManager`'s `Side` object is not really an indicator — it's a manually-pushed mirror of `PositionManager`'s own authoritative `Trade::m_side`, written every tick by `src/SCStudies.cpp:436-437` (`sideIndicator->Update(PositionManager::Instance().GetTradeSide())`) and, separately, by `src/BackTesterStudy.cpp:963-964` (which independently RE-DERIVES the same value from `sc.GetTradePosition()` rather than reusing `PositionManager::GetTradeSide()` — two independently-written implementations of "what's the current side," the same duplication-risk shape as the `close_percentile` bug this task already fixes, just not yet observed diverging). The institutional fix (user, 2026-08-05): eliminate the mirror entirely. Populate `TickCompanionValues::side` by calling `PositionManager::Instance().GetTradeSide()` directly, in `IndicatorManager`'s own per-tick population step — not from `m_packed`, not from any `Side` object.
+
+- [ ] **Step 3: Remove the now-redundant `Side` mirror push-sites**
+
+Delete the `sideIndicator->Update(...)` calls at `src/SCStudies.cpp:436-437` and `src/BackTesterStudy.cpp:963-964` — nothing reads `IndicatorManager`'s `Side` object's value anymore once Step 2 sources `side` from `PositionManager` directly (confirm this by checking `src/Scoring.cpp:289`'s `IndicatorKey::SIDE` reference first: it only compares against the enum *constant* for a chaos-mode allowlist, never reads the `Side` object's value, so it is unaffected and needs no change). The `Side` leaf class itself and `IndicatorKey::SIDE`'s now-fully-inert wiring in `IndicatorManager`'s constructor are left in place — Task 11 removes them along with every other leaf class; no special handling needed here.
+
+- [ ] **Step 4: `EventSerializer.cpp` reads from `GetTickCompanionValues()` instead of calling getters on indicator objects**
 
 Replace the block at `EventSerializer.cpp:74-147`ish (every `manager.GetIndicator<T>(key)->GetX()` call feeding `WriteEventRootSharedFields`/`indicators.mutate_X_quality(...)`/`indicators.mutate_X_norm(...)`) with reads from `manager.GetTickCompanionValues()`. This is also forced, not optional: `GetIndicator<T>()` and the leaf types it returns no longer exist after Task 11 — this step must land before Task 11, and after it lands, `EventSerializer.cpp` has zero remaining references to any leaf class.
 
-- [ ] **Step 4: Fix the dead-write bug — `GetTrainingEventT`'s `WriteTrainingRootSharedFields` call reads from the SAME struct, does not recompute anything**
+- [ ] **Step 5: Fix the dead-write bug — `GetTrainingEventT`'s `WriteTrainingRootSharedFields` call reads from the SAME struct, does not recompute anything**
 
 Replace `IndicatorManager.cpp`'s lines ~480-513 (the independent `GetIndicator<T>(key)->GetX()` calls and the inline `closePercentile = (currentClose - currentLow) / barRange` recomputation) with a single read: `const auto& companions = GetTickCompanionValues();`, then build `TrainingRootSharedSlice` directly from `companions`' fields. `close_percentile` now has exactly one implementation, used by both consumers — the recompute-from-raw-OHLC version is deleted, not kept as a fallback.
 
-- [ ] **Step 5: Keep `src/BackTesterStudy.cpp`'s second `GetIndicator<T>()` call site (~line 1751) compiling — minimal fix only**
+- [ ] **Step 6: Keep `src/BackTesterStudy.cpp`'s second `GetIndicator<T>()` call site (~line 1751) compiling — minimal fix only**
 
 Same file, same "work-in-progress, will be revisited/rewritten separately" status as Task 9 Step 3 (user, 2026-08-05) — do not invest design effort here. This is a different call site (inside the function that records full context at trade entry) pulling `VolumeIndicator::GetVolumeRatio()`/`GetVolumeImbalance()`, `PriceMetricsIndicator::GetClosePercentile()`, and `ATRProximityIndicator::GetATR10()` directly into a `g_entryContext` struct's own scalar fields. It calls leaf classes Task 11 deletes, so it must at least compile against the new API. Simplest correct fix: replace those four individual `GetIndicator<T>()` calls with reads from `manager.GetTickCompanionValues()` (Step 2's struct) — least-effort correct substitution, not a redesign.
 
-- [ ] **Step 6: Delete `EventSerializerV2.cpp`/`.h`**
+- [ ] **Step 7: Delete `EventSerializerV2.cpp`/`.h`**
 
 Confirm absence from `CMakeLists.txt` and zero includes anywhere (`grep -rn "EventSerializerV2" src/ include/ CMakeLists.txt`), then delete both files. This is unrelated dead code discovered adjacent to this task's own files, not part of the live/training duplication fix itself, but cheap and directly relevant to avoid leaving a second, subtly-buggy (`add_atr_10(0.0f)` hardcoded) "which serializer is real" trap sitting next to the one this task just cleaned up.
 
-- [ ] **Step 7: Build and verify**
+- [ ] **Step 8: Build and verify**
 
 ```bash
 ./build_dll.sh --no-clean
 grep -rn "GetIndicator<" src/messaging/EventSerializer.cpp src/IndicatorManager.cpp src/BackTesterStudy.cpp
+grep -n "sideIndicator->Update" src/SCStudies.cpp src/BackTesterStudy.cpp
 ```
-Expected: build succeeds; the `grep` for `GetIndicator<` in these three call sites returns nothing (all now read from `TickCompanionValues` exclusively). If a replay/backtest environment is available, spot-check that a live-published `Event` and a training-collected `TrainingEvent` from the same tick agree on `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` — they were structurally guaranteed to potentially disagree before this task, and are structurally guaranteed to agree now.
+Expected: build succeeds; the first `grep` returns nothing (all three now read from `TickCompanionValues` exclusively); the second `grep` returns nothing (Step 3's mirror push-sites are gone). If a replay/backtest environment is available, spot-check that a live-published `Event` and a training-collected `TrainingEvent` from the same tick agree on `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10`/`side` — they were structurally guaranteed to potentially disagree before this task, and are structurally guaranteed to agree now.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add include/IndicatorComputations.h src/messaging/EventSerializer.cpp src/IndicatorManager.cpp src/BackTesterStudy.cpp
+git add include/IndicatorComputations.h src/messaging/EventSerializer.cpp src/IndicatorManager.cpp src/BackTesterStudy.cpp src/SCStudies.cpp
 git rm src/messaging/EventSerializerV2.cpp include/messaging/EventSerializerV2.h
-git commit -m "fix(indicator-manager): unify live/training/backtest companion-value population, fix close_percentile dead-write bug, remove dead EventSerializerV2"
+git commit -m "fix(indicator-manager): unify live/training/backtest companion-value population, fix close_percentile dead-write bug, remove SIDE mirror and dead EventSerializerV2"
 ```
 
 ---
