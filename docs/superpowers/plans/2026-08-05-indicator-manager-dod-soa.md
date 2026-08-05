@@ -734,19 +734,21 @@ git commit -m "feat(indicator-manager): cut SIDE over to packed-array GetValue/S
 
 **Interfaces:**
 - Consumes: Task 5's `GetValue<Key>()`/`SetValue<Key>()`.
-- Produces: a free function `MacdResult ComputeMacd(MacdState& state, double macdDiffValue)` returning `{ MacdEnum signal; float zScore; }`, replacing `Macd::SetFromChart`'s body. Proves the "needs running history" shape most of the remaining simple indicators share. Does NOT prove the two-row `(Key, Block)` API — `Macd`'s companion turned out to be `NotPacked` (see Step 3) — that gets its first real exercise in Task 8.
+- Produces: a free function `MacdResult ComputeMacd(MacdState& state, double diffCurrent, double diffPrev1, double diffPrev2, int barsAvailable)` returning `{ MacdEnum signal; float zScore; }`, replacing `Macd::SetFromChart`'s body, plus 8 pure classification helper functions. Proves the "needs running history AND multi-bar raw lookback" shape — see the note below, this is NOT simply "needs the previous value."
 
-- [ ] **Step 1: Extract `Macd::SetFromChart`'s body into a free function**
+**Important — do not oversimplify this function's inputs.** An earlier draft of this task specified `ComputeMacd(MacdState&, double macdDiffValue)` — a single scalar. That is wrong: `Macd`'s season/pattern classification (`IsSpring`/`IsSummer`/`IsFall`/`IsWinter`/`IsPositiveTickDown`/`IsNegativeTickUp`/`IsZeroFromBelow`/`IsZeroFromAbove`, `src/Indicator.cpp:175-221`) reads `MACD_Diff[Index-2]` — genuinely two RAW CHART BARS back, not just "the previously published `MacdEnum` value" (which is what `m_prevValue`/the packed array's `GetPrevI8` track). This is a real, confirmed gap found by inspecting the actual source (verified directly, not assumed) — the packed array's single `prev` slot cannot supply this; the caller must pass the raw 3-bar window explicitly. This is exactly the kind of thing this design intentionally keeps OUT of the packed array (per spec §3.4's working-state exception) — raw multi-bar chart lookback is Sierra Chart's own `SCSubgraphRef` random-access array, already available at the call site, not something `IndicatorManager`'s per-key state needs to reproduce.
 
-Read the full current `Macd::SetFromChart` (`src/Indicator.cpp:72-...`) and `Macd`'s private state (`m_macdHistory`, `m_historyIdx`, `m_historyCount`, `kLookback`) before starting — this step's exact diff depends on that full body, which must be read fresh at implementation time (do not guess it from this plan; it was only partially quoted during spec/plan research).
+- [ ] **Step 1: Extract `Macd::SetFromChart`'s body AND its 8 classification helpers into free functions**
 
-Shape to produce (mirroring the `VwapState`/`ComputeVwap` convention from the design spec §3.5):
+Read the full current `Macd::SetFromChart` (`src/Indicator.cpp:72-172`), `Macd`'s private state (`m_macdHistory`, `m_historyIdx`, `m_historyCount`, `kLookback`), and all 8 classification helpers (`src/Indicator.cpp:175-221`) before starting — transcribe their exact current logic, do not re-derive it from memory.
+
+Shape to produce (mirroring the `VwapState`/`ComputeVwap` convention from the design spec §3.5 for the stateful z-score part; the classification helpers are fully stateless, taking only the 3-bar window):
 
 ```cpp
 // include/IndicatorComputations.h (new, or fold into IndicatorLayout.h's neighborhood — implementer's call, keep it pure)
 struct MacdState {
-    static constexpr int kLookback = /* current Macd::kLookback value */;
-    std::array<double, kLookback> history{};
+    static constexpr int kLookback = /* current Macd::kLookback value, from src/Indicator.cpp */;
+    std::array<double, kLookback> zScoreHistory{};
     int historyIdx = 0;
     int historyCount = 0;
 };
@@ -756,12 +758,40 @@ struct MacdResult {
     float zScore;
 };
 
-MacdResult ComputeMacd(MacdState& state, double macdDiffValue);
+// Pure classification helpers -- transcribed verbatim from Macd::IsSpring/IsSummer/
+// IsFall/IsWinter/IsPositiveTickDown/IsNegativeTickUp/IsZeroFromBelow/IsZeroFromAbove
+// (src/Indicator.cpp:175-221), with MACD_Diff[Index]/[Index-1]/[Index-2] renamed to
+// diffCurrent/diffPrev1/diffPrev2 -- same logic, decoupled from SCSubgraphRef/Index
+// so these stay standalone-testable like every other pure engine in this codebase.
+bool MacdIsSpring(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsSummer(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsFall(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsWinter(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsPositiveTickDown(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsNegativeTickUp(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsZeroFromBelow(double diffCurrent, double diffPrev1, double diffPrev2);
+bool MacdIsZeroFromAbove(double diffCurrent, double diffPrev1, double diffPrev2);
+
+// diffPrev1/diffPrev2 are only meaningful when barsAvailable >= 1 / >= 2 respectively
+// (mirrors Macd::SetFromChart's own `if (Index >= 2) ... else if (Index >= 1) ...`
+// bar-count gating -- the caller passes however many prior bars it actually has,
+// clamped to [0,2], NOT Sierra Chart's raw Index value itself, so this function
+// stays fully decoupled from ACSIL indexing semantics).
+MacdResult ComputeMacd(MacdState& state, double diffCurrent, double diffPrev1, double diffPrev2, int barsAvailable);
 ```
 
-- [ ] **Step 2: Write a standalone test for `ComputeMacd` before wiring it in**
+At the call site (wherever `Macd::SetFromChart(MACD_Diff, Index)` is invoked today — locate it fresh, don't assume), the adapter is thin and ACSIL-only:
+```cpp
+const double diffCurrent = MACD_Diff[Index];
+const double diffPrev1   = (Index >= 1) ? MACD_Diff[Index - 1] : 0.0;
+const double diffPrev2   = (Index >= 2) ? MACD_Diff[Index - 2] : 0.0;
+const int barsAvailable  = std::min(Index, 2);
+const auto result = ComputeMacd(m_longMacdState, diffCurrent, diffPrev1, diffPrev2, barsAvailable);
+```
 
-Create `tests/cpp/test_indicator_computations.cpp` (this becomes the home for all such extracted compute functions across Tasks 6/8/9 — one growing file, not one per indicator, matching how `StudyHelperFunctions.h`'s free functions are already organized in this codebase). Cover: cold start (fewer than 5 history samples -> `zScore == 0`), a known-in-advance sequence producing a specific z-score (hand-computed), and a sign-change in `macdDiffValue` producing the expected `MacdEnum` transition.
+- [ ] **Step 2: Write standalone tests for `ComputeMacd` AND the 8 classification helpers before wiring them in**
+
+Create `tests/cpp/test_indicator_computations.cpp` (this becomes the home for all such extracted compute functions across Tasks 6/8/9 — one growing file, not one per indicator, matching how `StudyHelperFunctions.h`'s free functions are already organized in this codebase). Cover: cold start (`barsAvailable == 0` -> `AT_ZERO`), the z-score path (fewer than 5 history samples -> `zScore == 0`; a known-in-advance sequence producing a specific z-score, hand-computed), a sign-change producing the expected simple-cross `MacdEnum` transition, AND at least one test per classification helper (`MacdIsSpring`/`IsSummer`/`IsFall`/`IsWinter`/etc.) using a 3-value window constructed to exercise that specific pattern — these 8 helpers are exactly the part an earlier, oversimplified draft of this task would have silently dropped, so their tests matter most here.
 
 - [ ] **Step 3: Cut `Macd`'s call site(s) over**
 
@@ -884,13 +914,13 @@ PopulateIndicatorState(*event->indicators);
 
 This removes the `OSCILLATOR_310` special case (lines 435-444) as dead code by construction — there is no longer a per-indicator virtual call anywhere in this path for either consumer, so there is nothing left to special-case. Add a regression comment at the deletion site explaining why: `PopulateIndicatorState` (Step 1) now reads `m_packed` directly, has no virtual dispatch, and is shared by both `Event.indicators` and `TrainingEvent.indicators` — removing the last place a per-indicator virtual call happens.
 
-- [ ] **Step 3: Unify `src/BackTesterStudy.cpp`'s `BuildEntryIndicatorState()` as a third caller of `PopulateIndicatorState`**
+- [ ] **Step 3: Keep `src/BackTesterStudy.cpp`'s `BuildEntryIndicatorState()` compiling against the new API — minimal fix only**
 
-Task 2's audit found `src/BackTesterStudy.cpp` has a static free function, `BuildEntryIndicatorState()` (~line 1223), building a full `MTS::Schema::IndicatorState` snapshot for the `.btst` `TradeRecord` message by calling `GetIndicator<T>()` on leaf objects directly — the same duplication pattern Steps 1-2 just eliminated for the live/training paths, plus it currently populates a few fields (`zn_trend`/`dx_trend`, the 4 correlation derivatives) that neither other path does today. Confirmed work-in-progress, unused in production (user, 2026-08-05) — not a live-parity risk, but it calls leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed.
+`src/BackTesterStudy.cpp` is confirmed work-in-progress and will be revisited/rewritten separately to suit the new architecture (user, 2026-08-05) — do not invest design effort here beyond keeping it building. `BuildEntryIndicatorState()` (~line 1223) calls `GetIndicator<T>()` on leaf objects Task 11 deletes, so it must at least compile against the new API before Task 11 can proceed, but do not treat this as an architectural unification opportunity the way Steps 1-2 were for the live/training paths.
 
-Replace this function's body with the same call used in Step 2 — build a local `MTS::Schema::IndicatorState` and call `PopulateIndicatorState(state)` — rather than hand-porting its individual `GetIndicator<T>()` calls to the new API one by one. This is a net improvement, not just a mechanical port: `zn_trend`/`dx_trend`/the correlation derivatives become populated the same way for all three consumers instead of only this one, for free. Confirm with a diff that no field this function used to populate is silently dropped — if `PopulateIndicatorState`'s switch doesn't yet cover `zn_trend`/`dx_trend`/the 4 correlation derivatives (it doesn't, per Task 2's audit — they're `NotPacked`, deliberately deferred), note this explicitly as an accepted, documented behavior change for a WIP/unused file, not a silent regression. **Preserve the existing `intValue()`-not-`ExtractInt8AndClearDirty()` choice's intent** (a read-only snapshot must not clear live dirty flags as a side effect) — `PopulateIndicatorState`'s rewritten Step-1 form already reads `m_packed` directly with no dirty-clearing side effect at all, so this property carries over automatically; just confirm it in the diff, don't re-derive it.
+Simplest correct fix: replace this function's body with a call to `PopulateIndicatorState(state)` (the same function Step 2 now calls) rather than hand-porting each individual `GetIndicator<T>()` call — this happens to be the least-effort fix, not because it's the "right" design for this file long-term. If `PopulateIndicatorState` doesn't cover a field this function used to populate (`zn_trend`/`dx_trend`, the 4 correlation derivatives — it doesn't, per Task 2's audit), leave a one-line comment noting the gap for the future rewrite; do not attempt to close it now. Preserve the existing `intValue()`-not-`ExtractInt8AndClearDirty()` property (a read-only snapshot must not clear live dirty flags) — this carries over automatically since `PopulateIndicatorState`'s rewritten form has no dirty-clearing side effect at all; just don't break it.
 
-Note for Task 10: `src/BackTesterStudy.cpp` has a SECOND, separate `GetIndicator<T>()` call site (~line 1751, inside the function that records full context at trade entry) pulling `VolumeIndicator`/`PriceMetricsIndicator`/`ATRProximityIndicator` companion getters into a `g_entryContext` struct's own scalar fields — this is a companion-value duplication, not an `IndicatorState`-struct duplication, so it's Task 10's category of fix, not this one's. Do not touch it here.
+Note for Task 10: the same file has a SECOND, separate `GetIndicator<T>()` call site (~line 1751) needing the same minimal treatment — see that task's Step 5.
 
 - [ ] **Step 4: Rewrite `CheckTrigger`**
 
@@ -963,9 +993,9 @@ Replace the block at `EventSerializer.cpp:74-147`ish (every `manager.GetIndicato
 
 Replace `IndicatorManager.cpp`'s lines ~480-513 (the independent `GetIndicator<T>(key)->GetX()` calls and the inline `closePercentile = (currentClose - currentLow) / barRange` recomputation) with a single read: `const auto& companions = GetTickCompanionValues();`, then build `TrainingRootSharedSlice` directly from `companions`' fields. `close_percentile` now has exactly one implementation, used by both consumers — the recompute-from-raw-OHLC version is deleted, not kept as a fallback.
 
-- [ ] **Step 5: `src/BackTesterStudy.cpp`'s second `GetIndicator<T>()` call site (~line 1751) becomes the third caller of `GetTickCompanionValues()`**
+- [ ] **Step 5: Keep `src/BackTesterStudy.cpp`'s second `GetIndicator<T>()` call site (~line 1751) compiling — minimal fix only**
 
-Task 9 Step 3 already migrated this file's `BuildEntryIndicatorState()` (an `IndicatorState`-struct duplication, that task's category of fix). This is a *different* call site in the same file — inside the function that records full context at trade entry — pulling `VolumeIndicator::GetVolumeRatio()`/`GetVolumeImbalance()`, `PriceMetricsIndicator::GetClosePercentile()`, and `ATRProximityIndicator::GetATR10()` directly into a `g_entryContext` struct's own scalar fields (`volumeRatioAtEntry`, `volumeImbalanceAtEntry`, `closePercentileAtEntry`, `atr10PriceAtEntry`) — a companion-value duplication, this task's category. Replace those four individual `GetIndicator<T>()` calls with reads from `manager.GetTickCompanionValues()` (Step 2's struct), same pattern as Step 3. Confirmed work-in-progress/unused (user, 2026-08-05) — not a live-parity risk, but it calls leaf classes Task 11 deletes, so it must be migrated before Task 11 can proceed.
+Same file, same "work-in-progress, will be revisited/rewritten separately" status as Task 9 Step 3 (user, 2026-08-05) — do not invest design effort here. This is a different call site (inside the function that records full context at trade entry) pulling `VolumeIndicator::GetVolumeRatio()`/`GetVolumeImbalance()`, `PriceMetricsIndicator::GetClosePercentile()`, and `ATRProximityIndicator::GetATR10()` directly into a `g_entryContext` struct's own scalar fields. It calls leaf classes Task 11 deletes, so it must at least compile against the new API. Simplest correct fix: replace those four individual `GetIndicator<T>()` calls with reads from `manager.GetTickCompanionValues()` (Step 2's struct) — least-effort correct substitution, not a redesign.
 
 - [ ] **Step 6: Delete `EventSerializerV2.cpp`/`.h`**
 
