@@ -1685,8 +1685,10 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // Entry preflight (flat/pending/halted) is centralized in ExecutionGate.
 
     // === PHASE 2b: SCORING VALIDATION (Daily Bias & Market Structure) ===
-    auto* dailyBiasInd = IndicatorManager::Instance().GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
-    DailyBiasEnum currentBias = dailyBiasInd ? dailyBiasInd->Value() : DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK;
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const DailyBiasEnum currentBias = static_cast<DailyBiasEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::DAILY_BIAS>());
 
     PatternType patternType = PatternType::Unknown;
 
@@ -2504,8 +2506,10 @@ void PositionManager::ProcessManualTradeCommand(
     TransitionIntentTicket("ELIGIBLE", ReasonCode::NA);
 
     // === PHASE 2b: BIAS FILTER ===
-    auto* dailyBiasInd = IndicatorManager::Instance().GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
-    DailyBiasEnum currentBias = dailyBiasInd ? dailyBiasInd->Value() : DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK;
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const DailyBiasEnum currentBias = static_cast<DailyBiasEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::DAILY_BIAS>());
 
     Scoring::BiasFilterResult biasResult = Scoring::Instance().ApplyDailyBiasFilter(PatternType::Unknown, isLong, currentBias);
 

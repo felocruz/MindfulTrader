@@ -210,46 +210,15 @@ void VwapIndicator::UpdateVwap(float typicalPrice, float barVolume, float atr, b
 //
 // VolumeIndicator — v5.7: Log-volume robust z-score + self-classification + order-flow imbalance
 //
-
-namespace {
-// Robust z-score of a value's log within a session pool: median/MAD in log-space.
-// MAD (50% breakdown) + log transform are the fat-tail-appropriate treatment for
-// volume (lognormal under the Mixture-of-Distributions Hypothesis).
-float RobustLogZ(const double* buf, int count, double logVol)
-{
-    if (count < 5) return 0.0f;  // need ≥5 samples for a stable MAD
-    std::array<double, 64> scratch;  // >= VolumeIndicator::kLookback (50)
-    std::copy_n(buf, count, scratch.begin());
-    const int mid = count / 2;
-
-    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
-    const double median = scratch[mid];
-
-    for (int i = 0; i < count; ++i) scratch[i] = std::abs(buf[i] - median);
-    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
-    const double mad = scratch[mid];
-
-    const double denom = mad * 1.4826;  // MAD -> σ consistency under normality
-    return (denom > 1e-12) ? static_cast<float>((logVol - median) / denom) : 0.0f;
-}
-}  // namespace
+// indicator-manager-dod-soa plan, Task 7: thin ACSIL-only adapters. The actual
+// session-pool z-score (ComputeVolumeBarSample) and classification/imbalance
+// (ComputeVolumeClassification) computations are pure free functions taking
+// an explicit VolumeState& (IndicatorComputations.h), mirroring ComputeMacd's
+// treatment (Task 6).
 
 void VolumeIndicator::SampleBarVolume(float completedBarVolume, bool isRTH)
 {
-    if (completedBarVolume <= 0.0f) return;  // guard log of zero/negative
-    const double logVol = std::log(static_cast<double>(completedBarVolume));
-
-    // Route the completed bar into its session pool (deseasonalization).
-    double* buf = isRTH ? m_logVolRth.data()  : m_logVolOvn.data();
-    int&    cnt = isRTH ? m_logVolRthCount     : m_logVolOvnCount;
-    int&    idx = isRTH ? m_logVolRthIdx        : m_logVolOvnIdx;
-
-    buf[idx] = logVol;
-    idx = (idx + 1) % kLookback;
-    if (cnt < kLookback) ++cnt;
-
-    // Robust log-vol z-score of the completed bar within its own session baseline.
-    m_volumeZScore = RobustLogZ(buf, cnt, logVol);
+    ComputeVolumeBarSample(m_volumeState, completedBarVolume, isRTH);
 }
 
 void VolumeIndicator::UpdateVolume(float bidVolume, float askVolume)
@@ -258,35 +227,11 @@ void VolumeIndicator::UpdateVolume(float bidVolume, float askVolume)
     // SampleBarVolume (session-aware). Here we (a) self-classify VolumeEnum against the
     // current z-score, folding in the live order-flow imbalance for the buy/sell split,
     // and (b) refresh the imbalance itself.
+    const VolumeClassification result = ComputeVolumeClassification(m_volumeState.volumeZScore, bidVolume, askVolume);
+    Update(result.signal);
 
-    // 1. Self-classify VolumeEnum using robust z-score thresholds
-    //    (thresholds are stable under fat tails — log/MAD z-score)
-    VolumeEnum classified = VolumeEnum::NORMAL;
-    if (m_volumeZScore < -2.0f) {
-        classified = VolumeEnum::VERY_LOW;
-    } else if (m_volumeZScore < -1.0f) {
-        classified = VolumeEnum::LOW;
-    } else if (m_volumeZScore > 2.0f) {
-        classified = VolumeEnum::VERY_HIGH;
-    } else if (m_volumeZScore > 1.0f) {
-        // Directional split: bid/ask imbalance at high volume = institutional activity
-        if (askVolume > bidVolume) {
-            classified = VolumeEnum::HIGH_BUY_VOLUME;
-        } else if (bidVolume > askVolume) {
-            classified = VolumeEnum::HIGH_SELL_VOLUME;
-        } else {
-            classified = VolumeEnum::HIGH;
-        }
-    }
-    Update(classified);
-
-    // 2. Order-flow imbalance: pure directional signal, orthogonal to magnitude
-    //    Bounded [-1, +1] by construction — no normalization needed
-    const float totalVol = bidVolume + askVolume;
-    m_lastTotalVolume = totalVol;  // sample size behind the ratio (min-volume guard)
-    m_volumeImbalance = (totalVol > 0.0f)
-        ? (askVolume - bidVolume) / totalVol
-        : 0.0f;
+    m_lastTotalVolume = result.totalVolume;  // sample size behind the ratio (min-volume guard)
+    m_volumeImbalance = result.imbalance;
 }
 
 //

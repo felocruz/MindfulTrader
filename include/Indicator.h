@@ -563,16 +563,10 @@ enum class RSI : int8_t
     BEARISH_DIVERGENCE = 5  // RSI shows bearish divergence with price
 };
 
-enum class VolumeEnum : int8_t
-{
-    NORMAL = 0,
-    HIGH = 1,
-    VERY_HIGH = 2,
-    LOW = 3,
-    VERY_LOW = 4,
-    HIGH_BUY_VOLUME = 5,
-    HIGH_SELL_VOLUME = 6
-};
+// VolumeEnum (extracted so it's ACSIL-independent; see IndicatorComputations.h) —
+// same rationale as MacdEnum/ImpulseEnum's extraction above (indicator-manager-
+// dod-soa plan, Task 7): ComputeVolumeClassification's return type must be the
+// real VolumeEnum.
 
 enum class StructureTest : int8_t
 {
@@ -1710,7 +1704,7 @@ public:
     // (mirrors the Amihud session-pool design). Call from the TS3 once-per-bar guard.
     void SampleBarVolume(float completedBarVolume, bool isRTH);
 
-    float GetVolumeRatio() const { return m_volumeZScore; }
+    float GetVolumeRatio() const { return m_volumeState.volumeZScore; }
     float GetVolumeImbalance() const { return m_volumeImbalance; }
     // Total traded contracts (bid+ask) behind the current imbalance. The imbalance is a
     // sample proportion (noise ~ 1/sqrt(N)); callers gate on this so a thin book can't
@@ -1719,25 +1713,17 @@ public:
 
     void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
         Indicator<VolumeEnum>::AddToTrainingEventFB(event);
-        event.volume_ratio_percent = m_volumeZScore;
+        event.volume_ratio_percent = m_volumeState.volumeZScore;
         event.volume_imbalance = m_volumeImbalance;
     }
 
 private:
-    // Robust z-score of log(volume): median/MAD in log-space, session-segregated.
-    // 50 same-session bars ≈ recent volume regime (fast-adaptive, unlike the 21-day
-    // Amihud window — volume regime shifts quickly).
-    static constexpr int kLookback = 50;
-    static constexpr double kMADConsistency = 1.4826;
-
-    // Two deseasonalized baselines routed by session (RTH vs overnight).
-    std::array<double, kLookback> m_logVolRth{};
-    int   m_logVolRthCount{0};
-    int   m_logVolRthIdx{0};
-    std::array<double, kLookback> m_logVolOvn{};
-    int   m_logVolOvnCount{0};
-    int   m_logVolOvnIdx{0};
-    float m_volumeZScore = 0.0f;
+    // Running state (session-segregated log-vol history + z-score), extracted
+    // to VolumeState (IndicatorComputations.h) so ComputeVolumeBarSample()/
+    // ComputeVolumeClassification() can be pure free functions taking explicit
+    // state (indicator-manager-dod-soa plan, Task 7 — same treatment as
+    // Macd::m_macdState, Task 6).
+    VolumeState m_volumeState;
     float m_volumeImbalance = 0.0f;  // (askVol - bidVol) / totalVol, bounded [-1, +1]
     float m_lastTotalVolume = 0.0f;  // bid+ask contracts behind the current imbalance
 };

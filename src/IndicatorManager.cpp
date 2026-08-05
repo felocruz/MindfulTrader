@@ -15,13 +15,11 @@
 #include "VolumeProfileEngine.h"
 
 // Elite v2.3: Named constants for feature vector defaults
-namespace FeatureDefaults {
-    // NOTE: MAX_HMM_ENTROPY removed - now handled by HmmStateIndicator
-    // IMPULSE_NEUTRAL removed (indicator-manager-dod-soa plan, Task 7): LONG_IMP's
-    // read call site now goes through GetValue<Key>() directly, which is always
-    // valid (no pointer, no null-fallback default needed).
-    constexpr float DAILY_BIAS_NEUTRAL = 0.5f;    // Midpoint when bias unknown
-}
+// (FeatureDefaults namespace removed (indicator-manager-dod-soa plan, Task 7):
+// its last two members, IMPULSE_NEUTRAL and DAILY_BIAS_NEUTRAL, existed only
+// as null-fallback defaults for GetIndicator<T>() pointer reads. LONG_IMP's
+// and DAILY_BIAS's read call sites now go through GetValue<Key>() directly,
+// which is always valid — no pointer, no null check, no fallback needed.)
 
 namespace {
     constexpr uint64_t IndicatorKeyMask(IndicatorKey key) {
@@ -331,6 +329,14 @@ void IndicatorManager::AssertPackedStateParity() const {
         // impulse_run_length row is already skipped above, unaffected.)
         if (desc.key == IndicatorKey::LONG_IMP) continue;
         if (desc.key == IndicatorKey::INTERM_IMP && desc.position == 12) continue;
+        // STRUCTURE_TEST/VOLUME_SIGNAL/ATR_PROXIMITY/DAILY_BIAS's remaining
+        // live readers (getScreen3EntryText, SyncFeatureVector, PositionManager,
+        // TripleScreen3) cut over to GetValue<Key>() (Task 7). Same "no longer
+        // meaningful" rationale as TIME_OF_DAY above.
+        if (desc.key == IndicatorKey::STRUCTURE_TEST) continue;
+        if (desc.key == IndicatorKey::VOLUME_SIGNAL) continue;
+        if (desc.key == IndicatorKey::ATR_PROXIMITY) continue;
+        if (desc.key == IndicatorKey::DAILY_BIAS) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
@@ -690,14 +696,13 @@ void IndicatorManager::SyncFeatureVector(std::vector<float>& targetVector) const
     // Elite v2.3: Use indicator floatValue() methods (indicators own normalization)
     const auto fi13Indicator = GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
     const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-    const auto dailyBiasIndicator = GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
 
     targetVector.push_back(fi13Indicator ? fi13Indicator->ZScore() : 0.0f);                              // 22: long_fi13_norm
     targetVector.push_back(fi2Indicator ? static_cast<float>(fi2Indicator->intValue()) : 0.0f);            // 23: interm_fi2_norm
     // DOD/SoA migration (Task 7): read straight from the packed array — no
     // pointer, no null check, always a valid value.
     targetVector.push_back(static_cast<float>(GetValue<IndicatorKey::LONG_IMP>()));                       // 24: impulse_color
-    targetVector.push_back(dailyBiasIndicator ? static_cast<float>(dailyBiasIndicator->intValue()) : FeatureDefaults::DAILY_BIAS_NEUTRAL);  // 25: daily_bias
+    targetVector.push_back(static_cast<float>(GetValue<IndicatorKey::DAILY_BIAS>()));                     // 25: daily_bias
 
     // ===== ZONE 8: Market Correlations (indices 26-28) =====
     // Computed by Python market_correlation_tracker.py (placeholders)
@@ -920,24 +925,17 @@ std::string IndicatorManager::getScreen2EntryText() {
 }
 
 std::string IndicatorManager::getScreen3EntryText() {
-    auto structureTest = GetIndicator<StructureTestIndicator>(IndicatorKey::STRUCTURE_TEST);
-    auto volume = GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
-    auto atrProximity = GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY);
-    auto dailyBias = GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
-
-    if (!structureTest || !volume || !atrProximity || !dailyBias) {
-        return "NA";
-    }
-
+    // DOD/SoA migration (Task 7): all four fields read straight from the
+    // packed array — no pointers, no null checks, always valid values.
     char buffer[48] = {0};
     std::snprintf(
         buffer,
         sizeof(buffer),
         "%d|%d|%d|%d",
-        structureTest->intValue(),
-        volume->intValue(),
-        atrProximity->intValue(),
-        static_cast<int>(dailyBias->Value())
+        static_cast<int>(GetValue<IndicatorKey::STRUCTURE_TEST>()),
+        static_cast<int>(GetValue<IndicatorKey::VOLUME_SIGNAL>()),
+        static_cast<int>(GetValue<IndicatorKey::ATR_PROXIMITY>()),
+        static_cast<int>(GetValue<IndicatorKey::DAILY_BIAS>())
     );
     return std::string(buffer);
 }

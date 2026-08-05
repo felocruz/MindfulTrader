@@ -362,3 +362,116 @@ inline ImpulseResult ComputeImpulse(ImpulseState& state, int color, int prevColo
 
     return ImpulseResult{ newValue, state.runLength, magnitude, fatigue, transitionRate };
 }
+
+// ============================================================================
+// VolumeIndicator (indicator-manager-dod-soa plan, Task 7): pure log-volume
+// robust z-score (session-segregated) + self-classification + order-flow
+// imbalance, extracted from VolumeIndicator::SampleBarVolume/UpdateVolume and
+// the anonymous-namespace RobustLogZ() helper (src/Indicator.cpp, pre-Task-7).
+// VolumeEnum moves here for the same ACSIL-independence reason as
+// MacdEnum/ImpulseEnum above.
+// ============================================================================
+
+enum class VolumeEnum : int8_t
+{
+    NORMAL = 0,
+    HIGH = 1,
+    VERY_HIGH = 2,
+    LOW = 3,
+    VERY_LOW = 4,
+    HIGH_BUY_VOLUME = 5,
+    HIGH_SELL_VOLUME = 6
+};
+
+// Two deseasonalized baselines routed by session (RTH vs overnight) — 50
+// same-session bars ≈ recent volume regime (fast-adaptive, unlike the 21-day
+// Amihud window — volume regime shifts quickly). volumeZScore is the only
+// value carried forward into UpdateVolume's per-tick self-classification.
+struct VolumeState {
+    static constexpr int kLookback = 50;
+
+    std::array<double, kLookback> logVolRth{};
+    int   logVolRthCount = 0;
+    int   logVolRthIdx = 0;
+    std::array<double, kLookback> logVolOvn{};
+    int   logVolOvnCount = 0;
+    int   logVolOvnIdx = 0;
+    float volumeZScore = 0.0f;
+};
+
+// Robust z-score of a value's log within a session pool: median/MAD in
+// log-space. MAD (50% breakdown) + log transform are the fat-tail-appropriate
+// treatment for volume (lognormal under the Mixture-of-Distributions
+// Hypothesis). Transcribed verbatim from the anonymous-namespace RobustLogZ()
+// (src/Indicator.cpp, pre-Task-7).
+inline float ComputeRobustLogZ(const double* buf, int count, double logVol) {
+    if (count < 5) return 0.0f;  // need >=5 samples for a stable MAD
+    std::array<double, VolumeState::kLookback> scratch;
+    std::copy_n(buf, count, scratch.begin());
+    const int mid = count / 2;
+
+    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
+    const double median = scratch[mid];
+
+    for (int i = 0; i < count; ++i) scratch[static_cast<size_t>(i)] = std::abs(buf[i] - median);
+    std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + count);
+    const double mad = scratch[mid];
+
+    const double denom = mad * 1.4826;  // MAD -> sigma consistency under normality
+    return (denom > 1e-12) ? static_cast<float>((logVol - median) / denom) : 0.0f;
+}
+
+// Per closed 15-min bar: route the completed bar into its session pool
+// (deseasonalization) and recompute the robust log-vol z-score. RTH and
+// overnight volume distributions differ materially (intraday U-shape/MDH), so
+// a pooled baseline is bimodal and miscalibrates the z. No-op guard mirrors
+// the original's log-of-nonpositive protection.
+inline void ComputeVolumeBarSample(VolumeState& state, float completedBarVolume, bool isRTH) {
+    if (completedBarVolume <= 0.0f) return;
+    const double logVol = std::log(static_cast<double>(completedBarVolume));
+
+    double* buf = isRTH ? state.logVolRth.data() : state.logVolOvn.data();
+    int&    cnt = isRTH ? state.logVolRthCount    : state.logVolOvnCount;
+    int&    idx = isRTH ? state.logVolRthIdx       : state.logVolOvnIdx;
+
+    buf[idx] = logVol;
+    idx = (idx + 1) % VolumeState::kLookback;
+    if (cnt < VolumeState::kLookback) ++cnt;
+
+    state.volumeZScore = ComputeRobustLogZ(buf, cnt, logVol);
+}
+
+struct VolumeClassification {
+    VolumeEnum signal;
+    float      imbalance;      // (askVol - bidVol) / totalVol, bounded [-1, +1]
+    float      totalVolume;    // bid+ask contracts behind the imbalance
+};
+
+// Per-tick: self-classify VolumeEnum against the current (per-bar,
+// session-aware) z-score baseline, folding in the live order-flow imbalance
+// for the buy/sell split, and refresh the imbalance itself. Pure function of
+// the already-updated volumeZScore (read-only here; ComputeVolumeBarSample
+// owns writing it).
+inline VolumeClassification ComputeVolumeClassification(float volumeZScore, float bidVolume, float askVolume) {
+    VolumeEnum classified = VolumeEnum::NORMAL;
+    if (volumeZScore < -2.0f) {
+        classified = VolumeEnum::VERY_LOW;
+    } else if (volumeZScore < -1.0f) {
+        classified = VolumeEnum::LOW;
+    } else if (volumeZScore > 2.0f) {
+        classified = VolumeEnum::VERY_HIGH;
+    } else if (volumeZScore > 1.0f) {
+        if (askVolume > bidVolume) {
+            classified = VolumeEnum::HIGH_BUY_VOLUME;
+        } else if (bidVolume > askVolume) {
+            classified = VolumeEnum::HIGH_SELL_VOLUME;
+        } else {
+            classified = VolumeEnum::HIGH;
+        }
+    }
+
+    const float totalVol = bidVolume + askVolume;
+    const float imbalance = (totalVol > 0.0f) ? (askVolume - bidVolume) / totalVol : 0.0f;
+
+    return VolumeClassification{ classified, imbalance, totalVol };
+}

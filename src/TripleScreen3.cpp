@@ -1403,8 +1403,9 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         const auto nhNlIndicator = indMgr.GetIndicator<NhNlSignalIndicator>(IndicatorKey::NH_NL_SIGNAL);
         anchors.nhNlDaily = nhNlIndicator ? nhNlIndicator->GetDailyValue() : 0.0f;
 
-        const auto dailyBiasInd = indMgr.GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS);
-        anchors.dailyBias = dailyBiasInd ? static_cast<float>(dailyBiasInd->Value()) : 0.0f;
+        // DOD/SoA migration (Task 7): read straight from the packed array — no
+        // pointer, no null check, always a valid value.
+        anchors.dailyBias = static_cast<float>(indMgr.GetValue<IndicatorKey::DAILY_BIAS>());
 
         anchors.lastUpdated = sc.BaseDateTimeIn[signalBarIndex];
 

@@ -187,6 +187,79 @@ int main() {
         check("transition_rate_one_change", near(r.transitionRate, 1.0f / 16.0f));
     }
 
+    std::printf("\nIndicatorComputations (Volume) tests\n");
+
+    // --- ComputeVolumeBarSample: cold start + guard ------------------------
+    {
+        VolumeState state;
+        ComputeVolumeBarSample(state, /*completedBarVolume=*/0.0f, /*isRTH=*/true);
+        check("zero_volume_is_noop", state.logVolRthCount == 0 && state.volumeZScore == 0.0f);
+    }
+    {
+        VolumeState state;
+        ComputeVolumeBarSample(state, /*completedBarVolume=*/-5.0f, /*isRTH=*/true);
+        check("negative_volume_is_noop", state.logVolRthCount == 0);
+    }
+    {
+        // Fewer than 5 samples -> zScore stays 0 regardless of session.
+        VolumeState state;
+        bool allZeroBeforeFive = true;
+        for (int i = 1; i <= 4; ++i) {
+            ComputeVolumeBarSample(state, static_cast<float>(i * 100), true);
+            if (state.volumeZScore != 0.0f) allZeroBeforeFive = false;
+        }
+        check("zscore_zero_below_five_samples", allZeroBeforeFive);
+        check("rth_count_tracks_samples", state.logVolRthCount == 4);
+    }
+    {
+        // RTH and overnight pools are independent (session-segregated).
+        VolumeState state;
+        ComputeVolumeBarSample(state, 100.0f, /*isRTH=*/true);
+        ComputeVolumeBarSample(state, 200.0f, /*isRTH=*/false);
+        check("rth_and_overnight_pools_independent", state.logVolRthCount == 1 && state.logVolOvnCount == 1);
+    }
+
+    // --- ComputeVolumeClassification: threshold boundaries -----------------
+    {
+        VolumeClassification c = ComputeVolumeClassification(/*volumeZScore=*/0.0f, 10.0f, 10.0f);
+        check("normal_classification", c.signal == VolumeEnum::NORMAL);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(-2.5f, 10.0f, 10.0f);
+        check("very_low_classification", c.signal == VolumeEnum::VERY_LOW);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(-1.5f, 10.0f, 10.0f);
+        check("low_classification", c.signal == VolumeEnum::LOW);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(2.5f, 10.0f, 10.0f);
+        check("very_high_classification", c.signal == VolumeEnum::VERY_HIGH);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(1.5f, 5.0f, 15.0f);
+        check("high_buy_volume_classification", c.signal == VolumeEnum::HIGH_BUY_VOLUME);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(1.5f, 15.0f, 5.0f);
+        check("high_sell_volume_classification", c.signal == VolumeEnum::HIGH_SELL_VOLUME);
+    }
+    {
+        VolumeClassification c = ComputeVolumeClassification(1.5f, 10.0f, 10.0f);
+        check("high_classification_balanced", c.signal == VolumeEnum::HIGH);
+    }
+    {
+        // imbalance = (ask - bid) / (ask + bid); totalVolume = ask + bid.
+        VolumeClassification c = ComputeVolumeClassification(0.0f, 30.0f, 70.0f);
+        check("imbalance_matches_hand_computed", near(c.imbalance, 0.4f));
+        check("total_volume_matches_hand_computed", near(c.totalVolume, 100.0f));
+    }
+    {
+        // Zero total volume -> imbalance defaults to 0 (no divide-by-zero).
+        VolumeClassification c = ComputeVolumeClassification(0.0f, 0.0f, 0.0f);
+        check("zero_total_volume_zero_imbalance", c.imbalance == 0.0f);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;
