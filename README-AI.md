@@ -90,7 +90,7 @@ Size-prefixed FlatBuffer records: `RunManifest` → `DecisionEvent`(s) → `Pred
 - Avoid heavy allocations in recurring ACSIL update paths.
 - Keep ZMQ interactions non-blocking on UI-sensitive paths.
 - Preserve microsecond timing conventions where latency is tracked.
-- `IndicatorManager` architecture is DOD (Data-Oriented Design). Always use `std::array` with `IndicatorKey` lookups instead of string hashes/heap allocations.
+- **`IndicatorManager`** currently uses a hand-written heterogeneous `IndicatorStore` (~44 differently-typed named members) plus a separate `std::array<BaseIndicator*, MAX_INDICATORS>` pointer-index array for O(1) `IndicatorKey`-enum lookup (`GetIndicator<T>(key)`, never string hashes or map lookups) — this is being migrated to true packed-array (SoA) storage with compile-time devirtualized access; see `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md`.
 
 ## Trap Detection Ownership (Native-First)
 1. **TRAP = structural invalidation of the entry thesis** — a sprung-trap reversal (probe-and-fail) that fires ahead of the money-stop. It is neither the price stop nor a trend/regime shift.

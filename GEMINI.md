@@ -168,7 +168,7 @@ Size-prefixed FlatBuffer records, one per event. Record ordering:
 ## Performance Rules (Hot Path)
 
 - **No heap allocations** in recurring ACSIL update paths (all three TS screens, every tick)
-- **`IndicatorManager`** uses DOD: `std::array<Indicator, IndicatorKey::COUNT>` — always use `IndicatorKey` enum lookups
+- **`IndicatorManager`** currently uses a hand-written heterogeneous `IndicatorStore` (~44 differently-typed named members) plus a separate `std::array<BaseIndicator*, MAX_INDICATORS>` pointer-index array for O(1) `IndicatorKey`-enum lookup (`GetIndicator<T>(key)`, never string hashes or map lookups) — this is being migrated to true packed-array (SoA) storage with compile-time devirtualized access; see `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md`.
 - **ZMQ** calls must be non-blocking on UI-sensitive paths
 - Preserve microsecond timing conventions where latency is tracked
 
