@@ -210,35 +210,48 @@ IndicatorManager::IndicatorManager()
     // Screen 1
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_MACD)] = &m_store.long_macd;
     m_store.long_macd.SetPackedSlotPointer(m_packed.RawI8Pointer(0));
+    m_store.long_macd.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(0));
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_FI13_SIGNAL)] = &m_store.long_fi13;
     m_store.long_fi13.SetPackedSlotPointer(m_packed.RawI8Pointer(1));
+    m_store.long_fi13.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(1));
     m_store.long_fi13.SetPackedSlotPointer(m_packed.RawF32Pointer(9));
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_MACD_DIVERGENCE)] = &m_store.long_macd_div;
     m_store.long_macd_div.SetPackedSlotPointer(m_packed.RawI8Pointer(2));
+    m_store.long_macd_div.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(2));
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_IMP)] = &m_store.long_imp;
     m_store.long_imp.SetPackedSlotPointer(m_packed.RawI8Pointer(3));
+    m_store.long_imp.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(3));
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_MKT_ACTION)] = &m_store.long_mkt_action;
 
     // Screen 2
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_STOCHASTIC)] = &m_store.interm_stochastic;
     m_store.interm_stochastic.SetPackedSlotPointer(m_packed.RawI8Pointer(4));
+    m_store.interm_stochastic.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(4));
     m_indicators[static_cast<size_t>(IndicatorKey::RASCHKE_STRATEGY_SETUP)] = &m_store.raschke_strategy;
     m_store.raschke_strategy.SetPackedSlotPointer(m_packed.RawI8Pointer(5));
+    m_store.raschke_strategy.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(5));
     m_indicators[static_cast<size_t>(IndicatorKey::RASCHKE_TACTICAL_TRIGGER)] = &m_store.raschke_tactical;
     m_store.raschke_tactical.SetPackedSlotPointer(m_packed.RawI8Pointer(6));
+    m_store.raschke_tactical.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(6));
     m_indicators[static_cast<size_t>(IndicatorKey::RSI)] = &m_store.rsi;
     m_store.rsi.SetPackedSlotPointer(m_packed.RawI8Pointer(7));
+    m_store.rsi.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(7));
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_FI2_SIGNAL)] = &m_store.interm_fi2;
     m_store.interm_fi2.SetPackedSlotPointer(m_packed.RawI8Pointer(8));
+    m_store.interm_fi2.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(8));
     m_store.interm_fi2.SetPackedSlotPointer(m_packed.RawF32Pointer(7));
     m_indicators[static_cast<size_t>(IndicatorKey::EMA_PROXIMITY)] = &m_store.ema_prox;
     m_store.ema_prox.SetPackedSlotPointer(m_packed.RawI8Pointer(9));
+    m_store.ema_prox.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(9));
     m_indicators[static_cast<size_t>(IndicatorKey::PRICE_METRICS)] = &m_store.price_metrics;
     m_store.price_metrics.SetPackedSlotPointer(m_packed.RawI8Pointer(10));
+    m_store.price_metrics.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(10));
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_MACD_DIVERGENCE)] = &m_store.interm_macd_div;
     m_store.interm_macd_div.SetPackedSlotPointer(m_packed.RawI8Pointer(11));
+    m_store.interm_macd_div.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(11));
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_IMP)] = &m_store.interm_imp;
     m_store.interm_imp.SetPackedSlotPointer(m_packed.RawI8Pointer(12));
+    m_store.interm_imp.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(12));
     // NOTE: kIndicatorLayout also has a second, companion Int8 row for
     // INTERM_IMP at position 26 (impulse_run_length) — that is a distinct
     // field (m_runLength, not m_value) with no shared write path through the
@@ -247,6 +260,7 @@ IndicatorManager::IndicatorManager()
     // it today). Out of scope for this task; deferred to Task 9/10.
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_MACD)] = &m_store.interm_macd;
     m_store.interm_macd.SetPackedSlotPointer(m_packed.RawI8Pointer(13));
+    m_store.interm_macd.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(13));
     // NOTE: INTERM_MACD's Float32-block companion (position 8, interm_macd_norm)
     // is intentionally NOT wired — Task 2's audit confirmed Macd::AddToTrainingEventFB
     // writes only the ambiguous top-level TrainingEventT::interm_macd_norm field,
@@ -256,37 +270,48 @@ IndicatorManager::IndicatorManager()
     // Screen 3
     m_indicators[static_cast<size_t>(IndicatorKey::STRUCTURE_TEST)] = &m_store.structure_test;
     m_store.structure_test.SetPackedSlotPointer(m_packed.RawI8Pointer(14));
+    m_store.structure_test.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(14));
     m_indicators[static_cast<size_t>(IndicatorKey::VOLUME_SIGNAL)] = &m_store.volume;
     m_store.volume.SetPackedSlotPointer(m_packed.RawI8Pointer(15));
+    m_store.volume.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(15));
     m_indicators[static_cast<size_t>(IndicatorKey::ATR_PROXIMITY)] = &m_store.atr_prox;
     m_store.atr_prox.SetPackedSlotPointer(m_packed.RawI8Pointer(16));
+    m_store.atr_prox.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(16));
     m_indicators[static_cast<size_t>(IndicatorKey::DAILY_BIAS)] = &m_store.daily_bias;
     m_store.daily_bias.SetPackedSlotPointer(m_packed.RawI8Pointer(17));
+    m_store.daily_bias.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(17));
     m_indicators[static_cast<size_t>(IndicatorKey::KANGAROO_TAIL)] = &m_store.kangaroo_tail;
     m_store.kangaroo_tail.SetPackedSlotPointer(m_packed.RawI8Pointer(18));
+    m_store.kangaroo_tail.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(18));
     m_store.kangaroo_tail.SetPackedSlotPointer(m_packed.RawF32Pointer(0));
     m_indicators[static_cast<size_t>(IndicatorKey::TURTLE_SOUP)] = &m_store.turtle_soup;
     m_store.turtle_soup.SetPackedSlotPointer(m_packed.RawI8Pointer(19));
+    m_store.turtle_soup.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(19));
     m_store.turtle_soup.SetPackedSlotPointer(m_packed.RawF32Pointer(1));
     m_indicators[static_cast<size_t>(IndicatorKey::MOMENTUM_PINBALL)] = &m_store.momentum_pinball;
     m_store.momentum_pinball.SetPackedSlotPointer(m_packed.RawI8Pointer(20));
+    m_store.momentum_pinball.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(20));
     m_store.momentum_pinball.SetPackedSlotPointer(m_packed.RawF32Pointer(2));
     m_indicators[static_cast<size_t>(IndicatorKey::ELDER_BREAKOUT)] = &m_store.elder_breakout;
     m_store.elder_breakout.SetPackedSlotPointer(m_packed.RawI8Pointer(21));
+    m_store.elder_breakout.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(21));
     m_store.elder_breakout.SetPackedSlotPointer(m_packed.RawF32Pointer(3));
     m_indicators[static_cast<size_t>(IndicatorKey::NR7)] = &m_store.nr7;
     m_store.nr7.SetPackedSlotPointer(m_packed.RawI8Pointer(22));
+    m_store.nr7.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(22));
     m_store.nr7.SetPackedSlotPointer(m_packed.RawF32Pointer(4));
 
     m_indicators[static_cast<size_t>(IndicatorKey::SHORT_MKT_ACTION)] = &m_store.short_mkt_action;
     m_indicators[static_cast<size_t>(IndicatorKey::OSCILLATOR_310)] = &m_store.oscillator_310;
     m_store.oscillator_310.SetPackedSlotPointer(m_packed.RawI8Pointer(24));
+    m_store.oscillator_310.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(24));
     m_indicators[static_cast<size_t>(IndicatorKey::VWAP)] = &m_store.vwap;
 
     m_indicators[static_cast<size_t>(IndicatorKey::SIDE)] = &m_store.side;
     m_indicators[static_cast<size_t>(IndicatorKey::MARKET_SYMBOL)] = &m_store.market_symbol;
     m_indicators[static_cast<size_t>(IndicatorKey::TIME_OF_DAY)] = &m_store.time_of_day;
     m_store.time_of_day.SetPackedSlotPointer(m_packed.RawI8Pointer(25));
+    m_store.time_of_day.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(25));
     m_indicators[static_cast<size_t>(IndicatorKey::OVERNIGHT_EXIT)] = &m_store.overnight_exit;
 
     // HMM_STATE, MARKET_CLIMATE, PREDICTION_STATE → InferenceManager (Mar 2026)
@@ -295,6 +320,7 @@ IndicatorManager::IndicatorManager()
 
     m_indicators[static_cast<size_t>(IndicatorKey::NH_NL_SIGNAL)] = &m_store.nh_nl_signal;
     m_store.nh_nl_signal.SetPackedSlotPointer(m_packed.RawI8Pointer(23));
+    m_store.nh_nl_signal.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(23));
 
     // Prediction State → InferenceManager (Mar 2026)
 
@@ -387,23 +413,43 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
         }
         case IndicatorKey::DAILY_BIAS: return false;
         case IndicatorKey::KANGAROO_TAIL: {
-            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::KANGAROO_TAIL).position;
+            // Finding 1 fix (Task 9 review): KANGAROO_TAIL has TWO kIndicatorLayout
+            // rows (Int8 primary + Float32 quality companion) — UniqueDescriptorFor
+            // silently resolves such keys to NotPacked (position 0), which used to
+            // alias LONG_MACD's position and test the wrong indicator entirely.
+            // DescriptorFor(Key, Block) plus this static_assert makes that class of
+            // bug a compile error instead of a silent position-0 alias.
+            constexpr auto desc = mts::DescriptorFor(IndicatorKey::KANGAROO_TAIL, mts::StorageBlock::Int8);
+            static_assert(desc.block == mts::StorageBlock::Int8, "KANGAROO_TAIL must resolve to a real Int8 row");
+            constexpr size_t pos = desc.position;
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), KangarooTailEnum::NONE);
         }
         case IndicatorKey::TURTLE_SOUP: {
-            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::TURTLE_SOUP).position;
+            // Finding 1 fix — see KANGAROO_TAIL comment above; same two-row shape.
+            constexpr auto desc = mts::DescriptorFor(IndicatorKey::TURTLE_SOUP, mts::StorageBlock::Int8);
+            static_assert(desc.block == mts::StorageBlock::Int8, "TURTLE_SOUP must resolve to a real Int8 row");
+            constexpr size_t pos = desc.position;
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), TurtleSoupEnum::NONE);
         }
         case IndicatorKey::MOMENTUM_PINBALL: {
-            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::MOMENTUM_PINBALL).position;
+            // Finding 1 fix — see KANGAROO_TAIL comment above; same two-row shape.
+            constexpr auto desc = mts::DescriptorFor(IndicatorKey::MOMENTUM_PINBALL, mts::StorageBlock::Int8);
+            static_assert(desc.block == mts::StorageBlock::Int8, "MOMENTUM_PINBALL must resolve to a real Int8 row");
+            constexpr size_t pos = desc.position;
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), MomentumPinballEnum::NONE);
         }
         case IndicatorKey::ELDER_BREAKOUT: {
-            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::ELDER_BREAKOUT).position;
+            // Finding 1 fix — see KANGAROO_TAIL comment above; same two-row shape.
+            constexpr auto desc = mts::DescriptorFor(IndicatorKey::ELDER_BREAKOUT, mts::StorageBlock::Int8);
+            static_assert(desc.block == mts::StorageBlock::Int8, "ELDER_BREAKOUT must resolve to a real Int8 row");
+            constexpr size_t pos = desc.position;
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), ElderBreakoutEnum::NONE);
         }
         case IndicatorKey::NR7: {
-            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::NR7).position;
+            // Finding 1 fix — see KANGAROO_TAIL comment above; same two-row shape.
+            constexpr auto desc = mts::DescriptorFor(IndicatorKey::NR7, mts::StorageBlock::Int8);
+            static_assert(desc.block == mts::StorageBlock::Int8, "NR7 must resolve to a real Int8 row");
+            constexpr size_t pos = desc.position;
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), NR7Enum::NONE);
         }
         case IndicatorKey::SHORT_MKT_ACTION: return false;

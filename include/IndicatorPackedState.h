@@ -59,6 +59,13 @@ public:
     // position, not poke the arrays directly.
     int8_t* RawI8Pointer(size_t pos) { return &m_currentI8[pos]; }
     float* RawF32Pointer(size_t pos) { return &m_currentF32[pos]; }
+    // Task 9 fix (Finding 2): companion prev-slot raw pointer, wired alongside
+    // RawI8Pointer(pos) into Indicator<T>::SetPackedPrevSlotPointer() so the
+    // raw-pointer dual-write path can shift current into prev exactly like
+    // SetI8() does. No Float32 equivalent yet -- nothing reads GetPrevF32()
+    // through the raw-pointer path today; add RawPrevF32Pointer() when the
+    // first such consumer shows up.
+    int8_t* RawPrevI8Pointer(size_t pos) { return &m_prevI8[pos]; }
 
 private:
     alignas(64) std::array<int8_t, N_I8>  m_currentI8{};

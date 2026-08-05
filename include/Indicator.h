@@ -635,6 +635,14 @@ protected:
     // plan, Task 4): nullptr = not yet wired. Written alongside m_value inside
     // Update() below; nothing reads through this pointer yet.
     int8_t* m_packedSlotI8 = nullptr;
+    // Task 9 fix (Finding 2): companion "previous" slot in m_packed's Int8
+    // block. Task 4's raw-pointer dual-write only ever overwrote *current*
+    // (m_packedSlotI8) — it never shifted the old value into *prev* the way
+    // IndicatorPackedState::SetI8() does internally, so m_packed.GetPrevI8()
+    // silently stayed 0 forever for every indicator updated through this path
+    // (i.e. everything except LONG_MACD/INTERM_MACD, which go through
+    // IndicatorManager::SetValue<Key>() instead). nullptr = not wired.
+    int8_t* m_packedPrevSlotI8 = nullptr;
 
     uint64_t KeyBit() const {
         return 1ULL << static_cast<uint64_t>(m_key);
@@ -669,6 +677,12 @@ public:
     // Dual-write target during Phase II migration (indicator-manager-dod-soa
     // plan, Task 4). nullptr = not yet wired into IndicatorManager::m_packed.
     void SetPackedSlotPointer(int8_t* slot) { m_packedSlotI8 = slot; }
+    // Task 9 fix (Finding 2): wires the companion prev-slot (see
+    // m_packedPrevSlotI8 above). Must be wired to the SAME position's
+    // RawPrevI8Pointer() as SetPackedSlotPointer()'s RawI8Pointer() call —
+    // IndicatorManager's constructor wires both together for every Int8-block
+    // key.
+    void SetPackedPrevSlotPointer(int8_t* slot) { m_packedPrevSlotI8 = slot; }
 
     void Update(const T& newValue) {
 
@@ -679,6 +693,14 @@ public:
                 *m_dirty_mask_ptr |= KeyBit();
             }
             if (m_packedSlotI8) {
+                // Task 9 fix (Finding 2): shift current into prev BEFORE
+                // overwriting current, mirroring IndicatorPackedState::SetI8's
+                // own m_prevI8[pos] = m_currentI8[pos] ordering exactly — this
+                // is the read-then-write step a bare pointer store to
+                // *m_packedSlotI8 alone could never perform.
+                if (m_packedPrevSlotI8) {
+                    *m_packedPrevSlotI8 = *m_packedSlotI8;
+                }
                 *m_packedSlotI8 = static_cast<int8_t>(newValue);
             }
         }
