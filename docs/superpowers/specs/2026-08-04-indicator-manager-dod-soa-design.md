@@ -52,12 +52,14 @@ The code special-cases index 26 to bypass the virtual call rather than fixing th
 ```cpp
 // Published, dirty-tracked, schema-mirroring state — the "hot" core.
 alignas(64) std::array<int8_t, N_I8>  m_currentI8;
-alignas(64) std::array<int8_t, N_I8>  m_prevI8;    // dirty-bit comparison only; never serialized
+alignas(64) std::array<int8_t, N_I8>  m_prevI8;
 alignas(64) std::array<float,  N_F32> m_currentF32;
-alignas(64) std::array<float,  N_F32> m_prevF32;   // same, for float-valued indicators
+alignas(64) std::array<float,  N_F32> m_prevF32;
 ```
 
 `N_I8` and `N_F32` are the counts of int8-valued and float-valued published indicators respectively (determined precisely during the Step-1 audit, §4).
+
+**`m_prevI8`/`m_prevF32` are load-bearing, not just a dirty-bit convenience.** A design-review round with Gemini proposed dropping both `prev` arrays entirely, reasoning that only the current value and the fact-of-change (a dirty bit) are ever read downstream. Verified against the actual code and found false: `Indicator<T>::m_prevValue` (the current codebase's equivalent) is read directly, by value, inside at least 9 indicator families' `ShouldTrigger()` overrides to detect state *transitions* — not just "did it change," but "did it specifically enter or exit a named state this tick" — e.g. `include/Indicator.h:1162-1167` (Stochastic: entering/exiting overbought/oversold), `:1407-1408` (KangarooTail: entered/exited), `:1459-1460` (TurtleSoup), `:1516-1517` (MomentumPinball), `:1574-1575` (ElderBreakout), `:1655-1656` (NR7), `:1706-1711` (RSI), `:1831-1844` (ATRProximity), `:1869-1878` (EmaProximity). These are exactly the pattern-detection indicators this system exists to compute — KangarooTail, TurtleSoup, and MomentumPinball are Raschke-pattern triggers, not incidental fields. Dropping the `prev` arrays would silently break entered/exited trigger detection for all of them. `m_prevI8`/`m_prevF32` stay in the design as originally specified; the memory cost (well under 100 bytes total) is trivial next to that risk.
 
 Default values (Gemini's proposed third array) are **not** per-instance storage — they never change at runtime, so they become a `static constexpr` table used only by `Reset()`. This removes one array (and one more thing that could drift out of sync) versus the literal 3-array `PackedIndicatorState` proposal.
 
