@@ -29,14 +29,14 @@ struct IndicatorDescriptor {
 // exist only on TrainingEventT and not on IndicatorState) get a single NotPacked
 // row so every IndicatorKey value is accounted for exactly once per row-count.
 //
-// Verified directly against include/Indicator.h, include/IndicatorManager.h,
-// src/IndicatorManager.cpp, src/BackTesterStudy.cpp, and
-// ../schema/mts_schema.fbs during the Task 2 audit (2026-08-05). Positions are
-// assignment order, not IndicatorState's own field order.
+// Verified directly against include/Indicator.h, include/IndicatorKey.h,
+// include/IndicatorManager.h, src/IndicatorManager.cpp, src/BackTesterStudy.cpp,
+// and ../schema/mts_schema.fbs during the Task 2 audit (2026-08-05). Positions
+// are assignment order, not IndicatorState's own field order.
 // ============================================================================
 inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     // -- Int8-block rows: present in MapIndicatorKeyToTrainingEvent's switch
-    //    (Indicator.h:1042-1073) AND IndicatorManager::PopulateIndicatorState's
+    //    (Indicator.h:986-1017) AND IndicatorManager::PopulateIndicatorState's
     //    switch (IndicatorManager.cpp:884-918) — both switches agree on this set. --
     { IndicatorKey::LONG_MACD,               StorageBlock::Int8, 0 },
     { IndicatorKey::LONG_FI13_SIGNAL,         StorageBlock::Int8, 1 },
@@ -56,7 +56,7 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     { IndicatorKey::VOLUME_SIGNAL,            StorageBlock::Int8, 15 },
     { IndicatorKey::ATR_PROXIMITY,            StorageBlock::Int8, 16 },
     // DAILY_BIAS writes BOTH daily_bias AND daily_bias_enum from the same
-    // intValue() in BOTH writer paths (Indicator.h:1060-1063 and
+    // intValue() in BOTH writer paths (Indicator.h:1004-1007 and
     // IndicatorManager.cpp:902-905) — confirmed: there is exactly one source
     // read, fanned out to two mutators at serialization time. They can never
     // diverge, so one packed slot (written to both mutators at serialization
@@ -68,10 +68,10 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     { IndicatorKey::ELDER_BREAKOUT,           StorageBlock::Int8, 21 },
     { IndicatorKey::NR7,                      StorageBlock::Int8, 22 },
     { IndicatorKey::NH_NL_SIGNAL,             StorageBlock::Int8, 23 },
-    { IndicatorKey::OSCILLATOR_310,           StorageBlock::Int8, 24 },  // confirmed NO companion override at all (Indicator.h:2526-2566) — the OSCILLATOR_310 crash-fix target
+    { IndicatorKey::OSCILLATOR_310,           StorageBlock::Int8, 24 },  // confirmed NO companion override at all (Indicator.h:2470-2510) — the OSCILLATOR_310 crash-fix target
     { IndicatorKey::TIME_OF_DAY,              StorageBlock::Int8, 25 },
     // impulse_run_length (IndicatorState int8 field) companion of INTERM_IMP.
-    // Impulse::AddToTrainingEventFB (Indicator.h:1092-1096) unconditionally
+    // Impulse::AddToTrainingEventFB (Indicator.h:1036-1040) unconditionally
     // writes mutate_impulse_run_length() regardless of whether the specific
     // Impulse instance's Key() is LONG_IMP or INTERM_IMP (the Impulse class is
     // instantiated for both, IndicatorManager.h:146,158) — same
@@ -85,23 +85,23 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     // -- Float32-block companion rows: an extra event.indicators->mutate_X(...)
     //    call beyond the key's own Int8 row, confirmed to target a real
     //    IndicatorState struct field (not a TrainingEventT-only field). --
-    { IndicatorKey::KANGAROO_TAIL,    StorageBlock::Float32, 0 },  // kangaroo_tail_quality, Indicator.h:1434-1441
-    { IndicatorKey::TURTLE_SOUP,      StorageBlock::Float32, 1 },  // turtle_soup_quality, Indicator.h:1490-1496
-    { IndicatorKey::MOMENTUM_PINBALL, StorageBlock::Float32, 2 },  // momentum_pinball_quality, Indicator.h:1548-1554
-    { IndicatorKey::ELDER_BREAKOUT,   StorageBlock::Float32, 3 },  // elder_breakout_quality, Indicator.h:1608-1614
-    { IndicatorKey::NR7,              StorageBlock::Float32, 4 },  // nr7_quality, Indicator.h:1689-1695
+    { IndicatorKey::KANGAROO_TAIL,    StorageBlock::Float32, 0 },  // kangaroo_tail_quality, Indicator.h:1378-1385
+    { IndicatorKey::TURTLE_SOUP,      StorageBlock::Float32, 1 },  // turtle_soup_quality, Indicator.h:1434-1440
+    { IndicatorKey::MOMENTUM_PINBALL, StorageBlock::Float32, 2 },  // momentum_pinball_quality, Indicator.h:1492-1498
+    { IndicatorKey::ELDER_BREAKOUT,   StorageBlock::Float32, 3 },  // elder_breakout_quality, Indicator.h:1552-1558
+    { IndicatorKey::NR7,              StorageBlock::Float32, 4 },  // nr7_quality, Indicator.h:1633-1639
     // CorrelationIndicator (direct BaseIndicator subclass, not Indicator<T>) writes
     // corr_es_zn/corr_es_dx directly by key comparison, not via the switch —
-    // confirmed at Indicator.h:2662-2670.
+    // confirmed at Indicator.h:2606-2614.
     { IndicatorKey::CORR_ES_ZN, StorageBlock::Float32, 5 },
     { IndicatorKey::CORR_ES_DX, StorageBlock::Float32, 6 },
-    // interm_fi2_norm: FI2Signal::AddToTrainingEventFB (Indicator.h:1365-1369),
+    // interm_fi2_norm: FI2Signal::AddToTrainingEventFB (Indicator.h:1309-1313),
     // unambiguous single-instance write; also confirmed at BackTesterStudy.cpp:1276.
     { IndicatorKey::INTERM_FI2_SIGNAL, StorageBlock::Float32, 7 },
     // interm_macd_norm: NOT written by Macd::AddToTrainingEventFB (that override
     // writes a *different*, TrainingEventT-top-level `event.interm_macd_norm`
     // field, ambiguously shared between LONG_MACD's and INTERM_MACD's Macd
-    // instances — Indicator.h:1125-1128, the discrepancy flagged in the Task 2
+    // instances — Indicator.h:1069-1072, the discrepancy flagged in the Task 2
     // brief; that top-level field is NotPacked, out of scope, unaffected by this
     // row). The IndicatorState *struct* field of the same name is instead
     // populated only by BackTesterStudy.cpp:1277, unambiguously keyed to
@@ -109,7 +109,7 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     // do not populate the struct field at all today — flagged as a pre-existing
     // live/training gap for a later unification pass, not fixed here.
     { IndicatorKey::INTERM_MACD, StorageBlock::Float32, 8 },
-    // long_fi13_norm: FI13Signal::AddToTrainingEventFB (Indicator.h:1337-1342),
+    // long_fi13_norm: FI13Signal::AddToTrainingEventFB (Indicator.h:1281-1286),
     // unambiguous single-instance write (also mirrored to a TrainingEventT
     // top-level field of the same name, harmlessly, since only one Indicator
     // instance owns LONG_FI13_SIGNAL); also confirmed at BackTesterStudy.cpp:1278.
@@ -122,7 +122,7 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     { IndicatorKey::UNKNOWN,          StorageBlock::NotPacked, 0 },
 
     // -- NotPacked: no live IndicatorState field exists for this key at all.
-    //    LongMarketAction/ShortMarketAction (Indicator.h:1277-1326) have no
+    //    LongMarketAction/ShortMarketAction (Indicator.h:1221-1270) have no
     //    AddToTrainingEventFB override and no matching struct field anywhere;
     //    base-class dispatch falls through MapIndicatorKeyToTrainingEvent's
     //    switch default:break — the enum value is computed but never
@@ -148,13 +148,13 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
 
     // -- NotPacked: orphaned enum sentinels. Grepped across the entire repo —
     //    these six values appear ONLY in their own enum declaration
-    //    (Indicator.h:56-61); no IndicatorStore slot in IndicatorManager.h, no
+    //    (IndicatorKey.h:50-55); no IndicatorStore slot in IndicatorManager.h, no
     //    switch case, no leaf class, nothing. The real prev-high/low/day-high/
     //    day-low/4-bar-high/4-bar-low values are served through two entirely
     //    separate mechanisms instead: (a) IndicatorManager's own
     //    m_dailyCache / GetCachedPrevDayHigh()-style plain getters
     //    (IndicatorManager.h:35,60-61,201-210), and (b) ShortMarketAction's own
-    //    internal PriceData struct (Indicator.h:1302-1324, filled from
+    //    internal PriceData struct (Indicator.h:1246-1268, filled from
     //    TripleScreen3), keyed to SHORT_MKT_ACTION — not to these six keys. --
     { IndicatorKey::PREV_HIGH_KEY,          StorageBlock::NotPacked, 0 },
     { IndicatorKey::PREV_LOW_KEY,           StorageBlock::NotPacked, 0 },
@@ -164,13 +164,13 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     { IndicatorKey::PREV_FOUR_BAR_LOW_KEY,  StorageBlock::NotPacked, 0 },
 
     // -- NotPacked: same orphaned-sentinel pattern as above. Declared only in
-    //    the enum (Indicator.h:62-63); never instantiated in
+    //    the enum (IndicatorKey.h:56-57); never instantiated in
     //    IndicatorManager.h's IndicatorStore, no switch case, no leaf class.
     //    The actual "Raschke 3-10 oscillator" values are plain float
     //    parameters computed inline in TripleScreen3.cpp (from
     //    Oscillator310::FastLine()/PrevFastLine()) and passed directly into
-    //    OvernightExitIndicator::SetFromOvernightContext() (Indicator.h:2001-
-    //    2010) — decoupled entirely from these two IndicatorKey values. --
+    //    OvernightExitIndicator::SetFromOvernightContext() (Indicator.h:1945-
+    //    1954) — decoupled entirely from these two IndicatorKey values. --
     { IndicatorKey::THREE_LINE_OSCILLATOR,      StorageBlock::NotPacked, 0 },
     { IndicatorKey::THREE_LINE_OSCILLATOR_PREV, StorageBlock::NotPacked, 0 },
 
@@ -192,7 +192,7 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     //    194) and real IndicatorState float fields (schema:233-236) exist, and
     //    BackTesterStudy.cpp:1286-1289 again has working accessor calls — but
     //    CorrelationIndicator::AddToTrainingEventFB itself explicitly says
-    //    (Indicator.h:2668-2669): "Derivatives (delta, accel) computed from
+    //    (Indicator.h:2612-2613): "Derivatives (delta, accel) computed from
     //    these base correlations. Not directly exported - Python calculates
     //    them." Marked NotPacked per this explicit training-path design
     //    comment; BackTesterStudy.cpp's export is a documented discrepancy to
@@ -204,7 +204,7 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
 
     // -- NotPacked: VwapIndicator::AddToTrainingEventFB is an explicit no-op —
     //    "VWAP is for trade-execution only — no FlatBuffer schema field
-    //    exists." (Indicator.h:1794-1796). Confirmed: no `vwap` field anywhere
+    //    exists." (Indicator.h:1738-1740). Confirmed: no `vwap` field anywhere
     //    in IndicatorState or TrainingEvent. --
     { IndicatorKey::VWAP, StorageBlock::NotPacked, 0 },
 }};
