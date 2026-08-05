@@ -340,6 +340,12 @@ void IndicatorManager::AssertPackedStateParity() const {
         // RSI's only external read (CheckWarmupStatus) cut over to
         // GetValue<Key>() (Task 7). Same "no longer meaningful" rationale.
         if (desc.key == IndicatorKey::RSI) continue;
+        // INTERM_STOCHASTIC/RASCHKE_STRATEGY_SETUP/RASCHKE_TACTICAL_TRIGGER's
+        // only external read (getScreen2EntryText) cut over to GetValue<Key>()
+        // (Task 7). Same "no longer meaningful" rationale.
+        if (desc.key == IndicatorKey::INTERM_STOCHASTIC) continue;
+        if (desc.key == IndicatorKey::RASCHKE_STRATEGY_SETUP) continue;
+        if (desc.key == IndicatorKey::RASCHKE_TACTICAL_TRIGGER) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
@@ -906,24 +912,24 @@ std::string IndicatorManager::getScreen1EntryText() {
 }
 
 std::string IndicatorManager::getScreen2EntryText() {
+    // INTERM_FI2_SIGNAL is a two-row key (Float32 interm_fi2_norm companion) —
+    // out of this task's scope, so it stays on the legacy pointer path.
     auto intermFI2Signal = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-    auto intermStochastic = GetIndicator<Stochastic>(IndicatorKey::INTERM_STOCHASTIC);
-    auto raschkeStrategySetup = GetIndicator<RaschkeStrategyIndicator>(IndicatorKey::RASCHKE_STRATEGY_SETUP);
-    auto raschkeTacticalTrigger = GetIndicator<RaschkeTacticalIndicator>(IndicatorKey::RASCHKE_TACTICAL_TRIGGER);
-
-    if (!intermFI2Signal || !intermStochastic || !raschkeStrategySetup || !raschkeTacticalTrigger) {
+    if (!intermFI2Signal) {
         return "NA";
     }
 
+    // DOD/SoA migration (Task 7): the other three fields read straight from
+    // the packed array — no pointers, no null checks, always valid values.
     char buffer[48] = {0};
     std::snprintf(
         buffer,
         sizeof(buffer),
         "%d|%d|%d|%d",
         intermFI2Signal->intValue(),
-        intermStochastic->intValue(),
-        static_cast<int>(raschkeStrategySetup->Value()),
-        static_cast<int>(raschkeTacticalTrigger->Value())
+        static_cast<int>(GetValue<IndicatorKey::INTERM_STOCHASTIC>()),
+        static_cast<int>(GetValue<IndicatorKey::RASCHKE_STRATEGY_SETUP>()),
+        static_cast<int>(GetValue<IndicatorKey::RASCHKE_TACTICAL_TRIGGER>())
     );
     return std::string(buffer);
 }
