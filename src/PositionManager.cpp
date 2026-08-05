@@ -977,10 +977,12 @@ bool PositionManager::IsQuoteChurnBreached(SCStudyInterfaceRef sc, double bid, d
 // mapping is always consistent with the indicator's classification.
 
 float PositionManager::GetSessionSpreadLimit() {
-    const auto* tod = IndicatorManager::Instance().GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
-    if (!tod) return ENTRY_MAX_SPREAD_TICKS;
+    // DOD/SoA migration (Task 5): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const auto timeOfDay = static_cast<TimeOfDayEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::TIME_OF_DAY>());
 
-    switch (tod->Value()) {
+    switch (timeOfDay) {
         case TimeOfDayEnum::PRE_MARKET_HOOK:   // 08:30–09:00 ET
         case TimeOfDayEnum::PRE_MARKET:        // 09:00–09:30 ET
         case TimeOfDayEnum::OPENING_HOUR:      // 09:30–10:30 ET (first 15 min widens)
@@ -997,10 +999,12 @@ float PositionManager::GetSessionSpreadLimit() {
 }
 
 int PositionManager::GetSessionExecutionBudgetMs() {
-    const auto* tod = IndicatorManager::Instance().GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
-    if (!tod) return ENTRY_EXECUTION_BUDGET_MS;
+    // DOD/SoA migration (Task 5): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const auto timeOfDay = static_cast<TimeOfDayEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::TIME_OF_DAY>());
 
-    switch (tod->Value()) {
+    switch (timeOfDay) {
         case TimeOfDayEnum::PRE_MARKET_HOOK:
         case TimeOfDayEnum::PRE_MARKET:
         case TimeOfDayEnum::OPENING_HOUR:
@@ -1771,10 +1775,11 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     }
 
     // === PHASE 2d: SESSION QUALITY MULTIPLIER (matching Python scoring.py) ===
-    auto* timeOfDayInd = IndicatorManager::Instance().GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
-    TimeOfDayEnum currentSession = TimeOfDayEnum::OVERNIGHT_HOLD;
-    if (timeOfDayInd) {
-        currentSession = timeOfDayInd->Value();
+    // DOD/SoA migration (Task 5): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const TimeOfDayEnum currentSession = static_cast<TimeOfDayEnum>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::TIME_OF_DAY>());
+    {
         float sessionMult = 1.0f;
         switch (currentSession) {
             case TimeOfDayEnum::SWEET_SPOT:         sessionMult = 1.15f; break;

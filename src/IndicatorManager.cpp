@@ -317,6 +317,11 @@ void IndicatorManager::AssertPackedStateParity() const {
     for (const auto& desc : mts::kIndicatorLayout) {
         if (desc.block != mts::StorageBlock::Int8) continue;
         if (desc.key == IndicatorKey::INTERM_IMP && desc.position == 26) continue;
+        // TIME_OF_DAY cut over to GetValue<Key>() (Task 5) — every live reader
+        // now goes through m_packed directly, so this is comparing the packed
+        // value against itself via the legacy object's still-live SetFromDateTime
+        // write path. No longer a meaningful parity check; skip it.
+        if (desc.key == IndicatorKey::TIME_OF_DAY) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
@@ -659,9 +664,9 @@ void IndicatorManager::SyncFeatureVector(std::vector<float>& targetVector) const
     targetVector.push_back(0.0f);  // 17: nr7_quality (placeholder - Python calculates)
 
     // ===== ZONE 6: Temporal Context (indices 18-21) =====
-    // Elite v2.3: Use indicator intValue() methods for enum-based indicators
-    const auto timeOfDayIndicator = GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
-    targetVector.push_back(timeOfDayIndicator ? static_cast<float>(timeOfDayIndicator->intValue()) : 0.0f);  // 18: time_of_day_norm
+    // DOD/SoA migration (Task 5): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    targetVector.push_back(static_cast<float>(GetValue<IndicatorKey::TIME_OF_DAY>()));  // 18: time_of_day_norm
 
     // bar_completion_pct: Computed by Python EventPhysicsCalculator (placeholder)
     targetVector.push_back(0.0f);  // 19: bar_completion_pct (placeholder - Python calculates)

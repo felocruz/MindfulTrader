@@ -1576,8 +1576,9 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
 
     if (hasOvernightPosition) {
         // Get current time classification
-        const auto timeOfDayIndicator = indMgr.GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
-        TimeOfDayEnum timeWindow = timeOfDayIndicator ? timeOfDayIndicator->Value() : TimeOfDayEnum::OVERNIGHT_HOLD;
+        // DOD/SoA migration (Task 5): read straight from the packed array.
+        const TimeOfDayEnum timeWindow =
+            static_cast<TimeOfDayEnum>(indMgr.GetValue<IndicatorKey::TIME_OF_DAY>());
 
         // Only evaluate during Globex and early RTH (not during regular trading hours)
         const bool isGlobexOrEarlyRTH = (
