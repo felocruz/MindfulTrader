@@ -112,6 +112,86 @@ namespace {
     static_assert(ArraysEqual(kRuntimeRegisteredIndicatorKeyValues,
                               mts::schema_contract::kIndicatorKeyRegistryValues),
                   "Runtime indicator registration keys diverge from generated indicator key registry");
+
+    // ------------------------------------------------------------------------
+    // Task 9 (indicator-manager-dod-soa plan): devirtualized ShouldTrigger()
+    // reimplementations for the ~9 entered/exited-transition indicator
+    // families. Each function reproduces its leaf class's ShouldTrigger()
+    // override (include/Indicator.h, re-read fresh for this task, not from
+    // memory) byte-for-byte, operating on int8_t values read from m_packed
+    // (GetI8/GetPrevI8) instead of the enum-typed m_value/m_prevValue members.
+    // ------------------------------------------------------------------------
+
+    // Shared shape for KangarooTail/TurtleSoup/MomentumPinball/ElderBreakout/
+    // NR7: "trigger on pattern entry OR exit" relative to each enum's NONE
+    // value (all confirmed == 0, but compared symbolically, not as a magic
+    // number, so this stays correct if any enum's NONE value ever changes).
+    template <typename Enum>
+    bool EnteredOrExitedNone(int8_t cur, int8_t prev, Enum noneValue) {
+        const int8_t none = static_cast<int8_t>(noneValue);
+        const bool entered = (prev == none && cur != none);
+        const bool exited = (prev != none && cur == none);
+        return entered || exited;
+    }
+
+    // Stochastic::ShouldTrigger() (Indicator.h:859-872)
+    bool StochasticTrigger(int8_t cur, int8_t prev) {
+        using E = StochasticEnum;
+        const bool enteringOverbought = (prev != static_cast<int8_t>(E::OVER_BOUGHT) && cur == static_cast<int8_t>(E::OVER_BOUGHT));
+        const bool enteringOversold   = (prev != static_cast<int8_t>(E::OVER_SOLD)    && cur == static_cast<int8_t>(E::OVER_SOLD));
+        const bool exitingOverbought  = (prev == static_cast<int8_t>(E::OVER_BOUGHT) && cur != static_cast<int8_t>(E::OVER_BOUGHT));
+        const bool exitingOversold    = (prev == static_cast<int8_t>(E::OVER_SOLD)    && cur != static_cast<int8_t>(E::OVER_SOLD));
+        const bool divergence = (cur == static_cast<int8_t>(E::BULLISH_DIVERGENCE) || cur == static_cast<int8_t>(E::BEARISH_DIVERGENCE));
+        return enteringOverbought || enteringOversold || exitingOverbought || exitingOversold || divergence;
+    }
+
+    // RSIIndicator::ShouldTrigger() (Indicator.h:1497-1510)
+    bool RSITrigger(int8_t cur, int8_t prev) {
+        using E = RSI;
+        const bool enteringOverbought = (prev != static_cast<int8_t>(E::OVERBOUGHT) && cur == static_cast<int8_t>(E::OVERBOUGHT));
+        const bool enteringOversold   = (prev != static_cast<int8_t>(E::OVERSOLD)    && cur == static_cast<int8_t>(E::OVERSOLD));
+        const bool exitingOverbought  = (prev == static_cast<int8_t>(E::OVERBOUGHT) && cur != static_cast<int8_t>(E::OVERBOUGHT));
+        const bool exitingOversold    = (prev == static_cast<int8_t>(E::OVERSOLD)    && cur != static_cast<int8_t>(E::OVERSOLD));
+        const bool divergence = (cur == static_cast<int8_t>(E::BULLISH_DIVERGENCE) || cur == static_cast<int8_t>(E::BEARISH_DIVERGENCE));
+        return enteringOverbought || enteringOversold || exitingOverbought || exitingOversold || divergence;
+    }
+
+    // ATRProximityIndicator::ShouldTrigger() (Indicator.h:1614-1632)
+    bool ATRProximityTrigger(int8_t cur, int8_t prev) {
+        using E = ATRProximityEnum;
+        const bool enteringExtreme = (prev == static_cast<int8_t>(E::LOW_VOLATILITY) &&
+                                       (cur == static_cast<int8_t>(E::EXTREME_VOLATILITY) ||
+                                        cur == static_cast<int8_t>(E::EXTREME_LOW) ||
+                                        cur == static_cast<int8_t>(E::EXTREME_HIGH)));
+        const bool exitingExtreme = ((prev == static_cast<int8_t>(E::EXTREME_VOLATILITY) ||
+                                       prev == static_cast<int8_t>(E::EXTREME_LOW) ||
+                                       prev == static_cast<int8_t>(E::EXTREME_HIGH)) &&
+                                      cur == static_cast<int8_t>(E::LOW_VOLATILITY));
+        const bool channelBreach = ((prev != static_cast<int8_t>(E::HIGH_MOVE) && cur == static_cast<int8_t>(E::HIGH_MOVE)) ||
+                                     (prev == static_cast<int8_t>(E::HIGH_MOVE) && cur != static_cast<int8_t>(E::HIGH_MOVE)));
+        return enteringExtreme || exitingExtreme || channelBreach;
+    }
+
+    // EmaProximityIndicator::ShouldTrigger() (Indicator.h:1649-1669)
+    bool EmaProximityTrigger(int8_t cur, int8_t prev) {
+        using E = EmaProximity;
+        const bool crossover = (cur == static_cast<int8_t>(E::CROSS_ABOVE) || cur == static_cast<int8_t>(E::CROSS_BELOW));
+        const bool wasBelow = (prev == static_cast<int8_t>(E::BELOW_TOUCH) ||
+                                prev == static_cast<int8_t>(E::BELOW_STRONG) ||
+                                prev == static_cast<int8_t>(E::PRICE_BELOW_EMA));
+        const bool wasAbove = (prev == static_cast<int8_t>(E::ABOVE_TOUCH) ||
+                                prev == static_cast<int8_t>(E::ABOVE_STRONG) ||
+                                prev == static_cast<int8_t>(E::PRICE_ABOVE_EMA));
+        const bool isAbove = (cur == static_cast<int8_t>(E::ABOVE_TOUCH) ||
+                               cur == static_cast<int8_t>(E::ABOVE_STRONG) ||
+                               cur == static_cast<int8_t>(E::PRICE_ABOVE_EMA));
+        const bool isBelow = (cur == static_cast<int8_t>(E::BELOW_TOUCH) ||
+                               cur == static_cast<int8_t>(E::BELOW_STRONG) ||
+                               cur == static_cast<int8_t>(E::PRICE_BELOW_EMA));
+        const bool crossingUp = wasBelow && isAbove;
+        const bool crossingDown = wasAbove && isBelow;
+        return crossover || crossingUp || crossingDown;
+    }
 }
 
 IndicatorManager& IndicatorManager::Instance()
@@ -243,63 +323,110 @@ IndicatorManager::IndicatorManager()
     m_store.vwap.SetDirtyMaskPointer(nullptr);
 }
 // ----------------------------------------------------------------------------
-// Phase 1.2: Static Metaprogramming Dispatcher (Devirtualized Trigger Check)
+// Phase 1.2 / Task 9 (indicator-manager-dod-soa plan): Static Metaprogramming
+// Dispatcher (Devirtualized Trigger Check)
 // ----------------------------------------------------------------------------
-// This function dispatches dirty-bit checks directly to the concrete types in m_store.
-// The compiler can inline ShouldTrigger() and optimize away the vtable lookup.
+// Reads m_packed directly (GetI8/GetPrevI8) instead of calling virtual
+// ShouldTrigger() on m_store's concrete objects -- no BaseIndicator*, no
+// vtable, anywhere in this function. Every case below was re-verified against
+// its leaf class's actual current ShouldTrigger() override (include/Indicator.h)
+// during this task, not reproduced from memory:
+//   - The ~9 entered/exited-transition families (Stochastic, RSI,
+//     ATRProximity, EmaProximity, KangarooTail, TurtleSoup, MomentumPinball,
+//     ElderBreakout, NR7) call the free-function reimplementations above,
+//     keyed to the same kIndicatorLayout position their packed row lives at.
+//   - LONG_IMP/INTERM_IMP/SIDE's ShouldTrigger() is `return IsDirty();`
+//     (Indicator.h:779,904). CheckTrigger(index) is only ever invoked from
+//     HasSignificantChange() with an index bit already known set in
+//     m_dirty_mask (that's where `index` comes from), so this is byte-for-byte
+//     equivalent to the old virtual call, just spelled out as a direct mask
+//     check instead of relying on that precondition implicitly.
+//   - Every other case's leaf class either has no ShouldTrigger() override at
+//     all (falls to Indicator<T>::ShouldTrigger() default: `return false;`,
+//     Indicator.h:663) or an explicit `return false;` override
+//     (CorrelationIndicator, Indicator.h:2401) -- confirmed by re-reading
+//     every override in the file (see grep-verified list in the task report),
+//     not assumed from the previous virtual-call switch's shape.
 // ----------------------------------------------------------------------------
 bool IndicatorManager::CheckTrigger(size_t index) const {
     switch (static_cast<IndicatorKey>(index)) {
         // Screen 1
-        case IndicatorKey::LONG_MACD: return m_store.long_macd.ShouldTrigger();
-        case IndicatorKey::LONG_FI13_SIGNAL: return m_store.long_fi13.ShouldTrigger();
-        case IndicatorKey::LONG_MACD_DIVERGENCE: return m_store.long_macd_div.ShouldTrigger();
-        case IndicatorKey::LONG_IMP: return m_store.long_imp.ShouldTrigger();
-        case IndicatorKey::LONG_MKT_ACTION: return m_store.long_mkt_action.ShouldTrigger();
+        case IndicatorKey::LONG_MACD: return false;
+        case IndicatorKey::LONG_FI13_SIGNAL: return false;
+        case IndicatorKey::LONG_MACD_DIVERGENCE: return false;
+        case IndicatorKey::LONG_IMP: return (m_dirty_mask & IndicatorKeyMask(IndicatorKey::LONG_IMP)) != 0ULL;
+        case IndicatorKey::LONG_MKT_ACTION: return false;
 
         // Screen 2
-        case IndicatorKey::INTERM_STOCHASTIC: return m_store.interm_stochastic.ShouldTrigger();
-        case IndicatorKey::RASCHKE_STRATEGY_SETUP: return m_store.raschke_strategy.ShouldTrigger();
-        case IndicatorKey::RASCHKE_TACTICAL_TRIGGER: return m_store.raschke_tactical.ShouldTrigger();
-        case IndicatorKey::RSI: return m_store.rsi.ShouldTrigger();
-        case IndicatorKey::INTERM_FI2_SIGNAL: return m_store.interm_fi2.ShouldTrigger();
-        case IndicatorKey::EMA_PROXIMITY: return m_store.ema_prox.ShouldTrigger();
-        case IndicatorKey::PRICE_METRICS: return m_store.price_metrics.ShouldTrigger();
-        case IndicatorKey::INTERM_MACD_DIVERGENCE: return m_store.interm_macd_div.ShouldTrigger();
-        case IndicatorKey::INTERM_IMP: return m_store.interm_imp.ShouldTrigger();
-        case IndicatorKey::INTERM_MACD: return m_store.interm_macd.ShouldTrigger();
+        case IndicatorKey::INTERM_STOCHASTIC: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::INTERM_STOCHASTIC).position;
+            return StochasticTrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
+        }
+        case IndicatorKey::RASCHKE_STRATEGY_SETUP: return false;
+        case IndicatorKey::RASCHKE_TACTICAL_TRIGGER: return false;
+        case IndicatorKey::RSI: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::RSI).position;
+            return RSITrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
+        }
+        case IndicatorKey::INTERM_FI2_SIGNAL: return false;
+        case IndicatorKey::EMA_PROXIMITY: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::EMA_PROXIMITY).position;
+            return EmaProximityTrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
+        }
+        case IndicatorKey::PRICE_METRICS: return false;
+        case IndicatorKey::INTERM_MACD_DIVERGENCE: return false;
+        case IndicatorKey::INTERM_IMP: return (m_dirty_mask & IndicatorKeyMask(IndicatorKey::INTERM_IMP)) != 0ULL;
+        case IndicatorKey::INTERM_MACD: return false;
 
         // Screen 3
-        case IndicatorKey::STRUCTURE_TEST: return m_store.structure_test.ShouldTrigger();
-        case IndicatorKey::VOLUME_SIGNAL: return m_store.volume.ShouldTrigger();
-        case IndicatorKey::ATR_PROXIMITY: return m_store.atr_prox.ShouldTrigger();
-        case IndicatorKey::DAILY_BIAS: return m_store.daily_bias.ShouldTrigger();
-        case IndicatorKey::KANGAROO_TAIL: return m_store.kangaroo_tail.ShouldTrigger();
-        case IndicatorKey::TURTLE_SOUP: return m_store.turtle_soup.ShouldTrigger();
-        case IndicatorKey::MOMENTUM_PINBALL: return m_store.momentum_pinball.ShouldTrigger();
-        case IndicatorKey::ELDER_BREAKOUT: return m_store.elder_breakout.ShouldTrigger();
-        case IndicatorKey::NR7: return m_store.nr7.ShouldTrigger();
-        case IndicatorKey::SHORT_MKT_ACTION: return m_store.short_mkt_action.ShouldTrigger();
-        case IndicatorKey::OSCILLATOR_310: return m_store.oscillator_310.ShouldTrigger();
+        case IndicatorKey::STRUCTURE_TEST: return false;
+        case IndicatorKey::VOLUME_SIGNAL: return false;
+        case IndicatorKey::ATR_PROXIMITY: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::ATR_PROXIMITY).position;
+            return ATRProximityTrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
+        }
+        case IndicatorKey::DAILY_BIAS: return false;
+        case IndicatorKey::KANGAROO_TAIL: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::KANGAROO_TAIL).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), KangarooTailEnum::NONE);
+        }
+        case IndicatorKey::TURTLE_SOUP: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::TURTLE_SOUP).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), TurtleSoupEnum::NONE);
+        }
+        case IndicatorKey::MOMENTUM_PINBALL: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::MOMENTUM_PINBALL).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), MomentumPinballEnum::NONE);
+        }
+        case IndicatorKey::ELDER_BREAKOUT: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::ELDER_BREAKOUT).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), ElderBreakoutEnum::NONE);
+        }
+        case IndicatorKey::NR7: {
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::NR7).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), NR7Enum::NONE);
+        }
+        case IndicatorKey::SHORT_MKT_ACTION: return false;
+        case IndicatorKey::OSCILLATOR_310: return false;
 
         // Metadata & State
-        case IndicatorKey::SIDE: return m_store.side.ShouldTrigger();
-        case IndicatorKey::MARKET_SYMBOL: return m_store.market_symbol.ShouldTrigger();
-        case IndicatorKey::TIME_OF_DAY: return m_store.time_of_day.ShouldTrigger();
-        case IndicatorKey::OVERNIGHT_EXIT: return m_store.overnight_exit.ShouldTrigger();
+        case IndicatorKey::SIDE: return (m_dirty_mask & IndicatorKeyMask(IndicatorKey::SIDE)) != 0ULL;
+        case IndicatorKey::MARKET_SYMBOL: return false;
+        case IndicatorKey::TIME_OF_DAY: return false;
+        case IndicatorKey::OVERNIGHT_EXIT: return false;
         // HMM_STATE, MARKET_CLIMATE → InferenceManager (no longer in dirty-mask dispatch)
-        case IndicatorKey::HURST_EXPONENT: return m_store.hurst_exponent.ShouldTrigger();
-        case IndicatorKey::NH_NL_SIGNAL: return m_store.nh_nl_signal.ShouldTrigger();
+        case IndicatorKey::HURST_EXPONENT: return false;
+        case IndicatorKey::NH_NL_SIGNAL: return false;
 
         // Cross-Market Correlations
-        case IndicatorKey::CORR_ES_ZN: return m_store.corr_es_zn.ShouldTrigger();
-        case IndicatorKey::CORR_ES_DX: return m_store.corr_es_dx.ShouldTrigger();
-        case IndicatorKey::ZN_TREND: return m_store.zn_trend.ShouldTrigger();
-        case IndicatorKey::DX_TREND: return m_store.dx_trend.ShouldTrigger();
-        case IndicatorKey::CORR_ES_ZN_DELTA: return m_store.corr_es_zn_delta.ShouldTrigger();
-        case IndicatorKey::CORR_ES_ZN_ACCEL: return m_store.corr_es_zn_accel.ShouldTrigger();
-        case IndicatorKey::CORR_ES_DX_DELTA: return m_store.corr_es_dx_delta.ShouldTrigger();
-        case IndicatorKey::CORR_ES_DX_ACCEL: return m_store.corr_es_dx_accel.ShouldTrigger();
+        case IndicatorKey::CORR_ES_ZN: return false;
+        case IndicatorKey::CORR_ES_DX: return false;
+        case IndicatorKey::ZN_TREND: return false;
+        case IndicatorKey::DX_TREND: return false;
+        case IndicatorKey::CORR_ES_ZN_DELTA: return false;
+        case IndicatorKey::CORR_ES_ZN_ACCEL: return false;
+        case IndicatorKey::CORR_ES_DX_DELTA: return false;
+        case IndicatorKey::CORR_ES_DX_ACCEL: return false;
 
         default: return false;
     }
@@ -313,6 +440,21 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
 // generic-Update() write path and is intentionally excluded (see the wiring
 // comment in the constructor); asserting it against intValue() would compare
 // unrelated values and fire spuriously.
+//
+// Task 9 disposition: NOT removed. Task 9 devirtualized CheckTrigger/
+// PopulateIndicatorState/GetTrainingEventT (this file) to read m_packed
+// directly, but those were never what this skip-list tracks -- the skip-list
+// tracks whether a key's OTHER live call sites (TripleScreen1/2/3.cpp,
+// EventSerializer.cpp, StudyHelperFunctions.cpp) have moved off the leaf
+// pointer to GetValue<Key>(). Task 9 didn't touch any of those call sites, so
+// the skip-list below is unchanged and still correct. Concretely: LONG_MACD's
+// and INTERM_MACD's leaf `.Value()` is still read live outside this class
+// (TripleScreen2.cpp:930, StudyHelperFunctions.cpp:1006/1027/1224) -- if their
+// dual-write ever broke, those call sites would silently diverge from
+// `m_packed` with nothing to catch it. This assertion is real, load-bearing
+// coverage for every key below not already skipped, not a tautology; removing
+// it now would lose that coverage. Defer full removal to whichever task
+// (10 or 11) finishes migrating those remaining external readers.
 void IndicatorManager::AssertPackedStateParity() const {
     for (const auto& desc : mts::kIndicatorLayout) {
         if (desc.block != mts::StorageBlock::Int8) continue;
@@ -525,35 +667,71 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
     event->tau_100_log = std::log1p(static_cast<float>(tauMedianUs));
     m_lastTrainingEventTimestampUs = event->timestamp_us;
 
-    WriteCrashProbe(12);  // Before indicator loop
+    WriteCrashProbe(12);  // Before indicator population
 
-    // 3. Iterate all indicators and populate their fields
-    for (size_t i = 0; i < m_indicators.size(); ++i) {
-        if (m_indicators[i]) {
-            // Write indicator index to breadcrumb so crash reveals which one
-            // Pre-call probe: 1200+i, Post-call probe: 1400+i
-            WriteCrashProbe(1200 + static_cast<int>(i));
-
-            // Crash guard: production evidence repeatedly points to a fault
-            // during virtual dispatch at OSCILLATOR_310 (index 26).
-            // Emit the same training field directly from owned storage.
-            if (i == static_cast<size_t>(IndicatorKey::OSCILLATOR_310)) {
-                if (!event->indicators) {
-                    event->indicators = std::make_unique<MTS::Schema::IndicatorState>();
-                }
-                event->indicators->mutate_oscillator_310(
-                    static_cast<int8_t>(m_store.oscillator_310.intValue()));
-                m_dirty_mask &= ~(1ULL << static_cast<uint64_t>(IndicatorKey::OSCILLATOR_310));
-                WriteCrashProbe(1400 + static_cast<int>(i));
-                continue;
-            }
-
-            m_indicators[i]->AddToTrainingEventFB(*event);
-            WriteCrashProbe(1400 + static_cast<int>(i));
-        }
+    // Task 9 (indicator-manager-dod-soa plan): replaced the per-indicator
+    // virtual-dispatch loop (`m_indicators[i]->AddToTrainingEventFB(*event)`)
+    // with a call to the now-devirtualized PopulateIndicatorState(). This
+    // removes the OSCILLATOR_310 crash-guard special case above as dead code
+    // by construction: PopulateIndicatorState reads m_packed directly, has no
+    // virtual dispatch, and is shared by both Event.indicators (live path,
+    // SendEventFlatBuffer) and TrainingEvent.indicators (this path) -- there
+    // is no longer a per-indicator virtual call anywhere in either consumer,
+    // so there is nothing left to special-case. The fine-grained per-index
+    // breadcrumbs (1200+i/1400+i) that used to bracket each indicator's
+    // individual virtual call are removed for the same reason: there is no
+    // longer a per-indicator loop to bracket.
+    if (!event->indicators) {
+        event->indicators = std::make_unique<MTS::Schema::IndicatorState>();
     }
+    PopulateIndicatorState(*event->indicators);
 
-    WriteCrashProbe(13);  // After indicator loop
+    // Stopgap (Task 9 Step 1's explicit "last checkpoint" obligation, plan
+    // Task 6 Step 4 / Task 8 Step 3 pattern): the deleted loop above also
+    // populated several companion values that live outside
+    // PopulateIndicatorState's Int8-only scope, via each leaf class's bespoke
+    // AddToTrainingEventFB override. Verified by re-reading every override in
+    // include/Indicator.h during this task (not assumed): the ones below have
+    // no other write site anywhere in this function and would otherwise
+    // silently regress training data. Companions already wired into m_packed
+    // (Task 4/8) are read via GetValue<Key,Block>(); companions with no packed
+    // home yet (NotPacked, Task 2's audit) are read directly from the
+    // concrete m_store object -- a plain non-virtual accessor call, not vtable
+    // dispatch. Task 10 gives all of these a durable, unified home
+    // (TickCompanionValues) shared with the live path.
+    event->indicators->mutate_kangaroo_tail_quality(
+        GetValue<IndicatorKey::KANGAROO_TAIL, mts::StorageBlock::Float32>());
+    event->indicators->mutate_turtle_soup_quality(
+        GetValue<IndicatorKey::TURTLE_SOUP, mts::StorageBlock::Float32>());
+    event->indicators->mutate_momentum_pinball_quality(
+        GetValue<IndicatorKey::MOMENTUM_PINBALL, mts::StorageBlock::Float32>());
+    event->indicators->mutate_elder_breakout_quality(
+        GetValue<IndicatorKey::ELDER_BREAKOUT, mts::StorageBlock::Float32>());
+    event->indicators->mutate_nr7_quality(
+        GetValue<IndicatorKey::NR7, mts::StorageBlock::Float32>());
+    event->indicators->mutate_corr_es_zn(
+        GetValue<IndicatorKey::CORR_ES_ZN, mts::StorageBlock::Float32>());
+    event->indicators->mutate_corr_es_dx(
+        GetValue<IndicatorKey::CORR_ES_DX, mts::StorageBlock::Float32>());
+    event->indicators->mutate_interm_fi2_norm(
+        GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
+    const float longFi13Norm = GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>();
+    event->indicators->mutate_long_fi13_norm(longFi13Norm);
+    event->long_fi13_norm = longFi13Norm;  // TrainingEventT top-level mirror (FI13Signal::AddToTrainingEventFB)
+    // impulse_run_length: NotPacked (position 26, unwired per Task 4) -- both
+    // LONG_IMP's and INTERM_IMP's Impulse instances wrote this field in the
+    // old loop (last-write-wins by IndicatorKey iteration order: INTERM_IMP,
+    // the same pre-existing ambiguity Task 2's audit flagged), so read it from
+    // the same INTERM_IMP instance here to reproduce the identical net value.
+    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
+    // interm_macd_norm / atr_10: NotPacked TrainingEventT top-level fields
+    // (Macd::AddToTrainingEventFB / ATRProximityIndicator::AddToTrainingEventFB).
+    // Same last-write-wins note as impulse_run_length above for interm_macd_norm
+    // (LONG_MACD's and INTERM_MACD's Macd instances both wrote it; INTERM_MACD wins).
+    event->interm_macd_norm = m_store.interm_macd.ZScore();
+    event->atr_10 = m_store.atr_prox.GetATR10();
+
+    WriteCrashProbe(13);  // After indicator population
 
     // 3b. Inference indicators (moved to InferenceManager, Mar 2026)
     InferenceManager::Instance().AddToTrainingEventFB(*event);
@@ -976,53 +1154,63 @@ bool IndicatorManager::CalculateRequiresInference() const {
     return requiresInference;
 }
 
+// Task 9 (indicator-manager-dod-soa plan): reads m_packed directly via the
+// existing GetValue<Key>()/GetValue<Key,Block>() compile-time accessors -- no
+// BaseIndicator*, no vtable, no m_indicators lookup anywhere in this function.
+// Same case list as the old ExtractInt8AndClearDirty()-based switch (Int8-
+// block rows only; Float32-block companions -- quality scores, z-score norms,
+// base correlations -- stay out of scope here, matching this function's
+// existing behavior, since Task 10 owns unifying those between the live and
+// training paths). Unlike the old loop, this has NO dirty-clearing side
+// effect: callers rely on PublishEventOnChange's explicit `m_dirty_mask = 0`
+// flush after a successful publish instead (see that function) -- this also
+// fixes a latent bug where calling this from the training-export path (see
+// GetTrainingEventT below) used to silently clear the live-publish dirty mask
+// as an unrelated side effect.
 void IndicatorManager::PopulateIndicatorState(MTS::Schema::IndicatorState& state) const {
+    using mts::StorageBlock;
 
-    // Iterate all indicators and send FULL SNAPSHOT
-    for (size_t i = 0; i < m_indicators.size(); ++i) {
-        auto* indicator = m_indicators[i];
-        if (!indicator) continue;
-
-        // Force extraction of current value using ExtractInt8AndClearDirty()
-        // This clears dirty flag as side effect, fulfilling contract
-        int8_t value = indicator->ExtractInt8AndClearDirty();
-
-        switch (static_cast<IndicatorKey>(i)) {
-            case IndicatorKey::LONG_MACD: state.mutate_long_macd(value); break;
-            case IndicatorKey::LONG_FI13_SIGNAL: state.mutate_long_fi13_signal(value); break;
-            case IndicatorKey::LONG_MACD_DIVERGENCE: state.mutate_long_macd_divergence(value); break;
-            case IndicatorKey::LONG_IMP: state.mutate_long_imp(value); break;
-            case IndicatorKey::INTERM_STOCHASTIC: state.mutate_interm_stochastic(value); break;
-            case IndicatorKey::RASCHKE_STRATEGY_SETUP: state.mutate_raschke_strategy_setup(value); break;
-            case IndicatorKey::RASCHKE_TACTICAL_TRIGGER: state.mutate_raschke_tactical_trigger(value); break;
-            case IndicatorKey::RSI: state.mutate_rsi(value); break;
-            case IndicatorKey::INTERM_FI2_SIGNAL: state.mutate_interm_fi2_signal(value); break;
-            case IndicatorKey::EMA_PROXIMITY: state.mutate_ema_proximity(value); break;
-            case IndicatorKey::PRICE_METRICS: state.mutate_price_metrics(value); break;
-            case IndicatorKey::INTERM_MACD_DIVERGENCE: state.mutate_interm_macd_divergence(value); break;
-            case IndicatorKey::INTERM_MACD: state.mutate_interm_macd(value); break;
-            case IndicatorKey::INTERM_IMP: state.mutate_interm_imp(value); break;
-            case IndicatorKey::STRUCTURE_TEST: state.mutate_structure_test(value); break;
-            case IndicatorKey::VOLUME_SIGNAL: state.mutate_volume_signal(value); break;
-            case IndicatorKey::ATR_PROXIMITY: state.mutate_atr_proximity(value); break;
-            case IndicatorKey::DAILY_BIAS:
-                state.mutate_daily_bias(value);
-                state.mutate_daily_bias_enum(value);
-                break;
-            case IndicatorKey::TIME_OF_DAY: state.mutate_time_of_day(value); break;
-            case IndicatorKey::KANGAROO_TAIL: state.mutate_kangaroo_tail(value); break;
-            case IndicatorKey::TURTLE_SOUP: state.mutate_turtle_soup(value); break;
-            case IndicatorKey::MOMENTUM_PINBALL: state.mutate_momentum_pinball(value); break;
-            case IndicatorKey::ELDER_BREAKOUT: state.mutate_elder_breakout(value); break;
-            case IndicatorKey::NR7: state.mutate_nr7(value); break;
-            case IndicatorKey::NH_NL_SIGNAL: state.mutate_nh_nl_signal(value); break;
-            case IndicatorKey::OSCILLATOR_310: state.mutate_oscillator_310(value); break;
-            // ZN_TREND / DX_TREND: deferred to future release.
-            // Training path (MapIndicatorKeyToTrainingEvent) already skips these.
-            // Live path now consistent: fall through to default.
-            default: break;
-        }
+    state.mutate_long_macd(GetValue<IndicatorKey::LONG_MACD>());
+    state.mutate_long_fi13_signal(GetValue<IndicatorKey::LONG_FI13_SIGNAL, StorageBlock::Int8>());
+    state.mutate_long_macd_divergence(GetValue<IndicatorKey::LONG_MACD_DIVERGENCE>());
+    state.mutate_long_imp(GetValue<IndicatorKey::LONG_IMP>());
+    state.mutate_interm_stochastic(GetValue<IndicatorKey::INTERM_STOCHASTIC>());
+    state.mutate_raschke_strategy_setup(GetValue<IndicatorKey::RASCHKE_STRATEGY_SETUP>());
+    state.mutate_raschke_tactical_trigger(GetValue<IndicatorKey::RASCHKE_TACTICAL_TRIGGER>());
+    state.mutate_rsi(GetValue<IndicatorKey::RSI>());
+    state.mutate_interm_fi2_signal(GetValue<IndicatorKey::INTERM_FI2_SIGNAL, StorageBlock::Int8>());
+    state.mutate_ema_proximity(GetValue<IndicatorKey::EMA_PROXIMITY>());
+    state.mutate_price_metrics(GetValue<IndicatorKey::PRICE_METRICS>());
+    state.mutate_interm_macd_divergence(GetValue<IndicatorKey::INTERM_MACD_DIVERGENCE>());
+    state.mutate_interm_macd(GetValue<IndicatorKey::INTERM_MACD, StorageBlock::Int8>());
+    // INTERM_IMP has two Int8-block rows (position 12 = primary signal,
+    // position 26 = impulse_run_length companion, unwired per Task 4).
+    // DescriptorFor(key, block) resolves to the FIRST matching row (position
+    // 12) -- the same disambiguation already proven at TripleScreen3.cpp and
+    // PositionManager.cpp's live reads of this same key.
+    state.mutate_interm_imp(GetValue<IndicatorKey::INTERM_IMP, StorageBlock::Int8>());
+    state.mutate_structure_test(GetValue<IndicatorKey::STRUCTURE_TEST>());
+    state.mutate_volume_signal(GetValue<IndicatorKey::VOLUME_SIGNAL>());
+    state.mutate_atr_proximity(GetValue<IndicatorKey::ATR_PROXIMITY>());
+    {
+        // DAILY_BIAS writes both mutators from the same single source read
+        // (see kIndicatorLayout.h's comment on this key) -- one packed slot,
+        // fanned out to two mutators here, same as the old code.
+        const int8_t dailyBias = GetValue<IndicatorKey::DAILY_BIAS>();
+        state.mutate_daily_bias(dailyBias);
+        state.mutate_daily_bias_enum(dailyBias);
     }
+    state.mutate_time_of_day(GetValue<IndicatorKey::TIME_OF_DAY>());
+    state.mutate_kangaroo_tail(GetValue<IndicatorKey::KANGAROO_TAIL, StorageBlock::Int8>());
+    state.mutate_turtle_soup(GetValue<IndicatorKey::TURTLE_SOUP, StorageBlock::Int8>());
+    state.mutate_momentum_pinball(GetValue<IndicatorKey::MOMENTUM_PINBALL, StorageBlock::Int8>());
+    state.mutate_elder_breakout(GetValue<IndicatorKey::ELDER_BREAKOUT, StorageBlock::Int8>());
+    state.mutate_nr7(GetValue<IndicatorKey::NR7, StorageBlock::Int8>());
+    state.mutate_nh_nl_signal(GetValue<IndicatorKey::NH_NL_SIGNAL>());
+    state.mutate_oscillator_310(GetValue<IndicatorKey::OSCILLATOR_310>());
+    // ZN_TREND / DX_TREND: deferred to future release (NotPacked, per
+    // kIndicatorLayout.h's audit comment) -- no case needed, matches the old
+    // switch's explicit "fall through to default" for these two keys.
 }
 
 void IndicatorManager::UpdateDailyCache(SCStudyInterfaceRef sc) {
