@@ -86,17 +86,20 @@ bool EventSerializer::SerializeEventInPlace(
         manager.PopulateIndicatorState(indicators);
 
         // Export pattern quality scores from live indicator state.
-        const auto* kangarooTail = manager.GetIndicator<KangarooTail>(IndicatorKey::KANGAROO_TAIL);
-        const auto* turtleSoup = manager.GetIndicator<TurtleSoup>(IndicatorKey::TURTLE_SOUP);
-        const auto* momentumPinball = manager.GetIndicator<MomentumPinball>(IndicatorKey::MOMENTUM_PINBALL);
-        const auto* elderBreakout = manager.GetIndicator<ElderBreakout>(IndicatorKey::ELDER_BREAKOUT);
-        const auto* nr7 = manager.GetIndicator<NR7>(IndicatorKey::NR7);
-
-        indicators.mutate_kangaroo_tail_quality(kangarooTail ? kangarooTail->QualityScore() : 0.0f);
-        indicators.mutate_turtle_soup_quality(turtleSoup ? turtleSoup->QualityScore() : 0.0f);
-        indicators.mutate_momentum_pinball_quality(momentumPinball ? momentumPinball->QualityScore() : 0.0f);
-        indicators.mutate_elder_breakout_quality(elderBreakout ? elderBreakout->QualityScore() : 0.0f);
-        indicators.mutate_nr7_quality(nr7 ? nr7->QualityScore() : 0.0f);
+        // DOD/SoA migration (Task 8): read straight from the packed Float32
+        // array — no pointer, no null check, always a valid value. Each of
+        // these keys is a two-row (Int8 + Float32) pair, so the explicit
+        // (Key, Block) form is required.
+        indicators.mutate_kangaroo_tail_quality(
+            manager.GetValue<IndicatorKey::KANGAROO_TAIL, mts::StorageBlock::Float32>());
+        indicators.mutate_turtle_soup_quality(
+            manager.GetValue<IndicatorKey::TURTLE_SOUP, mts::StorageBlock::Float32>());
+        indicators.mutate_momentum_pinball_quality(
+            manager.GetValue<IndicatorKey::MOMENTUM_PINBALL, mts::StorageBlock::Float32>());
+        indicators.mutate_elder_breakout_quality(
+            manager.GetValue<IndicatorKey::ELDER_BREAKOUT, mts::StorageBlock::Float32>());
+        indicators.mutate_nr7_quality(
+            manager.GetValue<IndicatorKey::NR7, mts::StorageBlock::Float32>());
 
         // Context Fields (From SnapshotContext)
         indicators.mutate_corr_es_zn(context.corr_es_zn);
@@ -217,8 +220,9 @@ EventSerializer::ContextSnapshot EventSerializer::SnapshotContext(const Indicato
         snapshot.market_climate = climateInd ? climateInd->intValue() : 0;
 
 
-        const auto* corrEsZn = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN);
-        const auto* corrEsDx = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX);
+        // CORR_ES_ZN_DELTA/ACCEL and CORR_ES_DX_DELTA/ACCEL remain NotPacked
+        // (Task 2 audit): "Not directly exported — Python calculates them" —
+        // out of this task's scope, still pointer-based.
         const auto* znTrend = manager.GetIndicator<CrossMarketTrend>(IndicatorKey::ZN_TREND);
         const auto* dxTrend = manager.GetIndicator<CrossMarketTrend>(IndicatorKey::DX_TREND);
         const auto* corrEsZnDelta = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN_DELTA);
@@ -226,11 +230,13 @@ EventSerializer::ContextSnapshot EventSerializer::SnapshotContext(const Indicato
         const auto* corrEsDxDelta = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX_DELTA);
         const auto* corrEsDxAccel = manager.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX_ACCEL);
 
-        // DOD/SoA migration (Task 7): read straight from the packed array — no
-        // pointer, no null check, always a valid value.
+        // DOD/SoA migration (Task 7/8): read straight from the packed array —
+        // no pointer, no null check, always a valid value. CORR_ES_ZN/
+        // CORR_ES_DX are single-row (Float32-only, no Int8 companion), so the
+        // single-key GetValue<Key>() form resolves unambiguously.
         snapshot.oscillator_310 = manager.GetValue<IndicatorKey::OSCILLATOR_310>();
-        snapshot.corr_es_zn = corrEsZn ? corrEsZn->Value() : 0.0f;
-        snapshot.corr_es_dx = corrEsDx ? corrEsDx->Value() : 0.0f;
+        snapshot.corr_es_zn = manager.GetValue<IndicatorKey::CORR_ES_ZN>();
+        snapshot.corr_es_dx = manager.GetValue<IndicatorKey::CORR_ES_DX>();
         snapshot.zn_trend = znTrend ? static_cast<int8_t>(znTrend->intValue()) : 0;
         snapshot.dx_trend = dxTrend ? static_cast<int8_t>(dxTrend->intValue()) : 0;
         snapshot.corr_es_zn_delta = corrEsZnDelta ? corrEsZnDelta->Value() : 0.0f;

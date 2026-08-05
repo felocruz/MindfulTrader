@@ -990,22 +990,22 @@ Result<void> RiskManager::ValidateCrossMarketCorrelation(SCStudyInterfaceRef sc)
     }
 
     // Fetch correlation indicators from IndicatorManager
-    auto* corrZN = IndicatorManager::Instance().GetIndicator<CorrelationIndicator>(
-        IndicatorKey::CORR_ES_ZN);
-    auto* corrDX = IndicatorManager::Instance().GetIndicator<CorrelationIndicator>(
-        IndicatorKey::CORR_ES_DX);
     auto* znTrend = IndicatorManager::Instance().GetIndicator<CrossMarketTrend>(
         IndicatorKey::ZN_TREND);
     auto* dxTrend = IndicatorManager::Instance().GetIndicator<CrossMarketTrend>(
         IndicatorKey::DX_TREND);
 
     // If correlation data not available yet (hidden charts not running), allow trade
-    if (!corrZN || !corrDX || !znTrend || !dxTrend) {
+    if (!znTrend || !dxTrend) {
         return Result<void>::Success();
     }
 
-    const float esZnCorr = corrZN->Value();
-    const float esDxCorr = corrDX->Value();
+    // DOD/SoA migration (Task 8): read straight from the packed array — no
+    // pointer, no null check, always a valid value. CORR_ES_ZN/CORR_ES_DX are
+    // single-row (Float32-only), so the single-key GetValue<Key>() form
+    // resolves unambiguously.
+    const float esZnCorr = IndicatorManager::Instance().GetValue<IndicatorKey::CORR_ES_ZN>();
+    const float esDxCorr = IndicatorManager::Instance().GetValue<IndicatorKey::CORR_ES_DX>();
     const CrossMarketTrendEnum znTrendDir = znTrend->Value();
     const CrossMarketTrendEnum dxTrendDir = dxTrend->Value();
 
