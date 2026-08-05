@@ -122,12 +122,11 @@ private:
         float corr_es_zn_accel;
         float corr_es_dx_delta;
         float corr_es_dx_accel;
-        float prev_high;
-        float prev_low;
-        float prev_day_high;
-        float prev_day_low;
-        float prev_four_bar_high;
-        float prev_four_bar_low;
+        // prev_high/prev_low/prev_day_high/prev_day_low/prev_four_bar_high/
+        // prev_four_bar_low removed (Task 10, indicator-manager-dod-soa plan):
+        // these duplicated IndicatorManager::GetTickCompanionValues()'s own
+        // ShortMarketAction/daily-cache reads. SerializeEventInPlace now reads
+        // them once from GetTickCompanionValues() instead of twice.
     };
     ContextSnapshot SnapshotContext(const IndicatorManager& manager, uint64_t timestamp_us);
     void UpdateTemporalPhysics(uint64_t timestamp_us, float& out_delta_t_log, float& out_tau_100_log);

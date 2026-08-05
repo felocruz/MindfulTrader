@@ -127,49 +127,32 @@ bool EventSerializer::SerializeEventInPlace(
 
         event_builder.add_indicators(&indicators);
 
-        float nhNlDaily = 0.0f;
-        if (auto* nhnl = manager.GetIndicator<NhNlSignalIndicator>(IndicatorKey::NH_NL_SIGNAL)) {
-            nhNlDaily = nhnl->GetDailyValue();
-        }
-
-        const auto* sideIndicator = manager.GetIndicator<Side>(IndicatorKey::SIDE);
-        const auto* marketSymbolIndicator = manager.GetIndicator<MarketSymbolIndicator>(IndicatorKey::MARKET_SYMBOL);
-        const auto* overnightExitIndicator = manager.GetIndicator<OvernightExitIndicator>(IndicatorKey::OVERNIGHT_EXIT);
-        const auto* priceMetrics = manager.GetIndicator<PriceMetricsIndicator>(IndicatorKey::PRICE_METRICS);
-        const auto* volumeInd = manager.GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
-
-        const int8_t side = sideIndicator ? static_cast<int8_t>(sideIndicator->intValue()) : 0;
-        const int8_t marketSymbol = marketSymbolIndicator ? static_cast<int8_t>(marketSymbolIndicator->intValue()) : 0;
-        const int8_t overnightExit = overnightExitIndicator ? static_cast<int8_t>(overnightExitIndicator->intValue()) : 0;
-        const float closePercentile = priceMetrics ? priceMetrics->GetClosePercentile() : 0.0f;
-        const float volumeRatioPercent = volumeInd ? volumeInd->GetVolumeRatio() : 0.0f;
-        const float volumeImbalance = volumeInd ? volumeInd->GetVolumeImbalance() : 0.0f;
+        // Task 10 (indicator-manager-dod-soa plan): single canonical read of
+        // every companion value shared with the training path, replacing this
+        // function's own independent GetIndicator<T>()->GetX() calls.
+        const auto companions = manager.GetTickCompanionValues();
 
         mts::schema_contract::shared_writers::WriteEventRootSharedFields(
             event_builder,
             mts::schema_contract::shared_writers::EventRootSharedSlice{
-                side,
-                marketSymbol,
-                overnightExit,
-                nhNlDaily,
-                context.prev_high,
-                context.prev_low,
-                context.prev_day_high,
-                context.prev_day_low,
-                context.prev_four_bar_high,
-                context.prev_four_bar_low,
-                closePercentile,
-                volumeRatioPercent,
-                volumeImbalance});
+                companions.side,
+                companions.marketSymbol,
+                companions.overnightExit,
+                companions.nhNlDaily,
+                companions.prevHigh,
+                companions.prevLow,
+                companions.prevDayHigh,
+                companions.prevDayLow,
+                companions.prevFourBarHigh,
+                companions.prevFourBarLow,
+                companions.closePercentile,
+                companions.volumeRatioPercent,
+                companions.volumeImbalance});
         event_builder.add_open(0.0f);
         event_builder.add_high(0.0f);
         event_builder.add_low(0.0f);
         event_builder.add_close(0.0f);
-        float atr10 = 0.0f;
-        if (auto* atrProximity = manager.GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY)) {
-            atr10 = atrProximity->GetATR10();
-        }
-        event_builder.add_atr_10(atr10);
+        event_builder.add_atr_10(companions.atr10);
         event_builder.add_volume(0);
 
         // v5.5: Read bar-context floats from their owning indicators
@@ -248,17 +231,11 @@ EventSerializer::ContextSnapshot EventSerializer::SnapshotContext(const Indicato
         snapshot.corr_es_dx_delta = corrEsDxDelta ? corrEsDxDelta->Value() : 0.0f;
         snapshot.corr_es_dx_accel = corrEsDxAccel ? corrEsDxAccel->Value() : 0.0f;
 
-        const auto* shortAction = manager.GetIndicator<ShortMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
-
-        // IMPORTANT semantic split:
-        // - prev_high/prev_low = previous completed 15-minute bar extremes (ShortMarketAction owner)
-        // - prev_day_high/prev_day_low = previous trading day session extremes (IndicatorManager daily cache owner)
-        snapshot.prev_high = shortAction ? shortAction->PrevHigh() : 0.0f;
-        snapshot.prev_low = shortAction ? shortAction->PrevLow() : 0.0f;
-        snapshot.prev_day_high = manager.GetCachedPrevDayHigh();
-        snapshot.prev_day_low = manager.GetCachedPrevDayLow();
-        snapshot.prev_four_bar_high = shortAction ? shortAction->PrevFourBarHigh() : 0.0f;
-        snapshot.prev_four_bar_low = shortAction ? shortAction->PrevFourBarLow() : 0.0f;
+        // prev_high/prev_low/prev_day_high/prev_day_low/prev_four_bar_high/
+        // prev_four_bar_low moved to IndicatorManager::GetTickCompanionValues()
+        // (Task 10, indicator-manager-dod-soa plan) — SerializeEventInPlace reads
+        // them from there now instead of this function duplicating the same
+        // ShortMarketAction/daily-cache reads.
 
     } catch (const std::exception& e) {
         Logger::getInstance().log(std::string("SnapshotContext exception: ") + e.what());

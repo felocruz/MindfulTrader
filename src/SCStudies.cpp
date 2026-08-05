@@ -433,10 +433,10 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
         // evaluate against the previous tick's snapshot timestamp.
         PositionManager::Instance().Update(sc);
 
-        const auto sideIndicator = IndicatorManager::Instance().GetIndicator<Side>(IndicatorKey::SIDE);
-        if (sideIndicator) {
-            sideIndicator->Update(PositionManager::Instance().GetTradeSide());
-        }
+        // Side mirror push-site removed (Task 10, indicator-manager-dod-soa
+        // plan): IndicatorManager::GetTickCompanionValues() now reads
+        // PositionManager::GetTradeSide() directly, so nothing reads the SIDE
+        // indicator's value anymore.
 
         // === Elite v2.4 EVENT-DRIVEN: Publish FlatBuffer Event on indicator change ===
         // Note: Connection now controlled by Python via CONFIG_REQ/CONFIG_ACK

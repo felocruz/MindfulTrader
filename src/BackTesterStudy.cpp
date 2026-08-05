@@ -954,15 +954,14 @@ void RunTradingPhase(SCStudyInterfaceRef sc, int phase)
             PositionManager::Instance().PublishSnapshot(sc);
         }
 
-        {
-            s_SCPositionData positionData;
-            sc.GetTradePosition(positionData);
-            TradeSideEnum currentSide = TradeSideEnum::FLAT;
-            if (positionData.PositionQuantity > 0)       currentSide = TradeSideEnum::LONG;
-            else if (positionData.PositionQuantity < 0)  currentSide = TradeSideEnum::SHORT;
-            const auto sideIndicator = IndicatorManager::Instance().GetIndicator<Side>(IndicatorKey::SIDE);
-            if (sideIndicator) sideIndicator->Update(currentSide);
-        }
+        // Side mirror push-site removed (Task 10, indicator-manager-dod-soa
+        // plan): this used to independently re-derive the current side from
+        // sc.GetTradePosition() and push it into IndicatorManager's SIDE
+        // indicator -- a second, differently-sourced implementation of "what's
+        // the current side" alongside SCStudies.cpp's own mirror (which used
+        // PositionManager::GetTradeSide() instead). IndicatorManager::
+        // GetTickCompanionValues() now reads PositionManager::GetTradeSide()
+        // directly, so nothing reads the SIDE indicator's value anymore.
 
         if (IndicatorManager::Instance().HasSignificantChange()) {
             const bool disconnected = IsDisconnected(sc);
@@ -1733,17 +1732,15 @@ void RecordTradeEntry(SCStudyInterfaceRef sc, int tradeID, int entryBarIndex)
     g_entryContext.indicatorState     = BuildEntryIndicatorState();
     g_entryContext.hasEntryIndicators = true;
 
-    // Continuous indicator fields stored separately for TradeRecord scalar columns
-    auto& im = IndicatorManager::Instance();
-    const auto* vol = im.GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
-    g_entryContext.volumeRatioAtEntry     = vol ? vol->GetVolumeRatio()     : 0.0f;
-    g_entryContext.volumeImbalanceAtEntry = vol ? vol->GetVolumeImbalance() : 0.0f;
-
-    const auto* pm = im.GetIndicator<PriceMetricsIndicator>(IndicatorKey::PRICE_METRICS);
-    g_entryContext.closePercentileAtEntry = pm ? pm->GetClosePercentile() : 0.0f;
-
-    const auto* atr = im.GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY);
-    g_entryContext.atr10PriceAtEntry = (atr && atr->GetATR10() > 0.0f) ? atr->GetATR10() : kNaN;
+    // Continuous indicator fields stored separately for TradeRecord scalar columns.
+    // Task 10 (indicator-manager-dod-soa plan): read from the same canonical
+    // per-tick companion snapshot the live/training paths use, instead of this
+    // call site's own independent GetIndicator<T>() reads.
+    const auto companions = IndicatorManager::Instance().GetTickCompanionValues();
+    g_entryContext.volumeRatioAtEntry     = companions.volumeRatioPercent;
+    g_entryContext.volumeImbalanceAtEntry = companions.volumeImbalance;
+    g_entryContext.closePercentileAtEntry = companions.closePercentile;
+    g_entryContext.atr10PriceAtEntry = (companions.atr10 > 0.0f) ? companions.atr10 : kNaN;
 }
 
 // Record trade exit — writes FlatBuffer TradeRecord and updates run aggregates.

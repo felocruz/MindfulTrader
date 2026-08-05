@@ -666,6 +666,43 @@ void IndicatorManager::UpdateBarContext(SCStudyInterfaceRef sc)
     InferenceManager::Instance().UpdateRegimeTenure();
 }
 
+// Task 10 (indicator-manager-dod-soa plan): one canonical per-tick gather of
+// the companion values that the live Event path (EventSerializer.cpp), the
+// training TrainingEvent path (GetTrainingEventT below), and
+// BackTesterStudy.cpp's entry-context capture each used to re-derive
+// independently via their own GetIndicator<T>()->GetX() calls. That
+// duplication is exactly how GetTrainingEventT's close_percentile dead-write
+// bug (two silently-disagreeing implementations, one of them recomputed from
+// raw OHLC) was possible. Every field below is read from wherever it is
+// already computed exactly once (the owning m_store leaf's own member state)
+// -- nothing here recomputes anything. `side` is the one exception with no
+// indicator-compute source at all: per the Task 5 finding, IndicatorManager's
+// SIDE indicator was never a real indicator, only a manually-pushed mirror of
+// PositionManager's authoritative Trade::m_side, so it is read directly from
+// PositionManager here instead, and the mirror push-sites are removed.
+TickCompanionValues IndicatorManager::GetTickCompanionValues() const {
+    TickCompanionValues companions;
+    companions.side = static_cast<int8_t>(PositionManager::Instance().GetTradeSide());
+    companions.marketSymbol = static_cast<int8_t>(m_store.market_symbol.intValue());
+    companions.overnightExit = static_cast<int8_t>(m_store.overnight_exit.intValue());
+    companions.nhNlDaily = m_store.nh_nl_signal.GetDailyValue();
+    // IMPORTANT semantic split (mirrors EventSerializer::SnapshotContext's
+    // comment): prevHigh/prevLow = previous completed 15-minute bar extremes
+    // (ShortMarketAction); prevDayHigh/prevDayLow = previous trading day
+    // session extremes (IndicatorManager's own daily cache).
+    companions.prevHigh = m_store.short_mkt_action.PrevHigh();
+    companions.prevLow = m_store.short_mkt_action.PrevLow();
+    companions.prevDayHigh = GetCachedPrevDayHigh();
+    companions.prevDayLow = GetCachedPrevDayLow();
+    companions.prevFourBarHigh = m_store.short_mkt_action.PrevFourBarHigh();
+    companions.prevFourBarLow = m_store.short_mkt_action.PrevFourBarLow();
+    companions.closePercentile = m_store.price_metrics.GetClosePercentile();
+    companions.volumeRatioPercent = m_store.volume.GetVolumeRatio();
+    companions.volumeImbalance = m_store.volume.GetVolumeImbalance();
+    companions.atr10 = m_store.atr_prox.GetATR10();
+    return companions;
+}
+
 // Elite v2.3: FlatBuffer Training Data Export
 // Creates a TrainingEvent with all 60+ fields populated
 // Elite v2.4 FIX: Return TrainingEventT object directly (no double Pack/UnPack)
@@ -770,12 +807,21 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
     // the same pre-existing ambiguity Task 2's audit flagged), so read it from
     // the same INTERM_IMP instance here to reproduce the identical net value.
     event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
-    // interm_macd_norm / atr_10: NotPacked TrainingEventT top-level fields
-    // (Macd::AddToTrainingEventFB / ATRProximityIndicator::AddToTrainingEventFB).
-    // Same last-write-wins note as impulse_run_length above for interm_macd_norm
-    // (LONG_MACD's and INTERM_MACD's Macd instances both wrote it; INTERM_MACD wins).
+    // interm_macd_norm: NotPacked TrainingEventT top-level field
+    // (Macd::AddToTrainingEventFB). Same last-write-wins note as
+    // impulse_run_length above (LONG_MACD's and INTERM_MACD's Macd instances
+    // both wrote it; INTERM_MACD wins).
     event->interm_macd_norm = m_store.interm_macd.ZScore();
-    event->atr_10 = m_store.atr_prox.GetATR10();
+
+    // Task 10 (indicator-manager-dod-soa plan): single canonical gather of
+    // atr_10 and every WriteTrainingRootSharedFields companion below, shared
+    // with the live Event path. Fixes the close_percentile dead-write bug:
+    // this used to be independently recomputed from raw OHLC a few lines
+    // below, silently overwriting whatever PriceMetricsIndicator's own cached
+    // percentile had already produced. There is now exactly one
+    // implementation, used by both consumers.
+    const auto companions = GetTickCompanionValues();
+    event->atr_10 = companions.atr10;
 
     WriteCrashProbe(13);  // After indicator population
 
@@ -805,57 +851,30 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
     event->close = currentClose;
     event->volume = static_cast<int64_t>(sc.Volume[sc.Index]);
 
-    // 6. Calculate bar metrics (rel_range = bar range / ATR10)
-    float barRange = currentHigh - currentLow;
-
-    float closePercentile = 0.0f;
-    if (barRange > 0.0f) {
-        closePercentile = (currentClose - currentLow) / barRange;
-    }
-
-    // v5.6: VolumeIndicator owns volume_ratio_percent via AddToTrainingEventFB
-    // (robust log-volume z-score, Taleb/Mandelbrot consistent)
-
-    const auto* sideIndicator = GetIndicator<Side>(IndicatorKey::SIDE);
-    const auto* marketSymbolIndicator = GetIndicator<MarketSymbolIndicator>(IndicatorKey::MARKET_SYMBOL);
-    const auto* overnightExitIndicator = GetIndicator<OvernightExitIndicator>(IndicatorKey::OVERNIGHT_EXIT);
-    const auto* nhnlIndicator = GetIndicator<NhNlSignalIndicator>(IndicatorKey::NH_NL_SIGNAL);
-    const auto* volumeIndicator = GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL);
-    const auto* shortActionIndicator = GetIndicator<ShortMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
-
-    const int8_t side = sideIndicator ? static_cast<int8_t>(sideIndicator->intValue()) : 0;
-    const int8_t marketSymbol = marketSymbolIndicator ? static_cast<int8_t>(marketSymbolIndicator->intValue()) : 0;
-    const int8_t overnightExit = overnightExitIndicator ? static_cast<int8_t>(overnightExitIndicator->intValue()) : 0;
-    const float nhNlDaily = nhnlIndicator ? nhnlIndicator->GetDailyValue() : 0.0f;
-    const float volumeRatioPercent = volumeIndicator ? volumeIndicator->GetVolumeRatio() : 0.0f;
-    const float volumeImbalance = volumeIndicator ? volumeIndicator->GetVolumeImbalance() : 0.0f;
-
-    // IMPORTANT semantic split:
-    // - prevHigh/prevLow = previous completed 15-minute bar extremes (ShortMarketAction)
-    // - prevDayHigh/prevDayLow = previous trading day session extremes (daily cache)
-    const float prevHigh = shortActionIndicator ? shortActionIndicator->PrevHigh() : 0.0f;
-    const float prevLow = shortActionIndicator ? shortActionIndicator->PrevLow() : 0.0f;
-    const float prevDayHigh = GetCachedPrevDayHigh();
-    const float prevDayLow = GetCachedPrevDayLow();
-    const float prevFourBarHigh = shortActionIndicator ? shortActionIndicator->PrevFourBarHigh() : 0.0f;
-    const float prevFourBarLow = shortActionIndicator ? shortActionIndicator->PrevFourBarLow() : 0.0f;
-
+    // close_percentile/volume_ratio_percent/volume_imbalance/nh_nl_daily/side/
+    // market_symbol/overnight_exit/prev_*: all read from the same
+    // `companions` snapshot gathered above -- no independent recomputation
+    // (this replaces the old inline `(currentClose - currentLow) / barRange`
+    // close_percentile recompute, which was the confirmed dead-write bug: it
+    // silently overwrote PriceMetricsIndicator's own cached percentile with a
+    // second, independently-derived value a few lines after indicator
+    // population had already set it).
     mts::schema_contract::shared_writers::WriteTrainingRootSharedFields(
         *event,
         mts::schema_contract::shared_writers::TrainingRootSharedSlice{
-            side,
-            marketSymbol,
-            overnightExit,
-            nhNlDaily,
-            prevHigh,
-            prevLow,
-            prevDayHigh,
-            prevDayLow,
-            prevFourBarHigh,
-            prevFourBarLow,
-            closePercentile,
-            volumeRatioPercent,
-            volumeImbalance});
+            companions.side,
+            companions.marketSymbol,
+            companions.overnightExit,
+            companions.nhNlDaily,
+            companions.prevHigh,
+            companions.prevLow,
+            companions.prevDayHigh,
+            companions.prevDayLow,
+            companions.prevFourBarHigh,
+            companions.prevFourBarLow,
+            companions.closePercentile,
+            companions.volumeRatioPercent,
+            companions.volumeImbalance});
 
     // 7. Return object (caller will Pack once)
     return event;

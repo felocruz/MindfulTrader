@@ -131,6 +131,16 @@ public:
     // Populate the Zero-Copy IndicatorState struct
     void PopulateIndicatorState(MTS::Schema::IndicatorState& state) const;
 
+    /// One canonical per-tick gather of companion values (Task 10,
+    /// indicator-manager-dod-soa plan) shared by the live Event path
+    /// (EventSerializer.cpp), the training TrainingEvent path
+    /// (GetTrainingEventT), and BackTesterStudy.cpp's entry-context capture.
+    /// Replaces three independent GetIndicator<T>()->GetX() call sites with
+    /// one read, fixing the close_percentile dead-write bug at the source.
+    /// `side` is sourced directly from PositionManager::GetTradeSide() — see
+    /// the definition's comment for why.
+    TickCompanionValues GetTickCompanionValues() const;
+
     // --- indicator-manager-dod-soa plan, Task 5: compile-time packed-array
     // accessors (design spec §3.3). Two forms:
     //   - Single-row form (the common case): resolves via

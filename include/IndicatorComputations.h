@@ -1546,3 +1546,37 @@ inline NR7Enum DetectNR7(
 
     return nr7Enum;
 }
+
+// ============================================================================
+// TickCompanionValues (indicator-manager-dod-soa plan, Task 10)
+// ============================================================================
+// One per-tick snapshot of the companion values that both the live Event path
+// (EventSerializer.cpp) and the training TrainingEvent path
+// (IndicatorManager::GetTrainingEventT) need. Before this task, each path
+// independently called GetIndicator<T>()->GetX() on the same underlying
+// indicator objects to gather these same conceptual values -- two unrelated,
+// independently-maintained blocks of code. That duplication is exactly how
+// GetTrainingEventT's close_percentile dead-write bug (two disagreeing
+// implementations, one of them recomputed from raw OHLC) was possible.
+// IndicatorManager::GetTickCompanionValues() is the single gather site now;
+// this struct only carries values already computed exactly once elsewhere --
+// it does not recompute anything itself. Mirrors
+// EventRootSharedSlice/TrainingRootSharedSlice's field list exactly (those two
+// are confirmed identical to each other already; this struct is the shared
+// READ-side counterpart of their shared WRITE-side contract).
+struct TickCompanionValues {
+    int8_t side = 0;
+    int8_t marketSymbol = 0;
+    int8_t overnightExit = 0;
+    float nhNlDaily = 0.0f;
+    float prevHigh = 0.0f;
+    float prevLow = 0.0f;
+    float prevDayHigh = 0.0f;
+    float prevDayLow = 0.0f;
+    float prevFourBarHigh = 0.0f;
+    float prevFourBarLow = 0.0f;
+    float closePercentile = 0.0f;
+    float volumeRatioPercent = 0.0f;
+    float volumeImbalance = 0.0f;
+    float atr10 = 0.0f;
+};
