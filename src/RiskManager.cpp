@@ -902,12 +902,10 @@ Result<void> RiskManager::ValidateKurtosisEmergencyGate(SCStudyInterfaceRef sc) 
         return Result<void>::Success();
     }
 
-    const auto* tactical = IndicatorManager::Instance().RaschkeTactical();
-    if (!tactical) {
-        return Result<void>::Failure("Kurtosis emergency active: tactical trigger unavailable", 1025);
-    }
-
-    const RaschkeTacticalTrigger trigger = tactical->Value();
+    // DOD/SoA migration (Task 7 fix round): read straight from the packed
+    // array — no pointer, no null check, always a valid value.
+    const RaschkeTacticalTrigger trigger = static_cast<RaschkeTacticalTrigger>(
+        IndicatorManager::Instance().GetValue<IndicatorKey::RASCHKE_TACTICAL_TRIGGER>());
     if (!IsTrendContinuationTrigger(trigger)) {
         SCString msg;
         msg.Format(
