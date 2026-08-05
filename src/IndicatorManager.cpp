@@ -337,6 +337,9 @@ void IndicatorManager::AssertPackedStateParity() const {
         if (desc.key == IndicatorKey::VOLUME_SIGNAL) continue;
         if (desc.key == IndicatorKey::ATR_PROXIMITY) continue;
         if (desc.key == IndicatorKey::DAILY_BIAS) continue;
+        // RSI's only external read (CheckWarmupStatus) cut over to
+        // GetValue<Key>() (Task 7). Same "no longer meaningful" rationale.
+        if (desc.key == IndicatorKey::RSI) continue;
 
         const auto* base = m_indicators[static_cast<size_t>(desc.key)];
         if (!base) continue;
@@ -386,9 +389,10 @@ void IndicatorManager::CheckWarmupStatus([[maybe_unused]] SCStudyInterfaceRef sc
 
     // Phase 2: Validate critical indicators are computing real values
     // If RSI is 0.0 after 200 bars, indicator is broken (not just oversold)
-    const auto rsiIndicator = GetIndicator<RSIIndicator>(IndicatorKey::RSI);
-    if (rsiIndicator) {
-        const int rsiValue = rsiIndicator->intValue();
+    // DOD/SoA migration (Task 7): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    {
+        const int rsiValue = static_cast<int>(GetValue<IndicatorKey::RSI>());
         if (rsiValue == 0) {
             // RSI stuck at 0 after 200 bars = broken indicator
             Logger::getInstance().log(
