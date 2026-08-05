@@ -752,7 +752,15 @@ SCSFExport scsf_Screen1_MACD(SCStudyInterfaceRef sc)
     auto& indMacd = IndicatorManager::Instance();
 
     auto longMacd = indMacd.GetIndicator<Macd>(IndicatorKey::LONG_MACD);
-    if (longMacd) longMacd->SetFromChart(Subgraph_MACDDiff, sc.Index);
+    if (longMacd) {
+        // indicator-manager-dod-soa plan, Task 6 proof of pattern: SetFromChart
+        // still owns the legacy object's other state (MacdValue/ZScore/Value,
+        // ShouldTrigger dirty-mask) for its other readers (TripleScreen3.cpp,
+        // getScreen1EntryText); the packed array is additionally written
+        // directly here via SetValue<Key>() to exercise the new accessor.
+        const MacdResult result = longMacd->SetFromChart(Subgraph_MACDDiff, sc.Index);
+        indMacd.SetValue<IndicatorKey::LONG_MACD>(result.signal);
+    }
 
     // Elder MACD Divergence Detection (240-min timeframe)
     // Get persistent state for divergence tracking

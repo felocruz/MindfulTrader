@@ -227,32 +227,11 @@ enum class EmaEnum : int8_t
     DEC = 3
 };
 
-// Elite v2.3: Kinetic Spectrum [-6, +6]
-// Architecture: Symmetric scale where:
-// - Positive = Bullish momentum (building → peak → consolidation)
-// - Negative = Bearish momentum (building → trough → consolidation)
-// - Magnitude hierarchy: CROSS(6) > PEAK/TROUGH(5) > ZERO_CROSS(4) > SEASON(3) > TICK(2) > FLAT(1)
-enum class MacdEnum : int8_t
-{
-    // Equilibrium
-    AT_ZERO = 0,              // Exactly at zero line (neutral)
-
-    // Bullish Spectrum (Positive)
-    BULLISH_CROSS = 6,        // Signal line cross up (max conviction)
-    SUMMER = 5,               // Histogram peak (max thrust)
-    ZERO_FROM_BELOW = 4,      // Zero cross up (bear back broken)
-    SPRING = 3,               // Rising histogram (momentum building)
-    NEG_TICK_UP = 2,          // Early spring (ticking up below zero)
-    POSITIVE_FLAT = 1,        // Consolidation above zero (resting)
-
-    // Bearish Spectrum (Negative)
-    NEGATIVE_FLAT = -1,       // Consolidation below zero
-    POS_TICK_DOWN = -2,       // Early fall (ticking down above zero)
-    FALL = -3,                // Falling histogram (momentum decaying)
-    ZERO_FROM_ABOVE = -4,     // Zero cross down (bull back broken)
-    WINTER = -5,              // Histogram trough (max bearish pressure)
-    BEARISH_CROSS = -6        // Signal line cross down (max conviction)
-};
+// MacdEnum (extracted so it's ACSIL-independent; see IndicatorComputations.h) —
+// same rationale as IndicatorKey.h's extraction above: ComputeMacd's free
+// function needs the real enum type, and that header must stay includable
+// with no sierrachart.h on the path (indicator-manager-dod-soa plan, Task 6).
+#include "IndicatorComputations.h"
 
 /*
   Represents the signal interpretation of the 13-period Daily 13-period Force Index (FI)
@@ -1069,7 +1048,20 @@ class Macd : public Indicator<MacdEnum>
 {
 public:
     Macd(IndicatorKey key_) : Indicator(key_, MacdEnum::AT_ZERO) { }
-    void SetFromChart(SCSubgraphRef MACD_Diff, int Index);
+
+    // indicator-manager-dod-soa plan, Task 6: the actual classification/
+    // z-score computation now lives in the pure, standalone-testable
+    // ComputeMacd()/MacdIsX() free functions (IndicatorComputations.h).
+    // SetFromChart stays as the ACSIL-only adapter — it still owns m_value/
+    // m_prevMacdValue/m_zScore/the dirty-mask-driving Update() call, since
+    // several other call sites (TripleScreen2/3.cpp, StudyHelperFunctions.cpp,
+    // EventSerializer.cpp, BackTesterStudy.cpp) read MacdValue()/ZScore()/
+    // Value()/ShouldTrigger() from this same object independently of the
+    // SetFromChart producer call site — verified by grep during the Task 6
+    // audit, not assumed. Returns the MacdResult so the producer call site can
+    // additionally exercise IndicatorManager::SetValue<Key>() (the packed-array
+    // proof of pattern) without disturbing any of those other readers.
+    MacdResult SetFromChart(SCSubgraphRef MACD_Diff, int Index);
     double MacdValue() const { return m_macdValue; }
     double PreviousMacdValue() const { return m_prevMacdValue; }
 
@@ -1085,25 +1077,11 @@ public:
 private:
     double m_macdValue = 0.0;
     double m_prevMacdValue = 0.0;
-
-    // Robust z-score state: median/MAD (Taleb-consistent, outlier-resistant)
-    // 50-bar lookback for 60-min TS2 ≈ 3 trading days
-    static constexpr int kLookback = 50;
-    static constexpr double kMADConsistency = 1.4826;
-
-    std::array<double, kLookback> m_macdHistory{};
-    int   m_historyCount{0};
-    int   m_historyIdx{0};
     float m_zScore{0.0f};
 
-    bool IsSpring(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsSummer(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsFall(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsWinter(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsPositiveTickDown(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsNegativeTickUp(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsZeroFromBelow(SCSubgraphRef MACD_Diff, int Index) const;
-    bool IsZeroFromAbove(SCSubgraphRef MACD_Diff, int Index) const;
+    // Running z-score history, extracted to MacdState (IndicatorComputations.h)
+    // so ComputeMacd() can be a pure free function taking explicit state.
+    MacdState m_macdState;
 };
 
 class Stochastic : public Indicator<StochasticEnum>

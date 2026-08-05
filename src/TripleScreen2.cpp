@@ -464,7 +464,20 @@ SCSFExport scsf_Screen2_MACD(SCStudyInterfaceRef sc)
 
     // Update INTERM_MACD in IndicatorManager for use by Screen3
     auto intermMacd = indMgr2.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
-    if (intermMacd) intermMacd->SetFromChart(Subgraph_MACDDiff, sc.Index);
+    if (intermMacd) {
+        // indicator-manager-dod-soa plan, Task 6 proof of pattern: SetFromChart
+        // still owns the legacy object's other state (MacdValue/ZScore/Value,
+        // ShouldTrigger dirty-mask) for its other readers (TripleScreen3.cpp,
+        // StudyHelperFunctions.cpp, EventSerializer.cpp, BackTesterStudy.cpp);
+        // the packed array is additionally written directly here via
+        // SetValue<Key>(). INTERM_MACD has TWO kIndicatorLayout rows (Int8
+        // signal @13, Float32 interm_macd_norm companion @8 — confirmed via
+        // include/IndicatorLayout.h, Task 2's audit), so the single-Key
+        // convenience form's static_assert would reject it; the explicit
+        // (Key, Block) form is required here.
+        const MacdResult result = intermMacd->SetFromChart(Subgraph_MACDDiff, sc.Index);
+        indMgr2.SetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>(result.signal);
+    }
 
     // Elder MACD Divergence Detection (15-min timeframe)
     // Get persistent state for divergence tracking (independent from 240-min)

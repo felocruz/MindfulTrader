@@ -69,155 +69,27 @@ void Impulse::SetFromColor(const int color, const int prevColor, const float maD
 }
 
 // --- Macd ---
-void Macd::SetFromChart(SCSubgraphRef MACD_Diff, int Index)
+// indicator-manager-dod-soa plan, Task 6: thin ACSIL-only adapter. The actual
+// classification/z-score computation is ComputeMacd() (IndicatorComputations.h),
+// a pure free function taking an explicit MacdState& plus a 3-bar raw window —
+// see that header for why: the 8 season/pattern classification helpers read
+// MACD_Diff[Index-2], genuinely two raw chart bars back, not just "the
+// previously published MacdEnum value".
+MacdResult Macd::SetFromChart(SCSubgraphRef MACD_Diff, int Index)
 {
     m_prevMacdValue = m_macdValue;
     m_macdValue = MACD_Diff[Index];
 
-    // ── Robust z-score (median/MAD) — Taleb fat-tail safe ──
-    // Mirrors FI2Signal::setFromChart normalization.
-    // MACD histogram is unbounded (Extremistan) → standard z is forbidden.
-    m_macdHistory[m_historyIdx] = m_macdValue;
-    m_historyIdx = (m_historyIdx + 1) % kLookback;
-    if (m_historyCount < kLookback) ++m_historyCount;
+    const double diffCurrent = MACD_Diff[Index];
+    const double diffPrev1   = (Index >= 1) ? MACD_Diff[Index - 1] : 0.0;
+    const double diffPrev2   = (Index >= 2) ? MACD_Diff[Index - 2] : 0.0;
+    const int barsAvailable  = std::min(Index, 2);
 
-    if (m_historyCount >= 5) {
-        std::array<double, kLookback> scratch;
-        std::copy_n(m_macdHistory.begin(), m_historyCount, scratch.begin());
-        const int n = m_historyCount;
-        const int mid = n / 2;
+    const MacdResult result = ComputeMacd(m_macdState, diffCurrent, diffPrev1, diffPrev2, barsAvailable);
+    m_zScore = result.zScore;
 
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        double median = scratch[mid];
-
-        for (int i = 0; i < n; ++i)
-            scratch[i] = std::abs(m_macdHistory[i] - median);
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        double mad = scratch[mid];
-
-        double denom = mad * kMADConsistency;
-        m_zScore = (denom > 1e-12)
-            ? static_cast<float>((m_macdValue - median) / denom)
-            : 0.0f;
-    }
-
-    MacdEnum newValue = MacdEnum::AT_ZERO;
-
-    // Check for zero-line crossings (highest priority)
-    // Check specific patterns first (ZERO_FROM_BELOW/ABOVE require 3 bars + momentum)
-    // Then evaluate simple crosses (BULLISH/BEARISH_CROSS require 2 bars only)
-    if (Index >= 2) {
-        // ZERO_FROM_BELOW: Crossing to positive with momentum (3-bar pattern)
-        if (IsZeroFromBelow(MACD_Diff, Index)) {
-            newValue = MacdEnum::ZERO_FROM_BELOW;
-        }
-        // ZERO_FROM_ABOVE: Crossing to negative with momentum (3-bar pattern)
-        else if (IsZeroFromAbove(MACD_Diff, Index)) {
-            newValue = MacdEnum::ZERO_FROM_ABOVE;
-        }
-        // Bullish cross: Simple cross from negative to positive (2-bar pattern)
-        else if (MACD_Diff[Index] > 0.0 && MACD_Diff[Index - 1] <= 0.0) {
-            newValue = MacdEnum::BULLISH_CROSS;
-        }
-        // Bearish cross: Simple cross from positive to negative (2-bar pattern)
-        else if (MACD_Diff[Index] < 0.0 && MACD_Diff[Index - 1] >= 0.0) {
-            newValue = MacdEnum::BEARISH_CROSS;
-        }
-        // MACD is positive
-        else if (MACD_Diff[Index] > 0.0) {
-            if (IsSummer(MACD_Diff, Index))
-                newValue = MacdEnum::SUMMER;
-            else if (IsFall(MACD_Diff, Index))
-                newValue = MacdEnum::FALL;
-            else if (IsPositiveTickDown(MACD_Diff, Index))
-                newValue = MacdEnum::POS_TICK_DOWN;
-            else if (MACD_Diff[Index] > MACD_Diff[Index - 1])
-                newValue = MacdEnum::SUMMER;  // Positive and rising (simple case)
-            else if (MACD_Diff[Index] < MACD_Diff[Index - 1])
-                newValue = MacdEnum::FALL;     // Positive and falling (simple case)
-            else
-                newValue = MacdEnum::POSITIVE_FLAT;  // Above zero, consolidating
-        }
-        // MACD is negative
-        else if (MACD_Diff[Index] < 0.0) {
-            if (IsWinter(MACD_Diff, Index))
-                newValue = MacdEnum::WINTER;
-            else if (IsSpring(MACD_Diff, Index))
-                newValue = MacdEnum::SPRING;
-            else if (IsNegativeTickUp(MACD_Diff, Index))
-                newValue = MacdEnum::NEG_TICK_UP;
-            else if (MACD_Diff[Index] < MACD_Diff[Index - 1])
-                newValue = MacdEnum::WINTER;   // Negative and falling (simple case)
-            else if (MACD_Diff[Index] > MACD_Diff[Index - 1])
-                newValue = MacdEnum::SPRING;    // Negative and rising (simple case)
-            else
-                newValue = MacdEnum::NEGATIVE_FLAT;  // Below zero, consolidating
-        }
-        // MACD is exactly zero (no additional pattern - already checked crosses above)
-        else {
-            newValue = MacdEnum::AT_ZERO;
-        }
-    }
-    // Index < 2: use simplified 2-bar cross detection while history is building
-    else if (Index >= 1) {
-        // Simple 2-bar crosses when we don't have 3 bars of history yet
-        if (MACD_Diff[Index] > 0.0 && MACD_Diff[Index - 1] <= 0.0) {
-            newValue = MacdEnum::BULLISH_CROSS;
-        }
-        else if (MACD_Diff[Index] < 0.0 && MACD_Diff[Index - 1] >= 0.0) {
-            newValue = MacdEnum::BEARISH_CROSS;
-        }
-    }
-
-    Update(newValue);
-}
-
-bool Macd::IsSpring(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] < 0.0) && (MACD_Diff[Index - 1] < 0.0) && (MACD_Diff[Index - 2] < 0.0) &&
-        (MACD_Diff[Index] > MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] >= MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsSummer(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] > 0.0) && (MACD_Diff[Index - 1] > 0.0) && (MACD_Diff[Index - 2] > 0.0) &&
-        (MACD_Diff[Index] > MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] >= MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsFall(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] > 0.0) && (MACD_Diff[Index - 1] > 0.0) && (MACD_Diff[Index - 2] > 0.0) &&
-        (MACD_Diff[Index] < MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] <= MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsWinter(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] < 0.0) && (MACD_Diff[Index - 1] < 0.0) && (MACD_Diff[Index - 2] < 0.0) &&
-        (MACD_Diff[Index] < MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] <= MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsPositiveTickDown(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] > 0.0) && (MACD_Diff[Index - 1] > 0.0) && (MACD_Diff[Index - 2] > 0.0) &&
-        (MACD_Diff[Index] < MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] > MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsNegativeTickUp(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] < 0.0) && (MACD_Diff[Index - 1] < 0.0) && (MACD_Diff[Index - 2] < 0.0) &&
-        (MACD_Diff[Index] > MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] < MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsZeroFromBelow(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] >= 0.0) && (MACD_Diff[Index - 1] < 0.0) && (MACD_Diff[Index - 2] < 0.0) &&
-        (MACD_Diff[Index] > MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] >= MACD_Diff[Index - 2]));
-}
-
-bool Macd::IsZeroFromAbove(SCSubgraphRef MACD_Diff, int Index) const {
-    return ((MACD_Diff[Index] <= 0.0) && (MACD_Diff[Index - 1] > 0.0) && (MACD_Diff[Index - 2] > 0.0) &&
-        (MACD_Diff[Index] < MACD_Diff[Index - 1]) &&
-        (MACD_Diff[Index - 1] <= MACD_Diff[Index - 2]));
+    Update(result.signal);
+    return result;
 }
 
 //
