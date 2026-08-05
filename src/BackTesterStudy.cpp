@@ -1221,49 +1221,35 @@ static MTS::Backtest::TradeSide MapTradeSide(TradeSideEnum side)
 
 // Read-only indicator snapshot for FlatBuffer TradeRecord.
 // Uses intValue() throughout — never ExtractInt8AndClearDirty() — so dirty flags are preserved.
+//
+// Task 9 (indicator-manager-dod-soa plan), Step 3: minimal fix only — this
+// file is confirmed WIP/unused and will be rewritten separately (user,
+// 2026-08-05). The Int8-block signal fields below (long_macd .. oscillator_310)
+// used to be hand-read one GetIndicator<T>()->intValue() call at a time; that
+// block is now a single call to the shared, devirtualized
+// PopulateIndicatorState() (same function GetTrainingEventT and the live
+// SendEventFlatBuffer path use) — no per-field porting needed, and it has no
+// dirty-clearing side effect (Step 1), so the "never ExtractInt8AndClearDirty()"
+// contract above still holds.
+//
+// Real gap, not introduced by this task (verified against PopulateIndicatorState's
+// actual case list, not assumed): it has no ZN_TREND/DX_TREND case (NotPacked,
+// deferred per Task 2's audit — the live Event.indicators path has never
+// populated them either). This function used to populate them from
+// CrossMarketTrend leaf reads; that is dropped here to match
+// PopulateIndicatorState's existing scope. Left for the future rewrite.
+//
+// The Float32-block companions below (quality scores, z-score norms,
+// impulse_run_length, correlations) are also out of PopulateIndicatorState's
+// scope (Int8-only, matching its pre-existing behavior) — kept as direct leaf
+// reads, unchanged from before this task.
 static MTS::Schema::IndicatorState BuildEntryIndicatorState()
 {
     MTS::Schema::IndicatorState state{};
     auto& im = IndicatorManager::Instance();
 
-    // Helper: safely read int8 from typed pointer
-    auto i8 = [](const auto* p) -> int8_t {
-        return p ? static_cast<int8_t>(p->intValue()) : int8_t{0};
-    };
-
-    // Int8 signal indicators
-    state.mutate_long_macd(i8(im.GetIndicator<Macd>(IndicatorKey::LONG_MACD)));
-    state.mutate_long_fi13_signal(i8(im.GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL)));
-    state.mutate_long_macd_divergence(i8(im.GetIndicator<MACDDivergence>(IndicatorKey::LONG_MACD_DIVERGENCE)));
-    state.mutate_long_imp(i8(im.GetIndicator<Impulse>(IndicatorKey::LONG_IMP)));
-    state.mutate_interm_stochastic(i8(im.GetIndicator<Stochastic>(IndicatorKey::INTERM_STOCHASTIC)));
-    state.mutate_raschke_strategy_setup(i8(im.GetIndicator<RaschkeStrategyIndicator>(IndicatorKey::RASCHKE_STRATEGY_SETUP)));
-    state.mutate_raschke_tactical_trigger(i8(im.GetIndicator<RaschkeTacticalIndicator>(IndicatorKey::RASCHKE_TACTICAL_TRIGGER)));
-    state.mutate_rsi(i8(im.GetIndicator<RSIIndicator>(IndicatorKey::RSI)));
-    state.mutate_interm_fi2_signal(i8(im.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL)));
-    state.mutate_ema_proximity(i8(im.GetIndicator<EmaProximityIndicator>(IndicatorKey::EMA_PROXIMITY)));
-    state.mutate_price_metrics(i8(im.GetIndicator<PriceMetricsIndicator>(IndicatorKey::PRICE_METRICS)));
-    state.mutate_interm_macd(i8(im.GetIndicator<Macd>(IndicatorKey::INTERM_MACD)));
-    state.mutate_interm_macd_divergence(i8(im.GetIndicator<MACDDivergence>(IndicatorKey::INTERM_MACD_DIVERGENCE)));
-    state.mutate_interm_imp(i8(im.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP)));
-    state.mutate_structure_test(i8(im.GetIndicator<StructureTestIndicator>(IndicatorKey::STRUCTURE_TEST)));
-    state.mutate_volume_signal(i8(im.GetIndicator<VolumeIndicator>(IndicatorKey::VOLUME_SIGNAL)));
-    state.mutate_atr_proximity(i8(im.GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY)));
-    {
-        const int8_t bias = i8(im.GetIndicator<DailyBiasIndicator>(IndicatorKey::DAILY_BIAS));
-        state.mutate_daily_bias(bias);
-        state.mutate_daily_bias_enum(bias);
-    }
-    state.mutate_time_of_day(i8(im.GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY)));
-    state.mutate_kangaroo_tail(i8(im.GetIndicator<KangarooTail>(IndicatorKey::KANGAROO_TAIL)));
-    state.mutate_turtle_soup(i8(im.GetIndicator<TurtleSoup>(IndicatorKey::TURTLE_SOUP)));
-    state.mutate_momentum_pinball(i8(im.GetIndicator<MomentumPinball>(IndicatorKey::MOMENTUM_PINBALL)));
-    state.mutate_elder_breakout(i8(im.GetIndicator<ElderBreakout>(IndicatorKey::ELDER_BREAKOUT)));
-    state.mutate_nr7(i8(im.GetIndicator<NR7>(IndicatorKey::NR7)));
-    state.mutate_nh_nl_signal(i8(im.GetIndicator<NhNlSignalIndicator>(IndicatorKey::NH_NL_SIGNAL)));
-    state.mutate_oscillator_310(i8(im.GetIndicator<Oscillator310>(IndicatorKey::OSCILLATOR_310)));
-    state.mutate_zn_trend(i8(im.GetIndicator<CrossMarketTrend>(IndicatorKey::ZN_TREND)));
-    state.mutate_dx_trend(i8(im.GetIndicator<CrossMarketTrend>(IndicatorKey::DX_TREND)));
+    im.PopulateIndicatorState(state);
+    // GAP: zn_trend / dx_trend not set here — see function comment above.
 
     // Quality scores (float)
     { const auto* p = im.GetIndicator<KangarooTail>(IndicatorKey::KANGAROO_TAIL);    state.mutate_kangaroo_tail_quality(p ? p->QualityScore() : 0.0f); }

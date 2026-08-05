@@ -76,8 +76,12 @@ bool EventSerializer::SerializeEventInPlace(
 
         event_builder.add_requires_inference(manager.CalculateRequiresInference());
 
-        // Snapshot dirty mask BEFORE PopulateIndicatorState (which clears bits
-        // via ExtractInt8AndClearDirty). Python uses this for authoritative hints.
+        // Snapshot dirty mask for Python's authoritative change hints. Stale-
+        // comment fix (indicator-manager-dod-soa plan, Task 9): this used to
+        // need to run BEFORE PopulateIndicatorState, which cleared dirty bits
+        // via ExtractInt8AndClearDirty(). Task 9 rewrote PopulateIndicatorState
+        // to read m_packed directly with no dirty-clearing side effect, so the
+        // ordering relative to the call below is no longer load-bearing.
         const uint64_t changed_mask = manager.GetDirtyMask();
         event_builder.add_changed_mask(changed_mask);
 

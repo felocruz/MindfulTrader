@@ -120,7 +120,12 @@ public:
     bool CalculateRequiresInference() const;
 
     // Snapshot current dirty bitmask for FlatBuffer changed_mask field.
-    // MUST be called BEFORE PopulateIndicatorState (which clears dirty bits).
+    // Stale-comment fix (indicator-manager-dod-soa plan, Task 9): this no
+    // longer needs to precede PopulateIndicatorState. Task 9 rewrote
+    // PopulateIndicatorState to read m_packed directly (GetValue<Key>()) with
+    // no dirty-clearing side effect at all, unlike the old ExtractInt8AndClearDirty()-
+    // based loop this comment used to warn about. Callers still snapshot the
+    // mask before publish for clarity, but the ordering is no longer load-bearing.
     [[nodiscard]] uint64_t GetDirtyMask() const { return m_dirty_mask; }
 
     // Populate the Zero-Copy IndicatorState struct
