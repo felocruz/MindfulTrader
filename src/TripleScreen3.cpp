@@ -791,8 +791,10 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         int& lastAmihudBar = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::LAST_AMIHUD_SAMPLE_INDEX);
         if (sc.Index != lastAmihudBar && sc.Index >= 100) {  // 100 = subgraph warmup
             lastAmihudBar = sc.Index;
-            const TimeOfDayEnum sess = timeOfDayIndicator ? timeOfDayIndicator->Value()
-                                                          : TimeOfDayEnum::OVERNIGHT_HOLD;
+            // DOD/SoA migration (Task 14): read straight from the packed
+            // array — no null check, always a valid value (mirrors the
+            // already-migrated pattern at this file's line ~1592).
+            const TimeOfDayEnum sess = static_cast<TimeOfDayEnum>(indMgr.GetValue<IndicatorKey::TIME_OF_DAY>());
             const int8_t s = static_cast<int8_t>(sess);
             // RTH cash session 09:30-16:00 ET = OPENING_HOUR(5)..PM_RUN_ENTRY(10);
             // pre-open, after-hours, and globex route to the overnight pool.

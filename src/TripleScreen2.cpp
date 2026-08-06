@@ -924,11 +924,11 @@ SCSFExport scsf_Screen2_ForceIndex(SCStudyInterfaceRef sc)
 
     auto& indFI = IndicatorManager::Instance();
 
-    auto longMacd = indFI.GetIndicator<Macd>(IndicatorKey::LONG_MACD);
-    MacdEnum macd = MacdEnum::AT_ZERO; // default safe value (neutral)
-    if (longMacd) {
-        macd = longMacd->Value();
-    }
+    // DOD/SoA migration (Task 14): read straight from the packed array — no
+    // pointer, no null check, always a valid value (previously defaulted to
+    // MacdEnum::AT_ZERO if the leaf object was null; packed reads can't be
+    // null, so that fallback is gone).
+    MacdEnum macd = static_cast<MacdEnum>(indFI.GetValue<IndicatorKey::LONG_MACD>());
 
     auto intermFI2Signal = indFI.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
     if (intermFI2Signal) {

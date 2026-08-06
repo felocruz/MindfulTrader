@@ -738,7 +738,6 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
 
     // --- Fetch Indicators from Manager ---
     auto intermMarketAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
-    auto intermMacd = IndicatorManager::Instance().GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
 
     if (!intermMarketAction) [[unlikely]] {
         return RaschkeStrategySetup::NONE; // Cannot proceed without this data
@@ -1002,8 +1001,11 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
 
     // --- 5. SLINGSHOT (MACD Momentum + Breakout) ---
     // Specific: Requires MACD state AND breakout confirmation
-    if (intermMacd) {
-        MacdEnum macdValue = intermMacd->Value();
+    {
+        // DOD/SoA migration (Task 14): read straight from the packed array —
+        // no pointer, no null check, always a valid value.
+        MacdEnum macdValue = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
         // Bullish: MACD below zero ticking up (NEG_TICK_UP or SPRING) + close above previous high
         if ((macdValue == MacdEnum::NEG_TICK_UP || macdValue == MacdEnum::SPRING) &&
             sc.Close[sc.Index] > sc.High[sc.Index - 1]) {
@@ -1021,10 +1023,11 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
     // Bullish: Price makes lower low, but MACD makes higher low
     // Bearish: Price makes higher high, but MACD makes lower high
     // Uses Sierra Chart's swing detection to find proper divergence points
-    if (intermMacd && sc.Index >= GHOST_LOOKBACK) {
+    if (sc.Index >= GHOST_LOOKBACK) {
         constexpr int SWING_LENGTH = 3;  // Look for swings with 3 bars on each side
 
-        const MacdEnum currentMacd = intermMacd->Value();
+        const MacdEnum currentMacd = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
         const bool bullishMacdConfirm =
             currentMacd == MacdEnum::NEG_TICK_UP ||
             currentMacd == MacdEnum::SPRING ||
@@ -1220,8 +1223,9 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
 
     // --- 15. FIRST_CROSS (MACD Zero-Line Cross) ---
     // General: Simple MACD momentum shift (includes all zero-line crossing variations)
-    if (intermMacd) {
-        MacdEnum macdValue = intermMacd->Value();
+    {
+        MacdEnum macdValue = static_cast<MacdEnum>(
+            IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
         if (macdValue == MacdEnum::ZERO_FROM_BELOW || macdValue == MacdEnum::ZERO_FROM_ABOVE ||
             macdValue == MacdEnum::BULLISH_CROSS || macdValue == MacdEnum::BEARISH_CROSS) {
             return RaschkeStrategySetup::FIRST_CROSS;
