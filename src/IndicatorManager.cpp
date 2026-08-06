@@ -808,12 +808,12 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
     // old loop (last-write-wins by IndicatorKey iteration order: INTERM_IMP,
     // the same pre-existing ambiguity Task 2's audit flagged), so read it from
     // the same INTERM_IMP instance here to reproduce the identical net value.
-    event->indicators->mutate_impulse_run_length(GetImpulseRunLength());
+    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
     // interm_macd_norm: NotPacked TrainingEventT top-level field
     // (Macd::AddToTrainingEventFB). Same last-write-wins note as
     // impulse_run_length above (LONG_MACD's and INTERM_MACD's Macd instances
     // both wrote it; INTERM_MACD wins).
-    event->interm_macd_norm = GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>();
+    event->interm_macd_norm = m_store.interm_macd.ZScore();
 
     // Task 10 (indicator-manager-dod-soa plan): single canonical gather of
     // atr_10 and every WriteTrainingRootSharedFields companion below, shared
