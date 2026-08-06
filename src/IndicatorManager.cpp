@@ -1452,7 +1452,6 @@ T* IndicatorManager::GetIndicator(IndicatorKey key) const
 }
 
 template Impulse* IndicatorManager::GetIndicator<Impulse>(IndicatorKey key) const;
-template Ema* IndicatorManager::GetIndicator<Ema>(IndicatorKey key) const;
 template Macd* IndicatorManager::GetIndicator<Macd>(IndicatorKey key) const;
 template MACDDivergence* IndicatorManager::GetIndicator<MACDDivergence>(IndicatorKey key) const;
 template Stochastic* IndicatorManager::GetIndicator<Stochastic>(IndicatorKey key) const;
@@ -1474,8 +1473,6 @@ template MarketSymbolIndicator* IndicatorManager::GetIndicator<MarketSymbolIndic
 template DailyBiasIndicator* IndicatorManager::GetIndicator<DailyBiasIndicator>(IndicatorKey key) const;
 template TimeOfDayIndicator* IndicatorManager::GetIndicator<TimeOfDayIndicator>(IndicatorKey key) const;
 template OvernightExitIndicator* IndicatorManager::GetIndicator<OvernightExitIndicator>(IndicatorKey key) const;
-template HmmStateIndicator* IndicatorManager::GetIndicator<HmmStateIndicator>(IndicatorKey key) const;
-template MarketClimateIndicator* IndicatorManager::GetIndicator<MarketClimateIndicator>(IndicatorKey key) const;
 template HurstExponentIndicator* IndicatorManager::GetIndicator<HurstExponentIndicator>(IndicatorKey key) const;
 template NhNlSignalIndicator* IndicatorManager::GetIndicator<NhNlSignalIndicator>(IndicatorKey key) const;
 template KangarooTail* IndicatorManager::GetIndicator<KangarooTail>(IndicatorKey key) const;
@@ -1486,5 +1483,4 @@ template ElderBreakout* IndicatorManager::GetIndicator<ElderBreakout>(IndicatorK
 template NR7* IndicatorManager::GetIndicator<NR7>(IndicatorKey key) const;
 template CorrelationIndicator* IndicatorManager::GetIndicator<CorrelationIndicator>(IndicatorKey key) const;
 template CrossMarketTrend* IndicatorManager::GetIndicator<CrossMarketTrend>(IndicatorKey key) const;
-template AdxIndicator* IndicatorManager::GetIndicator<AdxIndicator>(IndicatorKey key) const;
 template VwapIndicator* IndicatorManager::GetIndicator<VwapIndicator>(IndicatorKey key) const;

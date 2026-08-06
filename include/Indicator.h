@@ -826,12 +826,6 @@ private:
     ImpulseState m_impulseState;
 };
 
-class Ema : public Indicator<EmaEnum>
-{
-public:
-    Ema(IndicatorKey key_) : Indicator(key_, EmaEnum::UNDEFINED) { }
-};
-
 class Macd : public Indicator<MacdEnum>
 {
 public:
@@ -2261,70 +2255,6 @@ public:
     void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
         Indicator<NhNlSignalEnum>::AddToTrainingEventFB(event);
         event.nh_nl_daily = m_dailyValue;
-    }
-};
-
-class AdxIndicator : public BaseIndicator {
-private:
-    IndicatorKey m_key;
-    uint64_t* m_dirty_mask_ptr;
-    float m_value;
-    float m_prevValue;
-
-public:
-    AdxIndicator(IndicatorKey key_)
-        : m_key(key_)
-        , m_dirty_mask_ptr(nullptr)
-        , m_value(0.0f)
-        , m_prevValue(0.0f)
-    {}
-
-    void Reset() override {
-        m_value = 0.0f;
-        m_prevValue = 0.0f;
-        if (m_dirty_mask_ptr) {
-            *m_dirty_mask_ptr &= ~(1ULL << static_cast<uint64_t>(m_key));
-        }
-    }
-
-    bool IsDirty() const override {
-        return m_dirty_mask_ptr && ((*m_dirty_mask_ptr & (1ULL << static_cast<uint64_t>(m_key))) != 0ULL);
-    }
-
-    void SetDirtyMaskPointer(uint64_t* maskPtr) override {
-        m_dirty_mask_ptr = maskPtr;
-    }
-
-    // Passive indicator
-    bool ShouldTrigger() const override { return false; }
-
-    void Update(float val) {
-        if (val != m_value) {
-            m_prevValue = m_value;
-            m_value = val;
-            if (m_dirty_mask_ptr) {
-                *m_dirty_mask_ptr |= (1ULL << static_cast<uint64_t>(m_key));
-            }
-        }
-    }
-
-    IndicatorKey Key() const override { return m_key; }
-
-    float Value() const { return m_value; }
-
-    int intValue() const override { return static_cast<int>(m_value); }
-
-    // Not used for signaling, just raw data transport
-    int8_t ExtractInt8AndClearDirty() override {
-        m_prevValue = m_value;
-        if (m_dirty_mask_ptr) {
-            *m_dirty_mask_ptr &= ~(1ULL << static_cast<uint64_t>(m_key));
-        }
-        return 0; // Return dummy
-    }
-
-    void AddToTrainingEventFB(MTS::Training::TrainingEventT& event) const override {
-        // adx_14 field removed from TrainingEvent - no longer needed for observation vector
     }
 };
 

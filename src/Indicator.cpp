@@ -700,7 +700,6 @@ float HurstExponentIndicator::Calculate(SCStudyInterfaceRef sc, SCFloatArrayRef 
 
 // Explicitly instantiate the templates that are used in the project
 template class Indicator<ImpulseEnum>;
-template class Indicator<EmaEnum>;
 template class Indicator<MacdEnum>;
 template class Indicator<StochasticEnum>;
 template class Indicator<FI13Enum>;
