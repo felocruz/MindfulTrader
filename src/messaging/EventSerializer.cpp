@@ -115,13 +115,22 @@ bool EventSerializer::SerializeEventInPlace(
         indicators.mutate_corr_es_dx_delta(context.corr_es_dx_delta);
         indicators.mutate_corr_es_dx_accel(context.corr_es_dx_accel);
 
-        // Robust z-score floats (Taleb fat-tail safe: median/MAD normalization)
-        const auto* fi2 = manager.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-        indicators.mutate_interm_fi2_norm(fi2 ? fi2->ZScore() : 0.0f);
+        // Robust z-score floats (Taleb fat-tail safe: median/MAD normalization).
+        // DOD/SoA migration (Task 12): read straight from the packed array —
+        // no pointers, no null checks, always valid values.
+        indicators.mutate_interm_fi2_norm(manager.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
+        indicators.mutate_long_fi13_norm(manager.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
+        // interm_macd_norm (INTERM_MACD Float32 position 8) and
+        // impulse_run_length (INTERM_IMP Int8 position 26) are NOT migrated:
+        // neither packed slot has a write side wired anywhere in the repo
+        // (confirmed via AssertPackedStateParity's explicit skip of
+        // {INTERM_IMP, 26} and the constructor's own "intentionally NOT
+        // wired" comment for INTERM_MACD's Float32 companion). Reading them
+        // via GetValue<>() would silently return 0 forever. Left on the
+        // live leaf-object read, same as a NotPacked key, until a real write
+        // side exists.
         const auto* intermMacd = manager.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
         indicators.mutate_interm_macd_norm(intermMacd ? intermMacd->ZScore() : 0.0f);
-        const auto* fi13 = manager.GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
-        indicators.mutate_long_fi13_norm(fi13 ? fi13->ZScore() : 0.0f);
         const auto* intermImpulse = manager.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
         indicators.mutate_impulse_run_length(static_cast<int8_t>(intermImpulse ? intermImpulse->RunLength() : 0));
 
