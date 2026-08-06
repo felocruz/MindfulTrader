@@ -1250,24 +1250,32 @@ static MTS::Schema::IndicatorState BuildEntryIndicatorState()
     im.PopulateIndicatorState(state);
     // GAP: zn_trend / dx_trend not set here — see function comment above.
 
+    // DOD/SoA migration (Task 13): read straight from the packed array — no
+    // pointers, no null checks, always valid values.
     // Quality scores (float)
-    { const auto* p = im.GetIndicator<KangarooTail>(IndicatorKey::KANGAROO_TAIL);    state.mutate_kangaroo_tail_quality(p ? p->QualityScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<TurtleSoup>(IndicatorKey::TURTLE_SOUP);        state.mutate_turtle_soup_quality(p ? p->QualityScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<MomentumPinball>(IndicatorKey::MOMENTUM_PINBALL); state.mutate_momentum_pinball_quality(p ? p->QualityScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<ElderBreakout>(IndicatorKey::ELDER_BREAKOUT);  state.mutate_elder_breakout_quality(p ? p->QualityScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<NR7>(IndicatorKey::NR7);                       state.mutate_nr7_quality(p ? p->QualityScore() : 0.0f); }
+    state.mutate_kangaroo_tail_quality(im.GetValue<IndicatorKey::KANGAROO_TAIL, mts::StorageBlock::Float32>());
+    state.mutate_turtle_soup_quality(im.GetValue<IndicatorKey::TURTLE_SOUP, mts::StorageBlock::Float32>());
+    state.mutate_momentum_pinball_quality(im.GetValue<IndicatorKey::MOMENTUM_PINBALL, mts::StorageBlock::Float32>());
+    state.mutate_elder_breakout_quality(im.GetValue<IndicatorKey::ELDER_BREAKOUT, mts::StorageBlock::Float32>());
+    state.mutate_nr7_quality(im.GetValue<IndicatorKey::NR7, mts::StorageBlock::Float32>());
 
     // Normalized (Z-score) floats
-    { const auto* p = im.GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL); state.mutate_interm_fi2_norm(p ? p->ZScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);            state.mutate_interm_macd_norm(p ? p->ZScore() : 0.0f); }
-    { const auto* p = im.GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL); state.mutate_long_fi13_norm(p ? p->ZScore() : 0.0f); }
+    state.mutate_interm_fi2_norm(im.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
+    // interm_macd_norm (INTERM_MACD Float32 position 8) is NOT migrated: no
+    // write side is wired anywhere in the repo (constructor's own
+    // "intentionally NOT wired" comment) — GetValue<>() would silently
+    // return 0 forever. Left on the live leaf-object read.
+    { const auto* p = im.GetIndicator<Macd>(IndicatorKey::INTERM_MACD); state.mutate_interm_macd_norm(p ? p->ZScore() : 0.0f); }
+    state.mutate_long_fi13_norm(im.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
 
-    // Impulse run length
+    // impulse_run_length (INTERM_IMP Int8 position 26) is NOT migrated: same
+    // reason — AssertPackedStateParity explicitly skips this position
+    // because nothing writes it. Left on the live leaf-object read.
     { const auto* p = im.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP); state.mutate_impulse_run_length(p ? static_cast<int8_t>(p->RunLength()) : int8_t{0}); }
 
     // Cross-market correlations (float)
-    { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN);       state.mutate_corr_es_zn(p ? p->Value() : 0.0f); }
-    { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX);       state.mutate_corr_es_dx(p ? p->Value() : 0.0f); }
+    state.mutate_corr_es_zn(im.GetValue<IndicatorKey::CORR_ES_ZN>());
+    state.mutate_corr_es_dx(im.GetValue<IndicatorKey::CORR_ES_DX>());
     { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN_DELTA); state.mutate_corr_es_zn_delta(p ? p->Value() : 0.0f); }
     { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_ZN_ACCEL); state.mutate_corr_es_zn_accel(p ? p->Value() : 0.0f); }
     { const auto* p = im.GetIndicator<CorrelationIndicator>(IndicatorKey::CORR_ES_DX_DELTA); state.mutate_corr_es_dx_delta(p ? p->Value() : 0.0f); }
