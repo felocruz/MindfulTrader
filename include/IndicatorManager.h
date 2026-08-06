@@ -198,6 +198,13 @@ public:
         }
     }
 
+    // indicator-manager-dod-soa plan, Task 11: INTERM_IMP is the one key with
+    // two rows in the SAME block (Int8 @12 classification, Int8 @26
+    // impulse_run_length companion) -- DescriptorFor(key, block) can only
+    // resolve to the first match, so this one key needs a dedicated,
+    // hand-verified position rather than the generic templates above.
+    int8_t GetImpulseRunLength() const { return m_packed.GetI8(26); }
+
 private:
     IndicatorManager();
     ~IndicatorManager() = default;

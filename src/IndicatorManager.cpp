@@ -602,8 +602,10 @@ void IndicatorManager::CheckWarmupStatus([[maybe_unused]] SCStudyInterfaceRef sc
     }
 
     // Phase 2b: Validate FI2Signal is computing (soft warning, not blocking)
-    const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-    if (fi2Indicator && fi2Indicator->intValue() == 0 && m_warmupBarCount > MIN_WARMUP_BARS) {
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointer, no null check, always a valid value.
+    const int fi2Value = static_cast<int>(GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>());
+    if (fi2Value == 0 && m_warmupBarCount > MIN_WARMUP_BARS) {
         // Note: FI2 can legitimately be NEUTRAL during ranging markets
         // This is a soft warning, not a hard block like RSI
         Logger::getInstance().log(
@@ -806,12 +808,12 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
     // old loop (last-write-wins by IndicatorKey iteration order: INTERM_IMP,
     // the same pre-existing ambiguity Task 2's audit flagged), so read it from
     // the same INTERM_IMP instance here to reproduce the identical net value.
-    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
+    event->indicators->mutate_impulse_run_length(GetImpulseRunLength());
     // interm_macd_norm: NotPacked TrainingEventT top-level field
     // (Macd::AddToTrainingEventFB). Same last-write-wins note as
     // impulse_run_length above (LONG_MACD's and INTERM_MACD's Macd instances
     // both wrote it; INTERM_MACD wins).
-    event->interm_macd_norm = m_store.interm_macd.ZScore();
+    event->interm_macd_norm = GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>();
 
     // Task 10 (indicator-manager-dod-soa plan): single canonical gather of
     // atr_10 and every WriteTrainingRootSharedFields companion below, shared
@@ -951,11 +953,13 @@ void IndicatorManager::SyncFeatureVector(std::vector<float>& targetVector) const
 
     // ===== ZONE 7: Screen Fusion (indices 22-25) =====
     // Elite v2.3: Use indicator floatValue() methods (indicators own normalization)
-    const auto fi13Indicator = GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
-    const auto fi2Indicator = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointers, no null checks, always valid values.
+    const float fi13Norm = GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>();
+    const int fi2Value = GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>();
 
-    targetVector.push_back(fi13Indicator ? fi13Indicator->ZScore() : 0.0f);                              // 22: long_fi13_norm
-    targetVector.push_back(fi2Indicator ? static_cast<float>(fi2Indicator->intValue()) : 0.0f);            // 23: interm_fi2_norm
+    targetVector.push_back(fi13Norm);                          // 22: long_fi13_norm
+    targetVector.push_back(static_cast<float>(fi2Value));      // 23: interm_fi2_norm
     // DOD/SoA migration (Task 7): read straight from the packed array — no
     // pointer, no null check, always a valid value.
     targetVector.push_back(static_cast<float>(GetValue<IndicatorKey::LONG_IMP>()));                       // 24: impulse_color
@@ -1140,40 +1144,28 @@ bool IndicatorManager::HasSignificantChange() {
 }
 
 std::string IndicatorManager::getScreen1EntryText() {
-    auto longMacd = GetIndicator<Macd>(IndicatorKey::LONG_MACD);
-    auto longFI13Signal = GetIndicator<FI13Signal>(IndicatorKey::LONG_FI13_SIGNAL);
-
-    if (!longMacd || !longFI13Signal) {
-        return "NA";
-    }
+    // DOD/SoA migration (Task 11): read straight from the packed array — no
+    // pointers, no null checks, always valid values. (Previously returned
+    // "NA" if either leaf object was null; packed reads can't be null, so
+    // that branch is gone — both keys are guaranteed constructed by the time
+    // this is called, same as every other already-migrated accessor here.)
+    const int longMacdValue = static_cast<int>(GetValue<IndicatorKey::LONG_MACD>());
+    const int longFI13Value = static_cast<int>(GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Int8>());
 
     char buffer[32] = {0};
-    std::snprintf(
-        buffer,
-        sizeof(buffer),
-        "%d|%d",
-        longMacd->intValue(),
-        longFI13Signal->intValue()
-    );
+    std::snprintf(buffer, sizeof(buffer), "%d|%d", longMacdValue, longFI13Value);
     return std::string(buffer);
 }
 
 std::string IndicatorManager::getScreen2EntryText() {
-    // INTERM_FI2_SIGNAL is a two-row key (Float32 interm_fi2_norm companion) —
-    // out of this task's scope, so it stays on the legacy pointer path.
-    auto intermFI2Signal = GetIndicator<FI2Signal>(IndicatorKey::INTERM_FI2_SIGNAL);
-    if (!intermFI2Signal) {
-        return "NA";
-    }
-
-    // DOD/SoA migration (Task 7): the other three fields read straight from
+    // DOD/SoA migration (Task 11): all four fields now read straight from
     // the packed array — no pointers, no null checks, always valid values.
     char buffer[48] = {0};
     std::snprintf(
         buffer,
         sizeof(buffer),
         "%d|%d|%d|%d",
-        intermFI2Signal->intValue(),
+        static_cast<int>(GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Int8>()),
         static_cast<int>(GetValue<IndicatorKey::INTERM_STOCHASTIC>()),
         static_cast<int>(GetValue<IndicatorKey::RASCHKE_STRATEGY_SETUP>()),
         static_cast<int>(GetValue<IndicatorKey::RASCHKE_TACTICAL_TRIGGER>())
