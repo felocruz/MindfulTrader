@@ -664,6 +664,20 @@ void IndicatorManager::UpdateBarContext(SCStudyInterfaceRef sc)
     // Elite v2.3: Check warmup status (validates indicators after 200 bars)
     CheckWarmupStatus(sc);
 
+    // indicator-manager-dod-soa plan, whole-branch-review fix: SIDE's dirty
+    // bit lost its writer when Task 10 removed the legacy Side object's push
+    // sites (the object's VALUE is still correctly read live from
+    // PositionManager::GetTradeSide() in GetTickCompanionValues() -- only
+    // the dirty-bit side effect that used to drive prompt Event publication
+    // on a trade-side flip was lost). Restore it directly against
+    // PositionManager, the same authoritative source GetTickCompanionValues()
+    // already reads.
+    const TradeSideEnum currentSide = PositionManager::Instance().GetTradeSide();
+    if (currentSide != m_lastKnownSide) {
+        m_dirty_mask |= IndicatorKeyMask(IndicatorKey::SIDE);
+        m_lastKnownSide = currentSide;
+    }
+
     // Track regime tenure in InferenceManager (moved Mar 2026)
     InferenceManager::Instance().UpdateRegimeTenure();
 }

@@ -310,6 +310,12 @@ private:
     // Phase 3.1: Global bitset dirty tracking (53 indicators fit in 64 bits)
     uint64_t m_dirty_mask = 0;
 
+    // indicator-manager-dod-soa plan, whole-branch-review fix: tracks the
+    // trade side as of the last UpdateBarContext() tick so a flip can be
+    // detected and mirrored into m_dirty_mask's SIDE bit (see UpdateBarContext
+    // in IndicatorManager.cpp for the writer).
+    TradeSideEnum m_lastKnownSide = TradeSideEnum::FLAT;
+
     // Training temporal physics cache (for delta_t_log/tau_100_log parity)
     int64_t m_lastTrainingEventTimestampUs = 0;
     std::deque<int64_t> m_recentTrainingDeltaUs;
