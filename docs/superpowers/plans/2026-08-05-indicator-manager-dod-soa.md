@@ -40,10 +40,10 @@ Given this, the plan's end-state is now an intentional **hybrid architecture**: 
 | `include/IndicatorPackedState.h` (new) | The 4 packed arrays (`currentI8`/`prevI8`/`currentF32`/`prevF32`) + `dirtyMask`, plus `GetValue`/`SetValue`/`Reset` operating on raw positions. Pure, no Sierra Chart deps, no dependency on `IndicatorLayout.h` (position-based, key-agnostic — `IndicatorManager` composes the two). |
 | `tests/cpp/test_indicator_layout.cpp` (new) | Completeness/no-duplicate-position tests for `kIndicatorLayout`. |
 | `tests/cpp/test_indicator_packed_state.cpp` (new) | Get/Set/dirty-bit/Reset tests for `IndicatorPackedState`. |
-| `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; Task 11 gains `GetImpulseRunLength()` and migrates 4 internal call sites; Task 15 deletes only the 4 fully-dead orphan classes' `GetIndicator<T>()` instantiations, `IndicatorStore`/`m_indicators`/`GetIndicator<T>()` itself and the other ~34 leaf classes remain (see revised end-state above). |
+| `include/IndicatorManager.h` / `src/IndicatorManager.cpp` (modified) | Gains `IndicatorPackedState m_packed`; gains `GetValue<Key>()`/`SetValue<Key>()`; dual-write parity assertion during migration; Task 11 migrates 4 internal call sites (`impulse_run_length`/`interm_macd_norm` stay on the live leaf-object read — no write side is wired for either, see Task 11's revised text); Task 15 deletes only the 4 fully-dead orphan classes' `GetIndicator<T>()` instantiations, `IndicatorStore`/`m_indicators`/`GetIndicator<T>()` itself and the other ~34 leaf classes remain (see revised end-state above). |
 | `include/Indicator.h` / `src/Indicator.cpp` (modified) | `Indicator<T>::Update()` gains a packed-slot pointer for dual-write (one generic change). Compute methods progressively extracted to free functions (Macd only, Task 6). Task 15 deletes only the 4 fully-dead orphan leaf classes (`Ema`, `HmmStateIndicator`, `MarketClimateIndicator`, `AdxIndicator`); `BaseIndicator`, `Indicator<T>`, and the remaining ~34 leaf classes stay permanently. |
 | `src/TripleScreen2.cpp`, `TripleScreen3.cpp`, `src/StudyHelperFunctions.cpp` (modified, Task 14) | The 5 remaining genuine *read* call sites (not write sites — see revised end-state) migrated from `GetIndicator<T>(key)->Value()` to `indMgr.GetValue<Key>()`/`indMgr.GetValue<Key, Block>()`. |
-| `src/messaging/EventSerializer.cpp` (modified, Task 12), `src/BackTesterStudy.cpp` (modified, Task 13) | Remaining Float32-companion/`impulse_run_length` reads migrated to `GetValue<Key, Block>()`/`GetImpulseRunLength()`. |
+| `src/messaging/EventSerializer.cpp` (modified, Task 12), `src/BackTesterStudy.cpp` (modified, Task 13) | The genuinely-wired remaining Float32-companion reads migrated to `GetValue<Key, Block>()`. `interm_macd_norm`/`impulse_run_length` explicitly excluded (no write side wired for either — see Task 11's revised text) and stay on the live leaf-object read. |
 | `src/messaging/EventSerializer.cpp` (modified) | Live-`Event`-building companion-value reads (`->GetVolumeRatio()`, `->GetATR10()`, etc.) replaced with reads from a single per-tick `TickCompanionValues` struct, shared with the training path — removes a whole class of live/training duplication discovered while answering a direct question about OOP-vs-DOD mixing (Task 10). |
 | `src/messaging/EventSerializerV2.cpp`/`.h` (deleted) | Confirmed dead: absent from `CMakeLists.txt`, unused, contains a hardcoded `add_atr_10(0.0f)` bug. Removed as part of Task 10. |
 | `CLAUDE.md`, `README-AI.md`, `.github/copilot-instructions.md`, `GEMINI.md` (modified) | Stale `IndicatorManager` description corrected. |
@@ -1041,30 +1041,31 @@ git commit -m "fix(indicator-manager): unify live/training/backtest companion-va
 
 ---
 
-### Task 11: Fix the `INTERM_IMP` same-block collision; migrate `IndicatorManager.cpp`'s own internal call sites
+### Task 11: Migrate `IndicatorManager.cpp`'s own internal call sites
 
-**Context:** `INTERM_IMP` is the one key in `kIndicatorLayout` with two rows in the *same* block (Int8 position 12, the classification enum; Int8 position 26, the `impulse_run_length` companion — see `include/IndicatorLayout.h:53,83`). `DescriptorFor(key, block)` disambiguates only by `(key, block)`, so it always resolves to the first array match (position 12); position 26 is unreachable through `GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>()`. This task adds one dedicated accessor for this one irreducible case (not a generalized third `StorageBlock` axis — there is exactly one key that needs this, and a named special case is simpler and more honest than generalizing the descriptor system for it). It also cuts over the 6 internal `IndicatorManager.cpp` call sites that Tasks 7-9 didn't touch (they aren't inside `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`'s own body, so Task 9's rewrite skipped them) plus 2 direct-`m_store`-field reads inside `GetTrainingEventT` that bypass `GetIndicator<T>()` entirely (found while tracing this task, not caught by the original `GetIndicator<\|IndicatorStore\|BaseIndicator` grep).
+**Context (revised 2026-08-05, fix round after task review):** the original version of this task also tried to add a `GetImpulseRunLength()` accessor reading `m_packed.GetI8(26)` (`INTERM_IMP`'s `impulse_run_length` companion row) and migrate `GetTrainingEventT`'s two direct-`m_store`-field reads (`interm_imp.RunLength()`, `interm_macd.ZScore()`) to packed reads. **Both were wrong and have been reverted.** Position 26 (`INTERM_IMP`'s Int8 companion row) and `INTERM_MACD`'s Float32 position 8 (`interm_macd_norm`) both have a real row in `kIndicatorLayout`, but **neither has ever had a write side wired** — confirmed via `src/IndicatorManager.cpp`'s own `AssertPackedStateParity()` (explicitly skips `{INTERM_IMP, position 26}`) and the constructor's own comment at `IndicatorManager.cpp:264-266` ("INTERM_MACD's Float32-block companion (position 8, interm_macd_norm) is intentionally NOT wired ... No working internal write path exists to dual-write from; deferred to Task 9/10" — Tasks 9 and 10 came and went without wiring it either). A packed *row existing* in `kIndicatorLayout` is not the same claim as "this value is safe to read via `GetValue<>()` today" — reading an unwired slot silently returns `0` forever, which is a training-data-correctness regression, not a compile error, so it doesn't get caught by a green build. `impulse_run_length` and `interm_macd_norm` join the same "leave on the legacy live-object read, permanently, until someone wires a real write side" bucket as the `NotPacked` keys, even though their `kIndicatorLayout` row isn't literally `NotPacked` — the row describes where the value *would* live once wired, not that it's ready to read now. Tasks 12 and 13 (not yet dispatched when this was caught) have been corrected the same way.
+
+This task now does only what's genuinely safe: cut over the 4 internal `IndicatorManager.cpp` call sites that Tasks 7-9 didn't touch (they aren't inside `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`'s own body, so Task 9's rewrite skipped them). It does NOT touch `GetTrainingEventT`'s `impulse_run_length`/`interm_macd_norm` lines at all — those stay exactly as they were before this task (reading `m_store.interm_imp.RunLength()` / `m_store.interm_macd.ZScore()` directly), which is also a preexisting, correct, already-committed state from Task 9/10, not something this task needs to touch.
 
 **Files:**
-- Modify: `include/IndicatorManager.h` (add `GetImpulseRunLength()`)
-- Modify: `src/IndicatorManager.cpp` (`CheckWarmupStatus`, `SyncFeatureVector`, `getScreen1EntryText`, `getScreen2EntryText`, `GetTrainingEventT`)
-- Test: `tests/cpp/test_indicator_layout.cpp` (add one check)
+- Modify: `src/IndicatorManager.cpp` (`CheckWarmupStatus`, `SyncFeatureVector`, `getScreen1EntryText`, `getScreen2EntryText`)
+- Test: `tests/cpp/test_indicator_layout.cpp` (add one check documenting the `INTERM_IMP` same-block layout fact — informational ground truth for future readers, independent of whether/when a write side ever gets wired)
 
-**Interfaces:**
-- Produces: `IndicatorManager::GetImpulseRunLength() const -> int8_t` — reads `m_packed.GetI8(26)` directly (the `impulse_run_length` companion position, per `kIndicatorLayout`'s row `{ IndicatorKey::INTERM_IMP, StorageBlock::Int8, 26 }`). Tasks 12 and 13 call this.
+**Interfaces:** None produced — Tasks 12-14 do not depend on anything from this task.
 
-- [ ] **Step 1: Add `GetImpulseRunLength()` to `IndicatorManager.h`**
+- [ ] **Step 1 (fix round — do this first if `GetImpulseRunLength()` and the `GetTrainingEventT` changes from a prior attempt are still present): revert them**
 
-Add next to the existing `GetValue<Key, Block>()` overload (`include/IndicatorManager.h:178-187`):
+Remove `IndicatorManager::GetImpulseRunLength()` from `include/IndicatorManager.h` entirely (dead accessor — nothing may safely call it; it reads a slot no code writes).
 
+In `src/IndicatorManager.cpp`'s `GetTrainingEventT`, restore:
 ```cpp
-    // indicator-manager-dod-soa plan, Task 11: INTERM_IMP is the one key with
-    // two rows in the SAME block (Int8 @12 classification, Int8 @26
-    // impulse_run_length companion) -- DescriptorFor(key, block) can only
-    // resolve to the first match, so this one key needs a dedicated,
-    // hand-verified position rather than the generic templates above.
-    int8_t GetImpulseRunLength() const { return m_packed.GetI8(26); }
+    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
 ```
+and:
+```cpp
+    event->interm_macd_norm = m_store.interm_macd.ZScore();
+```
+(i.e., these two lines return to reading the live leaf objects directly, exactly as they were before this task — do not call `GetValue<>()`/`GetImpulseRunLength()` for either.)
 
 - [ ] **Step 2: Migrate `CheckWarmupStatus` (`src/IndicatorManager.cpp:604-613`)**
 
@@ -1158,48 +1159,29 @@ std::string IndicatorManager::getScreen2EntryText() {
 }
 ```
 
-- [ ] **Step 6: Migrate `GetTrainingEventT`'s two direct-`m_store`-field reads (`src/IndicatorManager.cpp:809,814`)**
-
-These bypass `GetIndicator<T>()` entirely (direct `m_store.X` member access) so the Step-1-successor grep in Task 15 won't catch them — fix now while in this neighborhood. Replace:
-```cpp
-    event->indicators->mutate_impulse_run_length(static_cast<int8_t>(m_store.interm_imp.RunLength()));
-```
-with:
-```cpp
-    event->indicators->mutate_impulse_run_length(GetImpulseRunLength());
-```
-and replace:
-```cpp
-    event->interm_macd_norm = m_store.interm_macd.ZScore();
-```
-with:
-```cpp
-    event->interm_macd_norm = GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>();
-```
-
-- [ ] **Step 7: Add a layout test for the new accessor**
+- [ ] **Step 6: Add a layout-documentation test (informational — not a claim that either row is read-safe today)**
 
 Add to `tests/cpp/test_indicator_layout.cpp`:
 ```cpp
-    check("INTERM_IMP has two Int8 rows (12 and 26), both reachable in principle",
+    check("INTERM_IMP has two Int8 rows (12 classification, 26 impulse_run_length companion, neither's write-side wiring is this test's concern)",
           mts::DescriptorFor(mts::IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8).position == 12 &&
           CountRows(mts::IndicatorKey::INTERM_IMP) == 2);
 ```
 (If this file has no existing `CountRows` helper, add one: a small loop over `kIndicatorLayout` counting matches for a given key — mirrors `UniqueDescriptorFor`'s own match-counting loop in `IndicatorLayout.h`.)
 
-- [ ] **Step 8: Build and test**
+- [ ] **Step 7: Build and test**
 
 ```bash
 ./build_dll.sh --no-clean
 g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_indicator_layout.cpp -o /tmp/t1 && /tmp/t1
 ```
-Expected: both succeed.
+Expected: both succeed. Paste the actual compiler/test output into your report, not just a pass/fail claim.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add include/IndicatorManager.h src/IndicatorManager.cpp tests/cpp/test_indicator_layout.cpp
-git commit -m "refactor(indicator-manager): migrate internal call sites off GetIndicator<T>(), add GetImpulseRunLength()"
+git commit -m "refactor(indicator-manager): migrate internal call sites off GetIndicator<T>(); revert incorrect unwired-slot reads"
 ```
 
 ---
@@ -1209,10 +1191,9 @@ git commit -m "refactor(indicator-manager): migrate internal call sites off GetI
 **Files:**
 - Modify: `src/messaging/EventSerializer.cpp`
 
-**Interfaces:**
-- Consumes: `IndicatorManager::GetImpulseRunLength()` (Task 11).
+**Interfaces:** None consumed from Task 11 (that task's `GetImpulseRunLength()` was reverted — see Task 11's revised text — because `INTERM_IMP` position 26 and `INTERM_MACD`'s Float32 position 8 have no write side wired anywhere; reading either via `GetValue<>()` silently returns 0 forever, a training-data-correctness regression that a green build cannot catch. This task's `interm_macd_norm`/`impulse_run_length` lines are therefore explicitly OUT of scope below, same as the `NotPacked` lines — do not migrate them.)
 
-- [ ] **Step 1: Replace lines 118-126**
+- [ ] **Step 1: Replace only the two genuinely-wired Float32-companion lines (lines 119-120, 123-124)**
 
 Replace:
 ```cpp
@@ -1232,9 +1213,20 @@ with:
         // DOD/SoA migration (Task 12): read straight from the packed array —
         // no pointers, no null checks, always valid values.
         indicators.mutate_interm_fi2_norm(manager.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
-        indicators.mutate_interm_macd_norm(manager.GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>());
         indicators.mutate_long_fi13_norm(manager.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
-        indicators.mutate_impulse_run_length(manager.GetImpulseRunLength());
+        // interm_macd_norm (INTERM_MACD Float32 position 8) and
+        // impulse_run_length (INTERM_IMP Int8 position 26) are NOT migrated:
+        // neither packed slot has a write side wired anywhere in the repo
+        // (confirmed via AssertPackedStateParity's explicit skip of
+        // {INTERM_IMP, 26} and the constructor's own "intentionally NOT
+        // wired" comment for INTERM_MACD's Float32 companion). Reading them
+        // via GetValue<>() would silently return 0 forever. Left on the
+        // live leaf-object read, same as a NotPacked key, until a real write
+        // side exists.
+        const auto* intermMacd = manager.GetIndicator<Macd>(IndicatorKey::INTERM_MACD);
+        indicators.mutate_interm_macd_norm(intermMacd ? intermMacd->ZScore() : 0.0f);
+        const auto* intermImpulse = manager.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP);
+        indicators.mutate_impulse_run_length(static_cast<int8_t>(intermImpulse ? intermImpulse->RunLength() : 0));
 ```
 
 Leave lines 210-232 (`ZN_TREND`/`DX_TREND`/`CORR_ES_ZN_DELTA`/`CORR_ES_ZN_ACCEL`/`CORR_ES_DX_DELTA`/`CORR_ES_DX_ACCEL`) exactly as they are — all six are `StorageBlock::NotPacked` by Task 2's deliberate audit decision; there is nothing to migrate.
@@ -1262,10 +1254,9 @@ git commit -m "refactor(event-serializer): migrate remaining Float32-companion r
 **Files:**
 - Modify: `src/BackTesterStudy.cpp`
 
-**Interfaces:**
-- Consumes: `IndicatorManager::GetImpulseRunLength()` (Task 11).
+**Interfaces:** None consumed from Task 11 (same reason as Task 12: `INTERM_IMP` position 26 and `INTERM_MACD`'s Float32 position 8 have no write side wired anywhere — see Task 11's revised text. Leave `interm_macd_norm` and `impulse_run_length` here exactly as they are.)
 
-- [ ] **Step 1: Replace `BuildEntryIndicatorState`'s lines 1253-1266**
+- [ ] **Step 1: Replace `BuildEntryIndicatorState`'s lines 1253-1258, 1261, 1263 only (leave 1262 and 1266 untouched)**
 
 Replace:
 ```cpp
@@ -1297,11 +1288,17 @@ with:
 
     // Normalized (Z-score) floats
     state.mutate_interm_fi2_norm(im.GetValue<IndicatorKey::INTERM_FI2_SIGNAL, mts::StorageBlock::Float32>());
-    state.mutate_interm_macd_norm(im.GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Float32>());
+    // interm_macd_norm (INTERM_MACD Float32 position 8) is NOT migrated: no
+    // write side is wired anywhere in the repo (constructor's own
+    // "intentionally NOT wired" comment) — GetValue<>() would silently
+    // return 0 forever. Left on the live leaf-object read.
+    { const auto* p = im.GetIndicator<Macd>(IndicatorKey::INTERM_MACD); state.mutate_interm_macd_norm(p ? p->ZScore() : 0.0f); }
     state.mutate_long_fi13_norm(im.GetValue<IndicatorKey::LONG_FI13_SIGNAL, mts::StorageBlock::Float32>());
 
-    // Impulse run length
-    state.mutate_impulse_run_length(im.GetImpulseRunLength());
+    // impulse_run_length (INTERM_IMP Int8 position 26) is NOT migrated: same
+    // reason — AssertPackedStateParity explicitly skips this position
+    // because nothing writes it. Left on the live leaf-object read.
+    { const auto* p = im.GetIndicator<Impulse>(IndicatorKey::INTERM_IMP); state.mutate_impulse_run_length(p ? static_cast<int8_t>(p->RunLength()) : int8_t{0}); }
 ```
 
 - [ ] **Step 2: Replace lines 1269-1270 (leave 1271-1274 untouched)**
@@ -1494,6 +1491,6 @@ git commit -m "refactor(indicator-manager): delete 4 fully-dead orphan indicator
 
 ### Task 16: Final whole-branch review
 
-Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 15's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched. Additionally verify: Task 10's claim that `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` each now have exactly ONE implementation feeding both `Event` and `TrainingEvent`; Task 11's `GetImpulseRunLength()` is used everywhere `impulse_run_length` is read (grep for any remaining `RunLength()` call outside `Indicator.h` itself); Tasks 12-14 didn't silently touch any write-only or `NotPacked` call site beyond what their steps specified; Task 15 deleted only the 4 named dead classes and nothing else still referenced anywhere. Finally, spot-check that the plan's own remaining `GetIndicator<T>()` call sites (the ~40 write sites plus the ~18 `NotPacked` reads) are each traceable to one of this plan's own findings — no new, undocumented `GetIndicator<T>()` caller should exist that this plan didn't account for.
+Use `superpowers:requesting-code-review`'s code-reviewer template against the full range (base: the commit before Task 1, head: Task 15's final commit). Verify against this plan's Global Constraints explicitly: no virtual dispatch survives in `CheckTrigger`/`PopulateIndicatorState`/`GetTrainingEventT`; `m_prevI8`/`m_prevF32` still exist and are read by the migrated trigger logic; `IndicatorManager` is still the sole facade; no heap allocation was introduced anywhere in `GetValue`/`SetValue`/`CheckTrigger`/`PopulateIndicatorState`; the packed-array field order still matches `IndicatorState`'s schema order; `../schema/mts_schema.fbs` was not touched. Additionally verify: Task 10's claim that `close_percentile`/`volume_ratio_percent`/`volume_imbalance`/`nh_nl_daily`/`atr_10` each now have exactly ONE implementation feeding both `Event` and `TrainingEvent`; `impulse_run_length` and `interm_macd_norm` are read from the live leaf objects (`RunLength()`/`ZScore()`) everywhere, NEVER via `GetValue<>()` or any `GetImpulseRunLength()`-style accessor — confirm no such accessor was reintroduced anywhere (`INTERM_IMP` position 26 and `INTERM_MACD`'s Float32 position 8 have no write side wired; this was a Critical finding caught and reverted during Task 11's fix round, re-verify it stayed reverted); Tasks 12-14 didn't silently touch any write-only or `NotPacked` call site beyond what their steps specified; Task 15 deleted only the 4 named dead classes and nothing else still referenced anywhere. Finally, spot-check that the plan's own remaining `GetIndicator<T>()` call sites (the ~40 write sites plus the ~18 `NotPacked` reads) are each traceable to one of this plan's own findings — no new, undocumented `GetIndicator<T>()` caller should exist that this plan didn't account for.
 
 (Process note for whoever runs this review: this plan's implementers self-reported test counts inaccurately in Tasks 7, 8, and 10 — always all-pass, but the printed totals were wrong each time, caught only by an independent `grep -c 'check("'`. Re-verify the final total the same way rather than trusting the last report.)
