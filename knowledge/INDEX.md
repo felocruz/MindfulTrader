@@ -27,7 +27,9 @@
 
 ## global/cpp
 
-*(empty — add chunks here as they are created)*
+| File | Intent |
+|---|---|
+| [indicator_manager_dod.md](global/cpp/indicator_manager_dod.md) | IndicatorManager's hybrid DOD/OOD architecture — packed SoA arrays are canonical for hot-path reads; IndicatorStore/BaseIndicator/Indicator<T> stays permanently as the write-side engine + NotPacked read path; the FM-01 "row exists ≠ write side wired" trap that already bit this codebase once |
 
 ---
 
@@ -42,7 +44,7 @@ These existing docs contain valuable content that hasn't been chunked yet.
 | `docs/TRADE_EXECUTION_SYSTEM.md` | `global/architecture/trade_lifecycle.md` | pending |
 | `docs/RISK_MANAGEMENT_SYSTEM.md` | `global/cpp/risk_management.md` | pending |
 | `docs/HMM_RUNTIME_REFERENCE.md` | `global/architecture/hmm_runtime.md` | pending |
-| `src/IndicatorManager.cpp` + `IndicatorManager.h` | `global/cpp/indicator_manager_dod.md` | pending |
+| `src/IndicatorManager.cpp` + `IndicatorManager.h` | `global/cpp/indicator_manager_dod.md` | done (2026-08-06) |
 | ZMQ port topology (from CLAUDE.md) | `global/zmq/port_topology.md` | pending |
 | `docs/TRADING_STRATEGIES_COMPLETE_REFERENCE.md` | `global/architecture/trading_strategies.md` | pending |
 
