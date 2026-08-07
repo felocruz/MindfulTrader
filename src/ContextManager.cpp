@@ -959,7 +959,10 @@ ContextManager::TriggerDecisionMetrics ContextManager::ComputeTriggerDecisionMet
     float event_velocity) const {
     TriggerDecisionMetrics metrics;
 
-    if (m_observationHistory.size() < OBS_SATURATION_MIN_SAMPLES) {
+    // Lockstep invariant: all 16 per-dim buffers are always pushed/popped
+    // together (single call site, CheckAndTriggerHMM below), so any one of
+    // them is a valid stand-in for "how many samples do we have."
+    if (m_observationHistory[0].size() < OBS_SATURATION_MIN_SAMPLES) {
         return metrics;
     }
 
@@ -968,14 +971,15 @@ ContextManager::TriggerDecisionMetrics ContextManager::ComputeTriggerDecisionMet
     float geometry_sq = 0.0f;
     float max_energy_abs_z = 0.0f;
     const float epsilon_floor = OBS_SATURATION_VAR_EPS;
-    const int n = static_cast<int>(m_observationHistory.size());
+    const int n = static_cast<int>(m_observationHistory[0].size());
     const int mid = n / 2;
 
     for (size_t dim = 0; dim < OBSERVATION_VECTOR_SIZE; ++dim) {
-        // Extract per-dim values into stack scratch
+        // Extract this dimension's own contiguous buffer into stack scratch
+        // (SoA -- no transposed AoS stride).
         std::array<float, OBS_SATURATION_MIN_SAMPLES + 1> scratch;
         for (int k = 0; k < n; ++k) {
-            scratch[static_cast<size_t>(k)] = m_observationHistory[static_cast<size_t>(k)][dim];
+            scratch[static_cast<size_t>(k)] = m_observationHistory[dim][static_cast<size_t>(k)];
         }
 
         // Robust median
@@ -985,7 +989,7 @@ ContextManager::TriggerDecisionMetrics ContextManager::ComputeTriggerDecisionMet
         // Robust MAD
         for (int k = 0; k < n; ++k) {
             scratch[static_cast<size_t>(k)] = std::abs(
-                m_observationHistory[static_cast<size_t>(k)][dim] - median);
+                m_observationHistory[dim][static_cast<size_t>(k)] - median);
         }
         std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
         const float madScale = scratch[static_cast<size_t>(mid)] * 1.4826f;
@@ -1230,9 +1234,11 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // Maintain rolling window for Mahalanobis distance calculation.
     // Saturation is determined solely by FeatureScaler warmup (500 samples),
     // which is the single authority for data-readiness.
-    m_observationHistory.push_back(currentObs);
-    if (m_observationHistory.size() > OBS_SATURATION_MIN_SAMPLES) {
-        m_observationHistory.pop_front();
+    for (size_t dim = 0; dim < OBSERVATION_VECTOR_SIZE; ++dim) {
+        m_observationHistory[dim].push_back(currentObs[dim]);
+        if (m_observationHistory[dim].size() > OBS_SATURATION_MIN_SAMPLES) {
+            m_observationHistory[dim].pop_front();
+        }
     }
 
     // ========================================================================
@@ -1337,7 +1343,7 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_hmmInitialized = false;
     m_eventTimestampsUS.clear();
     m_velocityState = eve::VelocityState{};
-    m_observationHistory.clear();
+    for (auto& buf : m_observationHistory) buf.clear();
     m_lastSequenceId = 0;
     m_hmmObservation.fill(0.0f);
     m_prevCollectionObservation.fill(0.0f);
@@ -1417,46 +1423,12 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
 // CV < 1.0 -> Regular (Periodic/Algorithmic)
 float ContextManager::CalculateBurstinessIndex(uint64_t now_us) {
     (void)now_us; // Unused, uses internal history
-    if (m_eventTimestampsUS.size() < 4) return 1.0f; // Need samples for variance
-
-    // Convert timestamps to IATs — stack-allocated (max 99 IATs, ~400 bytes)
-    std::array<float, EVENT_VELOCITY_MAX> iats;
-    size_t iatCount = 0;
-
-    uint64_t prev = 0;
-    bool first = true;
-    // Iterate from oldest to newest
-    for (const auto& ts : m_eventTimestampsUS) {
-        if (first) {
-            prev = ts;
-            first = false;
-            continue;
-        }
-        // IAT in milliseconds for numerical stability
-        float iat_ms = static_cast<float>(ts - prev) / 1000.0f;
-        if (iat_ms < 0.001f) iat_ms = 0.001f; // Clamp zero IATs
-        iats[iatCount++] = iat_ms;
-        prev = ts;
-    }
-
-    if (iatCount == 0) return 1.0f; // Default to Poisson
-
-    // Calculate Mean IAT
-    float sum = 0.0f;
-    for (size_t i = 0; i < iatCount; ++i) sum += iats[i];
-    float mean = sum / static_cast<float>(iatCount);
-
-    // Calculate StdDev IAT
-    float sumSq = 0.0f;
-    for (size_t i = 0; i < iatCount; ++i) {
-        const float d = iats[i] - mean;
-        sumSq += d * d;
-    }
-    float stdDev = std::sqrt(sumSq / (iatCount > 1 ? static_cast<float>(iatCount - 1) : 1.0f));
-
-    if (mean < 0.0001f) return 1.0f; // Avoid division by zero
-
-    return stdDev / mean;
+    // Arithmetic extracted to eve::CalculateBurstinessIndex() (EventVelocityEngine.h,
+    // docs/superpowers/specs/2026-08-07-contextmanager-ring-buffer-dod-design.md
+    // §3.3, Round 2) so it's independently unit-tested -- it has zero ACSIL
+    // dependency and was only unreachable by a standalone test as a
+    // ContextManager member function, behind sierrachart.h.
+    return eve::CalculateBurstinessIndex(m_eventTimestampsUS);
 }
 
 

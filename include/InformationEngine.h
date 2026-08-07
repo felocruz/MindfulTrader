@@ -1,6 +1,5 @@
 #pragma once
 
-#include <vector>
 #include <cmath>
 #include <algorithm>
 #include <numeric>
@@ -182,11 +181,13 @@ namespace MindfulTrader {
          */
         double GetLempelZivComplexity() const {
              // 1. Snapshot and Binarize
-             // Max LZ window 64 is small enough for stack vector usually, 
-             // but here we use a small buffer.
-             std::vector<int> S;
-             S.reserve(WINDOW_SIZE_LZ);
-             
+             // WINDOW_SIZE_LZ (64) is a compile-time-bounded max -- fixed
+             // stack arrays, zero heap allocation, replacing what used to be
+             // two std::vectors allocated fresh on every call (this ran every
+             // tick once warmed up, docs/superpowers/specs/2026-08-07-
+             // contextmanager-ring-buffer-dod-design.md §3.5, Round 3).
+             std::array<int, WINDOW_SIZE_LZ> S{};
+
              // Extract linear sequence from circular buffer
              size_t count = (m_countQ < WINDOW_SIZE_LZ) ? m_countQ : WINDOW_SIZE_LZ;
              if (count < 10) {
@@ -194,8 +195,7 @@ namespace MindfulTrader {
              }
 
              // Calculate local median for adaptive thresholding
-             std::vector<double> sortedBuf;
-             sortedBuf.reserve(count);
+             std::array<double, WINDOW_SIZE_LZ> sortedBuf{};
              for(size_t i=0; i<count; ++i) {
                  // Reconstruct chronological order if circular
                  // Logic: m_bufferLZ is a circular buffer.
@@ -204,25 +204,24 @@ namespace MindfulTrader {
                  // So "ith oldest" is (m_headIndexLZ + i) % Size.
                  // If NOT full, oldest is 0.
                  size_t idx = (m_countQ < WINDOW_SIZE_LZ) ? i : (m_headIndexLZ + i) % WINDOW_SIZE_LZ;
-                 sortedBuf.push_back(m_bufferLZ[idx]);
+                 sortedBuf[i] = m_bufferLZ[idx];
              }
-             std::sort(sortedBuf.begin(), sortedBuf.end());
+             std::sort(sortedBuf.begin(), sortedBuf.begin() + count);
              double median = sortedBuf[count/2];
 
              // Construct bit string S
              for(size_t i=0; i<count; ++i) {
                  size_t idx = (m_countQ < WINDOW_SIZE_LZ) ? i : (m_headIndexLZ + i) % WINDOW_SIZE_LZ;
-                 S.push_back(m_bufferLZ[idx] >= median ? 1 : 0);
+                 S[i] = (m_bufferLZ[idx] >= median ? 1 : 0);
              }
 
              // 2. Lempel-Ziv 76 Algorithm
              // Kaspar/Schuster (1987) implementation
              int complexity = 1;
-             int n = static_cast<int>(S.size());
-             
+             int n = static_cast<int>(count);
+
              int i = 0; // Index of the start of the new component
              int k = 1; // Length of the current candidate component
-             int k_max = 1; // Max length of component found so far (historical max)
 
              // Proper loop for LZ76
              // We partition S into components S[0...i-1], S[i...i+k-1], etc.

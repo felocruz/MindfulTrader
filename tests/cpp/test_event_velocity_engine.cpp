@@ -154,6 +154,51 @@ int main() {
               approx(vSecondTickAfterResumption, 100.0f, 0.1f));
     }
 
+    std::printf("\nCalculateBurstinessIndex unit tests\n");
+
+    // Fewer than 4 timestamps: neutral Poisson default.
+    {
+        RingBuffer<uint64_t, 8> ts;
+        ts.push_back(0);
+        ts.push_back(1000);
+        ts.push_back(2000);
+        check("burstiness_below_minimum_samples_is_neutral",
+              CalculateBurstinessIndex(ts) == 1.0f);
+    }
+
+    // Perfectly regular spacing: IATs are all identical -> stdDev=0 -> CV=0.0.
+    {
+        RingBuffer<uint64_t, 8> ts;
+        for (uint64_t t = 0; t <= 4'000'000; t += 1'000'000) ts.push_back(t);
+        check("burstiness_regular_spacing_is_zero",
+              CalculateBurstinessIndex(ts) == 0.0f);
+    }
+
+    // Irregular spacing: independently computed via Python (statistics.stdev,
+    // sample stdev with n-1) -- iats_ms=[500,1500,200,2800], mean=1250,
+    // stdev=1173.3143937865361, cv=0.9386515150292289.
+    {
+        RingBuffer<uint64_t, 8> ts;
+        for (uint64_t t : {0ULL, 500'000ULL, 2'000'000ULL, 2'200'000ULL, 5'000'000ULL}) {
+            ts.push_back(t);
+        }
+        check("burstiness_irregular_spacing_matches_independently_computed_cv",
+              approx(CalculateBurstinessIndex(ts), 0.9386515150292289f, 1e-4f));
+    }
+
+    // Capacity is independent of the production EVENT_VELOCITY_MAX=100 --
+    // exercise a tiny capacity (4) to confirm the template parameter is a
+    // genuine size, not a hardcoded assumption leaking in from ContextManager.
+    {
+        RingBuffer<uint64_t, 4> ts;
+        ts.push_back(0);
+        ts.push_back(1'000'000);
+        ts.push_back(2'000'000);
+        ts.push_back(3'000'000);
+        check("burstiness_works_at_small_template_capacity",
+              CalculateBurstinessIndex(ts) == 0.0f);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

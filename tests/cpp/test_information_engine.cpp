@@ -37,6 +37,10 @@ void check(const char* name, bool ok) {
     }
 }
 
+bool approx(double a, double b, double tol = 1e-6) {
+    return std::fabs(a - b) <= tol;
+}
+
 // Feeds a symmetric, varied-magnitude sequence (not a single constant value)
 // so the Q-histogram populates a realistic spread of bins around the regime's
 // typical size, rather than pinning all mass at exactly +/-1 sigma (which is
@@ -190,6 +194,38 @@ int main() {
               !sawEntropyOutOfBounds);
         check("recurrence_rate_stays_in_bounds_across_drifting_volatility_and_eviction",
               !sawRecurrenceOutOfBounds);
+    }
+
+    std::printf("\nGetLempelZivComplexity unit tests\n");
+
+    // Fewer than 10 samples in the LZ window: neutral default.
+    {
+        InformationEngine engine;
+        for (int i = 1; i <= 9; ++i) engine.AddObservation(static_cast<double>(i));
+        check("lz_below_minimum_samples_is_neutral",
+              engine.GetLempelZivComplexity() == 0.5);
+    }
+
+    // Ramp 1..10: median-split binarization -> S=[0,0,0,0,0,1,1,1,1,1] (hand-
+    // verified) -> LZ76 complexity=2, b(n)=10/log2(10) -> result=2/b(n).
+    // Independently re-derived via a standalone Python simulation of the same
+    // O(n^2) LZ76 algorithm and median-split binarization described in this
+    // class's own doc comment, not by running the code under test.
+    {
+        InformationEngine engine;
+        for (int i = 1; i <= 10; ++i) engine.AddObservation(static_cast<double>(i));
+        check("lz_ramp_matches_independently_simulated_lz76",
+              approx(engine.GetLempelZivComplexity(), 0.6643856189774724, 1e-9));
+    }
+
+    // All-identical input: median equals the constant value, so every sample
+    // binarizes to 1 (v >= median) -> S is all-ones -> LZ76 on an all-ones
+    // string of length 10, independently simulated the same way.
+    {
+        InformationEngine engine;
+        for (int i = 0; i < 10; ++i) engine.AddObservation(5.0);
+        check("lz_constant_input_matches_independently_simulated_lz76",
+              approx(engine.GetLempelZivComplexity(), 0.3321928094887362, 1e-9));
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",

@@ -21,8 +21,11 @@
 
 #pragma once
 
+#include <array>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
+#include "RingBuffer.h"
 
 namespace eve {
 
@@ -73,6 +76,66 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
     }
 
     return static_cast<float>(1'000'000.0 / state.emaIntervalUs);
+}
+
+/// Burstiness Index: coefficient of variation (StdDev/Mean) of inter-arrival
+/// times (IATs) over a rolling window of event timestamps (Raschke flow
+/// dynamics). >1.0 = bursty/clustered arrivals, <1.0 = more regular than
+/// Poisson, ==1.0 = neutral default (also returned during warmup/degenerate
+/// input, matching a Poisson process's own CV).
+///
+/// Extracted from ContextManager::CalculateBurstinessIndex()
+/// (docs/superpowers/specs/2026-08-07-contextmanager-ring-buffer-dod-design.md
+/// §3.3, Round 2) so it's independently unit-testable -- it has zero ACSIL
+/// dependency and was only ever unreachable by a standalone test because it
+/// lived as a ContextManager member function, behind sierrachart.h. Templated
+/// on Capacity purely so a unit test can exercise every code path (empty,
+/// below-minimum, exact-minimum) at a small capacity without needing
+/// production's full 100-timestamp window.
+template <size_t Capacity>
+float CalculateBurstinessIndex(const RingBuffer<uint64_t, Capacity>& timestamps) {
+    if (timestamps.size() < 4) return 1.0f;  // Need samples for variance
+
+    // Convert timestamps to IATs -- stack-allocated, sized to Capacity (one
+    // more than the max possible IAT count, matching the original's own
+    // sized-to-max-window convention).
+    std::array<float, Capacity> iats{};
+    size_t iatCount = 0;
+
+    uint64_t prev = 0;
+    bool first = true;
+    // Iterate from oldest to newest.
+    for (const auto& ts : timestamps) {
+        if (first) {
+            prev = ts;
+            first = false;
+            continue;
+        }
+        // IAT in milliseconds for numerical stability.
+        float iat_ms = static_cast<float>(ts - prev) / 1000.0f;
+        if (iat_ms < 0.001f) iat_ms = 0.001f;  // Clamp zero IATs
+        iats[iatCount++] = iat_ms;
+        prev = ts;
+    }
+
+    if (iatCount == 0) return 1.0f;  // Default to Poisson
+
+    // Calculate Mean IAT.
+    float sum = 0.0f;
+    for (size_t i = 0; i < iatCount; ++i) sum += iats[i];
+    float mean = sum / static_cast<float>(iatCount);
+
+    // Calculate StdDev IAT.
+    float sumSq = 0.0f;
+    for (size_t i = 0; i < iatCount; ++i) {
+        const float d = iats[i] - mean;
+        sumSq += d * d;
+    }
+    float stdDev = std::sqrt(sumSq / (iatCount > 1 ? static_cast<float>(iatCount - 1) : 1.0f));
+
+    if (mean < 0.0001f) return 1.0f;  // Avoid division by zero
+
+    return stdDev / mean;
 }
 
 }  // namespace eve

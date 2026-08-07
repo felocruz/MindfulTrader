@@ -1,11 +1,11 @@
 #pragma once
 
 #include <vector>
-#include <deque>
 #include <cmath>
 #include <numeric>
 #include <algorithm>
 #include <Eigen/Dense>
+#include "RingBuffer.h"
 
 namespace MindfulTrader {
 
@@ -43,10 +43,16 @@ public:
     bool IsReady() const { return m_prices.size() >= WINDOW_SIZE; }
 
 private:
-    std::deque<float> m_prices;       // Close prices
-    std::deque<float> m_highs;        // High prices
-    std::deque<float> m_lows;         // Low prices
-    std::deque<float> m_logRanges;    // ln(High - Low) history
+    // Fixed-capacity ring buffers (docs/superpowers/specs/2026-08-07-
+    // contextmanager-ring-buffer-dod-design.md) -- zero heap allocation for
+    // the buffer's lifetime, replacing std::deque's ongoing chunk churn as
+    // the window slides. Capacity = window size + 1 for headroom: Update()'s
+    // push_back-then-conditionally-pop_front transiently holds one more
+    // element than the logical window between those two statements.
+    RingBuffer<float, WINDOW_SIZE + 1> m_prices;        // Close prices
+    RingBuffer<float, WINDOW_SIZE + 1> m_highs;         // High prices
+    RingBuffer<float, WINDOW_SIZE + 1> m_lows;          // Low prices
+    RingBuffer<float, EXPANSION_WINDOW + 1> m_logRanges; // ln(High - Low) history
 
     // Helper: Simple Linear Regression (Y = a + bX)
     // Returns {slope, intercept}
