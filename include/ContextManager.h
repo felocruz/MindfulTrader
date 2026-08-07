@@ -127,6 +127,23 @@ struct FeatureScaler {
     static constexpr size_t N_DIMS = MTS::Schema::Contract::kObservationDim;
     static constexpr float ABSOLUTE_FLOOR = 1e-8f;              ///< Numerical safety floor (per-dim minimum)
     static constexpr float RELATIVE_FLOOR_FRACTION = 0.01f;     ///< 1% of burn-in median stddev per dim
+
+    /// Dim 11 (amihud_illiquidity): ABSOLUTE_FLOOR (1e-8) permanently zero-trapped
+    /// this dimension. Amihud = |log-return| / dollar-volume; on a liquid index
+    /// future its rolling MAD is ~1e-11 to 1e-10 -- two to three orders of
+    /// magnitude below the floor -- so madScale < minScaleFloor fired on every
+    /// single observation and the carry-forward death spiral (never leaving
+    /// hasValidScaled=false) returned 0.0f forever. Unlike DIM_LZ_INDEX/
+    /// DIM_RECURRENCE_INDEX/DIM_FRACTAL_INDEX below, Amihud's raw scale is NOT
+    /// instrument-invariant (it scales with an instrument's price level and
+    /// dollar volume, unlike those three bounded structural indices), so a
+    /// static center/scale would silently break if this study ever ran against
+    /// a different instrument -- lowering the floor instead preserves the
+    /// existing adaptive rolling median/MAD calibration for this dim, just lets
+    /// it actually clear the gate. See logs/rc_gemini.log CLAUDE_BRIEF_086/087
+    /// and GEMINI_BRIEF_087_RESPONSE for the full derivation.
+    static constexpr size_t DIM_AMIHUD_INDEX = 11;               ///< == OBS_AMIHUD_ILLIQUIDITY
+    static constexpr float AMIHUD_ABSOLUTE_FLOOR = 1e-16f;       ///< Negligible vs. ABSOLUTE_FLOOR; still divide-by-zero-safe
     static constexpr float LOG_BPS = 10000.0f;                  ///< Basis-point multiplier inside log transform
     static constexpr float LOG_EPS = 1e-8f;                     ///< Non-zero floor before log transform
     static constexpr float ENERGY_WINSOR_SIGMA = 6.0f;          ///< 6-sigma winsorization for energy channels
@@ -443,7 +460,8 @@ struct FeatureScaler {
                     bufScale = RobustLocation(buf).second;
                 }
             }
-            calibration[i].minScaleFloor = std::max(ABSOLUTE_FLOOR, bufScale * RELATIVE_FLOOR_FRACTION);
+            const float floorToUse = (i == DIM_AMIHUD_INDEX) ? AMIHUD_ABSOLUTE_FLOOR : ABSOLUTE_FLOOR;
+            calibration[i].minScaleFloor = std::max(floorToUse, bufScale * RELATIVE_FLOOR_FRACTION);
         }
         calibrated = true;
     }
@@ -465,7 +483,8 @@ struct FeatureScaler {
                     bufScale = RobustLocation(buf).second;
                 }
             }
-            const float newFloor = std::max(ABSOLUTE_FLOOR, bufScale * RELATIVE_FLOOR_FRACTION);
+            const float floorToUse = (i == DIM_AMIHUD_INDEX) ? AMIHUD_ABSOLUTE_FLOOR : ABSOLUTE_FLOOR;
+            const float newFloor = std::max(floorToUse, bufScale * RELATIVE_FLOOR_FRACTION);
             // EMA blend: 70% old + 30% new — conservative, prevents floor whiplash
             calibration[i].minScaleFloor = 0.7f * calibration[i].minScaleFloor + 0.3f * newFloor;
         }

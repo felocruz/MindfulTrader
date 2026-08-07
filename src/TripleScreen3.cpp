@@ -772,21 +772,6 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         obs->mutate_mean_rev_z(meanRevZ);
         obs->mutate_vol_convexity(volConvexity);       // Also Q1 for safety
         obs->mutate_micro_asymmetry(microAsymmetry);
-
-        // TEMPORARY DIAGNOSTIC (2026-08-06): tracing dim11 amihud_illiquidity
-        // zero-trap found in event_data_20260806_174401.context. Confirms
-        // whether the subgraph itself is ever nonzero, and whether the write
-        // sticks within this same tick. Remove once root cause is confirmed.
-        static uint64_t s_amihudDiagCount = 0;
-        ++s_amihudDiagCount;
-        if (s_amihudDiagCount <= 20 || (s_amihudDiagCount % 5000) == 0) {
-            Logger::getInstance().log(
-                "TS3 AmihudDiag index=" + std::to_string(sc.Index) +
-                " subgraphAmihud=" + std::to_string(amihud) +
-                " readBackAfterMutate=" + std::to_string(obs->amihud_illiquidity()) +
-                " count=" + std::to_string(s_amihudDiagCount)
-            );
-        }
     }
 
     // === Layer B: session-aware Amihud percentile sampling (once per closed 15-min bar) ===
