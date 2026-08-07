@@ -207,8 +207,10 @@ void DrawStudyHorizontalLine(SCStudyInterfaceRef sc, int LineNumber, float Value
                               COLORREF Color, int LineWidth, SubgraphLineStyles LineStyle);
 
 // DetectNR7 moved to include/IndicatorComputations.h (indicator-manager-dod-soa plan,
-// Task 8) — took only primitive arguments already, now an inline free function there,
-// alongside its now-ACSIL-independent NR7Enum.
+// Task 8), then deleted entirely (docs/superpowers/specs/2026-08-06-indicator-orphan-
+// cleanup-design.md) after confirming zero production callers -- TripleScreen3.cpp has
+// always had its own separate inline NR7 detection. NR7Enum itself remains live (real
+// production consumer via the NR7 indicator class).
 
 // ============================================================================
 // ELITE v2.5: 16D Observation Vector Calculation Pipeline

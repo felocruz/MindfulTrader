@@ -118,17 +118,15 @@ void TradeExecutionServer::UpdateMarketContext(SCStudyInterfaceRef sc) {
     m_marketContext.currencyValuePerTick = sc.CurrencyValuePerTick;
 
     // Get ATR from IndicatorManager (IntermediateMarketAction indicator)
-    auto intermAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
+    auto intermAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION);
     if (intermAction) {
         m_marketContext.atr = intermAction->atr();
     }
 
-    // Get swing highs/lows from IndicatorManager (ShortMarketAction indicator)
-    auto shortAction = IndicatorManager::Instance().GetIndicator<ShortMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
-    if (shortAction) {
-        m_marketContext.lastSwingHigh = shortAction->MaxHigh();
-        m_marketContext.lastSwingLow = shortAction->MinLow();
-    }
+    // Get swing highs/lows from IndicatorManager's decoupled short-term price extremes
+    // (docs/superpowers/specs/2026-08-06-indicator-orphan-cleanup-design.md §3.2)
+    m_marketContext.lastSwingHigh = IndicatorManager::Instance().GetMaxHigh();
+    m_marketContext.lastSwingLow = IndicatorManager::Instance().GetMinLow();
 }
 
 void TradeExecutionServer::Shutdown() {

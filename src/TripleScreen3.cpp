@@ -590,28 +590,19 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     // cross-study execution order.
     indMgr.UpdateDailyCache(sc);
 
-    // Update indicators with new high/low values
-    const auto shortPriceAction = indMgr.GetIndicator<ShortMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
-
     // Get cached previous day high/low from IndicatorManager (updated centrally in UpdateBarContext)
     const float prevDayHigh = indMgr.GetCachedPrevDayHigh();
     const float prevDayLow = indMgr.GetCachedPrevDayLow();
 
-    if (shortPriceAction) {
-        // Ensure sufficient historical data is available before accessing sc.High[sc.Index - 2], etc.
-        if (sc.Index >= 3) {
-            // Event-driven path: update every call using ONLY completed bars
-            // (sc.Index - 1, -2, -3), so values are stable intra-bar.
-            const float maxHigh = std::max({sc.High[sc.Index - 1], sc.High[sc.Index - 2], sc.High[sc.Index - 3]});
-            const float minLow = std::min({sc.Low[sc.Index - 1], sc.Low[sc.Index - 2], sc.Low[sc.Index - 3]});
+    // Ensure sufficient historical data is available before accessing sc.High[sc.Index - 2], etc.
+    if (sc.Index >= 3) {
+        // Event-driven path: update every call using ONLY completed bars
+        // (sc.Index - 1, -2, -3), so values are stable intra-bar.
+        const float maxHigh = std::max({sc.High[sc.Index - 1], sc.High[sc.Index - 2], sc.High[sc.Index - 3]});
+        const float minLow = std::min({sc.Low[sc.Index - 1], sc.Low[sc.Index - 2], sc.Low[sc.Index - 3]});
 
-            // Set previous bar high/low and 3-bar extremes
-            shortPriceAction->SetPriceValues(sc.Index, sc.High[sc.Index - 1],
-                                             sc.Low[sc.Index - 1], maxHigh, minLow);
-
-            // Set previous trading day's session high/low for training data export
-            shortPriceAction->SetPrevDayHighLow(prevDayHigh, prevDayLow);
-        }
+        // Set previous bar high/low and 3-bar extremes
+        indMgr.SetShortTermPriceExtremes(sc.High[sc.Index - 1], sc.Low[sc.Index - 1], maxHigh, minLow);
     }
 
     const auto structureTest = indMgr.GetIndicator<StructureTestIndicator>(IndicatorKey::STRUCTURE_TEST);
@@ -781,6 +772,21 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         obs->mutate_mean_rev_z(meanRevZ);
         obs->mutate_vol_convexity(volConvexity);       // Also Q1 for safety
         obs->mutate_micro_asymmetry(microAsymmetry);
+
+        // TEMPORARY DIAGNOSTIC (2026-08-06): tracing dim11 amihud_illiquidity
+        // zero-trap found in event_data_20260806_174401.context. Confirms
+        // whether the subgraph itself is ever nonzero, and whether the write
+        // sticks within this same tick. Remove once root cause is confirmed.
+        static uint64_t s_amihudDiagCount = 0;
+        ++s_amihudDiagCount;
+        if (s_amihudDiagCount <= 20 || (s_amihudDiagCount % 5000) == 0) {
+            Logger::getInstance().log(
+                "TS3 AmihudDiag index=" + std::to_string(sc.Index) +
+                " subgraphAmihud=" + std::to_string(amihud) +
+                " readBackAfterMutate=" + std::to_string(obs->amihud_illiquidity()) +
+                " count=" + std::to_string(s_amihudDiagCount)
+            );
+        }
     }
 
     // === Layer B: session-aware Amihud percentile sampling (once per closed 15-min bar) ===
@@ -1254,9 +1260,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         const float hurst = Subgraph_HurstExponent[signalBarIndex];
 
         // Export prior-window extremes to training data (used by Turtle Soup)
-        if (shortPriceAction) {
-            shortPriceAction->SetPrevFourBarExtremes(prevHighest, prevLowest);
-        }
+        indMgr.SetPrevFourBarExtremes(prevHighest, prevLowest);
 
         // Detect Turtle Soup pattern (Raw Sensor)
         float penetrationDistance = 0.0f;

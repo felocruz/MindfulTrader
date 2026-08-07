@@ -989,57 +989,6 @@ public:
     bool lowerRejected() const { return m_lowerRejected; }
 };
 
-class LongMarketAction : public Indicator<PriceActionEnum>
-{
-public:
-    LongMarketAction(IndicatorKey key_) : Indicator(key_, PriceActionEnum::NONE) { }
-};
-
-class ShortMarketAction : public Indicator<PriceActionEnum>
-{
-public:
-    ShortMarketAction(IndicatorKey key_);
-
-    // New method to set price values for ShortMarketAction
-    void SetPriceValues(int index, float high, float low, float maxHigh, float minLow);
-
-    // Set previous day and previous 4-bar extremes for training data export
-    void SetPrevDayHighLow(float prevDayHigh, float prevDayLow) {
-        m_priceData.prevDayHigh = prevDayHigh;
-        m_priceData.prevDayLow = prevDayLow;
-    }
-
-    void SetPrevFourBarExtremes(float prevFourBarHigh, float prevFourBarLow) {
-        m_priceData.prevFourBarHigh = prevFourBarHigh;
-        m_priceData.prevFourBarLow = prevFourBarLow;
-    }
-
-    int HighLowIndex() const { return m_priceData.highLowIndex; }
-    float PrevHigh() const { return m_priceData.prevHigh; }
-    float PrevLow() const { return m_priceData.prevLow; }
-    float MaxHigh() const { return m_priceData.maxHigh; }
-    float MinLow() const { return m_priceData.minLow; }
-    float PrevDayHigh() const { return m_priceData.prevDayHigh; }
-    float PrevDayLow() const { return m_priceData.prevDayLow; }
-    float PrevFourBarHigh() const { return m_priceData.prevFourBarHigh; }
-    float PrevFourBarLow() const { return m_priceData.prevFourBarLow; }
-
-private:
-    struct PriceData {
-        int highLowIndex = -1;
-        float prevHigh = 0.0f;          // Previous 15-min bar high (1 bar ago)
-        float prevLow = 0.0f;           // Previous 15-min bar low (1 bar ago)
-        float maxHigh = 0.0f;           // Max of last 3 bars
-        float minLow = 0.0f;            // Min of last 3 bars
-        float prevDayHigh = 0.0f;       // Previous trading day's session high (yesterday)
-        float prevDayLow = 0.0f;        // Previous trading day's session low (yesterday)
-        float prevFourBarHigh = 0.0f;   // Highest of previous 4 bars (Turtle Soup lookback)
-        float prevFourBarLow = 0.0f;    // Lowest of previous 4 bars (Turtle Soup lookback)
-    };
-    PriceData m_priceData;
-    int m_prevHighLowIndex = -1;
-};
-
 class FI13Signal : public Indicator<FI13Enum>
 {
 public:

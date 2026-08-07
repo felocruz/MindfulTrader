@@ -1,20 +1,20 @@
 # Indicator Dependency Validation Report
 
-**Date:** December 17, 2025  
-**Analysis Tool:** analyze_indicator_dependencies.py  
+**Date:** December 17, 2025
+**Analysis Tool:** analyze_indicator_dependencies.py
 **Purpose:** Verify indicator calculation dependencies across TripleScreen studies
 
 ## Executive Summary
 
-✅ **SUCCESS**: All indicator calculation dependencies are correctly ordered  
-✅ **Cross-study dependencies**: Properly handled by Sierra Chart execution order (Screen1 → Screen2 → Screen3)  
+✅ **SUCCESS**: All indicator calculation dependencies are correctly ordered
+✅ **Cross-study dependencies**: Properly handled by Sierra Chart execution order (Screen1 → Screen2 → Screen3)
 ✅ **No true violations found**: Only 1 false positive (commented-out TODO code)
 
 ## Sierra Chart Execution Order
 
 Studies execute in this order across charts:
 1. **TripleScreen1.cpp** (240-minute chart) - FIRST
-2. **TripleScreen2.cpp** (60-minute chart) - SECOND  
+2. **TripleScreen2.cpp** (60-minute chart) - SECOND
 3. **TripleScreen3.cpp** (15-minute chart) - THIRD
 4. **SCStudies.cpp** (data collection) - LAST
 
@@ -63,7 +63,6 @@ Validates that indicators are SET before READ within each study, or SET in earli
 | Impulse (INTERM_IMP) | TripleScreen2 | 118 |
 | IntermediateMarketAction | TripleScreen2 | 323 |
 | KangarooTail | TripleScreen3 | 399 |
-| LongMarketAction | TripleScreen1 | 111 |
 | Macd (LONG_MACD) | TripleScreen1 | 281 |
 | Macd (INTERM_MACD) | TripleScreen2 | 201 |
 | MACDDivergence (LONG) | TripleScreen1 | 299 |
@@ -104,8 +103,8 @@ These indicators are SET in earlier studies and READ in later studies - correctl
 
 ### 1. ADX Indicator (FALSE POSITIVE)
 
-**Location:** TripleScreen3.cpp:1099  
-**Issue:** `adxIndicator->Value()` appears to be read without being set  
+**Location:** TripleScreen3.cpp:1099
+**Issue:** `adxIndicator->Value()` appears to be read without being set
 **Resolution:** **FALSE POSITIVE** - This line is commented out (TODO item)
 
 ```cpp
@@ -147,9 +146,9 @@ All indicator dependencies are now documented in this report. Future changes sho
 
 ## Conclusion
 
-✅ **The system's indicator calculation flow is sound.**  
-✅ **All dependencies are correctly ordered.**  
-✅ **Cross-study dependencies properly leverage Sierra Chart's execution model.**  
+✅ **The system's indicator calculation flow is sound.**
+✅ **All dependencies are correctly ordered.**
+✅ **Cross-study dependencies properly leverage Sierra Chart's execution model.**
 
 The only "violation" found was a false positive from commented-out TODO code. The analysis confirms that indicators are calculated before they're used, ensuring data integrity and preventing undefined behavior.
 

@@ -737,7 +737,7 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
 
 
     // --- Fetch Indicators from Manager ---
-    auto intermMarketAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
+    auto intermMarketAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION);
 
     if (!intermMarketAction) [[unlikely]] {
         return RaschkeStrategySetup::NONE; // Cannot proceed without this data
@@ -2250,10 +2250,12 @@ MACDDivergenceEnum DetectElderMACDDivergence(
     return state.currentState;
 }
 
-// DetectKangarooTail/DetectTurtleSoup/DetectMomentumPinball/DetectElderBreakout/
-// DetectNR7 moved to include/IndicatorComputations.h (indicator-manager-dod-soa
-// plan, Task 8) — they took only primitive arguments already, so they're now
-// inline free functions there, alongside their now-ACSIL-independent enums.
+// DetectKangarooTail/DetectTurtleSoup/DetectMomentumPinball/DetectElderBreakout
+// moved to include/IndicatorComputations.h (indicator-manager-dod-soa plan, Task 8)
+// — they took only primitive arguments already, so they're now inline free
+// functions there, alongside their now-ACSIL-independent enums. DetectNR7 was
+// moved there too, then deleted entirely (docs/superpowers/specs/2026-08-06-
+// indicator-orphan-cleanup-design.md) after confirming zero production callers.
 
 // ============================================================================
 // ELITE v2.5: 16D Observation Vector Calculation Pipeline Implementation

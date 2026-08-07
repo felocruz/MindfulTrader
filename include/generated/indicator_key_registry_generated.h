@@ -10,7 +10,7 @@ struct IndicatorKeyRegistryRow {
     unsigned int key_value;
 };
 
-inline constexpr std::array<IndicatorKeyRegistryRow, 41> kIndicatorKeyRegistryRows = {{
+inline constexpr std::array<IndicatorKeyRegistryRow, 42> kIndicatorKeyRegistryRows = {{
     {"LONG_MACD", 1},
     {"LONG_FI13_SIGNAL", 2},
     {"LONG_MACD_DIVERGENCE", 3},
@@ -36,6 +36,7 @@ inline constexpr std::array<IndicatorKeyRegistryRow, 41> kIndicatorKeyRegistryRo
     {"ELDER_BREAKOUT", 24},
     {"NR7", 25},
     {"SHORT_MKT_ACTION", 20},
+    {"INTERM_MKT_ACTION", 54},
     {"OSCILLATOR_310", 26},
     {"VWAP", 53},
     {"SIDE", 27},
@@ -59,7 +60,7 @@ inline constexpr std::size_t kIndicatorKeyRegistryRowCount = kIndicatorKeyRegist
 inline constexpr std::array<unsigned int, kIndicatorKeyRegistryRowCount> kIndicatorKeyRegistryValues = {{
     1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
     21, 22, 23, 24, 25, 20, 26, 53, 27, 28, 29, 31, 34, 35, 45, 46,
-    47, 48, 49, 50, 51, 52,
+    47, 48, 49, 50, 51, 52, 54,
 }};
 
 constexpr bool IndicatorRegistryHasUniqueValues() {

@@ -29,11 +29,68 @@ An early pass classified `MARKET_CLIMATE`, `HMM_STATE`, `SIDE`, `MARKET_SYMBOL`,
 
 ### 3.1 `LONG_MKT_ACTION` — delete
 
+> **Status: DONE (2026-08-07).** `LongMarketAction` class deleted from `Indicator.h`;
+> `IndicatorStore` member and explicit-template-instantiation removed from
+> `IndicatorManager.h`/`IndicatorManager.cpp`; write call site removed from
+> `TripleScreen1.cpp`. **Correction**: an initial verification pass here claimed this
+> was "clean and complete" based on the diff's shown hunks alone — that was wrong. The
+> `m_indicators[LONG_MKT_ACTION] = &m_store.long_mkt_action;` registration line in the
+> constructor was never touched by the original edit and left the codebase in a
+> non-compiling state (referencing a deleted member) until caught by a compiler
+> diagnostic during the next piece of work and fixed directly. Lesson: check every
+> reference by grep, not just the hunks a diff happens to show. The now-orphaned
+> `GetPriceActionEnum()` free function (its
+> forward declaration and definition) was also removed — not explicitly called out in
+> this spec, but confirmed by grep to have zero remaining callers, so it was correct to
+> take with it. `IndicatorKey::LONG_MKT_ACTION`'s enum slot was correctly left in place
+> (no renumbering), matching this spec's design. `IndicatorLayout.h`'s comment was
+> updated to drop the "LongMarketAction/" prefix on the now-`ShortMarketAction`-only
+> `NotPacked` row comment. Clean, complete, matches this section's resolution exactly.
+
 **Finding:** `LongMarketAction::Update(GetPriceActionEnum(...))` is called every tick from `TripleScreen1.cpp:301`. Confirmed zero readers: not in `EventSerializer.cpp`, not in `PopulateIndicatorState`/`GetTrainingEventT`, not in `PositionManager.cpp`/`RiskManager.cpp`/`ContextManager.cpp`, not in the wire schema (`IndicatorLayout.h`'s own audit comment: *"the enum value is computed but never serialized anywhere"*), and the generated binding-policy row confirms `has_live_writer=false, has_training_writer=false`.
 
 **Resolution:** Delete the `LongMarketAction` class (`include/Indicator.h`), its `IndicatorStore` member and `m_indicators[]` registration (`include/IndicatorManager.h`, `src/IndicatorManager.cpp`), and the write call site (`src/TripleScreen1.cpp:301-302`). Same precedent as Task 15 of the DOD/SoA plan (4 orphan classes deleted for the same reason).
 
 ### 3.2 `SHORT_MKT_ACTION` — extract live companion values, then delete
+
+> **Status: DONE (2026-08-07).** Extraction found **six** genuinely-live companion
+> values, not four — the finding below missed `MaxHigh()`/`MinLow()`, read from
+> `TradeExecutionServer.cpp:129-130` into `m_marketContext.lastSwingHigh`/
+> `lastSwingLow`. All six (`PrevHigh`, `PrevLow`, `MaxHigh`, `MinLow`,
+> `PrevFourBarHigh`, `PrevFourBarLow`) were extracted into a new plain
+> `IndicatorManager::ShortTermPriceExtremes` struct (member `m_shortTermExtremes`),
+> decoupled from any `IndicatorKey`, mirroring the existing `DailyCache`/
+> `m_dailyCache` pattern already on `IndicatorManager`. Two further values were
+> confirmed dead and dropped rather than carried forward: `PrevDayHigh()`/
+> `PrevDayLow()` (fed by `SetPrevDayHighLow()`, called from `TripleScreen3.cpp`, but
+> never read anywhere — the real prev-day high/low path is `IndicatorManager`'s own
+> `m_dailyCache`/`GetCachedPrevDayHigh()`/`GetCachedPrevDayLow()`, confirmed by
+> `GetTickCompanionValues()`'s own code, entirely separate from `ShortMarketAction`)
+> and `HighLowIndex()`/`m_prevHighLowIndex` (write-only internal bookkeeping, zero
+> readers). The `ShortMarketAction` class, its `IndicatorStore` member, its
+> `m_indicators[]` registration, its explicit template instantiation, and the dead
+> `ShortMktAction()` convenience accessor (also confirmed zero callers) were then
+> deleted. `IndicatorKey::SHORT_MKT_ACTION`'s enum slot was left in place (no
+> renumbering, matching `LONG_MKT_ACTION`'s precedent) — `m_indicators[SHORT_MKT_ACTION]`
+> is now permanently null, and `CheckTrigger`'s switch case / the WS-04 runtime-
+> registration list / `IndicatorLayout.h`'s `NotPacked` row / `regenerate_schema.sh`'s
+> three embedded tables were all left untouched, since the enum value itself still
+> exists. Call sites updated: `TripleScreen3.cpp` (two write sites, now calling
+> `IndicatorManager::SetShortTermPriceExtremes()`/`SetPrevFourBarExtremes()` directly
+> instead of going through `GetIndicator<ShortMarketAction>()`), `TradeExecutionServer.cpp`
+> (now calls `GetMaxHigh()`/`GetMinLow()` directly), and `IndicatorManager.cpp`'s
+> `GetTickCompanionValues()` (reads `m_shortTermExtremes` directly instead of
+> `m_store.short_mkt_action`). `./build_dll.sh` succeeded and all 9 standalone unit
+> tests pass with 0 failures both before and after this change.
+>
+> This extraction was triggered by, and completed as part of, a broader fix for a
+> separate, more serious bug found while beginning this work: `IntermediateMarketAction`
+> and `ShortMarketAction` were sharing the same `IndicatorKey::SHORT_MKT_ACTION` storage
+> slot via `GetIndicator<T>()`'s unchecked `static_cast`, silently corrupting each
+> other's state every TS2 tick. `IntermediateMarketAction` was given its own dedicated
+> `IndicatorKey::INTERM_MKT_ACTION` first (a repo-wide audit confirmed this was the only
+> such type-confusion instance), which is what decoupled `SHORT_MKT_ACTION`'s storage
+> enough to safely proceed with this section's extraction.
 
 **Finding:** `ShortMarketAction::Update(GetPriceActionEnum(...))`'s own classification value has the same dead-value shape as `LONG_MKT_ACTION` — confirmed via the same binding-policy row (`WireClass::non_wire_internal, FieldSink::none, has_live_writer=false, has_training_writer=false`). But the same C++ object (`m_store.short_mkt_action`) is reused as the storage location for four unrelated, genuinely live values:
 

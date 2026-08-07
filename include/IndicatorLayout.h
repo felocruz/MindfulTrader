@@ -122,13 +122,29 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     { IndicatorKey::UNKNOWN,          StorageBlock::NotPacked, 0 },
 
     // -- NotPacked: no live IndicatorState field exists for this key at all.
-    //    LongMarketAction/ShortMarketAction (Indicator.h:1221-1270) have no
-    //    AddToTrainingEventFB override and no matching struct field anywhere;
-    //    base-class dispatch falls through MapIndicatorKeyToTrainingEvent's
-    //    switch default:break — the enum value is computed but never
-    //    serialized anywhere. --
-    { IndicatorKey::LONG_MKT_ACTION,  StorageBlock::NotPacked, 0 },
+    //    ShortMarketAction's own PriceActionEnum classification had no
+    //    AddToTrainingEventFB override and no matching struct field anywhere —
+    //    the enum value was computed but never serialized anywhere. The class
+    //    itself has since been deleted (docs/superpowers/specs/2026-08-06-
+    //    indicator-orphan-cleanup-design.md §3.2); its genuinely-live companion
+    //    values (prev-high/low, 3-bar max/min, prior-window 4-bar extremes) were
+    //    extracted into IndicatorManager's own m_shortTermExtremes, decoupled
+    //    from this key. m_indicators[SHORT_MKT_ACTION] is now permanently null;
+    //    the enum slot itself is left in place (no renumbering), matching
+    //    LONG_MKT_ACTION's precedent. --
     { IndicatorKey::SHORT_MKT_ACTION, StorageBlock::NotPacked, 0 },
+
+    // -- NotPacked: IntermediateMarketAction is a pure execution-side helper
+    //    (TS2 EMA/Keltner-channel/swing-high-low tracking, consumed by
+    //    PositionManager/TradeExecutionServer for ATR and structural target
+    //    levels) — never serialized to Python. Given its own dedicated key
+    //    2026-08-07 after discovering it had been incorrectly sharing
+    //    SHORT_MKT_ACTION's storage via a naive GetIndicator<T>() static_cast
+    //    onto a completely different, incompatible object (ShortMarketAction) --
+    //    both reading garbage and silently corrupting ShortMarketAction's real
+    //    prev-high/low companion values on every TS2 tick. See
+    //    docs/superpowers/specs/2026-08-06-indicator-orphan-cleanup-design.md. --
+    { IndicatorKey::INTERM_MKT_ACTION, StorageBlock::NotPacked, 0 },
 
     // -- NotPacked: real fields, but on TrainingEvent's TOP LEVEL
     //    (../schema/mts_schema.fbs:990-992), not on the nested IndicatorState
@@ -153,9 +169,10 @@ inline constexpr std::array<IndicatorDescriptor, 62> kIndicatorLayout = {{
     //    day-low/4-bar-high/4-bar-low values are served through two entirely
     //    separate mechanisms instead: (a) IndicatorManager's own
     //    m_dailyCache / GetCachedPrevDayHigh()-style plain getters
-    //    (IndicatorManager.h:35,60-61,201-210), and (b) ShortMarketAction's own
-    //    internal PriceData struct (Indicator.h:1246-1268, filled from
-    //    TripleScreen3), keyed to SHORT_MKT_ACTION — not to these six keys. --
+    //    (IndicatorManager.h:35,60-61,201-210), and (b) IndicatorManager's own
+    //    m_shortTermExtremes struct (filled from TripleScreen3, decoupled from
+    //    any IndicatorKey since the 2026-08-06-indicator-orphan-cleanup-design.md
+    //    §3.2 extraction) — not tied to these six keys. --
     { IndicatorKey::PREV_HIGH_KEY,          StorageBlock::NotPacked, 0 },
     { IndicatorKey::PREV_LOW_KEY,           StorageBlock::NotPacked, 0 },
     { IndicatorKey::PREV_DAY_HIGH_KEY,      StorageBlock::NotPacked, 0 },

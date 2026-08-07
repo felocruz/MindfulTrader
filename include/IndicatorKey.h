@@ -65,5 +65,14 @@ enum class IndicatorKey : uint8_t {
     CORR_ES_DX_DELTA = 51,
     CORR_ES_DX_ACCEL = 52,
     VWAP = 53,
-    MAX_INDICATORS = 54
+    // Own key for IntermediateMarketAction (2026-08-07): was incorrectly sharing
+    // SHORT_MKT_ACTION's storage via GetIndicator<IntermediateMarketAction>(SHORT_MKT_ACTION)
+    // -- a naive static_cast<T*> onto a ShortMarketAction* (completely different,
+    // incompatible layout). Both read (garbage EMA/swing values) and write
+    // (TripleScreen2.cpp's setters silently corrupting ShortMarketAction's real
+    // prevHigh/prevLow/prevDayHigh/prevDayLow/prevFourBarHigh/prevFourBarLow --
+    // fields that reach Python) were affected. See docs/superpowers/specs/
+    // 2026-08-06-indicator-orphan-cleanup-design.md for the discovery.
+    INTERM_MKT_ACTION = 54,
+    MAX_INDICATORS = 55
 };

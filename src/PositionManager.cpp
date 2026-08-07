@@ -231,7 +231,7 @@ void PositionManager::Update(SCStudyInterfaceRef sc) {
         m_exitSubmittedThisTick = false;
         UpdateAttachedOrders(sc);
 
-        auto intermPriceAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
+        auto intermPriceAction = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION);
         if (intermPriceAction)
             m_openTrade.SetChannel(intermPriceAction->Channel());
 
@@ -372,7 +372,7 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
             const double tbDofScale = tbHmm ? tbHmm->DofStopScale() : 1.5;
 
             float tbSwingHigh = 0.0f, tbSwingLow = 0.0f;
-            if (auto tbIma = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION)) {
+            if (auto tbIma = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION)) {
                 tbSwingHigh = tbIma->swingHigh();
                 tbSwingLow  = tbIma->swingLow();
             }
@@ -1463,7 +1463,7 @@ tbe::BarrierInputs BuildBarrierInputs(SCStudyInterfaceRef sc,
     const double dofScale = hmm ? hmm->DofStopScale() : 1.5;
 
     float swingHigh = 0.0f, swingLow = 0.0f;
-    if (auto ima = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION)) {
+    if (auto ima = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION)) {
         swingHigh = ima->swingHigh();
         swingLow  = ima->swingLow();
     }
@@ -1949,7 +1949,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     bool structEntryIntoResistance = false;
     bool structEntryAtSupport = false;
     {
-        auto ima = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
+        auto ima = IndicatorManager::Instance().GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION);
         if (ima) {
             const float swHigh = ima->swingHigh();
             const float swLow  = ima->swingLow();

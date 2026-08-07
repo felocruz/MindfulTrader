@@ -295,27 +295,6 @@ void IntermediateMarketAction::setKeltnerRejection(bool upperRejected, bool lowe
 }
 
 //
-// ShortMarketAction
-//
-
-ShortMarketAction::ShortMarketAction(IndicatorKey key_)
-    : Indicator(key_, PriceActionEnum::NONE)
-{
-}
-
-void ShortMarketAction::SetPriceValues(int index, float high, float low, float maxHigh, float minLow)
-{
-    // Update the current index and high/low values
-    m_prevHighLowIndex = m_priceData.highLowIndex;
-
-    m_priceData.highLowIndex = index - 1; // Store data for the just-closed bar
-    m_priceData.prevHigh = high; // This is sc.High[index - 1] from caller
-    m_priceData.prevLow = low;   // This is sc.Low[index - 1] from caller
-    m_priceData.maxHigh = maxHigh;
-    m_priceData.minLow = minLow;
-}
-
-//
 // PriceMetricsIndicator
 //
 void PriceMetricsIndicator::SetOHLC(float open, float high, float low, float close) {

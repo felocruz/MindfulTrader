@@ -29,9 +29,9 @@ struct IndicatorBindingPolicyRow {
     bool has_training_writer;
 };
 
-inline constexpr std::size_t kExpectedManagedIndicatorKeyCount = 41;
+inline constexpr std::size_t kExpectedManagedIndicatorKeyCount = 42;
 inline constexpr std::size_t kExpectedSharedWireCount = 37;
-inline constexpr std::size_t kExpectedNonWireInternalCount = 4;
+inline constexpr std::size_t kExpectedNonWireInternalCount = 5;
 
 inline constexpr std::array<const char*, kExpectedManagedIndicatorKeyCount> kExpectedManagedIndicatorKeys = {
     "LONG_MACD",
@@ -59,6 +59,7 @@ inline constexpr std::array<const char*, kExpectedManagedIndicatorKeyCount> kExp
     "ELDER_BREAKOUT",
     "NR7",
     "SHORT_MKT_ACTION",
+    "INTERM_MKT_ACTION",
     "OSCILLATOR_310",
     "VWAP",
     "SIDE",
@@ -103,6 +104,7 @@ inline constexpr std::array<IndicatorBindingPolicyRow, kExpectedManagedIndicator
     {"ELDER_BREAKOUT", WireClass::shared_wire, FieldSink::indicator_state, "int8 enum", true, true},
     {"NR7", WireClass::shared_wire, FieldSink::indicator_state, "int8 enum", true, true},
     {"SHORT_MKT_ACTION", WireClass::non_wire_internal, FieldSink::none, "special", false, false},
+    {"INTERM_MKT_ACTION", WireClass::non_wire_internal, FieldSink::none, "special", false, false},
     {"OSCILLATOR_310", WireClass::shared_wire, FieldSink::indicator_state, "int8 enum", true, true},
     {"VWAP", WireClass::non_wire_internal, FieldSink::none, "special", false, false},
     {"SIDE", WireClass::shared_wire, FieldSink::event_root_and_training_root, "int8 enum", true, true},
@@ -203,7 +205,7 @@ constexpr bool HasAllExpectedKeys() {
 }
 
 inline constexpr char kIndicatorBindingPolicySchemaSha256[] = "30c58e2d717126963127d56cfd39d938a0453966c960af8c025d67f7817d8c31";
-inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-08-04T09:08:37Z";
+inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-08-07T12:04:40Z";
 
 static_assert(kIndicatorBindingPolicyRowCount == kExpectedManagedIndicatorKeyCount,
               "Indicator binding policy row count drifted from expected managed IndicatorKey count");

@@ -64,6 +64,29 @@ public:
     float GetCachedValueAreaHigh() const { return m_dailyCache.valueAreaHigh; }
     float GetCachedValueAreaLow() const { return m_dailyCache.valueAreaLow; }
 
+    // Short-term price extremes: previous completed 15-min bar high/low, 3-bar
+    // max/min swing extremes, and prior 20-bar-window Turtle Soup lookback extremes.
+    // Extracted from ShortMarketAction (docs/superpowers/specs/2026-08-06-indicator-
+    // orphan-cleanup-design.md §3.2): that class's own PriceActionEnum classification
+    // was dead (no live/training writer), but its object doubled as storage for these
+    // six genuinely-live values. Not tied to any IndicatorKey.
+    void SetShortTermPriceExtremes(float prevHigh, float prevLow, float maxHigh, float minLow) {
+        m_shortTermExtremes.prevHigh = prevHigh;
+        m_shortTermExtremes.prevLow = prevLow;
+        m_shortTermExtremes.maxHigh = maxHigh;
+        m_shortTermExtremes.minLow = minLow;
+    }
+    void SetPrevFourBarExtremes(float prevFourBarHigh, float prevFourBarLow) {
+        m_shortTermExtremes.prevFourBarHigh = prevFourBarHigh;
+        m_shortTermExtremes.prevFourBarLow = prevFourBarLow;
+    }
+    float GetPrevHigh() const { return m_shortTermExtremes.prevHigh; }
+    float GetPrevLow() const { return m_shortTermExtremes.prevLow; }
+    float GetMaxHigh() const { return m_shortTermExtremes.maxHigh; }
+    float GetMinLow() const { return m_shortTermExtremes.minLow; }
+    float GetPrevFourBarHigh() const { return m_shortTermExtremes.prevFourBarHigh; }
+    float GetPrevFourBarLow() const { return m_shortTermExtremes.prevFourBarLow; }
+
     /// Train/live parity gate (docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md
     /// final-review fix wave): the real Volume Profile Value Area must stay OFF by default
     /// because the currently-deployed HMM was fitted on the old proxy's semantics. Only the
@@ -74,9 +97,6 @@ public:
     // ...existing code...
     Oscillator310* Oscillator310Ptr() const {
         return static_cast<Oscillator310*>(m_indicators[static_cast<size_t>(IndicatorKey::OSCILLATOR_310)]);
-    }
-    ShortMarketAction* ShortMktAction() const {
-        return static_cast<ShortMarketAction*>(m_indicators[static_cast<size_t>(IndicatorKey::SHORT_MKT_ACTION)]);
     }
     StructureTestIndicator* StructureTest() const {
         return static_cast<StructureTestIndicator*>(m_indicators[static_cast<size_t>(IndicatorKey::STRUCTURE_TEST)]);
@@ -227,7 +247,6 @@ private:
         FI13Signal long_fi13{IndicatorKey::LONG_FI13_SIGNAL};
         MACDDivergence long_macd_div{IndicatorKey::LONG_MACD_DIVERGENCE};
         Impulse long_imp{IndicatorKey::LONG_IMP};
-        LongMarketAction long_mkt_action{IndicatorKey::LONG_MKT_ACTION};
 
         // Screen 2
         Stochastic interm_stochastic{IndicatorKey::INTERM_STOCHASTIC};
@@ -252,7 +271,9 @@ private:
         MomentumPinball momentum_pinball{IndicatorKey::MOMENTUM_PINBALL};
         ElderBreakout elder_breakout{IndicatorKey::ELDER_BREAKOUT};
         NR7 nr7{IndicatorKey::NR7};
-        ShortMarketAction short_mkt_action{IndicatorKey::SHORT_MKT_ACTION};
+        // Own object/key -- previously wrongly aliased onto ShortMarketAction's
+        // storage via GetIndicator<IntermediateMarketAction>(SHORT_MKT_ACTION).
+        IntermediateMarketAction interm_mkt_action{IndicatorKey::INTERM_MKT_ACTION};
         Oscillator310 oscillator_310{IndicatorKey::OSCILLATOR_310};
 
         // Metadata & State
@@ -299,6 +320,26 @@ private:
     bool m_realVolumeProfileDailyBiasEnabled = false;
     bool m_dailyCacheInitialized = false;
     bool m_dailyAnchorZeroWarningLogged = false;
+
+    // Short-term price extremes -- decoupled companion storage extracted from
+    // ShortMarketAction (docs/superpowers/specs/2026-08-06-indicator-orphan-cleanup-
+    // design.md §3.2): that class's own PriceActionEnum classification was dead (no
+    // live/training writer), but its object doubled as storage for these six
+    // genuinely-live values (Event schema prev_high/prev_low/prev_four_bar_high/
+    // prev_four_bar_low, TradeExecutionServer's swing-high/low market context).
+    // Not tied to any IndicatorKey. All six fields are written exclusively from
+    // TripleScreen3.cpp (TS3, the 15-minute chart) -- this is TS3-only data, not a
+    // cross-timeframe aggregate.
+    struct ShortTermPriceExtremes {
+        float prevHigh = 0.0f;         // Previous completed 15-min bar high
+        float prevLow = 0.0f;          // Previous completed 15-min bar low
+        float maxHigh = 0.0f;          // Max of last 3 completed 15-min bars (swing-high proxy)
+        float minLow = 0.0f;           // Min of last 3 completed 15-min bars (swing-low proxy)
+        float prevFourBarHigh = 0.0f;  // Highest of prior 20-bar (15-min) window (Turtle Soup lookback)
+        float prevFourBarLow = 0.0f;   // Lowest of prior 20-bar (15-min) window (Turtle Soup lookback)
+    };
+
+    ShortTermPriceExtremes m_shortTermExtremes;
 
     // m_regimeTenure, m_lastHmmState → InferenceManager (Mar 2026)
 

@@ -107,6 +107,7 @@ namespace {
             static_cast<unsigned int>(IndicatorKey::CORR_ES_ZN_ACCEL),
             static_cast<unsigned int>(IndicatorKey::CORR_ES_DX_DELTA),
             static_cast<unsigned int>(IndicatorKey::CORR_ES_DX_ACCEL),
+            static_cast<unsigned int>(IndicatorKey::INTERM_MKT_ACTION),
         }};
 
     static_assert(ArraysEqual(kRuntimeRegisteredIndicatorKeyValues,
@@ -221,7 +222,6 @@ IndicatorManager::IndicatorManager()
     m_indicators[static_cast<size_t>(IndicatorKey::LONG_IMP)] = &m_store.long_imp;
     m_store.long_imp.SetPackedSlotPointer(m_packed.RawI8Pointer(3));
     m_store.long_imp.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(3));
-    m_indicators[static_cast<size_t>(IndicatorKey::LONG_MKT_ACTION)] = &m_store.long_mkt_action;
 
     // Screen 2
     m_indicators[static_cast<size_t>(IndicatorKey::INTERM_STOCHASTIC)] = &m_store.interm_stochastic;
@@ -301,7 +301,11 @@ IndicatorManager::IndicatorManager()
     m_store.nr7.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(22));
     m_store.nr7.SetPackedSlotPointer(m_packed.RawF32Pointer(4));
 
-    m_indicators[static_cast<size_t>(IndicatorKey::SHORT_MKT_ACTION)] = &m_store.short_mkt_action;
+    // IndicatorKey::SHORT_MKT_ACTION has no live IndicatorStore member -- ShortMarketAction
+    // was deleted (docs/superpowers/specs/2026-08-06-indicator-orphan-cleanup-design.md
+    // §3.2); its live companion values now live in m_shortTermExtremes, decoupled from any
+    // IndicatorKey. m_indicators[SHORT_MKT_ACTION] is intentionally left null.
+    m_indicators[static_cast<size_t>(IndicatorKey::INTERM_MKT_ACTION)] = &m_store.interm_mkt_action;
     m_indicators[static_cast<size_t>(IndicatorKey::OSCILLATOR_310)] = &m_store.oscillator_310;
     m_store.oscillator_310.SetPackedSlotPointer(m_packed.RawI8Pointer(24));
     m_store.oscillator_310.SetPackedPrevSlotPointer(m_packed.RawPrevI8Pointer(24));
@@ -453,6 +457,7 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
             return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), NR7Enum::NONE);
         }
         case IndicatorKey::SHORT_MKT_ACTION: return false;
+        case IndicatorKey::INTERM_MKT_ACTION: return false;
         case IndicatorKey::OSCILLATOR_310: return false;
 
         // Metadata & State
@@ -704,14 +709,14 @@ TickCompanionValues IndicatorManager::GetTickCompanionValues() const {
     companions.nhNlDaily = m_store.nh_nl_signal.GetDailyValue();
     // IMPORTANT semantic split (mirrors EventSerializer::SnapshotContext's
     // comment): prevHigh/prevLow = previous completed 15-minute bar extremes
-    // (ShortMarketAction); prevDayHigh/prevDayLow = previous trading day
+    // (m_shortTermExtremes); prevDayHigh/prevDayLow = previous trading day
     // session extremes (IndicatorManager's own daily cache).
-    companions.prevHigh = m_store.short_mkt_action.PrevHigh();
-    companions.prevLow = m_store.short_mkt_action.PrevLow();
+    companions.prevHigh = m_shortTermExtremes.prevHigh;
+    companions.prevLow = m_shortTermExtremes.prevLow;
     companions.prevDayHigh = GetCachedPrevDayHigh();
     companions.prevDayLow = GetCachedPrevDayLow();
-    companions.prevFourBarHigh = m_store.short_mkt_action.PrevFourBarHigh();
-    companions.prevFourBarLow = m_store.short_mkt_action.PrevFourBarLow();
+    companions.prevFourBarHigh = m_shortTermExtremes.prevFourBarHigh;
+    companions.prevFourBarLow = m_shortTermExtremes.prevFourBarLow;
     companions.closePercentile = m_store.price_metrics.GetClosePercentile();
     companions.volumeRatioPercent = m_store.volume.GetVolumeRatio();
     companions.volumeImbalance = m_store.volume.GetVolumeImbalance();
@@ -1473,8 +1478,6 @@ template FI13Signal* IndicatorManager::GetIndicator<FI13Signal>(IndicatorKey key
 template FI2Signal* IndicatorManager::GetIndicator<FI2Signal>(IndicatorKey key) const;
 template Side* IndicatorManager::GetIndicator<Side>(IndicatorKey key) const;
 template IntermediateMarketAction* IndicatorManager::GetIndicator<IntermediateMarketAction>(IndicatorKey key) const;
-template LongMarketAction* IndicatorManager::GetIndicator<LongMarketAction>(IndicatorKey key) const;
-template ShortMarketAction* IndicatorManager::GetIndicator<ShortMarketAction>(IndicatorKey key) const;
 template RaschkeStrategyIndicator* IndicatorManager::GetIndicator<RaschkeStrategyIndicator>(IndicatorKey key) const;
 template RaschkeTacticalIndicator* IndicatorManager::GetIndicator<RaschkeTacticalIndicator>(IndicatorKey key) const;
 template RSIIndicator* IndicatorManager::GetIndicator<RSIIndicator>(IndicatorKey key) const;

@@ -300,7 +300,8 @@ bool Scoring::IsIndicatorEventSignificant(IndicatorKey indicatorKey, const Local
 
         // Suppress generic market action chatter
         if (indicatorKey == IndicatorKey::LONG_MKT_ACTION ||
-            indicatorKey == IndicatorKey::SHORT_MKT_ACTION) {
+            indicatorKey == IndicatorKey::SHORT_MKT_ACTION ||
+            indicatorKey == IndicatorKey::INTERM_MKT_ACTION) {
             return false;
         }
     }

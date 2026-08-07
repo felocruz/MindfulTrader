@@ -272,7 +272,7 @@ int main() {
                                      /*prevFastLine=*/1.0f, /*prevSlowLine=*/0.5f) == Oscillator310CrossEnum::NEUTRAL);
 
     std::printf("\nIndicatorComputations (KangarooTail/TurtleSoup/MomentumPinball/"
-                "ElderBreakout/NR7) tests\n");
+                "ElderBreakout) tests\n");
 
     // --- DetectKangarooTail --------------------------------------------
     {
@@ -381,36 +381,6 @@ int main() {
             100.0f, 105.0f, 95.0f, 1.0f, 0.5f, 100.0, 100.0, 0, false,
             dist, hurstOut, volSpike, consolOut, gapOut, quality);
         check("elder_breakout_none_when_inside_bands", e == ElderBreakoutEnum::NONE);
-    }
-
-    // --- DetectNR7 ---------------------------------------------------------
-    {
-        // Current range (1.0) narrower than all of the last 7 bars' ranges
-        // (avg 2.0) -> narrowest, percentile 0.5 -> EXTREME tier (<0.80).
-        std::vector<float> ranges(7, 2.0f);
-        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
-        NR7Enum e = DetectNR7(/*currentHigh=*/101.0f, /*currentLow=*/100.0f, ranges,
-                                /*volume=*/100.0, /*avgVolume=*/100.0,
-                                /*consolidationBars=*/2,
-                                curRange, avgRange, pct, volSpike, quality);
-        check("nr7_extreme_on_deep_compression", e == NR7Enum::EXTREME);
-        check("nr7_quality_in_range", quality > 0.0f && quality <= 1.0f);
-    }
-    {
-        // Current range NOT narrowest (some prior bar was tighter) -> NONE.
-        std::vector<float> ranges = {0.5f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f, 2.0f};
-        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
-        NR7Enum e = DetectNR7(101.0f, 100.0f, ranges, 100.0, 100.0, 2,
-                                curRange, avgRange, pct, volSpike, quality);
-        check("nr7_none_when_not_narrowest", e == NR7Enum::NONE);
-    }
-    {
-        // Fewer than 7 range samples -> NONE (insufficient lookback).
-        std::vector<float> ranges = {1.0f, 1.0f, 1.0f};
-        float curRange = 0.0f, avgRange = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
-        NR7Enum e = DetectNR7(101.0f, 100.0f, ranges, 100.0, 100.0, 2,
-                                curRange, avgRange, pct, volSpike, quality);
-        check("nr7_none_when_insufficient_lookback", e == NR7Enum::NONE);
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",

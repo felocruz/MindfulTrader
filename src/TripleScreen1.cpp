@@ -4,7 +4,6 @@
 // Helper function prototypes
 EmaEnum GetEmaEnum(float ema, float prevEma);
 FI13Enum GetFI_13(float force, float prevForce, float ema_delta, float low_delta, float high_delta, float forceStdDev);
-PriceActionEnum GetPriceActionEnum(float last, float ema);
 
 namespace {
 enum class NhNlLogMode : int {
@@ -297,9 +296,6 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
     // Update indicators with new impulse value (v5.2: pass macdDiff + ATR for derived metrics)
     auto longImpulse = indMgr.GetIndicator<Impulse>(IndicatorKey::LONG_IMP);
     if (longImpulse) longImpulse->SetFromColor(Subgraph_ColorBar.DataColor[sc.Index], Subgraph_ColorBar.DataColor[sc.Index - 1], maDiff, macdDiff, Subgraph_ATR[sc.Index]);
-
-    auto longPriceAction = indMgr.GetIndicator<LongMarketAction>(IndicatorKey::LONG_MKT_ACTION);
-    if (longPriceAction) longPriceAction->Update(GetPriceActionEnum(sc.Close[sc.Index], Subgraph_ImpulseEMA[sc.Index]));
 
     // Calculate and update market regime (240-min timeframe)
     // Event-driven: update on every tick so downstream HMM consumers always
@@ -948,15 +944,4 @@ FI13Enum GetFI_13(float force, float prevForce, float ema_delta, float low_delta
     }
 
     return newValue;
-}
-
-PriceActionEnum GetPriceActionEnum(float last, float ema) {
-    PriceActionEnum mktAction = PriceActionEnum::IN_VALUE_ZONE;
-
-    if (last > ema)
-        mktAction = PriceActionEnum::ABOVE_VALUE;
-    else if (last < ema)
-        mktAction = PriceActionEnum::BELOW_VALUE;
-
-    return mktAction;
 }

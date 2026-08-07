@@ -793,7 +793,7 @@ SCSFExport scsf_Screen2_KeltnerChannel(SCStudyInterfaceRef sc)
 
     }
 
-    auto intermPriceAction = indMgr.GetIndicator<IntermediateMarketAction>(IndicatorKey::SHORT_MKT_ACTION);
+    auto intermPriceAction = indMgr.GetIndicator<IntermediateMarketAction>(IndicatorKey::INTERM_MKT_ACTION);
     if (intermPriceAction) {
         intermPriceAction->setFastEma(Subgraph_KeltnerAverage[sc.Index], Subgraph_TopBand[sc.Index], Subgraph_BottomBand[sc.Index]);
 
