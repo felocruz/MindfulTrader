@@ -166,10 +166,18 @@ struct FeatureScaler {
     /// on slow/discrete regimes while preserving topology via Soft-Log-Z.
     static constexpr size_t DIM_RECURRENCE_INDEX = 13;
     static constexpr size_t DIM_FRACTAL_INDEX = 14;
-    static constexpr float RECURRENCE_STATIC_CENTER = 0.5f;      ///< Contract range [0,1]
-    static constexpr float RECURRENCE_STATIC_SCALE = 0.25f;      ///< Maps [0,1] → approx [-2,+2]
-    static constexpr float FRACTAL_STATIC_CENTER = 1.5f;         ///< Contract range [1,2]
-    static constexpr float FRACTAL_STATIC_SCALE = 0.25f;         ///< Maps [1,2] → approx [-2,+2]
+    /// Recalibrated 2026-07-23 against real event_data.context (500k-sample pull):
+    /// original constants assumed symmetric use of the theoretical contract range,
+    /// but real data centers well off that assumption and only spans a narrow band.
+    /// Recentered to empirical raw median; rescaled to 1.4826*empirical raw MAD
+    /// (the same Taleb-consistent convention RobustLocation() uses for adaptive
+    /// dims below), so real variation spans the intended [-2,+2] ToSoftLogZ range
+    /// instead of a narrow off-center sliver. See docs/hmm/STUDENT_T_HMM_RUNBOOK.md
+    /// (lbrnet) item 4b and logs/rc_gemini.log CLAUDE_BRIEF_024/025 for derivation.
+    static constexpr float RECURRENCE_STATIC_CENTER = 0.329f;    ///< empirical median (was 0.5)
+    static constexpr float RECURRENCE_STATIC_SCALE = 0.083f;     ///< 1.4826*raw MAD (was 0.25)
+    static constexpr float FRACTAL_STATIC_CENTER = 1.289f;       ///< empirical median (was 1.5)
+    static constexpr float FRACTAL_STATIC_SCALE = 0.101f;        ///< 1.4826*raw MAD (was 0.25)
 
     /// Per-dim rolling window depths — tuned to decorrelation characteristics.
     /// Short-memory features (bounded, fast-decorrelating) use shorter windows.
