@@ -204,6 +204,7 @@ Size-prefixed FlatBuffer records, one per event. Record ordering:
 - `../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` — `ContextManager` architecture baseline and remaining hardening work
 - `../docs/SCHEMA_DRIVEN_SERIALIZATION_PARITY_INITIATIVE.md` — active initiative: eliminating train/live serialization drift between C++ event path and Python training ingestion
 - `docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit). Finding 1 (`UpdateContext()` never called — entire regime-defense subsystem runs on frozen state) — RESOLVED (commit `097e11b`; `SyncRegimeState()` wired into `Update()`, `regime_state_wiring_fix_spec.md`); Finding 12 is a Python-port parity gap, not a C++ fix.
+- `docs/ADR/sierra_chart_data_feed_setup.md` — (Decision implemented 2026-08-04) Switched to Sierra Chart Package 11 + Denali CME-no-depth + IB execution-only for live ES trading; Package 12/MBO evaluated and not recommended. Active opportunity: replace proxies (`StudyHelperFunctions.cpp`'s "TPO Value Area Proxy" and `StructureEngine.cpp`'s close-price-histogram "Point of Control") with real Volume Profile study values via `sc.GetStudyArrayUsingID`.
 
 ### Operator Guides
 - `../docs/VISUAL_REGIME_TUNING_GUIDE.md` — Elder Triple Screen chart observations → specific system parameter changes
