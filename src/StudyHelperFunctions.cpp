@@ -1,10 +1,10 @@
 #include "MindfulTrader_Precompiled.h"
-#include <deque>
 #include <sstream>
 #include <iomanip>
 #include <random> // Added for shuffling
 #include "Logger.h"
 #include "DailyBiasEngine.h"
+#include "RingBuffer.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -15,20 +15,24 @@
 /// Example: 20-bar entropy window updated 1000×/sec = 20µs saved per second
 ///
 /// Thread-safe: Each caller gets their own instance (static local, thread_local)
+///
+/// Capacity is a compile-time template parameter (fixed-capacity RingBuffer,
+/// zero heap allocation for its lifetime), not a runtime constructor argument
+/// -- matches the convention established in docs/superpowers/specs/2026-08-07-
+/// contextmanager-ring-buffer-dod-design.md (Round 4). The window never holds
+/// more than Capacity elements: push() pops down to Capacity-1 before pushing
+/// whenever already full, so it never transiently overshoots.
 /// ============================================================================
-template<typename T>
+template<typename T, size_t Capacity>
 class RollingWindowCalculator {
 private:
-    std::deque<T> window;
+    RingBuffer<T, Capacity> window;
     T sum = 0;
-    size_t max_size;
 
 public:
-    explicit RollingWindowCalculator(size_t size) : max_size(size) {}
-
     void push(T value) {
-        if (window.size() == max_size) {
-            sum -= window.front();
+        if (window.size() == Capacity) {
+            sum -= window[0];
             window.pop_front();
         }
         window.push_back(value);
@@ -40,7 +44,7 @@ public:
     }
 
     T get_sum() const { return sum; }
-    bool is_full() const { return window.size() == max_size; }
+    bool is_full() const { return window.size() == Capacity; }
     size_t size() const { return window.size(); }
     void reset() { window.clear(); sum = 0; }
 };
@@ -51,12 +55,12 @@ public:
 /// Replaces O(n) recalculation with O(1) incremental updates
 class ATRCalculator {
 private:
-    RollingWindowCalculator<float> atr_fast_buffer;
-    RollingWindowCalculator<float> atr_slow_buffer;
+    RollingWindowCalculator<float, 5> atr_fast_buffer;
+    RollingWindowCalculator<float, 20> atr_slow_buffer;
     int last_index = -1;
 
 public:
-    ATRCalculator() : atr_fast_buffer(5), atr_slow_buffer(20) {}
+    ATRCalculator() = default;
 
     float GetMarketSpeed(float tr_current, float prev_market_speed) {
         // Push current TR into both buffers (O(1) each)
@@ -87,11 +91,11 @@ public:
 /// Trades memory for speed: maintains running sum of |price changes|
 class EfficiencyRatioCalculator {
 private:
-    RollingWindowCalculator<float> volatility_window;
     static constexpr int ER_LOOKBACK = 34;
+    RollingWindowCalculator<float, ER_LOOKBACK> volatility_window;
 
 public:
-    EfficiencyRatioCalculator() : volatility_window(ER_LOOKBACK) {}
+    EfficiencyRatioCalculator() = default;
 
     float GetEfficiencyRatio(float net_change, float abs_daily_change) {
         // Push |price change| into window (O(1))
@@ -2733,10 +2737,9 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
     constexpr int KURT_WINDOW = 100;
     if (sc.Index < KURT_WINDOW) return 3.0f;
 
-    std::vector<float> returns;
+    std::array<float, KURT_WINDOW> returns{};
     for (int i = 0; i < KURT_WINDOW; ++i) {
-        float ret = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
-        returns.push_back(ret);
+        returns[static_cast<size_t>(i)] = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
     }
 
     float mean_ret = 0.0f;
@@ -2810,10 +2813,9 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     constexpr int SKEW_WINDOW = 100;
     if (sc.Index < SKEW_WINDOW) return 0.0f;
 
-    std::vector<float> returns;
+    std::array<float, SKEW_WINDOW> returns{};
     for (int i = 0; i < SKEW_WINDOW; ++i) {
-        float ret = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
-        returns.push_back(ret);
+        returns[static_cast<size_t>(i)] = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
     }
 
     float mean_ret = 0.0f;
@@ -3255,7 +3257,13 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // 1) Compute price stretch as |z(log-price)| over lookback window.
     // 2) Suppress score in momentum regimes using lag-1 return autocorrelation.
 
-    const int n = std::max(lookback_n, 5);
+    // kMaxLookback matches the [10,40] adaptive observation window contract
+    // this function's one caller (TripleScreen3.cpp) always passes today
+    // (CalculateAdaptiveObservationWindow's own std::clamp(..., 10, 40)) --
+    // defensive upper bound so a fixed-capacity scratch buffer below can
+    // never be written out of range if a future caller passes something larger.
+    constexpr int kMaxLookback = 40;
+    const int n = std::clamp(lookback_n, 5, kMaxLookback);
     if (sc.Index < (n + 1)) return 0.0f;
 
     constexpr double kPriceEps = 1e-6;
@@ -3284,14 +3292,13 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     if (m < 3) return std::clamp(static_cast<float>(abs_z_price), 0.0f, 5.0f);
 
     double sum_r = 0.0;
-    std::vector<double> returns;
-    returns.reserve(m);
+    std::array<double, kMaxLookback> returns{};  // m <= n-1 < kMaxLookback, always in range
     for (int i = 0; i < m; ++i) {
         const int idx = start_idx + i + 1;
         const double p = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx]), kPriceEps);
         const double p_prev = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx - 1]), kPriceEps);
         const double r = std::log(p / p_prev);
-        returns.push_back(r);
+        returns[static_cast<size_t>(i)] = r;
         sum_r += r;
     }
 
@@ -3320,29 +3327,36 @@ float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
 
     // Better: Calculate TR locally to be robust
 
-    std::vector<float> trValues;
-    trValues.reserve(lookback_n);
+    // kMaxLookback matches the [10,40] adaptive observation window contract
+    // this function's one caller (TripleScreen3.cpp) always passes today --
+    // defensive upper bound so the fixed-capacity scratch buffer below can
+    // never be written out of range if a future caller passes something larger.
+    constexpr int kMaxLookback = 40;
+    const int n = std::clamp(lookback_n, 1, kMaxLookback);
+
+    std::array<float, kMaxLookback> trValues{};
     double sumTR = 0;
 
-    for(int i=0; i<lookback_n; i++) {
+    for(int i=0; i<n; i++) {
         int idx = sc.Index - i;
         float h = sc.BaseData[SC_HIGH][idx];
         float l = sc.BaseData[SC_LOW][idx];
         float c_prev = sc.BaseData[SC_LAST][idx-1];
 
         float tr = std::max(h-l, std::max(std::abs(h-c_prev), std::abs(l-c_prev)));
-        trValues.push_back(tr);
+        trValues[static_cast<size_t>(i)] = tr;
         sumTR += tr;
     }
 
-    double meanTR = sumTR / lookback_n;
+    double meanTR = sumTR / n;
     double sumSqDiff = 0;
 
-    for(float tr : trValues) {
+    for(int i=0; i<n; i++) {
+        const float tr = trValues[static_cast<size_t>(i)];
         sumSqDiff += (tr - meanTR) * (tr - meanTR);
     }
 
-    const double trStd = std::sqrt(sumSqDiff / lookback_n);
+    const double trStd = std::sqrt(sumSqDiff / n);
     const double trMean = std::max(meanTR, 1e-6);
     const float cv = static_cast<float>(trStd / trMean);
     return std::clamp(cv, 0.0f, 5.0f);

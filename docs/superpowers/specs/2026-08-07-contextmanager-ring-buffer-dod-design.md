@@ -1,4 +1,12 @@
-# ContextManager 16D Pipeline — DOD Conversion for `FeatureScaler`/`StructureEngine`/`m_eventTimestampsUS`/`m_observationHistory`/`InformationEngine::GetLempelZivComplexity()`
+# 16D Observation Vector Pipeline — DOD Conversion (Zero Heap Allocation on the Hot Path)
+
+Four rounds converting every `std::deque`/growing-`std::vector` found on the 16D observation
+vector's per-tick path (`TripleScreen1/2/3.cpp` → `ContextManager`/`StudyHelperFunctions.cpp`
+→ FlatBuffers emission) to fixed-capacity, zero-heap containers. Round 1: `FeatureScaler`/
+`StructureEngine`. Round 2: `ContextManager::m_eventTimestampsUS`/`m_observationHistory`.
+Round 3: `InformationEngine::GetLempelZivComplexity()`. Round 4: `StudyHelperFunctions.cpp`
+(`CalculateRealizedKurtosis`/`CalculateSkewness`/`CalculateMeanReversionSpeed`/
+`CalculateVolConvexity`/`RollingWindowCalculator<T>`).
 
 > **Round 1 status: DONE (2026-08-07)** — `FeatureScaler`/`StructureEngine`, below. Implemented largely as designed, with one
 > necessary addition not anticipated in §3: `FeatureScaler` could not be
@@ -86,6 +94,54 @@
 > 4 + 3 = 72 characterization/unit assertions across the three rounds) pass
 > with 0 failures.
 
+> **Round 4 status: DONE (2026-08-07).** A fourth sweep, this time of
+> `StudyHelperFunctions.cpp` (~3400 lines, not previously swept end-to-end),
+> found three more findings (§1.3, §3.6 below), fixed in priority order.
+> **Priority 1** (worst found): `CalculateRealizedKurtosis()`/`CalculateSkewness()`
+> each built a fresh 100-element `std::vector<float>` with **no `.reserve()`** —
+> ~7 reallocations per call from vector growth-doubling, not just one, called
+> once per new bar. Both became `std::array<float, 100>` (`KURT_WINDOW`/
+> `SKEW_WINDOW` are literal `constexpr int`s, so this was a direct swap, same
+> shape as Round 3). **Priority 2:** `CalculateMeanReversionSpeed()`/
+> `CalculateVolConvexity()` each allocated one `.reserve()`d vector (so only
+> one allocation, not seven) sized to a *runtime* `lookback_n` parameter,
+> called every tick (not de-duplicated to once-per-bar like Priority 1) —
+> `lookback_n` is bounded to `[10,40]` by its one caller's own
+> clamp, but neither function enforced that bound internally. Fixed with
+> `std::array<_, 40>` plus a defensive `std::clamp(lookback_n, ..., 40)`
+> inside each function itself (not just trusted from the caller) — since both
+> are plain, externally-callable functions declared in the header, a future
+> caller passing a larger value would otherwise write out of the fixed
+> array's bounds. **Priority 3** (weakest finding, done anyway for
+> consistency): `RollingWindowCalculator<T>`, a generic template reused by
+> `ATRCalculator` (windows of 5, 20) and `EfficiencyRatioCalculator` (window
+> of 34) across all three `TripleScreen*.cpp` files, was `std::deque`-backed.
+> On reflection this was likely benign in practice — libstdc++'s deque chunk
+> size for a 4-byte type is ~128 elements, well above any of these window
+> sizes, so the deque almost certainly allocated its one chunk once and never
+> churned again. Converted anyway to match the `RingBuffer` convention now
+> established everywhere else in this pipeline: `Capacity` became a second,
+> compile-time template parameter (`RollingWindowCalculator<T, Capacity>`)
+> instead of a runtime constructor argument, since `RingBuffer` itself
+> requires `Capacity` at compile time — the three call sites needed a small,
+> mechanical update (template argument added, constructor argument dropped;
+> `EfficiencyRatioCalculator`'s `ER_LOOKBACK` constant had to move above its
+> use as that template argument, since C++ member-type declarations can't
+> forward-reference a later member the way function bodies can).
+>
+> No new test files — `StudyHelperFunctions.cpp`'s functions all take
+> `SCStudyInterfaceRef sc` directly and read `sc.Close`/`sc.BaseData` inline
+> (unlike Round 1's `FeatureScaler`, which had zero ACSIL coupling once
+> extracted), so extracting them for standalone testing would be a much
+> larger, invasive refactor than this round's actual scope. Verified instead
+> via careful review of each diff (mechanical: vector→array, `push_back`→
+> indexed assignment, identical math and loop bounds) plus a full
+> `./build_dll.sh` and full test-suite pass — same fallback already used for
+> Round 2's `m_observationHistory` for the same underlying reason. `std::vector`
+> and `std::deque` no longer appear anywhere in `StudyHelperFunctions.cpp`.
+> All 12 standalone `tests/cpp/*.cpp` suites (unchanged — no new assertions
+> this round) pass with 0 failures.
+
 ## 1. Context
 
 A brainstorming pass traced the full 16D observation vector pipeline — `TripleScreen1/2/3.cpp` writers → `ContextManager::BuildObservationVector()` → `FeatureScaler::UpdateAndNormalize()` → `CheckAndTriggerHMM()` → FlatBuffers emission (`.context` file / `HMMClient` ZMQ) — to assess whether the same class of data-oriented-design gains found in the `indicator-manager-dod-soa` migration applies here.
@@ -131,6 +187,14 @@ double GetLempelZivComplexity() const {
 
 `WINDOW_SIZE_LZ` is a compile-time constant (`64`) — the function's own comment even acknowledges a stack buffer "usually" would fit, but the code never made that switch. Called every tick once `m_infoEngine.GetSampleCount() >= 50` (`ContextManager::BuildObservationVector()`), this is a **guaranteed heap allocation on every qualifying tick** — not periodic chunk churn like Rounds 1/2's `std::deque` findings, a hard allocation every time. The clearest-cut case found across all three rounds.
 
+### 1.3 Round 4: `StudyHelperFunctions.cpp` — the largest untraced file in the pipeline
+
+A fourth pass swept `StudyHelperFunctions.cpp` (~3400 lines) end-to-end for the same patterns — the largest single file in the trace that hadn't yet been checked line-by-line. Three findings, ranked by severity:
+
+1. **`CalculateRealizedKurtosis()`/`CalculateSkewness()`** (worst): each builds a fresh 100-element `std::vector<float>` with **no `.reserve()`** — vector growth-doubling means ~7 reallocations per call, not one. Called once per new bar (de-duplicated via a `lastObsUpdateIndex` guard in `UpdateObservationVectorSubgraphs`) — feeds `NormalizedAnchors.realizedKurtosis`/`skewnessIdx`, dims 8/10 of the 16D vector. `KURT_WINDOW`/`SKEW_WINDOW` are both literal `constexpr int = 100`.
+2. **`CalculateMeanReversionSpeed()`/`CalculateVolConvexity()`**: each allocates one `.reserve()`d vector (one allocation, not seven) sized to a *runtime* `lookback_n` parameter. Worse than #1 in one respect — called **every tick**, not de-duplicated to once-per-bar (the call site's own comment: "not yet persisted by `UpdateObservationVectorSubgraphs`"). `lookback_n` is bounded to `[10,40]` by its one caller (`CalculateAdaptiveObservationWindow`'s own `std::clamp`), but neither function enforces that bound internally — both are plain functions declared in the header, callable from anywhere.
+3. **`RollingWindowCalculator<T>`** (weakest, converted anyway for consistency): a generic `std::deque`-backed template reused by `ATRCalculator` (windows of 5, 20) and `EfficiencyRatioCalculator` (window of 34), called from all three `TripleScreen*.cpp` files. Likely benign in practice — libstdc++'s deque chunk size for a 4-byte type is ~128 elements, well above any of these window sizes, so the one initial chunk almost certainly never needed a successor. Fixed to match the established convention, not because it was confirmed to be causing live churn.
+
 ## 2. Goals and non-goals
 
 **Goals:**
@@ -140,14 +204,17 @@ double GetLempelZivComplexity() const {
 - Convert `m_eventTimestampsUS` to `RingBuffer<uint64_t, EVENT_VELOCITY_MAX + 1>`, and extract `CalculateBurstinessIndex()`'s pure arithmetic into `EventVelocityEngine.h` so it's independently unit-testable for the first time — it currently has zero test coverage, trapped in `ContextManager.cpp` behind `sierrachart.h`, same root cause `FeatureScaler` had in Round 1. **(Round 2, done.)**
 - Convert `m_observationHistory` from `std::deque<std::array<float,16>>` (AoS) to a structure-of-arrays of 16 `RingBuffer<float, OBS_SATURATION_MIN_SAMPLES + 1>` — one per dimension, mirroring `FeatureScaler`'s own `stateBuffers`/`logBuffers` layout — closing both the heap-churn issue and the transposed-access inefficiency in `ComputeTriggerDecisionMetrics`. **(Round 2, done.)**
 - Convert `InformationEngine::GetLempelZivComplexity()`'s two per-call `std::vector`s to fixed `std::array<_, WINDOW_SIZE_LZ>` scratch buffers — eliminating a guaranteed heap allocation on every qualifying tick, not just periodic churn. **(Round 3, done.)**
+- Convert `StudyHelperFunctions.cpp`'s three findings in priority order: `CalculateRealizedKurtosis`/`CalculateSkewness`'s no-reserve 100-element vectors (worst — up to 7 reallocations/call); `CalculateMeanReversionSpeed`/`CalculateVolConvexity`'s runtime-sized, single-reserve vectors (called every tick, not de-duplicated); `RollingWindowCalculator<T>`'s `std::deque` (likely benign, converted for consistency). **(Round 4, done.)**
+- For any function taking a *runtime* size parameter with no compile-time bound, enforce a defensive upper-bound clamp inside the function itself before sizing a fixed array to it — don't just trust the one caller's own bound, since these are externally-callable functions. **(Round 4, done — `CalculateMeanReversionSpeed`/`CalculateVolConvexity`.)**
 
 **Non-goals:**
 - `HMMClient::SendBinaryRequest()`'s per-call `FlatBufferBuilder` allocation is explicitly out of scope — it runs on `HMMClient`'s dedicated background worker thread, gated by the Mahalanobis significant-change trigger, not the ACSIL tick hot path. Same category `EventSerializer.cpp` already solved elsewhere via a reusable builder, but lower priority here since it's already decoupled from the hot path.
 - No change to `BuildObservationVector()`, the "FlatBuffer struct as direct storage" design for `m_observationData`, `CalculateEventVelocity()`'s existing EMA-based velocity formula, or any of the 16D vector's semantics/values. No schema changes.
-- Not a comprehensive test suite for `FeatureScaler`/`StructureEngine`/`ContextManager` as a whole — only enough characterization coverage to safety-net each specific container swap. Broader test coverage for these classes is a separate, larger effort if ever wanted.
-- Full-repo call-site sweep for other `std::deque`/`std::vector` usage beyond the files this pipeline actually traces through is out of scope — Rounds 1–3 confirmed everything else in the trace (`TailRiskEngine::m_sortBuffer`, the TripleScreen files' lazy-init `new` calls) is already either zero-allocation or one-time.
+- Not a comprehensive test suite for `FeatureScaler`/`StructureEngine`/`ContextManager`/`StudyHelperFunctions.cpp` as a whole — only enough characterization coverage (or, where that's blocked by ACSIL coupling, careful review + full build/test-suite pass) to safety-net each specific container swap. Broader test coverage for these files is a separate, larger effort if ever wanted.
+- Full-repo call-site sweep for other `std::deque`/`std::vector` usage beyond the files this pipeline actually traces through is out of scope — Rounds 1–4 confirmed everything else in the trace (`TailRiskEngine::m_sortBuffer`, the TripleScreen files' lazy-init `new` calls) is already either zero-allocation or one-time.
 - Renaming `m_observationHistory` is out of scope — only its underlying storage type changes; the SoA restructure is a private-implementation-detail change invisible to every caller outside `ContextManager.cpp`.
 - Changing `GetLempelZivComplexity()`'s algorithm, its median-split binarization, or the Kaspar/Schuster LZ76 implementation itself is out of scope — Round 3 is a pure storage-layer swap, same standard as every prior round.
+- Fixing `ATRCalculator`'s apparent double-counting (`CalculateMarketSpeed()` is called twice per tick from two different callers in `TripleScreen1.cpp`, and its `last_index` member looks intended to guard against exactly this but is never checked) is explicitly out of scope — that's a correctness question noticed in passing during Round 4, not a DOD finding. Not fixed here.
 
 ## 3. Design
 
@@ -303,6 +370,78 @@ The one thing to get right: `std::sort` must bound its range to `[begin, begin +
 
 `#include <vector>` becomes unused once this is the only `std::vector` consumer in the file — dropped as a direct consequence. A pre-existing unused local (`k_max`, dead since some earlier edit) in the same function is removed too, since it sits in the exact lines being touched.
 
+### 3.6 `StudyHelperFunctions.cpp` (Round 4)
+
+**Priority 1 — `CalculateRealizedKurtosis()`/`CalculateSkewness()`:** `KURT_WINDOW`/`SKEW_WINDOW` are both literal `constexpr int = 100`, so this is the same direct swap as Round 3's `GetLempelZivComplexity()`:
+
+```cpp
+// Before:
+std::vector<float> returns;
+for (int i = 0; i < KURT_WINDOW; ++i) {
+    float ret = std::log(...);
+    returns.push_back(ret);
+}
+// After:
+std::array<float, KURT_WINDOW> returns{};
+for (int i = 0; i < KURT_WINDOW; ++i) {
+    returns[static_cast<size_t>(i)] = std::log(...);
+}
+```
+The rest of each function's range-based `for (float r : returns)` loops are unchanged — `std::array` supports them identically, and every element is always filled (the loop always runs the full `KURT_WINDOW`/`SKEW_WINDOW` bound), so there's no "filled prefix vs. fixed capacity" distinction to get wrong here, unlike Round 3's `GetLempelZivComplexity()`.
+
+**Priority 2 — `CalculateMeanReversionSpeed()`/`CalculateVolConvexity()`:** these take a *runtime* `lookback_n`/derived `n`/`m`, with no compile-time bound and no internal upper-bound enforcement — only their one caller's own `[10,40]` clamp keeps them safe today. Since both are plain, header-declared functions (callable from anywhere, not `static`/file-local), sizing a fixed array to today's observed max without also clamping internally would silently corrupt memory the day a second caller passes something larger. Both get a local `constexpr int kMaxLookback = 40;` and an explicit `std::clamp(...)` on the runtime parameter *before* it's used to size or index the array:
+
+```cpp
+// CalculateMeanReversionSpeed, before:
+const int n = std::max(lookback_n, 5);
+...
+std::vector<double> returns;
+returns.reserve(m);
+...
+returns.push_back(r);
+// After:
+constexpr int kMaxLookback = 40;
+const int n = std::clamp(lookback_n, 5, kMaxLookback);
+...
+std::array<double, kMaxLookback> returns{};  // m <= n-1 < kMaxLookback, always in range
+...
+returns[static_cast<size_t>(i)] = r;
+```
+
+`CalculateVolConvexity` follows the same shape, with one extra care point: its second loop originally read `for (float tr : trValues)` over the *vector's actual filled size*. Converted naively to a range-based `for` over the *fixed array* would silently sum in `kMaxLookback - n` zero-initialized tail elements whenever `n < kMaxLookback` — corrupting `sumSqDiff`. Fixed by bounding both loops explicitly to `i < n`, not iterating the array's full fixed capacity — the same "filled prefix vs. fixed capacity" distinction Round 3 already had to get right for `GetLempelZivComplexity()`.
+
+**Priority 3 — `RollingWindowCalculator<T>`:** `RingBuffer<T, Capacity>` requires `Capacity` at compile time, so the class gained a second template parameter instead of keeping a runtime constructor argument:
+
+```cpp
+// Before:
+template<typename T>
+class RollingWindowCalculator {
+    std::deque<T> window;
+    size_t max_size;
+public:
+    explicit RollingWindowCalculator(size_t size) : max_size(size) {}
+    void push(T value) {
+        if (window.size() == max_size) { sum -= window.front(); window.pop_front(); }
+        window.push_back(value);
+        sum += value;
+    }
+    ...
+};
+// After:
+template<typename T, size_t Capacity>
+class RollingWindowCalculator {
+    RingBuffer<T, Capacity> window;
+public:
+    void push(T value) {
+        if (window.size() == Capacity) { sum -= window[0]; window.pop_front(); }
+        window.push_back(value);
+        sum += value;
+    }
+    ...
+};
+```
+`window.front()` becomes `window[0]` (`RingBuffer` doesn't need a separate `front()` — index 0 is always the oldest element, matching deque's own semantics). The runtime `max_size` member is removed entirely since `Capacity` now encodes it. Three call sites updated: `ATRCalculator`'s two buffers (`RollingWindowCalculator<float, 5>`/`<float, 20>`, constructor arguments dropped) and `EfficiencyRatioCalculator`'s one (`RollingWindowCalculator<float, ER_LOOKBACK>`) — the last one required moving `static constexpr int ER_LOOKBACK = 34;` to *before* the member that uses it as a template argument, since (unlike a constructor's default-member-initializer or a function body) a class member's *type* is resolved immediately, not deferred to a complete-class context, so it can't forward-reference a later member.
+
 ## 4. Verification approach
 
 Neither `FeatureScaler` nor `StructureEngine` has any existing unit test, so this swap needs its own safety net, scoped narrowly to the change itself (not a general test-coverage backfill):
@@ -324,6 +463,10 @@ Neither `FeatureScaler` nor `StructureEngine` has any existing unit test, so thi
 
 8. **`tests/cpp/test_information_engine.cpp` (extended):** `InformationEngine.h` is already ACSIL-independent and directly testable (unlike Round 2's `m_eventTimestampsUS`/`m_observationHistory`), so this one gets real characterization coverage, not just container-level tests. Three cases: fewer than 10 samples (documented neutral 0.5 default); a hand-computable ramp (median-split binarization traced by hand into an exact bit string, then the resulting LZ76 complexity independently re-derived via a standalone `python3` simulation of the same O(n²) Kaspar/Schuster algorithm this class's own doc comment describes — not by running the code under test); an all-identical-input degenerate case (same independent-simulation methodology). Golden values captured once against the *current* `std::vector` implementation (100% pass), then confirmed unchanged after the swap (100% pass, identical values, byte-for-byte).
 
+**Round 4 addition:**
+
+9. **No new test files.** Every function touched in `StudyHelperFunctions.cpp` takes `SCStudyInterfaceRef sc` directly and reads `sc.Close`/`sc.BaseData`/`sc.High`/`sc.Low` inline — unlike Round 1's `FeatureScaler` (zero ACSIL coupling once extracted to its own header), extracting these for standalone testing would mean restructuring their whole interface (passing raw arrays/spans instead of `sc`), a much larger and more invasive change than this round's actual scope. Verification instead: (a) careful line-by-line review of each diff — all four Priority 1/2 conversions are mechanical (`push_back`→indexed assignment, identical arithmetic, identical loop bounds), with the one real risk (iterating a fixed array's *full* capacity instead of its *filled* count in `CalculateVolConvexity`'s second loop) explicitly checked and fixed; (b) `RollingWindowCalculator<T, Capacity>`'s new template parameter reviewed against all three call sites for capacity-vs-original-runtime-size equivalence (5→5, 20→20, 34→`ER_LOOKBACK`); (c) a full `./build_dll.sh` and full 12-suite test-suite pass — same fallback Round 2 already used for `m_observationHistory` for the identical underlying reason.
+
 ## 5. Success criteria
 
 **Round 1 (done):**
@@ -344,3 +487,10 @@ Neither `FeatureScaler` nor `StructureEngine` has any existing unit test, so thi
 - Three new characterization assertions in `test_information_engine.cpp`, with two independently-computed LZ76 golden values (not derived from the code under test) confirmed identical before and after the swap.
 - `./build_dll.sh` succeeds; all 12 standalone `tests/cpp/*.cpp` suites pass with 0 failures.
 - No change to `GetLempelZivComplexity()`'s returned values for any input sequence — this is a pure storage-layer swap, same standard as every prior round.
+
+**Round 4 (done):**
+- `CalculateRealizedKurtosis()`/`CalculateSkewness()` use fixed `std::array<float, 100>` instead of no-reserve `std::vector`s.
+- `CalculateMeanReversionSpeed()`/`CalculateVolConvexity()` use fixed `std::array<_, 40>` plus an internal defensive `std::clamp` on their runtime size parameter — safe even if a future caller passes a value outside today's `[10,40]` contract.
+- `RollingWindowCalculator<T, Capacity>` is `RingBuffer`-backed with `Capacity` as a compile-time template parameter; all three call sites (`ATRCalculator` ×2, `EfficiencyRatioCalculator` ×1) updated accordingly.
+- `std::vector` and `std::deque` no longer appear anywhere in `StudyHelperFunctions.cpp`.
+- `./build_dll.sh` succeeds; all 12 standalone `tests/cpp/*.cpp` suites pass with 0 failures. No change to any of these six functions' returned values for any input — pure storage-layer swaps, same standard as every prior round.
