@@ -6,7 +6,7 @@ Automated scripts for populating and updating trading data files required by Min
 
 Two data files are required:
 1. **daily_high_low.csv** - Previous day's high/low for MES futures (automated)
-2. **nh_nl_historical.csv** - NYSE new highs/lows breadth data (manual)
+2. **NH_NL.csv** - NYSE new highs/lows breadth data (manual, no automated source)
 
 ### Data Source Options for MES
 
@@ -140,36 +140,37 @@ The contract size affects P&L calculation, not the actual index price. A session
 
 **Note:** MES (Micro E-mini S&P 500) and ES (E-mini S&P 500) track the same S&P 500 index. The only difference is contract size ($5/point for MES vs $50/point for ES). Daily high/low **price levels are identical** - contract size doesn't affect the actual price. We use ES=F data because it has better liquidity and data availability on Yahoo Finance.
 
-### nh_nl_historical.csv
+### NH_NL.csv
 
 ```csv
-date,nh_daily,nl_daily,nh_weekly,nl_weekly
-2024-01-02,145,52,823,412
-2024-01-03,189,38,901,385
+date,nh_nl_daily,nh_nl_weekly,sp500_close
+2026-04-01,-1795,-11546,0.0
+2026-04-02,-1669,-11566,0.0
 ```
 
 **Fields:**
 - `date`: Trading date in YYYY-MM-DD format
-- `nh_daily`: NYSE new highs (daily)
-- `nl_daily`: NYSE new lows (daily)
-- `nh_weekly`: NYSE new highs (7-day rolling sum)
-- `nl_weekly`: NYSE new lows (7-day rolling sum)
+- `nh_nl_daily`: NYSE new-highs-minus-new-lows differential for that day (StockCharts `$USHL5` symbol's daily close)
+- `nh_nl_weekly`: Trailing 7-trading-day rolling sum of `nh_nl_daily`, inclusive of the current day
+- `sp500_close`: Not currently populated (kept at `0.0` for every row — this column exists in the schema `NhNlDataLoader.cpp` parses but nothing downstream reads it yet)
 
-**Source:** Manual download from StockCharts.com (no API available)
-- URL: https://stockcharts.com/freecharts/nh-nl.html
+**Source:** Manual export from StockCharts.com — no API, no automated fetch anywhere in this repo or in `../lbrnet`/`../MTS`.
+- Chart: the `$USHL5` (NYSE High-Low Index) SharpCharts view — see the `NH_NL` link in `MTS/market_minder.py` for the exact URL
+- Export the daily OHLCV table (Open=High=Low=Close=the daily NH-NL value for this index; Volume is always 0) for the date range since the last update
 - See: [docs/ELDER_NH_NL_METHODOLOGY.md](docs/ELDER_NH_NL_METHODOLOGY.md)
+- **No conversion script is checked in yet** — the parsing/rolling-sum logic (skip 3 header lines, `MM-DD-YYYY`→`YYYY-MM-DD`, weekly = trailing 7-trading-day sum) has only been done ad hoc so far. Worth formalizing into a script if this becomes a routine task.
 
 ## Data Location
 
 ### Linux Development
 - **Local:** `data/daily_high_low.csv`
-- **Local:** `data/nh_nl_historical.csv`
+- **Local:** `data/NH_NL.csv`
 
 ### Windows/Sierra Chart (via WSL)
 - **Windows:** `C:/Trading/data/daily_high_low.csv`
-- **Windows:** `C:/Trading/data/nh_nl_historical.csv`
+- **Windows:** `C:/Trading/data/NH_NL.csv`
 
-The `update_daily_data.sh` script automatically copies data to Windows path if running on WSL.
+The `update_daily_data.sh` script automatically copies `daily_high_low.csv` (after its automated refresh) and `NH_NL.csv` (whatever is currently in `data/NH_NL.csv` — this step does not refresh it, see the NH_NL.csv section above) to the Windows path if running on WSL.
 
 ## Troubleshooting
 
@@ -280,7 +281,8 @@ Data is loaded automatically by Sierra Chart studies:
 
 **NhNlDataLoader** (`src/NhNlDataLoader.cpp`):
 - Singleton pattern with auto-load
-- Reads: `C:/Trading/data/nh_nl_historical.csv`
+- Reads: `C:/Trading/data/NH_NL.csv`
+- Expects exactly 4 columns: `date,nh_nl_daily,nh_nl_weekly,sp500_close` — anything else fails to parse
 - Provides NH-NL breadth signal for regime detection
 - Used by CalculateNhNlSignal() in StudyHelperFunctions.cpp
 
@@ -290,8 +292,9 @@ Data is loaded automatically by Sierra Chart studies:
 - 5pm CT: Update daily_high_low.csv
 
 **Weekly (Manual):**
-- Download NH-NL data from StockCharts.com
-- Update nh_nl_historical.csv
+- Export the `$USHL5` series from StockCharts.com (see NH_NL.csv section above)
+- Convert to `date,nh_nl_daily,nh_nl_weekly,sp500_close` and update `data/NH_NL.csv`
+- Copy to `/mnt/c/Trading/data/NH_NL.csv`
 
 **Monthly:**
 - Verify data quality (no gaps, reasonable values)

@@ -1,7 +1,8 @@
 #!/bin/bash
 #
 # End-of-Day Data Update Script
-# Updates both nh_nl_historical.csv and daily_high_low.csv
+# Updates daily_high_low.csv (automated); checks NH_NL.csv freshness only --
+# NH-NL has no automated source (see step 2 below), it's refreshed manually.
 #
 # Usage:
 #   ./update_daily_data.sh
@@ -46,36 +47,18 @@ else
 fi
 
 echo ""
-echo "2. NH-NL data update"
-USE_NORGATE_NHNL="${USE_NORGATE_NHNL:-0}"
+echo "2. NH-NL data freshness check"
+echo "   NH-NL has no automated source. Refresh manually: export the"
+echo "   \$USHL5 (NYSE High-Low Index) series from StockCharts.com, then"
+echo "   convert it into data/NH_NL.csv's date,nh_nl_daily,nh_nl_weekly,"
+echo "   sp500_close format and copy to /mnt/c/Trading/data/NH_NL.csv."
+echo "   This step only WARNS on staleness -- it does not fail the script,"
+echo "   since daily_high_low.csv's automated update above is unaffected."
 
-if [ "$USE_NORGATE_NHNL" = "1" ]; then
-    echo "   Source: Norgate Data"
-    : "${NORGATE_NH_NYSE_SYMBOL:?Set NORGATE_NH_NYSE_SYMBOL}"
-    : "${NORGATE_NL_NYSE_SYMBOL:?Set NORGATE_NL_NYSE_SYMBOL}"
-    : "${NORGATE_NH_NASDAQ_SYMBOL:?Set NORGATE_NH_NASDAQ_SYMBOL}"
-    : "${NORGATE_NL_NASDAQ_SYMBOL:?Set NORGATE_NL_NASDAQ_SYMBOL}"
-
-    python3 scripts/export_norgate_nh_nl.py \
-        --nh-nyse-symbol "$NORGATE_NH_NYSE_SYMBOL" \
-        --nl-nyse-symbol "$NORGATE_NL_NYSE_SYMBOL" \
-        --nh-nasdaq-symbol "$NORGATE_NH_NASDAQ_SYMBOL" \
-        --nl-nasdaq-symbol "$NORGATE_NL_NASDAQ_SYMBOL" \
-        --output data/nh_nl_historical.csv
-
-    python3 scripts/check_nh_nl_freshness.py \
-        --input data/nh_nl_historical.csv \
-        --max-age-days 5 \
-        --strict
-
-    echo "   ✅ NH-NL update successful (Norgate)"
-else
-    echo "   Skipped automated NH-NL update (USE_NORGATE_NHNL=$USE_NORGATE_NHNL)"
-    echo "   To enable Norgate automation, set:"
-    echo "     USE_NORGATE_NHNL=1"
-    echo "     NORGATE_NH_NYSE_SYMBOL, NORGATE_NL_NYSE_SYMBOL"
-    echo "     NORGATE_NH_NASDAQ_SYMBOL, NORGATE_NL_NASDAQ_SYMBOL"
-fi
+python3 scripts/check_nh_nl_freshness.py \
+    --input data/NH_NL.csv \
+    --max-age-days 5 \
+    --no-strict || true
 
 echo ""
 echo "=========================================="
@@ -96,8 +79,8 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
         echo "✅ Copied daily_high_low.csv to $WIN_DATA_DIR"
     fi
 
-    if [ -f "data/nh_nl_historical.csv" ]; then
-        cp -v data/nh_nl_historical.csv "$WIN_DATA_DIR/"
-        echo "✅ Copied nh_nl_historical.csv to $WIN_DATA_DIR"
+    if [ -f "data/NH_NL.csv" ]; then
+        cp -v data/NH_NL.csv "$WIN_DATA_DIR/"
+        echo "✅ Copied NH_NL.csv to $WIN_DATA_DIR"
     fi
 fi
