@@ -588,10 +588,20 @@ void ContextManager::AddToTrainingEventFB(MTS::Training::TrainingEventT& event, 
     const StatisticalContext* wave = m_hasWaveContext ? &m_waveContext : nullptr;
     const StatisticalContext* ripple = m_hasRippleContext ? &m_rippleContext : nullptr;
 
+    // Explicit else-branch resets (docs/superpowers/specs/2026-08-07-training-
+    // event-export-dod-design.md §3.2/Tier 2): TrainingEventT is now a pooled,
+    // reused instance (IndicatorManager::m_trainingEventScratch), not freshly
+    // allocated per call -- without these, a call where `wave` is null would
+    // silently keep the PREVIOUS call's volatility/efficiency/regime_tenure
+    // instead of the zero default a fresh object would have shown.
     if (wave) {
         event.volatility = wave->volatility;          ///< Std dev of log returns
         event.efficiency = wave->efficiency;          ///< Net change / sum of absolute changes [0,1]
         event.regime_tenure = wave->regimeTenure;  ///< TS2 bar-closes in current regime
+    } else {
+        event.volatility = 0.0f;
+        event.efficiency = 0.0f;
+        event.regime_tenure = 0;
     }
     event.rel_range = ripple ? ripple->relRange : 0.0f;
     // Export TS2 oscillator velocity when available; fall back to ripple velocity.
@@ -608,6 +618,12 @@ void ContextManager::AddToTrainingEventFB(MTS::Training::TrainingEventT& event, 
         event.dist_four_bar_high = m_anchors->distFourBarHigh; ///< Distance to 4-bar swing high
         event.dist_four_bar_low = m_anchors->distFourBarLow;   ///< Distance to 4-bar swing low
         event.dist_ema_13 = m_anchors->distEma13;              ///< Distance to EMA(13)
+    } else {
+        event.dist_day_high = 0.0f;
+        event.dist_day_low = 0.0f;
+        event.dist_four_bar_high = 0.0f;
+        event.dist_four_bar_low = 0.0f;
+        event.dist_ema_13 = 0.0f;
     }
 
     // SECTION 11: Observation Vector (16D context for HMM inference)
@@ -617,22 +633,30 @@ void ContextManager::AddToTrainingEventFB(MTS::Training::TrainingEventT& event, 
     // This guarantees representational parity across .alpha, .context, live inference,
     // and training pipelines.
     // m_latestScaledObs is updated once per CheckAndTriggerHMM() call.
-    event.observation = std::make_unique<MTS::Schema::ObservationData>(
-        MTS::Schema::Contract::MakeObservationData(m_latestScaledObs));
+    // Tier 2 pooling: allocate the nested struct once, then overwrite its
+    // contents on every call (a plain struct assignment -- ObservationData is
+    // a fixed-layout FlatBuffers struct, not a table, so this is always a
+    // complete, unconditional overwrite of every field, never a partial one).
+    if (!event.observation) {
+        event.observation = std::make_unique<MTS::Schema::ObservationData>();
+    }
+    *event.observation = MTS::Schema::Contract::MakeObservationData(m_latestScaledObs);
 
     // SECTION 12: Asymmetry Context (8D Transformer Input)
     // All 8 dims sourced from m_latestInstitutionalMetrics for .alpha/.context parity.
-    event.asymmetry_context = std::make_unique<MTS::Schema::AsymmetryContext>(
-        MTS::Schema::Contract::MakeAsymmetryContext({
-            m_latestInstitutionalMetrics.shannonFlowEntropy,
-            m_latestInstitutionalMetrics.shannonEfficiency,
-            m_latestInstitutionalMetrics.talebKurtosis,
-            m_latestInstitutionalMetrics.talebSkewness,
-            m_latestInstitutionalMetrics.elderChandelierATR,
-            m_latestInstitutionalMetrics.paretoRot,
-            m_latestInstitutionalMetrics.raschkeBurst,
-            m_latestInstitutionalMetrics.elderImpulse,
-        }));
+    if (!event.asymmetry_context) {
+        event.asymmetry_context = std::make_unique<MTS::Schema::AsymmetryContext>();
+    }
+    *event.asymmetry_context = MTS::Schema::Contract::MakeAsymmetryContext({
+        m_latestInstitutionalMetrics.shannonFlowEntropy,
+        m_latestInstitutionalMetrics.shannonEfficiency,
+        m_latestInstitutionalMetrics.talebKurtosis,
+        m_latestInstitutionalMetrics.talebSkewness,
+        m_latestInstitutionalMetrics.elderChandelierATR,
+        m_latestInstitutionalMetrics.paretoRot,
+        m_latestInstitutionalMetrics.raschkeBurst,
+        m_latestInstitutionalMetrics.elderImpulse,
+    });
 }
 
 // ============================================================================

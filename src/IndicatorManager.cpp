@@ -738,13 +738,17 @@ inline void WriteCrashProbe(int step) {
 }
 } // namespace
 
-std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEventT(SCStudyInterfaceRef sc) {
+MTS::Training::TrainingEventT* IndicatorManager::GetTrainingEventT(SCStudyInterfaceRef sc) {
     using namespace MTS::Training;
 
     WriteCrashProbe(11);  // Entry
 
-    // 1. Create native C++ object using Object API
-    auto event = std::make_unique<TrainingEventT>();
+    // 1. Reuse the pooled scratch object instead of allocating fresh (Tier 2,
+    // docs/superpowers/specs/2026-08-07-training-event-export-dod-design.md).
+    // Every scalar field below is unconditionally overwritten before this
+    // function returns (confirmed by the spec's write-site audit), so no
+    // data from a previous call is ever visible to the caller.
+    auto* event = &m_trainingEventScratch;
 
     // 2. Populate temporal metadata
     event->bar_index = sc.Index;
@@ -761,9 +765,20 @@ std::unique_ptr<MTS::Training::TrainingEventT> IndicatorManager::GetTrainingEven
 
     int64_t tauMedianUs = deltaUs;
     if (!m_recentTrainingDeltaUs.empty()) {
-        std::vector<int64_t> scratch(m_recentTrainingDeltaUs.begin(), m_recentTrainingDeltaUs.end());
-        const size_t mid = scratch.size() / 2;
-        std::nth_element(scratch.begin(), scratch.begin() + static_cast<std::ptrdiff_t>(mid), scratch.end());
+        // Fixed scratch buffer, zero heap allocation (docs/superpowers/specs/
+        // 2026-08-07-training-event-export-dod-design.md, Tier 1) -- replaces
+        // a std::vector copy-constructed fresh on every significant-change
+        // event. Only the filled prefix (m_recentTrainingDeltaUs.size(), not
+        // the buffer's full kTrainingTauWindowSize capacity) participates in
+        // nth_element.
+        const size_t n = m_recentTrainingDeltaUs.size();
+        std::array<int64_t, kTrainingTauWindowSize> scratch{};
+        for (size_t i = 0; i < n; ++i) {
+            scratch[i] = m_recentTrainingDeltaUs[i];
+        }
+        const size_t mid = n / 2;
+        std::nth_element(scratch.begin(), scratch.begin() + static_cast<std::ptrdiff_t>(mid),
+                          scratch.begin() + static_cast<std::ptrdiff_t>(n));
         tauMedianUs = scratch[mid];
     }
 

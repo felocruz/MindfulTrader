@@ -8,13 +8,13 @@
 #include <memory>
 #include <map>
 #include <array>
-#include <deque>
 
 #include "MindfulTraderConstants.h"
 #include "sierrachart.h"
 #include "Indicator.h"
 #include "IndicatorLayout.h"
 #include "IndicatorPackedState.h"
+#include "RingBuffer.h"
 
 // DataCollector removed (Jan 24, 2026 - event pipeline now handled by EventDataCollectorStudy)
 
@@ -44,7 +44,14 @@ public:
     static IndicatorManager& Instance();
 
     // --- Elite v2.3+ FlatBuffer API ---
-    std::unique_ptr<MTS::Training::TrainingEventT> GetTrainingEventT(SCStudyInterfaceRef sc);  // Elite v2.4: Return object directly
+    // Tier 2 (docs/superpowers/specs/2026-08-07-training-event-export-dod-
+    // design.md): returns a non-owning pointer to the pooled
+    // m_trainingEventScratch member (previously a fresh std::make_unique
+    // per call) -- always non-null today, same as before this change; the
+    // one caller (EventDataCollectorStudy.cpp) already treats the result as
+    // "check for null, then use via ->/*", which means the same thing for a
+    // raw pointer as it did for a unique_ptr.
+    MTS::Training::TrainingEventT* GetTrainingEventT(SCStudyInterfaceRef sc);
     void SyncFeatureVector(std::vector<float>& targetVector) const;
 
     // --- Elite v2.4: Event-Driven FlatBuffer Publishing (SCStudies.cpp migration) ---
@@ -357,10 +364,29 @@ private:
     // in IndicatorManager.cpp for the writer).
     TradeSideEnum m_lastKnownSide = TradeSideEnum::FLAT;
 
-    // Training temporal physics cache (for delta_t_log/tau_100_log parity)
+    // Training temporal physics cache (for delta_t_log/tau_100_log parity).
+    // Fixed-capacity ring buffer (docs/superpowers/specs/2026-08-07-training-
+    // event-export-dod-design.md, Tier 1) -- zero heap allocation, replacing
+    // std::deque's ongoing chunk churn as the window slides on every
+    // significant-change event. Capacity = kTrainingTauWindowSize + 1 for
+    // headroom (push_back-then-conditionally-pop_front transiently overshoots
+    // by one, same convention as every other RingBuffer conversion this repo
+    // has made).
     int64_t m_lastTrainingEventTimestampUs = 0;
-    std::deque<int64_t> m_recentTrainingDeltaUs;
     static constexpr size_t kTrainingTauWindowSize = 100;
+    RingBuffer<int64_t, kTrainingTauWindowSize + 1> m_recentTrainingDeltaUs;
+
+    // Tier 2 (docs/superpowers/specs/2026-08-07-training-event-export-dod-
+    // design.md): pooled TrainingEventT scratch object, reused across every
+    // GetTrainingEventT() call instead of freshly std::make_unique'd -- its
+    // three nested heap-owning fields (indicators/observation/
+    // asymmetry_context) are allocated once (lazily, on first use) and never
+    // freed until IndicatorManager itself is destroyed. GetTrainingEventT()
+    // returns a non-owning pointer to this member; every scalar field is
+    // confirmed unconditionally overwritten on every call (see the spec's
+    // §3.2 write-site audit) before the pointer is handed to the caller, so
+    // no data from a previous call is ever visible.
+    MTS::Training::TrainingEventT m_trainingEventScratch;
 
     // Elite v2.4: Global Event Sequence Counter
     // CRITICAL: Monotonically increasing counter for event ordering
