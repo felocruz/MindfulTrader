@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <vector>
 
 // Static singleton
@@ -265,9 +266,16 @@ void EventSerializer::UpdateTemporalPhysics(uint64_t timestamp_us, float& out_de
 
     uint64_t tau_median_us = delta_us;
     if (!m_recentDeltaUs.empty()) {
-        std::vector<uint64_t> scratch(m_recentDeltaUs.begin(), m_recentDeltaUs.end());
-        const size_t mid = scratch.size() / 2;
-        std::nth_element(scratch.begin(), scratch.begin() + static_cast<std::ptrdiff_t>(mid), scratch.end());
+        // Only the filled prefix (n, not the buffer's full kTauWindowSize
+        // capacity) participates in the median — unfilled tail slots are
+        // zero-initialized and would bias nth_element toward zero.
+        const size_t n = m_recentDeltaUs.size();
+        std::array<uint64_t, kTauWindowSize> scratch{};
+        for (size_t i = 0; i < n; ++i) {
+            scratch[i] = m_recentDeltaUs[i];
+        }
+        const size_t mid = n / 2;
+        std::nth_element(scratch.begin(), scratch.begin() + static_cast<std::ptrdiff_t>(mid), scratch.begin() + static_cast<std::ptrdiff_t>(n));
         tau_median_us = scratch[mid];
     }
 

@@ -104,8 +104,8 @@ void Scoring::InitializeMultipliers() {
     };
 }
 
-double Scoring::CalculateEliteCompositeMultiplier(const std::vector<double>& multipliers) const {
-    if (multipliers.empty()) {
+double Scoring::CalculateEliteCompositeMultiplier(const double* multipliers, size_t count) const {
+    if (multipliers == nullptr || count == 0) {
         return 1.0;
     }
 
@@ -114,7 +114,8 @@ double Scoring::CalculateEliteCompositeMultiplier(const std::vector<double>& mul
     double penalty_sum = 0.0;
     int penalty_count = 0;
 
-    for (double m : multipliers) {
+    for (size_t i = 0; i < count; ++i) {
+        const double m = multipliers[i];
         if (m > 1.0) {
             bonus_product *= m;
         } else if (m < 1.0) {

@@ -36,7 +36,7 @@ public:
     // === Core Scoring Algorithms ===
 
     // Elite multiplicative penalty protection: Compound bonuses, average penalties
-    double CalculateEliteCompositeMultiplier(const std::vector<double>& multipliers) const;
+    double CalculateEliteCompositeMultiplier(const double* multipliers, size_t count) const;
 
     // Tanh normalization to prevent gradient explosion
     double NormalizeScore(double raw_score, double scale = 100.0) const;

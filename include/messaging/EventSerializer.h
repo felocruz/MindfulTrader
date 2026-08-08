@@ -5,9 +5,9 @@
 #include <cstdint>
 #include <atomic>
 #include <memory>
-#include <deque>
 #include "flatbuffers/flatbuffers.h"
 #include "generated/mts_schema_generated.h"
+#include "RingBuffer.h"
 
 // Forward declarations
 class IndicatorManager;
@@ -140,8 +140,7 @@ private:
     std::atomic<int32_t> m_lastEventSizeBytes{0};
 
     // Event-physics cache used to compute delta_t_log and tau_100_log on the live stream.
-    uint64_t m_lastEventTimestampUs = 0;
-    std::deque<uint64_t> m_recentDeltaUs;
-
     static constexpr size_t kTauWindowSize = 100;
+    uint64_t m_lastEventTimestampUs = 0;
+    RingBuffer<uint64_t, kTauWindowSize + 1> m_recentDeltaUs;
 };

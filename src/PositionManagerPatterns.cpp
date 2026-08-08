@@ -1,5 +1,6 @@
 #include "PositionManager.h"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include "HMMClient.h"
 #include "IndicatorManager.h"
@@ -128,11 +129,13 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
         deepContextMult = Scoring::Instance().GetDeepContextMultiplier(pattern, riskCtx);
     }
 
-    // Composite Health Score for HOLDING
-    std::vector<double> holdingFactors;
-    holdingFactors.push_back(hmmMult);
-    holdingFactors.push_back(climateMult);
-    holdingFactors.push_back(deepContextMult); // Add deep context multiplier
+    // Composite Health Score for HOLDING (fixed max of 4 factors: hmm, climate,
+    // deep context, and an optional regime-stability factor below).
+    std::array<double, 4> holdingFactors{};
+    size_t holdingFactorCount = 0;
+    holdingFactors[holdingFactorCount++] = hmmMult;
+    holdingFactors[holdingFactorCount++] = climateMult;
+    holdingFactors[holdingFactorCount++] = deepContextMult; // Add deep context multiplier
 
     // Regime stability factor: short expected_duration → lower holding score
     // Logic lives in HmmStateIndicator::HoldingStabilityFactor().
@@ -140,11 +143,11 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
     if (hmmDurInd) {
         const double stabilityFactor = hmmDurInd->HoldingStabilityFactor();
         if (stabilityFactor < 1.0) {
-            holdingFactors.push_back(stabilityFactor);
+            holdingFactors[holdingFactorCount++] = stabilityFactor;
         }
     }
 
-    double holdingScore = Scoring::Instance().CalculateEliteCompositeMultiplier(holdingFactors);
+    double holdingScore = Scoring::Instance().CalculateEliteCompositeMultiplier(holdingFactors.data(), holdingFactorCount);
     const float toxicThreshold = RiskManager::Instance().GetLiveToxicScoreThreshold();
     const float hostileThreshold = RiskManager::Instance().GetLiveHostileScoreThreshold();
 
