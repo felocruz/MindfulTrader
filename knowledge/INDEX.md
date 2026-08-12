@@ -47,6 +47,8 @@ These existing docs contain valuable content that hasn't been chunked yet.
 | `src/IndicatorManager.cpp` + `IndicatorManager.h` | `global/cpp/indicator_manager_dod.md` | done (2026-08-06) |
 | ZMQ port topology (from CLAUDE.md) | `global/zmq/port_topology.md` | pending |
 | `docs/TRADING_STRATEGIES_COMPLETE_REFERENCE.md` | `global/architecture/trading_strategies.md` | pending |
+| `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md` | `global/cpp/gang_hurst_mandelbrot.md`, `global/cpp/gang_shannon_entropy.md`, `global/cpp/gang_taleb_kurtosis.md`, `global/cpp/gang_pareto_hill_estimator.md` (one per pillar) | pending — spec is still evolving (rows marked `needs-empirical-validation`); chunk once findings settle to `validated`/`under-powered` (see spec's own status-table convention) |
+| `docs/ADR/triple_barrier_exit_engine_spec.md` + `triple_barrier_cutover_phase1_plan.md` (+ 5 companion rulings) | `global/cpp/exit_doctrine_triple_barrier.md` | pending — **stable, settled fact, not fluid**: `ChandelierStopManager` was fully deleted (commit `9ee5326`, 2026-07-15); live exit doctrine is single-stage immutable first-touch Triple Barrier, not multi-stage Chandelier trailing/scale-out. High-priority chunk — this is exactly the kind of "assistant doesn't know a major deletion happened" gap the KB exists to prevent, and unlike the Gang spec above there's nothing left to validate first. |
 
 ---
 
