@@ -5,6 +5,7 @@
 #include "Logger.h"
 #include "DailyBiasEngine.h"
 #include "RingBuffer.h"
+#include "OrderFlowAsymmetryEngine.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2964,7 +2965,12 @@ void UpdateObservationVectorSubgraphs(
     } else {
         Subgraph_PathEfficiencySNR[sc.Index] = CalculatePathEfficiencySNR(sc, Subgraph_ATR[sc.Index], adaptive_window_n);
         Subgraph_HurstExponent[sc.Index] = CalculateHurstExponent(sc);
-        Subgraph_MicroAsymmetry[sc.Index] = CalculateMicroAsymmetry(sc, Subgraph_VolumeSMA[sc.Index], adaptive_window_n);
+        float& lastValidMicroAsymmetry = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MICRO_ASYMMETRY_LAST_VALID_VALUE);
+        Subgraph_MicroAsymmetry[sc.Index] = ofae::ComputeMicroAsymmetry(
+            static_cast<float>(sc.AskVolume[sc.Index]),
+            static_cast<float>(sc.BidVolume[sc.Index]),
+            lastValidMicroAsymmetry);
+        lastValidMicroAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
         Subgraph_RealizedKurtosis[sc.Index] = CalculateRealizedKurtosis(sc, Subgraph_RealizedKurtosis[sc.Index - 1], Subgraph_ATR.Data);
         Subgraph_SkewnessIdx[sc.Index] = CalculateSkewness(sc, Subgraph_ATR.Data);
 

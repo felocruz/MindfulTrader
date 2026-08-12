@@ -83,6 +83,7 @@ namespace PersistentVar_AdaptiveCalculators {
     const int HURST_LAST_VALID_VALUE = 24;   // Last finite Hurst value for graceful degradation
     const int HURST_HAS_LAST_VALID = 25;     // 1 when HURST_LAST_VALID_VALUE has been initialized
     const int LAST_AMIHUD_SAMPLE_INDEX = 26; // Last bar index pushed into the Amihud percentile pool (once per 15-min bar)
+    const int MICRO_ASYMMETRY_LAST_VALID_VALUE = 27; // Last valid (has-trade) order-flow asymmetry for graceful degradation on a no-trade bar
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection
