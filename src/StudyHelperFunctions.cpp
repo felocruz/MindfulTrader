@@ -2627,106 +2627,6 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc) {
     return CalculateHurstExponent(sc, 100, 8);
 }
 
-/// Calculate True Microstructure Asymmetry from Sierra Chart's Time and Sales tick-by-tick data
-/// Measures informed order flow: true buyer/seller pressure at market makers' surfaces
-/// ELITE ARCHITECTURE: Institutional-grade order flow inference (not price proxy)
-///
-/// @return Asymmetry normalized to [-1.0, 1.0]:
-///   +1.0 = Pure buying pressure (buyers aggressive at ask, supply exhaustion)
-///   -1.0 = Pure selling pressure (sellers aggressive at bid, distribution)
-///    0.0 = Balanced order flow (no directional bias)
-float CalculateMicroAsymmetryFromTimeAndSales(SCStudyInterfaceRef sc) {
-    // Use persistent storage to track last processed T&S sequence (avoid reprocessing)
-    int64_t& last_ts_sequence = sc.GetPersistentInt64(42);  // Slot 42: T&S sequence tracking
-
-    // Get Time and Sales data from Sierra Chart
-    c_SCTimeAndSalesArray TimeSalesArray;
-    sc.GetTimeAndSales(TimeSalesArray);
-
-    if (TimeSalesArray.Size() == 0) {
-        // Signal unavailable so caller can fall back to price-action proxy.
-        return std::numeric_limits<float>::quiet_NaN();
-    }
-
-    // Scan recent Time and Sales records for order flow asymmetry
-    // Process only new records since last call (sequence tracking prevents double counting)
-    float bid_volume = 0.0f;
-    float ask_volume = 0.0f;
-    int new_directional_records = 0;
-
-    // Loop through Time and Sales, processing only new records since last call
-    for (int i = 0; i < TimeSalesArray.Size(); ++i) {
-        const s_TimeAndSales& record = TimeSalesArray[i];
-
-        // Skip already-processed records (avoid thundering herd)
-        if (record.Sequence <= last_ts_sequence)
-            continue;
-
-        // Classify by Type and accumulate flow asymmetry
-        float trade_volume = static_cast<float>(record.Volume);
-
-        if (record.Type == SC_TS_BID) {
-            // BID trade: seller took liquidity (bearish pressure)
-            bid_volume += trade_volume;
-            ++new_directional_records;
-        } else if (record.Type == SC_TS_ASK) {
-            // ASK trade: buyer took liquidity (bullish pressure)
-            ask_volume += trade_volume;
-            ++new_directional_records;
-        }
-        // SC_TS_BIDASKVALUES and SC_TS_OTHER skipped (not directional)
-    }
-
-    // Update last processed sequence for next call
-    if (TimeSalesArray.Size() > 0) {
-        last_ts_sequence = TimeSalesArray[TimeSalesArray.Size() - 1].Sequence;
-    }
-
-    // Calculate asymmetry: (buyer pressure - seller pressure) / total
-    float total_volume = bid_volume + ask_volume;
-    if (new_directional_records == 0 || total_volume < 0.001f) {
-        // No new usable T&S trades this call; let caller use fallback path.
-        return std::numeric_limits<float>::quiet_NaN();
-    }
-
-    // Asymmetry formula (signed, normalized to [-1, 1])
-    // +1.0: 100% buying (all trades at ask)
-    // -1.0: 100% selling (all trades at bid)
-    //  0.0: 50-50 balanced
-    float asymmetry = (ask_volume - bid_volume) / total_volume;
-    return std::clamp(asymmetry, -1.0f, 1.0f);
-}
-
-float CalculateMicroAsymmetry(SCStudyInterfaceRef sc, [[maybe_unused]] float volume_sma_20, int lookback_n) {
-    /// Microstructure Asymmetry - Dual-Mode Institutional Implementation
-    /// Time and Sales tick-by-tick order flow (true informed lead indicator)
-    ///
-    /// Interpretation:
-    ///   -1.0: All selling (distribution, sellers aggressive at bid)
-    ///    0.0: Balanced (no directional flow bias)
-    ///   +1.0: All buying (accumulation, buyers aggressive at ask)
-    ///
-    /// ELITE ARCHITECTURE:
-    ///   T&S Path: Real tick-by-tick order flow (10-100ms latency)
-
-    // PHASE 1: Try Time and Sales (institutional-grade real order flow)
-    float ts_asymmetry = CalculateMicroAsymmetryFromTimeAndSales(sc);
-
-    // Check if T&S data was available (if ts_asymmetry != 0 or records were processed)
-    // For now, use a heuristic: if we have recent T&S data, prefer it
-    c_SCTimeAndSalesArray TimeSalesArray;
-    sc.GetTimeAndSales(TimeSalesArray);
-
-    if (TimeSalesArray.Size() > 0 && std::isfinite(ts_asymmetry)) {
-        // T&S data available: use it (even if asymmetry is 0, it means balanced not unavailable)
-        // Return the T&S-based asymmetry as primary signal
-        return ts_asymmetry;
-    }
-
-    (void)lookback_n;
-    return std::numeric_limits<float>::quiet_NaN();
-}
-
 float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFloatArrayRef atrArray) {
     /// Realized Kurtosis - ELITE: Regime-Adjusted Implementation #3
     /// Detects tail risk (excess kurtosis >3 = panic/euphoria, 0 = normal, <-2 = flat/trapped)
@@ -3033,7 +2933,6 @@ void UpdateObservationVectorSubgraphs(
 ///   // Calculate observation vector with adaptive window
 ///   for (int i = 0; i < windows.observation_vector_n; ++i) {
 ///       features[0] = CalculatePathEfficiencySNR(...);  // Uses entropy_window
-///       features[1] = CalculateMicroAsymmetry(...);   // Uses asym_window
 ///       // ... all observation dimensions use windows.observation_vector_n
 ///   }
 ///

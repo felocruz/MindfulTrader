@@ -254,16 +254,6 @@ float CalculatePathEfficiencySNR(SCStudyInterfaceRef sc, float atr10, int lookba
 /// Hurst Exponent (Index 6): Rescaled Range Analysis for persistence detection
 float CalculateHurstExponent(SCStudyInterfaceRef sc);
 
-/// TRUE Microstructure Asymmetry from Time and Sales tick data (Institutional-Grade Order Flow)
-/// Primary method: Measures real buyer/seller pressure at market makers' surfaces
-/// Infers informed trading flow: informed traders come first, retail follows 10-500ms later
-float CalculateMicroAsymmetryFromTimeAndSales(SCStudyInterfaceRef sc);
-
-/// Microstructure Asymmetry (Index 7): Dual-mode - T&S priority, fallback to price proxy
-/// PRIORITY 1: Time and Sales tick-by-tick (10-100ms informed flow latency)
-/// FALLBACK: Price-action signed volume (5s bar-closure latency)
-float CalculateMicroAsymmetry(SCStudyInterfaceRef sc, float volume_sma_20, int lookback_n = 20);
-
 /// Realized Kurtosis: 4th moment with bias correction (fat tail detector)
 /// prevKurtosis: carry-forward value from previous bar (for low-variance fallback)
 float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFloatArrayRef atrArray);
