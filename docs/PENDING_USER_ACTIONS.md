@@ -58,4 +58,26 @@ Several design decisions were made "safe-by-construction" (a wrong guess falls b
 
 ---
 
-*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`).*
+## 6. Dim 11 (`amihud_illiquidity`) empirical re-verification — after this DLL is deployed
+
+From `docs/superpowers/specs/2026-08-12-tick-native-toxicity-illiquidity-design.md`: dim 11's
+FeatureScaler zero-collapse may already be resolved by the existing `AMIHUD_ABSOLUTE_FLOOR` fix in
+`FeatureScaler.h` — the `.context` file this was diagnosed from may predate that fix reaching a
+deployed build.
+
+1. Deploy the DLL built by `docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`'s
+   Task 4 and run a historical replay through `EventDataCollectorStudy` to produce a fresh `.context`
+   file.
+2. Run `context_preflight.py`'s octile zero-ratio analysis (see
+   `docs/superpowers/plans/2026-08-12-observation-vector-sentinel-collapse-audit.md` §2 for the
+   method) against the fresh file, specifically for dim 11.
+3. **If dim 11's zero-ratio now shows the same warmup-decay-then-flatten shape dim 0 already
+   shows** (flattening to a low single-digit percentage, not a persistent ~40%): no further C++
+   change needed — close this out.
+4. **If it doesn't**: apply the carry-forward pattern from
+   `docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md` D1
+   (`CalculateAmihudIlliquidity`'s `count < 2` branch) as originally speced.
+
+---
+
+*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`).*
