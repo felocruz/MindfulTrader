@@ -2807,7 +2807,13 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
     const float range_signal = 1.0f / (1.0f + std::exp(-2.0f * logRatio));  // logistic sigmoid
 
     // Signal 2: Thin-book pressure from volume depletion.
-    const float currentVolume = static_cast<float>(sc.Volume[sc.Index]);
+    // Last fully-closed bar's volume, not the current still-forming bar's
+    // (this function is called once per bar, at the bar's first tick, via
+    // UpdateObservationVectorSubgraphs -- sc.Volume[sc.Index] at that moment
+    // is live and near its minimum almost every call, systematically biasing
+    // "thinness" toward its extreme. See
+    // docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md.
+    const float currentVolume = (sc.Index >= 1) ? static_cast<float>(sc.Volume[sc.Index - 1]) : 0.0f;
     float thinness = 0.5f;  // neutral when volume references are unavailable
     if (volumeSma > 1.0f && currentVolume > 0.0f) {
         const float volRatio = currentVolume / volumeSma;
