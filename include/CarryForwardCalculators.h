@@ -61,4 +61,16 @@ inline float ComputeFisherInformation(float minPrice, float maxPrice, float curr
     return 0.5f * std::log((1.0f + x) / (1.0f - x));
 }
 
+// Dim 11 (amihud_illiquidity): mean(|log-return|/dollar-volume) over the
+// valid samples in the lookback window. Degenerate when fewer than 2 valid
+// samples were found (thin/illiquid lookback) — carries the last valid
+// value forward instead of a fabricated exact-zero "perfectly liquid"
+// reading.
+inline float ComputeAmihudIlliquidity(double sum, int count, float lastValidValue) {
+    if (count < 2) {
+        return lastValidValue;
+    }
+    return static_cast<float>(sum / count);
+}
+
 }  // namespace cfc

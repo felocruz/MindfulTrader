@@ -3049,9 +3049,18 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
     // per unit dollar flow). High values = illiquid (large impact per dollar traded).
     if (sc.Index < lookback_n) return 0.0f;
 
+    // Window is entirely closed/historical bars (i=1..lookback_n), never the
+    // current still-forming bar (i=0). This function is called from
+    // UpdateObservationVectorSubgraphs's once-per-bar gate (first tick of
+    // each bar only) -- sc.Volume[sc.Index] at that moment is the live,
+    // still-accumulating volume, near its minimum almost every call, which
+    // would otherwise make the current-bar term spuriously fail the
+    // dollarVol/vol floor checks below on nearly every call (same root
+    // cause as dim 7's and dim 12's once-per-bar timing bugs -- see
+    // docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md).
     double sum = 0.0;
     int count = 0;
-    for (int i = 0; i < lookback_n; ++i) {
+    for (int i = 1; i <= lookback_n; ++i) {
         int idx = sc.Index - i;
         if (idx < 1) break;
         const double price = static_cast<double>(sc.Close[idx]);
@@ -3064,12 +3073,11 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
         sum += logRet / dollarVol;
         ++count;
     }
-    if (count < 2) return 0.0f;
 
-    // Mean |log-return| per dollar of volume. PHASE-2A FeatureScaler handles the
-    // model-input scaling; the risk gate uses a session-aware rolling percentile
-    // of this raw value (scale-invariant), so absolute units are irrelevant here.
-    return static_cast<float>(sum / count);
+    float& lastValidAmihud = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE);
+    const float amihud = cfc::ComputeAmihudIlliquidity(sum, count, lastValidAmihud);
+    lastValidAmihud = amihud;
+    return amihud;
 }
 
 float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n) {

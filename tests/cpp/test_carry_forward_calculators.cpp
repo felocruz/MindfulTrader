@@ -73,6 +73,19 @@ int main() {
     check("fisher_info_degenerate_no_prior_value_returns_neutral",
           approx(cfc::ComputeFisherInformation(100.0f, 100.0f, 100.0f, 0.0f), 0.0f));
 
+    // --- ComputeAmihudIlliquidity (dim 11) ---
+    check("amihud_normal_case_is_mean",
+          approx(cfc::ComputeAmihudIlliquidity(0.006, 3, 0.0f), 0.006 / 3.0));
+
+    check("amihud_degenerate_count_carries_forward",
+          approx(cfc::ComputeAmihudIlliquidity(0.006, 1, 0.42f), 0.42f));
+
+    check("amihud_degenerate_zero_count_carries_forward",
+          approx(cfc::ComputeAmihudIlliquidity(0.0, 0, 0.42f), 0.42f));
+
+    check("amihud_degenerate_no_prior_value_returns_neutral",
+          approx(cfc::ComputeAmihudIlliquidity(0.006, 1, 0.0f), 0.0f));
+
     std::printf("\n%d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
 }
