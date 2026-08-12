@@ -58,7 +58,7 @@ Several design decisions were made "safe-by-construction" (a wrong guess falls b
 
 ---
 
-## 6. Dim 11 (`amihud_illiquidity`) — empirical question RESOLVED (2026-08-12), fix not yet implemented
+## 6. Dim 11 (`amihud_illiquidity`) — RESOLVED (2026-08-12), fix implemented (commit `b7d3f05`), pending the batched deploy
 
 **Update (2026-08-12):** the empirical re-verification below has concluded — via a live
 `ContextManager::ObservationStaleness ALERT` grep of `/mnt/c/Trading/logs/MindfulTrader.log` against
@@ -79,13 +79,20 @@ exact-zero-collapse pattern (that's the `FeatureScaler` median mechanism, unchan
 related, additional bias worth fixing in the same pass — the current-bar volume should be read at
 whatever point is most complete for that bar, not always at its first tick.
 
-1. Apply the carry-forward pattern from
-   `docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md` D1
-   (`CalculateAmihudIlliquidity`'s `count < 2` branch) as originally speced.
-2. In the same pass, fix the current-bar volume timing issue described above — mirror dim 7's fix
-   (`TripleScreen3.cpp`, `git show 90b17fc`): move the current-bar term out of the once-per-bar-gated
-   `UpdateObservationVectorSubgraphs` path, or otherwise ensure `sc.Volume[sc.Index]` is read late
-   enough in the bar's life to be meaningful, not always at the first tick.
+**Implemented as (commit `b7d3f05`):**
+
+1. Carry-forward: `CalculateAmihudIlliquidity`'s degenerate branch (previously `if (count < 2) return
+   0.0f;`) now calls `cfc::ComputeAmihudIlliquidity(sum, count, lastValidAmihud)`, per the pattern in
+   `docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md` D1 — the last
+   valid value is persisted via `sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE)`
+   instead of collapsing to a fixed `0.0f` sentinel.
+2. Current-bar volume timing: the summation loop changed from `for (int i = 0; i < lookback_n; ++i)`
+   to `for (int i = 1; i <= lookback_n; ++i)`, excluding the live current bar (i=0) from the window
+   entirely rather than merely deferring its read — the window is now built exclusively from
+   closed/historical bars, mirroring dim 7's and dim 12's once-per-bar timing fixes.
+
+This is now grouped with the other dims-1/2/7/8/12/3/4 fixes awaiting one batched deploy + post-deploy
+re-verify (see section 4's framing above for the same batched-deploy pattern).
 
 ---
 
@@ -113,4 +120,4 @@ paths), consistent with a shared "no new price data" cause rather than a defect 
 
 ---
 
-*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`).*
+*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`), Section 6 updated 2026-08-12 alongside this plan (`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`) to mark the fix implemented.*
