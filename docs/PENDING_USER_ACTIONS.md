@@ -58,25 +58,58 @@ Several design decisions were made "safe-by-construction" (a wrong guess falls b
 
 ---
 
-## 6. Dim 11 (`amihud_illiquidity`) empirical re-verification — after this DLL is deployed
+## 6. Dim 11 (`amihud_illiquidity`) — empirical question RESOLVED (2026-08-12), fix not yet implemented
 
-From `docs/superpowers/specs/2026-08-12-tick-native-toxicity-illiquidity-design.md`: dim 11's
-FeatureScaler zero-collapse may already be resolved by the existing `AMIHUD_ABSOLUTE_FLOOR` fix in
-`FeatureScaler.h` — the `.context` file this was diagnosed from may predate that fix reaching a
-deployed build.
+**Update (2026-08-12):** the empirical re-verification below has concluded — via a live
+`ContextManager::ObservationStaleness ALERT` grep of `/mnt/c/Trading/logs/MindfulTrader.log` against
+the currently-deployed DLL (`/mnt/c/SierraChart2/Data/MindfulTrader.dll`, built 09:02:32, confirmed to
+already include the pre-existing `AMIHUD_ABSOLUTE_FLOOR` fix) — dim 11 is **still** persistently
+zero-collapsing: 49 alerts, always exactly `0.0`, max stale run 2,477 samples. The existing floor fix
+is confirmed insufficient — item 1 below is the answer.
 
-1. Deploy the DLL built by `docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`'s
-   Task 4 and run a historical replay through `EventDataCollectorStudy` to produce a fresh `.context`
-   file.
-2. Run `context_preflight.py`'s octile zero-ratio analysis (see
-   `docs/superpowers/plans/2026-08-12-observation-vector-sentinel-collapse-audit.md` §2 for the
-   method) against the fresh file, specifically for dim 11.
-3. **If dim 11's zero-ratio now shows the same warmup-decay-then-flatten shape dim 0 already
-   shows** (flattening to a low single-digit percentage, not a persistent ~40%): no further C++
-   change needed — close this out.
-4. **If it doesn't**: apply the carry-forward pattern from
+**Also newly found, while root-causing dim 7's separate once-per-bar timing bug (see
+`docs/superpowers/plans/2026-08-12-observation-vector-incremental-accumulators.md`'s "Related finding"
+section):** `CalculateAmihudIlliquidity` reads `sc.Volume[sc.Index]` for the current (i=0) term —
+`sc.Volume` accumulates throughout the still-forming bar exactly like `sc.AskVolume`/`sc.BidVolume`
+did for dim 7. Because this function is called from `UpdateObservationVectorSubgraphs`'s once-per-bar
+gate (fires only on the bar's first tick), the current bar's volume is read while still near-zero,
+tripping `if (vol < 1.0) continue;` (`StudyHelperFunctions.cpp:3060`) and silently dropping the
+current bar's term from the sum on essentially every call. This doesn't by itself explain the
+exact-zero-collapse pattern (that's the `FeatureScaler` median mechanism, unchanged) but it is a
+related, additional bias worth fixing in the same pass — the current-bar volume should be read at
+whatever point is most complete for that bar, not always at its first tick.
+
+1. Apply the carry-forward pattern from
    `docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md` D1
    (`CalculateAmihudIlliquidity`'s `count < 2` branch) as originally speced.
+2. In the same pass, fix the current-bar volume timing issue described above — mirror dim 7's fix
+   (`TripleScreen3.cpp`, `git show 90b17fc`): move the current-bar term out of the once-per-bar-gated
+   `UpdateObservationVectorSubgraphs` path, or otherwise ensure `sc.Volume[sc.Index]` is read late
+   enough in the bar's life to be meaningful, not always at the first tick.
+
+---
+
+## 7. Dim 9 (`tail_index`) long stale runs — investigated, CLOSED (2026-08-12): organic, no bug
+
+`ContextManager::ObservationStaleness ALERT` showed 56 alerts for dim 9 (`tail_index`, Hill estimator
+alpha from `TailRiskEngine`), max stale run 10,141 samples, values varying (not a single frozen
+sentinel like dims 1/7/11). Investigated per
+`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md` Task 5. Full analysis:
+`.superpowers/sdd/2026-08-12-remaining-observation-vector-dims/task-5-report.md`.
+
+**Conclusion: organic, not the Tasks 1-4 once-per-bar timing bug family and not a warmup-reset
+artifact.** `TailRiskEngine::AddObservation` (feeding dim 9) is only called from
+`EventDataCollectorStudy.cpp` when `sc.Close[sc.Index]` actually changes
+(`currentPrice != s_lastPhysicsPrice`), but the staleness-telemetry counter increments on every
+`CheckAndTriggerHMM` call regardless of whether a new price print occurred. Long stale runs correspond
+to real stretches of the replayed historical data with no new price observation (thin-liquidity/quiet
+windows), not a computation defect: `GetHillAlpha()` is a pure function of the circular buffer's
+contents, so an unfed buffer produces a bit-identical result on every call, which is correct. Only one
+`Context reset generation=` occurred in the analyzed log (well before nearly all 56 alerts), ruling out
+warmup-reset churn as the driver. Corroborating evidence: dim 9 goes stale in the same telemetry windows
+as several structurally unrelated dims (dim1, dim2, dim7, dim8, dim11, dim14, fed by different code
+paths), consistent with a shared "no new price data" cause rather than a defect isolated to
+`TailRiskEngine`. No code change made or required.
 
 ---
 
