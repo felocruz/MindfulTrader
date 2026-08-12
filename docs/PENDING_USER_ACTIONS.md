@@ -91,10 +91,26 @@ whatever point is most complete for that bar, not always at its first tick.
    entirely rather than merely deferring its read — the window is now built exclusively from
    closed/historical bars, mirroring dim 7's and dim 12's once-per-bar timing fixes.
 
-This is now grouped with the other dims-1/2/7/8/12/3/4 fixes awaiting one batched deploy + post-deploy
-re-verify, per `docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`'s Global
-Constraints ("batch the deploy after every task here, and the already-committed dims 1/2/7/8 fixes,
-into one deploy") and its "Explicitly out of scope" section.
+**Update (2026-08-12, fix round 1):** dim 12's fragility_raw is `0.65 * range_signal + 0.35 *
+(range_signal * thinness)`. The `9506dd5` commit above fixed only the `thinness` term's volume read;
+`range_signal` — the dominant, 0.65-weighted term — still computed `barRange = sc.High[sc.Index] -
+sc.Low[sc.Index]`, reading the live still-forming bar. Since this function is called at the bar's first
+tick (same once-per-bar gate as dims 4/7/11), `High == Low` at that moment and `barRange` collapsed to
+its `0.00001f` floor on essentially every live call, pinning `fragility_raw` to roughly `[0.0064,
+0.0099]` regardless of actual market conditions. Fixed in commit `f6f112d`
+(`fix(microstructure): closed-bar-only range read for liq_fragility dominant term (dim 12)`) —
+`barRange` now reads `sc.High[sc.Index - 1] - sc.Low[sc.Index - 1]`, mirroring the pattern already used
+for the volume term six lines below.
+
+**Also decided and deliberately deferred (2026-08-12):** `CalculateRealizedVarianceRatio` (dim 3,
+`correction_action`) still reads `sc.Close[sc.Index]` (the live current bar) as its `i=0` term every
+tick. This was reviewed and NOT changed to closed-bar-only in this plan, because unlike
+`sc.Volume`/`sc.BaseData[SC_HIGH/LOW]` (accumulators that are genuinely incomplete early in a bar),
+`sc.Close` mid-bar is simply "the current best-known price" — a legitimate real-time quantity, not a
+partially-formed one. If this needs to change, it should be its own future decision, not bundled here.
+
+See section 8 below for the batched-deploy tracking and re-verification plan covering this fix
+alongside dims 1/2/3/4/7/8/11.
 
 ---
 
@@ -103,8 +119,7 @@ into one deploy") and its "Explicitly out of scope" section.
 `ContextManager::ObservationStaleness ALERT` showed 56 alerts for dim 9 (`tail_index`, Hill estimator
 alpha from `TailRiskEngine`), max stale run 10,141 samples, values varying (not a single frozen
 sentinel like dims 1/7/11). Investigated per
-`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md` Task 5. Full analysis:
-`.superpowers/sdd/2026-08-12-remaining-observation-vector-dims/task-5-report.md`.
+`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md` Task 5.
 
 **Conclusion: organic, not the Tasks 1-4 once-per-bar timing bug family and not a warmup-reset
 artifact.** `TailRiskEngine::AddObservation` (feeding dim 9) is only called from
@@ -122,4 +137,53 @@ paths), consistent with a shared "no new price data" cause rather than a defect 
 
 ---
 
-*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`), Section 6 updated 2026-08-12 alongside this plan (`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`) to mark the fix implemented.*
+## 8. Batched deploy of dims 1/2/3/4/7/8/11/12 fixes + post-deploy re-verification
+
+**Bundled commits:**
+
+- Dims 1/2/8 (`burstiness_index`, `relative_range`, `fisher_info` carry-forward instead of a fixed
+  `0.0f` sentinel): `e6b4003`
+- Dim 7 (`micro_asymmetry` computed every tick instead of once per bar): `90b17fc`
+- Dim 3 (`correction_action` carry-forward via the existing burstiness formula): `241b4c0`
+- Dim 4 (`vol_convexity` closed-bar-only window): `008b421`
+- Dim 11 (`amihud_illiquidity` carry-forward + closed-bar-only window): `b7d3f05`
+- Dim 12 (`liq_fragility`): thinness/volume term `9506dd5`, dominant range_signal term `f6f112d`
+
+**Deploy steps:**
+
+1. Build: `./build_dll.sh --no-clean` (must succeed with 0 errors).
+2. Copy the resulting `bin/MindfulTrader.dll` to the currently-deployed DLL path,
+   `/mnt/c/SierraChart2/Data/MindfulTrader.dll` (same path referenced in this section's history above).
+3. Restart Sierra Chart (or reload the study instance) so the new DLL is actually picked up.
+4. Run a historical replay through `BackTesterStudy` (or a live session) long enough to accumulate
+   several thousand `ContextManager::ObservationStaleness ALERT` samples.
+5. Grep `/mnt/c/Trading/logs/MindfulTrader.log` for `ObservationStaleness ALERT` and tabulate, per dim,
+   the alert count, max stale run, and whether values vary or sit at a single frozen sentinel — the
+   same method used to verify dim 11 above.
+
+**Per-dim acceptance criteria:**
+
+- **Dims 4, 11, 12 (now bar-quantized / closed-bar-only):** these dims recompute once per closed bar,
+  not continuously. The correct post-deploy signature is "value changes at bar boundaries and is
+  non-zero/non-degenerate" — NOT "low stale-run count." A bar-quantized value legitimately shows a
+  longer stale run within a single bar's ticks than before (it is correctly frozen for the whole bar by
+  design), and that is not a regression.
+  - **Dim 4 specifically: its alert COUNT is expected to INCREASE from its pre-fix baseline of 9
+    alerts.** A bit-identical value across a whole bar's ticks is now correct behavior, not a bug — do
+    not misread a higher post-deploy count as new breakage.
+  - Dim 11: confirm it no longer collapses to exactly `0.0` (pre-fix: 49 alerts, always exactly `0.0`,
+    max stale run 2,477). Post-fix it should show non-zero, plausible values that change at bar
+    boundaries.
+  - Dim 12: confirm `fragility_raw` is no longer pinned to roughly `[0.0064, 0.0099]` — it should range
+    meaningfully wider (design intent: ~0.0-0.35 normal, ~0.4-0.8 stressed) and change at bar
+    boundaries.
+- **Dim 3 (`correction_action`):** expect the exact-zero-collapse pattern to be gone — carry-forward is
+  now active on the degenerate branch, so the value should hold the last valid reading instead of
+  resetting to `0.0`.
+- **Dims 1/2/7/8:** confirm no `stale_run` matching a single frozen sentinel value the way dims 1/7/11
+  did pre-fix — carry-forward should be visibly holding the last valid physics reading, not a fixed
+  `0.0`.
+
+---
+
+*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`), Section 6 updated 2026-08-12 alongside this plan (`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`) to mark the fix implemented. Section 6 updated again and Section 8 added 2026-08-12 alongside this plan's fix round 1 (dim 12's dominant-term fix), restoring a concrete batched-deploy verification recipe and recording dim 3's live-current-bar read as a deliberate, reviewed deferral; Section 7 updated to remove its dangling gitignored `.superpowers/sdd/**` report reference.*
