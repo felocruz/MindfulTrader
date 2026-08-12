@@ -92,7 +92,9 @@ whatever point is most complete for that bar, not always at its first tick.
    closed/historical bars, mirroring dim 7's and dim 12's once-per-bar timing fixes.
 
 This is now grouped with the other dims-1/2/7/8/12/3/4 fixes awaiting one batched deploy + post-deploy
-re-verify (see section 4's framing above for the same batched-deploy pattern).
+re-verify, per `docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`'s Global
+Constraints ("batch the deploy after every task here, and the already-committed dims 1/2/7/8 fixes,
+into one deploy") and its "Explicitly out of scope" section.
 
 ---
 
