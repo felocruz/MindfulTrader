@@ -221,8 +221,8 @@ public:
 
     /// Mark TS1 macro dims (0/6/8/9) as freshly committed at replay timestamp
     /// and process-monotonic timestamp.
-    /// Called by TS1 writer only after atomic finite commit.
-    void MarkTs1MacroDimsFresh(uint64_t timestamp_us);
+    /// quality_ready must be true only after TS1 statistical warmup/contract checks pass.
+    void MarkTs1MacroDimsFresh(uint64_t timestamp_us, bool quality_ready = true);
 
     /// Returns true when TS1 macro dims are finite, non-degenerate, and fresh.
     /// max_age_us bounds accepted staleness from the last TS1 macro commit.
@@ -234,6 +234,11 @@ public:
 
     /// Last replay timestamp when TS1 macro dims were atomically committed.
     uint64_t GetTs1MacroLastWriteUs() const;
+
+    /// True once TS1 has produced at least one post-reset quality-qualified write.
+    bool HasTs1QualityReadyAfterReset() const {
+        return m_ts1QualityReadyAfterReset.load(std::memory_order_relaxed);
+    }
 
     /// Mark TS2 structural dims (recurrence/fractal) as freshly committed at replay timestamp
     /// and process-monotonic timestamp.
@@ -281,7 +286,8 @@ public:
     /// Reset all state (hard epoch boundary for chart-derived data).
     /// After reset, TS1/TS2 readiness requires fresh post-reset producer writes.
     /// reset_reference_time_us should be the replay/live chart timestamp at arm-time.
-    /// If provided, preserved TS1/TS2 ownership snapshots are anchored to this epoch.
+    /// Preserved TS1/TS2 ownership snapshots are value-restored only; readiness/freshness
+    /// is re-earned from post-reset producer commits.
     void Reset(uint64_t reset_reference_time_us = 0);
 
 public:
@@ -392,6 +398,7 @@ private:
     std::atomic<uint64_t> m_ts1MacroLastSteadyUs{0};         ///< Process-monotonic TS1 commit time (us)
     std::atomic<uint64_t> m_ts2StructuralLastSteadyUs{0};    ///< Process-monotonic TS2 structural commit time (us)
     std::atomic<bool> m_ts1SeenAfterReset{false};            ///< TS1 producer has written since last hard reset
+    std::atomic<bool> m_ts1QualityReadyAfterReset{false};    ///< TS1 producer emitted at least one statistically-qualified post-reset write
     std::atomic<bool> m_ts2SeenAfterReset{false};            ///< TS2 producer has written since last hard reset
     std::atomic<uint64_t> m_resetGeneration{0};              ///< Monotonic epoch id incremented by Reset()
 

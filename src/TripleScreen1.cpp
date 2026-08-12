@@ -34,7 +34,7 @@ enum class Ts1MacroObsLogMode : int {
 
 // TS1 macro-observation diagnostics were used during WS-09 investigation.
 // Keep disabled by default to avoid polluting runtime logs.
-constexpr Ts1MacroObsLogMode kTs1MacroObsLogMode = Ts1MacroObsLogMode::OFF;
+constexpr Ts1MacroObsLogMode kTs1MacroObsLogMode = Ts1MacroObsLogMode::IMPORTANT_ONLY;
 constexpr uint64_t kTs1MacroDigestEveryWrites = 500;
 constexpr uint64_t kTs1MacroStaleWarnEveryWrites = 2000;
 constexpr uint64_t kTs1MacroNonFiniteWarnEveryWrites = 1000;
@@ -492,6 +492,8 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
         } else if (!hasSufficientHurstHistory) {
             hurst = s_hasLastValidHurst ? s_lastValidHurst : 0.5f;
         }
+        const bool hurstUsingInsufficientHistoryFallback =
+            !std::isfinite(hurstRaw) && !hasSufficientHurstHistory;
 
         // 3. Hill Estimator — sourced from TailRiskEngine (event-driven).
         //    TRE is the unconditional authority; no bar-based CalculateHillEstimator here.
@@ -530,6 +532,12 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
             const float dim9TailIndex = obs->tail_index();
             const bool dim9Finite = std::isfinite(dim9TailIndex);
             const bool allTs1DimsFinite = dim0Finite && dim6Finite && dim8Finite && dim9Finite;
+            const bool ts1HistoryReady =
+                (sc.Index + 1) >= (macro_window_n + 1) &&
+                (sc.Index + 1) >= fisher_window_n;
+            const bool ts1QualityReady = allTs1DimsFinite &&
+                                         ts1HistoryReady &&
+                                         !hurstUsingInsufficientHistoryFallback;
 
             if (!allTs1DimsFinite &&
                 ShouldLogTs1MacroImportant() &&
@@ -613,6 +621,8 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
 
             static uint64_t s_macroCommitCount = 0;
             static uint64_t s_macroSkipCount = 0;
+            static uint64_t s_macroQualityReadyCount = 0;
+            static uint64_t s_macroQualityRejectCount = 0;
 
             if (allTs1DimsFinite) {
                 obs->mutate_log_variance_ratio(logVariance);
@@ -620,7 +630,28 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                 // tail_index: sourced from TailRiskEngine in BuildObservationVector()
                 obs->mutate_fisher_info(fisherInfo);
                 ContextManager::Instance().MarkTs1MacroDimsFresh(
-                    sc.GetCurrentDateTime().ToUNIXTimeInMicroseconds());
+                    sc.GetCurrentDateTime().ToUNIXTimeInMicroseconds(), ts1QualityReady);
+                if (ts1QualityReady) {
+                    ++s_macroQualityReadyCount;
+                } else {
+                    ++s_macroQualityRejectCount;
+                    if (ShouldLogTs1MacroImportant() &&
+                        (s_macroQualityRejectCount <= 5 || (s_macroQualityRejectCount % 500) == 0)) {
+                        Logger::getInstance().log(
+                            "TS1 MacroObs quality-not-ready "
+                            "(rejects=" + std::to_string(s_macroQualityRejectCount) +
+                            ", idx=" + std::to_string(sc.Index) +
+                            ", history_ready=" + std::to_string(ts1HistoryReady ? 1 : 0) +
+                            ", hurst_fallback=" +
+                            std::to_string(hurstUsingInsufficientHistoryFallback ? 1 : 0) +
+                            ", macro_window=" + std::to_string(macro_window_n) +
+                            ", fisher_window=" + std::to_string(fisher_window_n) +
+                            ", dim0=" + std::to_string(logVariance) +
+                            ", dim6=" + std::to_string(hurst) +
+                            ", dim8=" + std::to_string(fisherInfo) + ")"
+                        );
+                    }
+                }
                 ++s_macroCommitCount;
             } else {
                 ++s_macroSkipCount;
@@ -631,7 +662,9 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                 Logger::getInstance().log(
                     "TS1 MacroObs commit digest writes=" + std::to_string(s_macroWriteCount) +
                     " committed=" + std::to_string(s_macroCommitCount) +
-                    " skipped=" + std::to_string(s_macroSkipCount)
+                    " skipped=" + std::to_string(s_macroSkipCount) +
+                    " quality_ready=" + std::to_string(s_macroQualityReadyCount) +
+                    " quality_reject=" + std::to_string(s_macroQualityRejectCount)
                 );
             }
         }

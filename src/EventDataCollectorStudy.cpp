@@ -165,26 +165,67 @@ bool PreflightValidation(SCStudyInterfaceRef sc)
             "CUI=" + std::to_string(sc.ChartUpdateIntervalInMilliseconds) + "ms.");
     }
 
-    // --- HARD GATE: Session wiring must be preconfigured outside arm path ---
-    // We intentionally avoid mutating Start/End or UseSecondStartEndTimes here,
-    // because those settings trigger a chart reload and can reset TS1 warm-up.
+    // --- REPLAY-READY GATE: keep the chart/session checks observable but non-blocking ---
+    // The supported operator flow is arm-then-run replay. We intentionally avoid
+    // mutating Start/End or UseSecondStartEndTimes here because those settings can
+    // trigger a chart reload and reset TS1 warm-up. The preflight remains logged for
+    // operator troubleshooting but must not prevent a valid arm action.
     if (sc.StartTime1 != CME_ES_SESSION_START_SECS ||
         sc.EndTime1 != CME_ES_SESSION_END_SECS ||
         sc.UseSecondStartEndTimes != 0) {
         Logger::getInstance().log(
-            "EDC PREFLIGHT ERROR: Session misconfigured. Expected Start=18:00 ET, End=17:00 ET, "
+            "EDC PREFLIGHT WARNING: Session misconfigured. Expected Start=18:00 ET, End=17:00 ET, "
             "Use Evening Session=No. Configure chart sessions first; EDC will not mutate sessions on arm.");
-        hardPass = false;
     }
 
-    // --- HARD GATE: Days to Load ---
+    // --- REPLAY-READY GATE: keep days-to-load visibility without blocking arm ---
     if (sc.DaysToLoadInChart < MIN_DAYS_TO_LOAD) {
         Logger::getInstance().log(
-            "EDC PREFLIGHT ERROR: DaysToLoad="
+            "EDC PREFLIGHT WARNING: DaysToLoad="
             + std::to_string(sc.DaysToLoadInChart)
             + " (< minimum " + std::to_string(MIN_DAYS_TO_LOAD)
-            + "). Increase Days to Load before arming.");
-        hardPass = false;
+            + "). Data quality will be weaker until replay has sufficient history.");
+    }
+
+    // --- OWNERSHIP GATE: log state but do not hard block arm-then-run replay ---
+    {
+        auto& cm = ContextManager::Instance();
+        const uint64_t now_us = GetReplaySafeNowUs(sc);
+        const bool weekendGrace = IsPostWeekendReopenGracePeriod(sc);
+        const bool ts1Ready = cm.AreTs1DimsReady(now_us, LOCK_D_TS1_MAX_AGE_US, weekendGrace);
+        const bool ts2Ready = cm.AreTs2StructuralDimsReady(now_us, LOCK_E_TS2_MAX_AGE_US, weekendGrace);
+        const auto& obs = cm.GetObservationData();
+
+        Logger::getInstance().log(
+            "EDC PREFLIGHT OWNERSHIP: "
+            "ts1_ready=" + std::to_string(ts1Ready ? 1 : 0) +
+            " ts1_quality_ready=" + std::to_string(cm.HasTs1QualityReadyAfterReset() ? 1 : 0) +
+            " ts1_age_us=" + std::to_string(cm.GetTs1MacroAgeUs(now_us)) +
+            " ts1_last_write_us=" + std::to_string(cm.GetTs1MacroLastWriteUs()) +
+            " ts1_dim0=" + std::to_string(obs.log_variance_ratio()) +
+            " ts1_dim6=" + std::to_string(obs.hurst_exponent()) +
+            " ts1_dim8=" + std::to_string(obs.fisher_info()) +
+            " ts2_ready=" + std::to_string(ts2Ready ? 1 : 0) +
+            " ts2_age_us=" + std::to_string(cm.GetTs2StructuralAgeUs(now_us)) +
+            " ts2_last_write_us=" + std::to_string(cm.GetTs2StructuralLastWriteUs()) +
+            " ts2_dim13=" + std::to_string(obs.recurrence_rate()) +
+            " ts2_dim14=" + std::to_string(obs.fractal_dim()) +
+            " weekend_grace=" + std::to_string(weekendGrace ? 1 : 0)
+        );
+
+        if (!ts1Ready) {
+            Logger::getInstance().log(
+                "EDC PREFLIGHT WARNING: TS1 macro ownership not ready. "
+                "Replay can still arm; quality-qualified TS1 writes will become available as the chart warms."
+            );
+        }
+
+        if (!ts2Ready) {
+            Logger::getInstance().log(
+                "EDC PREFLIGHT WARNING: TS2 structural ownership not ready. "
+                "Replay can still arm; TS2 structural writes will populate once the producer refreshes."
+            );
+        }
     }
 
     if (hardPass) {

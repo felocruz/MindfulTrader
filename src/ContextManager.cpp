@@ -345,14 +345,19 @@ size_t ContextManager::GetObservationSampleCount() const {
     return m_featureScaler.sampleCount;
 }
 
-void ContextManager::MarkTs1MacroDimsFresh(uint64_t timestamp_us) {
+void ContextManager::MarkTs1MacroDimsFresh(uint64_t timestamp_us, bool quality_ready) {
     m_ts1MacroLastWriteUs.store(timestamp_us, std::memory_order_relaxed);
     m_ts1MacroLastSteadyUs.store(GetSteadyNowUs(), std::memory_order_relaxed);
     m_ts1SeenAfterReset.store(true, std::memory_order_relaxed);
+    m_ts1QualityReadyAfterReset.store(quality_ready, std::memory_order_relaxed);
 }
 
 bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool bypassCheck) const {
     if (!m_ts1SeenAfterReset.load(std::memory_order_relaxed)) {
+        return false;
+    }
+
+    if (!m_ts1QualityReadyAfterReset.load(std::memory_order_relaxed)) {
         return false;
     }
 
@@ -368,6 +373,17 @@ bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool 
                         std::isfinite(dim8) &&
                         std::isfinite(dim9);
     if (!finite) {
+        return false;
+    }
+
+    const bool inContract =
+        dim0 >= kObsLowerBounds[OBS_LOG_VARIANCE_RATIO] &&
+        dim0 <= kObsUpperBounds[OBS_LOG_VARIANCE_RATIO] &&
+        dim6 >= kObsLowerBounds[OBS_HURST_EXPONENT] &&
+        dim6 <= kObsUpperBounds[OBS_HURST_EXPONENT] &&
+        dim8 >= kObsLowerBounds[OBS_FISHER_INFO] &&
+        dim8 <= kObsUpperBounds[OBS_FISHER_INFO];
+    if (!inContract) {
         return false;
     }
 
@@ -1133,6 +1149,8 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
                 "(count=" + std::to_string(m_telemetryCounters.ts1MacroReject) +
                 ", reset_generation=" + std::to_string(GetResetGeneration()) +
                 ", seen_after_reset=" + std::to_string(m_ts1SeenAfterReset.load(std::memory_order_relaxed) ? 1 : 0) +
+                ", quality_ready=" +
+                std::to_string(m_ts1QualityReadyAfterReset.load(std::memory_order_relaxed) ? 1 : 0) +
                 ", age_us=" + std::to_string(GetTs1MacroAgeUs(now_us)) +
                 ", last_write_us=" + std::to_string(GetTs1MacroLastWriteUs()) +
                 ", dim0=" + std::to_string(m_observationData.log_variance_ratio()) +
@@ -1387,6 +1405,7 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_ts2StructuralLastWriteUs.store(0, std::memory_order_relaxed);
     m_ts2StructuralLastSteadyUs.store(0, std::memory_order_relaxed);
     m_ts1SeenAfterReset.store(false, std::memory_order_relaxed);
+    m_ts1QualityReadyAfterReset.store(false, std::memory_order_relaxed);
     m_ts2SeenAfterReset.store(false, std::memory_order_relaxed);
 
     // D1 fix: reset members previously missed
@@ -1402,20 +1421,10 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_infoEngine.Reset();
     m_tailRiskEngine.Reset();
 
-    const uint64_t ts1AnchorWriteUs = (reset_reference_time_us > 0)
-        ? reset_reference_time_us
-        : savedTs1WriteUs;
-    const uint64_t ts2AnchorWriteUs = (reset_reference_time_us > 0)
-        ? reset_reference_time_us
-        : savedTs2WriteUs;
-
     if (ts1SnapshotValid) {
         m_observationData.mutate_log_variance_ratio(savedDim0);
         m_observationData.mutate_hurst_exponent(savedDim6);
         m_observationData.mutate_fisher_info(savedDim8);
-        m_ts1MacroLastWriteUs.store(ts1AnchorWriteUs, std::memory_order_relaxed);
-        m_ts1MacroLastSteadyUs.store(GetSteadyNowUs(), std::memory_order_relaxed);
-        m_ts1SeenAfterReset.store(true, std::memory_order_relaxed);
     }
 
     if (ts2SnapshotValid) {
@@ -1424,9 +1433,6 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
         m_observationData.mutate_correction_action(savedDim3);
         m_observationData.mutate_recurrence_rate(savedDim13);
         m_observationData.mutate_fractal_dim(savedDim14);
-        m_ts2StructuralLastWriteUs.store(ts2AnchorWriteUs, std::memory_order_relaxed);
-        m_ts2StructuralLastSteadyUs.store(GetSteadyNowUs(), std::memory_order_relaxed);
-        m_ts2SeenAfterReset.store(true, std::memory_order_relaxed);
     }
 
     Logger::getInstance().log(
@@ -1434,6 +1440,8 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
         " instance=" + std::to_string(reinterpret_cast<uint64_t>(this)) +
         " ts1_snapshot=" + std::to_string(ts1SnapshotValid ? 1 : 0) +
         " ts2_snapshot=" + std::to_string(ts2SnapshotValid ? 1 : 0) +
+        " ts1_freshness_rearmed=0" +
+        " ts2_freshness_rearmed=0" +
         " reset_reference_time_us=" + std::to_string(reset_reference_time_us)
     );
 
