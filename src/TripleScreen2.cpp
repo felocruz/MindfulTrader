@@ -1,4 +1,5 @@
 #include "MindfulTrader_Precompiled.h"
+#include "CarryForwardCalculators.h"
 
 /*==========================================================================*/
 // Helper Functions (Pure Logic)
@@ -268,11 +269,10 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
 
     // 0. Relative Range (Volatility Normalization) - Q1
     float atr = Array_ImpulseATR[sc.Index];
-    float relRange = 0.0f;
-    if (atr > 0.00001f) {
-        relRange = (sc.High[sc.Index] - sc.Low[sc.Index]) / atr;
-    }
-    // Stateless metric: keep local and push directly to ContextManager.
+    float& lastValidRelRange = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RELATIVE_RANGE_LAST_VALID_VALUE);
+    float relRange = cfc::ComputeRelativeRange(sc.High[sc.Index], sc.Low[sc.Index], atr, lastValidRelRange);
+    lastValidRelRange = relRange;
+    // Push directly to ContextManager.
 
     // Keep all Screen 2 short-horizon features on one adaptive lookback.
     const int observation_window_n = CalculateAdaptiveObservationWindow(sc, 0.5f);

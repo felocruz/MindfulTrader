@@ -84,6 +84,9 @@ namespace PersistentVar_AdaptiveCalculators {
     const int HURST_HAS_LAST_VALID = 25;     // 1 when HURST_LAST_VALID_VALUE has been initialized
     const int LAST_AMIHUD_SAMPLE_INDEX = 26; // Last bar index pushed into the Amihud percentile pool (once per 15-min bar)
     const int MICRO_ASYMMETRY_LAST_VALID_VALUE = 27; // Last valid (has-trade) order-flow asymmetry for graceful degradation on a no-trade bar
+    const int BURSTINESS_LAST_VALID_VALUE = 28;      // Last valid burstiness_index for graceful degradation on a flat older-half range
+    const int RELATIVE_RANGE_LAST_VALID_VALUE = 29;  // Last valid relative_range for graceful degradation on a zero/unpopulated ATR
+    const int FISHER_INFO_LAST_VALID_VALUE = 30;     // Last valid fisher_info for graceful degradation on a flat lookback price range
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

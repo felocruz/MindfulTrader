@@ -6,6 +6,7 @@
 #include "DailyBiasEngine.h"
 #include "RingBuffer.h"
 #include "OrderFlowAsymmetryEngine.h"
+#include "CarryForwardCalculators.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -3011,18 +3012,11 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {
         if(p > maxPrice) maxPrice = p;
     }
 
-    if (maxPrice <= minPrice) return 0.0f;
-
     float currentPrice = sc.BaseData[SC_LAST][sc.Index];
-    // Normalize to -0.99 to 0.99 to avoid inf
-    float rawPos = (currentPrice - minPrice) / (maxPrice - minPrice);
-    float x = 2.0f * (rawPos - 0.5f); // Map 0..1 to -1..1
-
-    // Clamp to avoid 1.0/-1.0 singularity
-    if (x > 0.99f) x = 0.99f;
-    if (x < -0.99f) x = -0.99f;
-
-    return 0.5f * std::log((1.0f + x) / (1.0f - x));
+    float& lastValidFisherInfo = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::FISHER_INFO_LAST_VALID_VALUE);
+    const float fisherInfo = cfc::ComputeFisherInformation(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
+    lastValidFisherInfo = fisherInfo;
+    return fisherInfo;
 }
 
 float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n) {
@@ -3107,11 +3101,10 @@ float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n) {
     double rv_recent_rate = rv_recent / half;
     double rv_older_rate = rv_older / (lookback_n - half);
 
-    constexpr double kFloor = 1e-12;
-    if (rv_older_rate < kFloor) return 0.0f;
-
-    float ratio = static_cast<float>(std::log(std::max(rv_recent_rate, kFloor) / rv_older_rate));
-    return std::clamp(ratio, -6.0f, 6.0f);
+    float& lastValidBurstiness = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::BURSTINESS_LAST_VALID_VALUE);
+    const float burstiness = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_older_rate, lastValidBurstiness);
+    lastValidBurstiness = burstiness;
+    return burstiness;
 }
 
 float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
