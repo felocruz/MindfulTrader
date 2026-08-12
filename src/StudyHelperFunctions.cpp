@@ -3228,8 +3228,10 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
 float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
     // Volatility of Volatility (High moment of volatility)
     // StdDev of ATR over lookback
-
-    if (sc.Index < lookback_n) return 0.0f;
+    // Uses only closed/historical bars (i=1..n) -- sc.Index itself (the
+    // still-forming current bar) is never read, since this function is
+    // called every tick and its High/Low would otherwise leak the live,
+    // not-yet-final bar into a statistic meant to summarize completed bars.
 
     // Better: Calculate TR locally to be robust
 
@@ -3239,25 +3241,26 @@ float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
     // never be written out of range if a future caller passes something larger.
     constexpr int kMaxLookback = 40;
     const int n = std::clamp(lookback_n, 1, kMaxLookback);
+    if (sc.Index < n + 1) return 0.0f;
 
     std::array<float, kMaxLookback> trValues{};
     double sumTR = 0;
 
-    for(int i=0; i<n; i++) {
+    for (int i = 1; i <= n; i++) {
         int idx = sc.Index - i;
         float h = sc.BaseData[SC_HIGH][idx];
         float l = sc.BaseData[SC_LOW][idx];
         float c_prev = sc.BaseData[SC_LAST][idx-1];
 
         float tr = std::max(h-l, std::max(std::abs(h-c_prev), std::abs(l-c_prev)));
-        trValues[static_cast<size_t>(i)] = tr;
+        trValues[static_cast<size_t>(i - 1)] = tr;
         sumTR += tr;
     }
 
     double meanTR = sumTR / n;
     double sumSqDiff = 0;
 
-    for(int i=0; i<n; i++) {
+    for (int i = 0; i < n; i++) {
         const float tr = trValues[static_cast<size_t>(i)];
         sumSqDiff += (tr - meanTR) * (tr - meanTR);
     }
