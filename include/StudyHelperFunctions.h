@@ -235,12 +235,17 @@ int CalculateFisherAdaptiveWindow(SCStudyInterfaceRef sc, float coherence_score)
 
 /// Update all observation vector subgraphs.
 /// Caller (TS3) owns subgraph layout and injects refs — this function is index-agnostic.
+// NOTE: micro_asymmetry (dim 7) is NOT computed here -- it must be updated
+// every tick (like VolumeIndicator's BidVolume/AskVolume read), not gated to
+// once per bar the way the rest of this function's outputs are. See
+// TripleScreen3.cpp's per-tick block near its VolumeIndicator::UpdateVolume
+// call, and docs/superpowers/plans/2026-08-12-observation-vector-incremental-accumulators.md's
+// "corner cases" discussion for the full root-cause writeup.
 void UpdateObservationVectorSubgraphs(
     SCStudyInterfaceRef sc,
     int observation_window_n,
     SCSubgraphRef Subgraph_PathEfficiencySNR,
     SCSubgraphRef Subgraph_HurstExponent,
-    SCSubgraphRef Subgraph_MicroAsymmetry,
     SCSubgraphRef Subgraph_RealizedKurtosis,
     SCSubgraphRef Subgraph_SkewnessIdx,
     SCSubgraphRef Subgraph_AmihudIlliquidity,

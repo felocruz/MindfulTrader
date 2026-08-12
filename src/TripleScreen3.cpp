@@ -1,5 +1,6 @@
 #include "MindfulTrader_Precompiled.h"
 #include "ContextManager.h"
+#include "OrderFlowAsymmetryEngine.h"
 
 /*==========================================================================*/
 // TripleScreen3-specific constants
@@ -638,6 +639,24 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
                                       static_cast<float>(sc.AskVolume[sc.Index]));
     }
 
+    // dim 7 (micro_asymmetry): must update every tick, same cadence as
+    // VolumeIndicator's read just above -- sc.BidVolume/AskVolume accumulate
+    // throughout the still-forming bar, so reading them once per bar (as
+    // UpdateObservationVectorSubgraphs's other outputs do) would freeze this
+    // at whatever they were at the bar's first tick, near-zero almost every
+    // time. Writing every tick to Subgraph_MicroAsymmetry[sc.Index] also
+    // correctly freezes each COMPLETED bar's slot at its final (bar-close)
+    // value once sc.Index moves past it, which is what anchors.microAsymmetry
+    // (below, at signal time) needs.
+    {
+        float& lastValidMicroAsymmetry = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MICRO_ASYMMETRY_LAST_VALID_VALUE);
+        Subgraph_MicroAsymmetry[sc.Index] = ofae::ComputeMicroAsymmetry(
+            static_cast<float>(sc.AskVolume[sc.Index]),
+            static_cast<float>(sc.BidVolume[sc.Index]),
+            lastValidMicroAsymmetry);
+        lastValidMicroAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
+    }
+
     const auto atrProximity = indMgr.GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY);
     if (atrProximity) {
         atrProximity->Update(DetectATRProximity(sc, Subgraph_AtrTemp3[sc.Index]));
@@ -674,7 +693,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     const int observation_window_n = CalculateAdaptiveObservationWindow(sc, coherence_score);
     UpdateObservationVectorSubgraphs(sc, observation_window_n,
         Subgraph_PathEfficiencySNR, Subgraph_HurstExponent,
-        Subgraph_MicroAsymmetry, Subgraph_RealizedKurtosis,
+        Subgraph_RealizedKurtosis,
         Subgraph_SkewnessIdx, Subgraph_AmihudIlliquidity,
         Subgraph_LiqFragility, Subgraph_AtrTemp3, Subgraph_VolumeSma);
 

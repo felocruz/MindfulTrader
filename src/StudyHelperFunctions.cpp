@@ -5,7 +5,6 @@
 #include "Logger.h"
 #include "DailyBiasEngine.h"
 #include "RingBuffer.h"
-#include "OrderFlowAsymmetryEngine.h"
 #include "CarryForwardCalculators.h"
 
 /// ============================================================================
@@ -2834,12 +2833,14 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
     return std::clamp(fragility_smoothed, 0.0f, 1.0f);
 }
 
+// NOTE: micro_asymmetry (dim 7) is NOT computed here -- see the declaration's
+// doc comment in StudyHelperFunctions.h. It must be updated every tick, not
+// gated to once per bar the way the rest of this function's outputs are.
 void UpdateObservationVectorSubgraphs(
     SCStudyInterfaceRef sc,
     int observation_window_n,
     SCSubgraphRef Subgraph_PathEfficiencySNR,
     SCSubgraphRef Subgraph_HurstExponent,
-    SCSubgraphRef Subgraph_MicroAsymmetry,
     SCSubgraphRef Subgraph_RealizedKurtosis,
     SCSubgraphRef Subgraph_SkewnessIdx,
     SCSubgraphRef Subgraph_AmihudIlliquidity,
@@ -2858,7 +2859,6 @@ void UpdateObservationVectorSubgraphs(
     if (sc.Index < WARMUP_BARS) {
         Subgraph_PathEfficiencySNR[sc.Index] = 0.5f;
         Subgraph_HurstExponent[sc.Index] = 0.5f;
-        Subgraph_MicroAsymmetry[sc.Index] = 0.0f;
         Subgraph_RealizedKurtosis[sc.Index] = 3.0f;
         Subgraph_SkewnessIdx[sc.Index] = 0.0f;
         Subgraph_AmihudIlliquidity[sc.Index] = 0.5f;
@@ -2866,12 +2866,6 @@ void UpdateObservationVectorSubgraphs(
     } else {
         Subgraph_PathEfficiencySNR[sc.Index] = CalculatePathEfficiencySNR(sc, Subgraph_ATR[sc.Index], adaptive_window_n);
         Subgraph_HurstExponent[sc.Index] = CalculateHurstExponent(sc);
-        float& lastValidMicroAsymmetry = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MICRO_ASYMMETRY_LAST_VALID_VALUE);
-        Subgraph_MicroAsymmetry[sc.Index] = ofae::ComputeMicroAsymmetry(
-            static_cast<float>(sc.AskVolume[sc.Index]),
-            static_cast<float>(sc.BidVolume[sc.Index]),
-            lastValidMicroAsymmetry);
-        lastValidMicroAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
         Subgraph_RealizedKurtosis[sc.Index] = CalculateRealizedKurtosis(sc, Subgraph_RealizedKurtosis[sc.Index - 1], Subgraph_ATR.Data);
         Subgraph_SkewnessIdx[sc.Index] = CalculateSkewness(sc, Subgraph_ATR.Data);
 
