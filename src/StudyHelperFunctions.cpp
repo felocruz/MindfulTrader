@@ -2786,8 +2786,12 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
 
     if (sc.Index < 20) return 0.0f;
 
-    // Current bar range
-    float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
+    // Current bar range -- reads the last fully-closed bar, not the live
+    // still-forming one, for the same reason the volume read below does:
+    // this function is called at the bar's first tick, when High==Low==the
+    // bar's only trade so far, which would otherwise pin range_signal (the
+    // dominant 0.65-weighted term) near its floor on every live call.
+    float barRange = sc.High[sc.Index - 1] - sc.Low[sc.Index - 1];
     if (barRange < 0.00001f) barRange = 0.00001f;  // Avoid div-by-zero on doji
 
     // Trailing ATR reference
