@@ -3033,10 +3033,10 @@ float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n) {
     double rv_full_rate = rv_full / lookback_n;
     double rv_recent_rate = rv_recent / half;
 
-    constexpr double kFloor = 1e-12;
-    if (rv_full_rate < kFloor) return 0.0f;
-
-    return static_cast<float>(std::log(std::max(rv_recent_rate, kFloor) / rv_full_rate));
+    float& lastValidCorrectionAction = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::CORRECTION_ACTION_LAST_VALID_VALUE);
+    const float correctionAction = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_full_rate, lastValidCorrectionAction);
+    lastValidCorrectionAction = correctionAction;
+    return correctionAction;
 }
 
 float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
