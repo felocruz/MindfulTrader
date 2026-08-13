@@ -179,6 +179,52 @@ int main() {
         (void)result;
     }
 
+    // --- TestDedupeAtIngestion ---
+    {
+        FeatureScaler fs;
+        // Warm up dim 1 (burstiness_index, SOFTLOGZ) with 500 varying samples so the
+        // rolling window and warmup gate are both satisfied before the repeat run.
+        for (int i = 0; i < 500; ++i) {
+            auto obs = MakeObs(0.0f);
+            obs[1] = 0.01f * static_cast<float>(i % 37) - 0.18f;  // varying, never exactly repeats
+            fs.UpdateAndNormalize(obs);
+        }
+        // Now inject a carry-forward run: the same raw value 300 times in a row,
+        // simulating a degenerate-input calculator holding its last valid reading.
+        std::array<float, FeatureScaler::N_DIMS> result{};
+        for (int i = 0; i < 300; ++i) {
+            auto obs = MakeObs(0.0f);
+            obs[1] = 0.42f;
+            result = fs.UpdateAndNormalize(obs);
+        }
+        // Pre-fix: the window fills with 0.42f repeats, median converges to 0.42f,
+        // z collapses to exactly 0. Post-fix: the window stops growing after the
+        // first 0.42f push, so the held value's z reflects its true distance from
+        // the pre-repeat distribution -- must be nonzero.
+        check("dedupe: held value gets nonzero z after long repeat run", std::fabs(result[1]) > 1e-4f);
+    }
+
+    // --- TestDedupeLowersDominance ---
+    {
+        FeatureScaler fs;
+        for (int i = 0; i < 500; ++i) {
+            auto obs = MakeObs(0.0f);
+            obs[2] = 0.01f * static_cast<float>(i % 41) - 0.2f;
+            fs.UpdateAndNormalize(obs);
+        }
+        // Inject the same repeat-collapse signature the hardening spec's D2 diagnostic
+        // was built to catch: a single value dominating >30% of the window.
+        for (int i = 0; i < 250; ++i) {
+            auto obs = MakeObs(0.0f);
+            obs[2] = 0.75f;
+            fs.UpdateAndNormalize(obs);
+        }
+        // Force a recalibration so dominanceRatio[] is recomputed.
+        fs.Recalibrate();
+        check("dedupe: dim2 dominanceRatio stays below the D2 ALERT threshold (0.30)",
+              fs.dominanceRatio[2] < 0.30f);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

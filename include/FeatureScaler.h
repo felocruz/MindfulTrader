@@ -260,18 +260,29 @@ struct FeatureScaler {
         }
 
         // ── Step 1: Update rolling buffers by mode (per-dim window depth) ──
+        // Dedupe-at-ingestion: a value identical to the window's most recent entry
+        // carries zero marginal Shannon information (H(X_t|X_{t-1})=0 for an exact
+        // repeat) and must not be treated as a fresh independent draw by the
+        // median/MAD estimator below -- see docs/superpowers/specs/
+        // 2026-08-13-observation-vector-institutional-elevation-spec.md Unit 1.
         for (size_t i = 0; i < N_DIMS; ++i) {
             const size_t winSize = DIM_WINDOW_SIZE[i];
             if (SCALE_MODE_MAP[i] == ScaleMode::SOFTLOGZ) {
-                stateBuffers[i].push_back(raw[i]);
-                if (stateBuffers[i].size() > winSize) {
-                    stateBuffers[i].pop_front();
+                auto& buf = stateBuffers[i];
+                if (buf.empty() || buf.back() != raw[i]) {
+                    buf.push_back(raw[i]);
+                    if (buf.size() > winSize) {
+                        buf.pop_front();
+                    }
                 }
             } else {
                 const float logValue = ToLogEnergy(raw[i]);
-                logBuffers[i].push_back(logValue);
-                if (logBuffers[i].size() > winSize) {
-                    logBuffers[i].pop_front();
+                auto& buf = logBuffers[i];
+                if (buf.empty() || buf.back() != logValue) {
+                    buf.push_back(logValue);
+                    if (buf.size() > winSize) {
+                        buf.pop_front();
+                    }
                 }
             }
         }
