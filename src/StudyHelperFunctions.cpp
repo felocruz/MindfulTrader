@@ -3197,7 +3197,7 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // never be written out of range if a future caller passes something larger.
     constexpr int kMaxLookback = 40;
     const int n = std::clamp(lookback_n, 5, kMaxLookback);
-    if (sc.Index < (n + 1)) return 0.0f;
+    if (sc.Index < (n + 1)) return 0.0f; // True cold-start, no prior value exists yet
 
     constexpr double kPriceEps = 1e-6;
     const int start_idx = sc.Index - n + 1;
@@ -3215,14 +3215,29 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     const double mean_log_p = sum_log_p / static_cast<double>(n);
     const double var_log_p = std::max((sum_log_p_sq / static_cast<double>(n)) - (mean_log_p * mean_log_p), 0.0);
     const double std_log_p = std::sqrt(var_log_p);
-    if (std_log_p < 1e-6) return 0.0f;
+
+    float& lastValidMeanRevZ = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MEAN_REV_Z_LAST_VALID_VALUE);
+    // Degenerate (flat price window) carries the last valid value forward
+    // instead of a fabricated exact-zero "no stretch" reading -- same
+    // sentinel-collapse fix already applied to dims 1/2/3/7/8/11/12.
+    if (std_log_p < 1e-6) {
+        return lastValidMeanRevZ;
+    }
 
     const double current_log_p = std::log(std::max(static_cast<double>(sc.BaseData[SC_LAST][sc.Index]), kPriceEps));
     const double abs_z_price = std::abs((current_log_p - mean_log_p) / std_log_p);
 
     // Lag-1 autocorrelation on log-returns: positive rho => momentum, negative => reversion.
     const int m = n - 1;
-    if (m < 3) return std::clamp(static_cast<float>(abs_z_price), 0.0f, 5.0f);
+    if (m < 3) {
+        // Genuinely computed (not degenerate) -- too few samples for the
+        // autocorrelation term, so it's skipped, not faked. Still updates the
+        // carry-forward state so a later degenerate call has a real value to
+        // fall back on.
+        const float score = std::clamp(static_cast<float>(abs_z_price), 0.0f, 5.0f);
+        lastValidMeanRevZ = score;
+        return score;
+    }
 
     double sum_r = 0.0;
     std::array<double, kMaxLookback> returns{};  // m <= n-1 < kMaxLookback, always in range
@@ -3249,7 +3264,9 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     const double elasticity_gate = std::clamp(1.0 - std::max(rho, 0.0), 0.0, 1.0);
     const double score = abs_z_price * elasticity_gate;
 
-    return std::clamp(static_cast<float>(score), 0.0f, 5.0f);
+    const float meanRevZ = std::clamp(static_cast<float>(score), 0.0f, 5.0f);
+    lastValidMeanRevZ = meanRevZ;
+    return meanRevZ;
 }
 
 float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
