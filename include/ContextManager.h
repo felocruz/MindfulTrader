@@ -411,7 +411,14 @@ private:
         float talebKurtosis = 0.0f;
         float talebSkewness = 0.0f;
         float elderChandelierATR = 0.0f;
-        float paretoRot = 0.0f;
+        float paretoRot = 0.0f;  // NOTE: holds a Mandelbrot-pillar metric (fractal
+                          // roughness from StructureEngine::GetFractalDimension()),
+                          // not a Pareto-pillar one -- field name predates this
+                          // finding (docs/superpowers/specs/2026-08-12-gang-
+                          // literature-grounding-spec.md Finding 4). Left
+                          // unrenamed: the wire-schema field this feeds is a
+                          // cross-repo contract (../schema/mts_schema.fbs),
+                          // out of scope for a comment-only hygiene fix.
         float raschkeBurst = 0.0f;
         float elderImpulse = 0.0f;
     };

@@ -682,6 +682,8 @@ void ContextManager::UpdatePriceStructure(SCStudyInterfaceRef sc, float high, fl
     m_structureEngine.Update(high, low, close, isNewBar);
 
     // [NEW] Elite v3.0: Populate Institutional Metrics Cache
+    // See naming-mismatch note at ContextManager.h:414 -- this assigns a
+    // Mandelbrot-pillar value into a Pareto-named field.
     m_latestInstitutionalMetrics.paretoRot = m_structureEngine.GetFractalDimension();
 
     // Elder Impulse Proxy: Close Location Value
