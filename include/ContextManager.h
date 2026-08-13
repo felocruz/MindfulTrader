@@ -42,8 +42,11 @@ struct NormalizedAnchors {
     float microAsymmetry = 0.0f;        ///< Normalized order-flow imbalance.
 
     // Fragility metrics.
-    float realizedKurtosis = 0.0f;      ///< 4th moment (fat-tail detector).
-    float skewnessIdx = 0.0f;           ///< 3rd moment directional asymmetry.
+    float realizedKurtosis = 0.0f;      ///< Moors (1988) octile kurtosis (fat-tail detector).
+                                        ///< 1.233 = N(0,1) neutral, 1.0 = flat/platykurtic, >1.5 = fat-tailed.
+                                        ///< NOT the old moment-based excess kurtosis (replaced 2026-08-13, 298b9e0).
+    float skewnessIdx = 0.0f;           ///< Bowley (1920) quartile skewness, bounded [-1,+1]:
+                                        ///< directional asymmetry, 0 = symmetric. NOT the old 3rd moment.
     float amihudIlliquidity = 0.0f;      ///< Amihud illiquidity (|r_t|/V_t).
     float spreadStress = 0.0f;           ///< Spread-stress fragility estimate.
 
@@ -81,8 +84,8 @@ struct LocalRiskContext {
     float shannonEfficiency = 0.5f;    // 1 - H/Hmax — signal-to-noise ratio
 
     // Taleb (Tail Risk) — from NormalizedAnchors + TailRiskEngine
-    float talebKurtosis = 0.0f;        // realized 4th moment
-    float talebSkewness = 0.0f;        // realized 3rd moment
+    float talebKurtosis = 0.0f;        // Moors (1988) octile kurtosis (1.233 = N(0,1) neutral, clamped [0,5])
+    float talebSkewness = 0.0f;        // Bowley (1920) quartile skewness (0 = symmetric, bounded [-1,+1])
     float elderChandelierATR = 0.0f;   // Elder's Chandelier: (price - stop) / ATR distance
     float paretoTailAlpha = 4.0f;      // Pareto tail index via Hill estimator (4.0 = safe default)
 
@@ -325,8 +328,11 @@ public:
      *   - Microstructure Asymmetry: Buy/sell volume delta → informed flow lead indicator
      *
      * QUADRANT III (Fragility): Indices 8-11 (Taleb Risk Metrics)
-     *   - Realized Kurtosis: Fat tail probability (>6.0 = GUARDRAIL: tighten stops)
-     *   - Skewness: Directional panic detection (panic liquidation vs accumulation)
+     *   - Realized Kurtosis: Fat tail probability, Moors octile scale
+     *     (1.233 = N(0,1) neutral; >1.4753 = fragile; >2.0064 = halt) -- the old
+     *     ">6.0 = GUARDRAIL" figure was on the deleted moment-based scale
+     *   - Skewness: Directional panic detection, Bowley quartile scale, bounded
+     *     [-1,+1] (panic liquidation vs accumulation)
      *   - Amihud Illiquidity: |return|/volume ratio (adverse selection proxy)
      *   - Liquidity Fragility: Bid-ask spread inflation (order book thinness stress)
      *

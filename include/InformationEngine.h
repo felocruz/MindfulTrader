@@ -293,6 +293,37 @@ namespace MindfulTrader {
          * Confirmed still-current consensus practice (2026-08-13 grounding pass,
          * matches R's entropy::entropy(method="MM") / infotheo's "mm" default).
          *
+         * ---------------------------------------------------------------------
+         * CONSUMER-THRESHOLD SCALE NOTE (2026-08-13, final-review Finding 7)
+         * ---------------------------------------------------------------------
+         * The Miller-Madow term shifted this statistic's scale DOWNWARD. Its
+         * magnitude, computed directly from (m-1)/(2N*ln2) with this class's own
+         * parameters (NUM_BINS = 10, so m <= 10; N = m_countP, capped at
+         * WINDOW_SIZE_P = 50 and gated at a minimum of 10):
+         *   - steady state (N=50, m=10): 0.130 bits, ~3.9% of a ~3.32-bit reading
+         *   - warmup floor (N=10, m=10): 0.649 bits, ~19.6%
+         * i.e. roughly a 4-20% downward shift, largest during warmup.
+         *
+         * DECISION: this is an ACCEPTED, DOCUMENTED delta. No consumer threshold
+         * was re-derived. Every downstream threshold is expressed as a FRACTION
+         * of kShannonMaxEntropyBits (ContextManager.h) rather than as an
+         * absolute bit count, and the three consumers --
+         *   - src/Indicator.cpp (MarketClimate chaos/momentum/coil bands)
+         *   - include/ExecutionParams.h `shannonEntropyHaltFrac` (RiskManager
+         *     chaos halt)
+         *   - src/Scoring.cpp (entropy scoring bands)
+         * -- were evaluated and judged only mildly affected: a few-percent
+         * downward shift moves each gate a few percent toward "less chaotic",
+         * which is directionally conservative for the halt gates.
+         *
+         * This is deliberately UNLIKE the kurtosis migration, where Task 7 ran a
+         * full empirical percentile-matching campaign: that shift was a change of
+         * statistic (moment-based excess kurtosis 3.0 -> Moors octile kurtosis
+         * 1.233, a ~2.4x recentring on a ~20x-compressed scale), an order of
+         * magnitude larger than this bias correction. Should entropy gates ever
+         * need re-derivation, the methodology to copy is
+         * tools/analyze_kurtosis_threshold_migration.py.
+         *
          * @return Entropy in bits (0.0 to ~3.32 for k=10)
          */
         double GetShannonEntropy() const {

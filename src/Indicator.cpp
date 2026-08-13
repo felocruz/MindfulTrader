@@ -511,6 +511,14 @@ void MarketClimateIndicator::UpdateContext(const LocalRiskContext& ctx, HMMState
     // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-institutional-
     // elevation/task-7-report.md).
     bool isFragile = (kurtosis > 1.4753f);
+    // ENTROPY SCALE NOTE (2026-08-13, final-review Finding 7): GetShannonEntropy()
+    // now subtracts a Miller-Madow bias term, shifting entropy DOWN by ~4% at the
+    // steady-state window (N=50) and up to ~20% during warmup (N=10). This
+    // threshold was evaluated and deliberately NOT re-derived -- the shift is an
+    // order of magnitude smaller than kurtosis's 3.0 -> 1.233 change (which DID
+    // get a full empirical re-derivation, see the isFragile note above), and it
+    // moves the chaos gate conservatively (harder to call "chaos"). Full
+    // rationale at InformationEngine.h's GetShannonEntropy() doc comment.
     bool isChaos = (entropy > 0.6f * kShannonMaxEntropyBits);
 
     if (isFragile) {

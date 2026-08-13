@@ -56,8 +56,8 @@ namespace {
         SG_MICRO_ASYMMETRY = 36,         // Rolling (AskVol-BidVol)/VolumeSMA (20 bars)
 
         // === ELITE ObservationData support metrics - Quadrant III (Fragility) ===
-        SG_REALIZED_KURTOSIS = 37,       // Excess 4th moment (fat tail detector, >3.0 = risk)
-        SG_SKEWNESS_IDX = 38,            // 3rd moment (directional panic: +1 = retail, -1 = accumulation)
+        SG_REALIZED_KURTOSIS = 37,       // Moors octile kurtosis (fat tail detector, 1.233 = normal, >1.5 = risk)
+        SG_SKEWNESS_IDX = 38,            // Bowley quartile skewness (directional panic: +1 = retail, -1 = accumulation)
         SG_AMIHUD_ILLIQUIDITY = 39,     // Amihud Illiquidity |r_t|/V_t (adverse selection proxy)
         SG_LIQ_FRAGILITY = 40,           // Bid-Ask spread volatility stress index
         SG_EMA13_ANCHOR = 41,            // EMA(13) for structural anchor distance (15-min directional smoothing = 3.25 hours)
@@ -346,11 +346,11 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
 
         // === ELITE ObservationData support metrics - Quadrant III (Fragility) ===
 
-        Subgraph_RealizedKurtosis.Name = "Realized Kurtosis (4th Moment)";
+        Subgraph_RealizedKurtosis.Name = "Realized Kurtosis (Moors Octile)";
         Subgraph_RealizedKurtosis.DrawStyle = DRAWSTYLE_IGNORE;
         Subgraph_RealizedKurtosis.DrawZeros = false;
 
-        Subgraph_SkewnessIdx.Name = "Skewness Index (3rd Moment)";
+        Subgraph_SkewnessIdx.Name = "Skewness Index (Bowley Quartile)";
         Subgraph_SkewnessIdx.DrawStyle = DRAWSTYLE_IGNORE;
         Subgraph_SkewnessIdx.DrawZeros = false;
 

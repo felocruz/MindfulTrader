@@ -228,6 +228,14 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     // --- 2. ENTROPY ADJUSTMENT (Shannon) ---
     // shannonFlowEntropy is in BITS; thresholds below are normalized H/Hmax ratios
     // scaled by kShannonMaxEntropyBits = log2(10) (Finding 18).
+    // ENTROPY SCALE NOTE (2026-08-13, final-review Finding 7): GetShannonEntropy()
+    // now subtracts a Miller-Madow bias term, shifting entropy DOWN ~4% at the
+    // steady-state window (N=50), up to ~20% during warmup (N=10). These three
+    // bands were evaluated and deliberately NOT re-derived: the shift is an order
+    // of magnitude smaller than the kurtosis 3.0 -> 1.233 change handled just
+    // above by the fragility sigmoid (which DID get a full empirical
+    // re-derivation, Task 7, including its slope). Full rationale at
+    // InformationEngine.h's GetShannonEntropy() doc comment.
     bool isMeanReversionPattern = (pattern == PatternType::TurtleSoup || pattern == PatternType::KangarooTail);
     bool isTrendPattern = (pattern == PatternType::ElderBreakout || pattern == PatternType::MomentumPinball);
     // NR7 (Crabel 1990) is a volatility-compression breakout-anticipation setup whose payoff is a

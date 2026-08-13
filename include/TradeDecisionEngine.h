@@ -279,7 +279,7 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
         r.regimeUncertaintyPremium = 1.0 + 0.5 * transRisk;
     }
 
-    // 4. Tail risk premium: composite of Hill α, excess kurtosis, Mahalanobis
+    // 4. Tail risk premium: composite of Hill α, Moors octile kurtosis, Mahalanobis
     //    Fat tails (low α, high kurtosis, high Mahalanobis) → expensive.
     //    Calibrated to fat-tailed futures (Student-t DOF≈5), not Gaussian.
     {
