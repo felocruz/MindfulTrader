@@ -48,8 +48,10 @@ namespace MindfulTrader {
         }
 
         /**
-         * @brief Adds a new Log Return observation (Event-Driven update).
-         * Complexity: O(1)
+         * @brief Adds a new Log Return observation (Event-Driven update) and
+         * advances the EWMA-smoothed alpha by exactly one step.
+         * Complexity: O(1) buffer write + O(N log K) estimation (the work that
+         * used to sit in GetHillAlpha(); see the note below).
          * @param logReturn Natural log return: ln(price_t / price_{t-1})
          */
         void AddObservation(double logReturn) {
@@ -64,6 +66,37 @@ namespace MindfulTrader {
             if (m_headIndex >= m_windowSize) {
                 m_headIndex = 0;
                 m_isFull = true;
+            }
+
+            // The EWMA advances HERE -- once per genuine new observation -- not
+            // in GetHillAlpha(). Before 2026-08-13 the smoothing step lived in
+            // the getter, so the effective smoothing constant depended on how
+            // often callers happened to read: N reads between two real
+            // observations drove m_smoothedAlpha geometrically toward rawAlpha,
+            // weakening the smoothing exactly when read/publish rates spike
+            // (i.e. in high volatility, the regime where stable smoothing
+            // matters most). With the update anchored to AddObservation() the
+            // alpha series is a deterministic function of the observation
+            // sequence alone, independent of read cadence, and GetHillAlpha()
+            // is a pure O(1) read. Net hot-path cost is unchanged: the same
+            // O(N log K) scan runs once per observation instead of once per
+            // read (final-review Finding 6).
+            double rawAlpha = 0.0;
+            if (!ComputeRawAlpha(rawAlpha)) return;
+
+            // EWMA-smooth the alpha series itself (not the k-selection) -- Resnick &
+            // Stărică (1997) show Hill is consistent under GARCH-type dependence, so
+            // smoothing the output addresses finite-sample variance without
+            // disturbing the underlying estimator. alpha=0.2 -> ~9-sample half-life,
+            // an engineering choice matching this codebase's other EMA smoothing
+            // conventions (e.g. FeatureScaler's CARRY_DECAY_HALFLIFE=200 samples at
+            // a much higher tick-rate cadence -- this dim updates far less often).
+            constexpr double kAlphaSmoothing = 0.2;
+            if (!m_hasSmoothedAlpha) {
+                m_smoothedAlpha = rawAlpha;
+                m_hasSmoothedAlpha = true;
+            } else {
+                m_smoothedAlpha = kAlphaSmoothing * rawAlpha + (1.0 - kAlphaSmoothing) * m_smoothedAlpha;
             }
         }
 
@@ -81,18 +114,34 @@ namespace MindfulTrader {
         }
 
         /**
-         * @brief Calculates the Hill Estimator (Alpha) for the current window.
-         * Complexity: O(N * log K) using partial_sort.
+         * @brief Current EWMA-smoothed Hill Estimator (Alpha).
+         * Complexity: O(1) -- a pure read. All estimation work happens in
+         * AddObservation(), so calling this repeatedly between observations is
+         * free AND cannot perturb the smoothed state (final-review Finding 6).
          *
-         * Formula: alpha = [ (1/k) * sum( ln(x_i / x_{k+1}) ) ] ^ -1
+         * Formula (in AddObservation -> ComputeRawAlpha):
+         *   alpha = [ (1/k) * sum( ln(x_i / x_{k+1}) ) ] ^ -1
          * Where x_i are the sorted top k absolute returns.
          *
          * @return Hill Alpha (lower = fatter tails/higher risk).
          *         Returns 4.0 (very safe) if not enough data.
          */
-        double GetHillAlpha() {
+        double GetHillAlpha() const {
+            return m_smoothedAlpha;
+        }
+
+    private:
+        /**
+         * @brief Computes the un-smoothed (raw) Hill alpha over the current
+         * window via the Resnick & Stărică (1997) stability-region k-selector.
+         * Complexity: O(N * log K) using partial_sort + an O(maxK) scan.
+         * @param outAlpha receives the raw alpha on success.
+         * @return false when the window cannot support an estimate yet (caller
+         *         must leave the smoothed state untouched).
+         */
+        bool ComputeRawAlpha(double& outAlpha) {
             if (!m_isFull && m_headIndex < m_tailCutoff + 1) {
-                return 4.0; // Not enough data yet, assume Gaussian safety
+                return false; // Not enough data yet, assume Gaussian safety
             }
 
             // 1. Copy active window to sort buffer
@@ -112,7 +161,20 @@ namespace MindfulTrader {
             // tail cutoff, capped at validSize-1) so the stability-region scan below
             // has a real range to search, not just the single configured k.
             size_t maxK = std::min(m_tailCutoff * 4, validSize - 1);
-            if (maxK < 2) return 4.0;
+            if (maxK < 2) return false;
+
+            // Scan k in [10, maxK], matching the spec's stated k range. Very
+            // small k (2-6) yields extremely noisy per-k Hill estimates -- only
+            // a handful of order statistics -- and the first-plateau-wins
+            // selector below is most exposed to locking onto a noise-driven
+            // "plateau" precisely where k is smallest and variance is highest,
+            // on a live risk-classification input. Starting at k=10 removes
+            // that exposure (final-review Finding 10). With the default
+            // config (windowSize=500, tailPercent=0.05 -> m_tailCutoff=25)
+            // maxK = 100, giving exactly the specified k in [10, 100].
+            constexpr size_t kMinScanK = 10;
+            size_t startK = std::min(kMinScanK, maxK);
+            if (startK < 2) startK = 2;  // degenerate tiny-window configs only
 
             std::partial_sort(
                 m_sortBuffer.begin(),
@@ -132,9 +194,13 @@ namespace MindfulTrader {
             // member (reserved once in the constructor, like m_sortBuffer) so this
             // scan does zero heap allocation on the hot path.
             m_hillAtK.clear();
-            double runningLogSum = std::log(m_sortBuffer[0]) + std::log(m_sortBuffer[1]);
-            for (size_t k = 2; k <= maxK; ++k) {
-                if (k > 2) {
+            // Prime the prefix sum with the first `startK` log-magnitudes, so
+            // runningLogSum == sum_{i<k} log(x_i) at the top of each iteration.
+            // m_hillAtK index j therefore corresponds to k = startK + j.
+            double runningLogSum = 0.0;
+            for (size_t i = 0; i < startK; ++i) runningLogSum += std::log(m_sortBuffer[i]);
+            for (size_t k = startK; k <= maxK; ++k) {
+                if (k > startK) {
                     runningLogSum += std::log(m_sortBuffer[k - 1]);
                 }
                 double threshold = m_sortBuffer[k];
@@ -173,27 +239,12 @@ namespace MindfulTrader {
             }
             const size_t chosenStart = (firstLen > 0) ? firstStart : bestStart;
             const size_t chosenLen = (firstLen > 0) ? firstLen : bestLen;
+            if (m_hillAtK.empty()) return false;
             const size_t midpointIdx = chosenStart + chosenLen / 2;
-            const double rawAlpha = m_hillAtK[std::min(midpointIdx, m_hillAtK.size() - 1)];
-
-            // 3. EWMA-smooth the alpha series itself (not the k-selection) -- Resnick &
-            // Stărică (1997) show Hill is consistent under GARCH-type dependence, so
-            // smoothing the output addresses finite-sample variance without
-            // disturbing the underlying estimator. alpha=0.2 -> ~9-sample half-life,
-            // an engineering choice matching this codebase's other EMA smoothing
-            // conventions (e.g. FeatureScaler's CARRY_DECAY_HALFLIFE=200 samples at
-            // a much higher tick-rate cadence -- this dim updates far less often).
-            constexpr double kAlphaSmoothing = 0.2;
-            if (!m_hasSmoothedAlpha) {
-                m_smoothedAlpha = rawAlpha;
-                m_hasSmoothedAlpha = true;
-            } else {
-                m_smoothedAlpha = kAlphaSmoothing * rawAlpha + (1.0 - kAlphaSmoothing) * m_smoothedAlpha;
-            }
-            return m_smoothedAlpha;
+            outAlpha = m_hillAtK[std::min(midpointIdx, m_hillAtK.size() - 1)];
+            return true;
         }
 
-    private:
         size_t m_windowSize;
         size_t m_tailCutoff; // K
 
