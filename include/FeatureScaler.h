@@ -155,6 +155,15 @@ struct FeatureScaler {
     std::array<float, N_DIMS> latestLogScale = {};  ///< MAD × 1.4826
 
     std::array<DimCalibration, N_DIMS> calibration = {};  ///< Per-dim adaptive state
+
+    /// Per-dim result of the last Calibrate()/Recalibrate() dominance check:
+    /// fraction of the rolling window occupied by its single most-frequent
+    /// exact value. Exposed (not logged here -- this header has zero
+    /// ACSIL/Logger dependency by design) so a caller with Logger access can
+    /// flag a sentinel-collapse signature
+    /// (docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md D2).
+    std::array<float, N_DIMS> dominanceRatio = {};
+
     bool calibrated = false;                               ///< Set once at warmup completion
 
     bool modeMapValidated = false;
@@ -214,6 +223,24 @@ struct FeatureScaler {
         const float madScale = scratch[static_cast<size_t>(mid)] * 1.4826f;
 
         return {median, madScale};
+    }
+
+    /// Fraction of `buf` occupied by its single most-frequent exact value.
+    /// O(n^2) on up to RANK_WINDOW (500) samples -- only called from
+    /// Calibrate()/Recalibrate() (warmup completion + every
+    /// RECALIBRATION_INTERVAL samples), never per-tick. Pure, native-testable.
+    static float ComputeValueDominance(const RingBuffer<float, RANK_WINDOW + 1>& buf) {
+        const int n = static_cast<int>(buf.size());
+        if (n == 0) return 0.0f;
+        int maxCount = 0;
+        for (int j = 0; j < n; ++j) {
+            int count = 0;
+            for (int k = 0; k < n; ++k) {
+                if (buf[static_cast<size_t>(k)] == buf[static_cast<size_t>(j)]) ++count;
+            }
+            maxCount = std::max(maxCount, count);
+        }
+        return static_cast<float>(maxCount) / static_cast<float>(n);
     }
 
     /// Feed raw observation, return hybrid-scaled values.
@@ -380,11 +407,13 @@ struct FeatureScaler {
                 if (buf.size() >= 5) {
                     bufScale = RobustLocation(buf).second;
                 }
+                dominanceRatio[i] = ComputeValueDominance(buf);
             } else {
                 const auto& buf = logBuffers[i];
                 if (buf.size() >= 5) {
                     bufScale = RobustLocation(buf).second;
                 }
+                dominanceRatio[i] = ComputeValueDominance(buf);
             }
             const float floorToUse = (i == DIM_AMIHUD_INDEX) ? AMIHUD_ABSOLUTE_FLOOR : ABSOLUTE_FLOOR;
             calibration[i].minScaleFloor = std::max(floorToUse, bufScale * RELATIVE_FLOOR_FRACTION);
@@ -403,11 +432,13 @@ struct FeatureScaler {
                 if (buf.size() >= 5) {
                     bufScale = RobustLocation(buf).second;
                 }
+                dominanceRatio[i] = ComputeValueDominance(buf);
             } else {
                 const auto& buf = logBuffers[i];
                 if (buf.size() >= 5) {
                     bufScale = RobustLocation(buf).second;
                 }
+                dominanceRatio[i] = ComputeValueDominance(buf);
             }
             const float floorToUse = (i == DIM_AMIHUD_INDEX) ? AMIHUD_ABSOLUTE_FLOOR : ABSOLUTE_FLOOR;
             const float newFloor = std::max(floorToUse, bufScale * RELATIVE_FLOOR_FRACTION);

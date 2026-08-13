@@ -134,6 +134,32 @@ int main() {
         check("reset_clears_calibrated", !fs.calibrated);
     }
 
+    // --- ComputeValueDominance (D2 sentinel-collapse diagnostic) ---
+    {
+        RingBuffer<float, FeatureScaler::RANK_WINDOW + 1> buf;
+        for (int i = 0; i < 10; ++i) buf.push_back(1.0f);
+        check("dominance_all_identical_is_one",
+              approx(FeatureScaler::ComputeValueDominance(buf), 1.0f, 1e-6f));
+    }
+    {
+        RingBuffer<float, FeatureScaler::RANK_WINDOW + 1> buf;
+        for (int i = 0; i < 10; ++i) buf.push_back(static_cast<float>(i));
+        check("dominance_all_distinct_is_one_over_n",
+              approx(FeatureScaler::ComputeValueDominance(buf), 0.1f, 1e-6f));
+    }
+    {
+        RingBuffer<float, FeatureScaler::RANK_WINDOW + 1> buf;
+        for (int i = 0; i < 6; ++i) buf.push_back(0.0f);
+        for (int i = 0; i < 4; ++i) buf.push_back(static_cast<float>(i + 1));
+        check("dominance_repeated_sentinel_matches_expected_ratio",
+              approx(FeatureScaler::ComputeValueDominance(buf), 0.6f, 1e-6f));
+    }
+    {
+        RingBuffer<float, FeatureScaler::RANK_WINDOW + 1> buf;
+        check("dominance_empty_buffer_is_zero",
+              approx(FeatureScaler::ComputeValueDominance(buf), 0.0f, 1e-6f));
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

@@ -1218,6 +1218,29 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // Energy magnitude dims use rolling Log-Z with 6-sigma winsorization.
     // Note: AsymmetryContext 8D is NOT scaled here. It is used as raw embedding lookup.
     auto currentObs = m_featureScaler.UpdateAndNormalize(rawObs);
+
+    // D2: sentinel-collapse diagnostic (log-only, no behavior change) -- flag
+    // any dim whose rolling window is >30% dominated by a single repeated
+    // value, the exact signature of a sentinel-collapse or a
+    // carry-forward-then-median-collapse (this session's live-data finding on
+    // dims 1/2 -- docs/superpowers/plans/2026-08-12-statistical-context-relrange-sentinel-gap.md
+    // Problem 2). Gated to the same cadence FeatureScaler itself refreshes
+    // dominanceRatio (warmup completion + every RECALIBRATION_INTERVAL
+    // samples) so this doesn't repeat the same finding every tick.
+    if (m_featureScaler.calibrated &&
+        (m_featureScaler.sampleCount == FeatureScaler::RANK_WINDOW ||
+         (m_featureScaler.sampleCount % FeatureScaler::RECALIBRATION_INTERVAL) == 0)) {
+        for (size_t i = 0; i < FeatureScaler::N_DIMS; ++i) {
+            if (m_featureScaler.dominanceRatio[i] > 0.30f) {
+                Logger::getInstance().log(
+                    "FeatureScaler dominance ALERT dim=" + std::to_string(i) +
+                    " ratio=" + std::to_string(m_featureScaler.dominanceRatio[i]) +
+                    " sampleCount=" + std::to_string(m_featureScaler.sampleCount)
+                );
+            }
+        }
+    }
+
     m_latestScaledObs = currentObs;  // Store for LockC and external consumers
 
     // Feature Scaler Warmup Guard: suppress ALL downstream processing until
