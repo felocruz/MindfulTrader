@@ -2282,15 +2282,19 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     }
 
     // === GAP 25: FAT-TAIL CHASE CAP (Taleb — refuse to chase in crash regimes) ===
-    // When tails are extreme (DOF ≤ 4 / kurtosis > 10), price discovery is unreliable.
-    // Chasing into a falling knife amplifies adverse selection.  Cap chase to zero
-    // (pure limit) so we only fill at our stated price or not at all.
+    // When tails are extreme (DOF ≤ 4 / kurtosis > 10 [old scale]), price discovery
+    // is unreliable. Chasing into a falling knife amplifies adverse selection.  Cap
+    // chase to zero (pure limit) so we only fill at our stated price or not at all.
+    // Threshold percentile-matched: was 10.0 (old moment-based scale), P85.8 of the
+    // historical distribution -- see tools/analyze_kurtosis_threshold_migration.py,
+    // run 2026-08-13 (Task 7). No-data fallback (1.23f) is Moors' N(0,1) neutral
+    // baseline (see StudyHelperFunctions.cpp), replacing the stale old-scale 3.0f.
     {
         const auto& lrcChase = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmChase = InferenceManager::Instance().HmmState();
         const float chaseDof = hmmChase ? hmmChase->Dof() : 30.0f;
-        const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 3.0f;
-        if (chaseDof <= 4.0f || chaseKurtosis > 10.0f) {
+        const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 1.23f;
+        if (chaseDof <= 4.0f || chaseKurtosis > 1.8530f) {
             order.MaximumChaseAsPrice = 0.0;  // Pure limit — no chase in crash regime
         }
     }
@@ -2314,18 +2318,22 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // selects the stop ORDER TYPE for fill quality — never a trailing/breakeven
     // adjustment (naive profit-protection permanently rejected; see
     // triple_barrier_profit_protection_ruling.md):
-    //   1. CRASH REGIME (DOF ≤ 4 / kurtosis > 10 / Amihud pctile > p90):
+    //   1. CRASH REGIME (DOF ≤ 4 / kurtosis > 10 [old scale] / Amihud pctile > p90):
     //      → market stop (STOP_WITH_BID_ASK_TRIGGERING).  Guaranteed fill; in a
     //        flash crash a limit stop can gap through — exit certainty > price control.
     //   2. NORMAL / ORDERLY-BUT-TOXIC:
     //      → static stop-limit with 2-tick offset.  Protective fill control.
+    // Threshold percentile-matched: was 10.0 (old moment-based scale), P85.8 of the
+    // historical distribution -- see tools/analyze_kurtosis_threshold_migration.py,
+    // run 2026-08-13 (Task 7). No-data fallback (1.23f) is Moors' N(0,1) neutral
+    // baseline, replacing the stale old-scale 3.0f.
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmStop = InferenceManager::Instance().HmmState();
         const float dof = hmmStop ? hmmStop->Dof() : 30.0f;
-        const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 3.0f;
+        const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 1.23f;
 
-        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
+        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 1.8530f) ||
                                  (lrc.isValid && lrc.amihudPercentile > 0.90f);
 
         if (crashRegime) {
@@ -2729,13 +2737,15 @@ void PositionManager::ProcessManualTradeCommand(
     order.MaximumChaseAsPrice = 2.0 * sc.TickSize;
     order.TimeInForce = SCT_TIF_DAY;
 
-    // GAP 25: fat-tail chase cap (mirrors automatic path)
+    // GAP 25: fat-tail chase cap (mirrors automatic path). Threshold/fallback
+    // percentile-matched the same as the automatic path -- see that block's
+    // comment above and tools/analyze_kurtosis_threshold_migration.py (Task 7).
     {
         const auto& lrcChase = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmChase = InferenceManager::Instance().HmmState();
         const float chaseDof = hmmChase ? hmmChase->Dof() : 30.0f;
-        const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 3.0f;
-        if (chaseDof <= 4.0f || chaseKurtosis > 10.0f) {
+        const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 1.23f;
+        if (chaseDof <= 4.0f || chaseKurtosis > 1.8530f) {
             order.MaximumChaseAsPrice = 0.0;  // Pure limit — no chase in crash regime
         }
     }
@@ -2747,14 +2757,17 @@ void PositionManager::ProcessManualTradeCommand(
         order.TextTag = tag;
     }
 
-    // Bracket Stop — regime-aware STATIC stop type (mirrors automatic path Step C)
+    // Bracket Stop — regime-aware STATIC stop type (mirrors automatic path Step C).
+    // Threshold/fallback percentile-matched the same as the automatic path -- see
+    // that block's comment above and tools/analyze_kurtosis_threshold_migration.py
+    // (Task 7).
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmStop = InferenceManager::Instance().HmmState();
         const float dof = hmmStop ? hmmStop->Dof() : 30.0f;
-        const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 3.0f;
+        const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 1.23f;
 
-        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 10.0f) ||
+        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 1.8530f) ||
                                  (lrc.isValid && lrc.amihudPercentile > 0.90f);
 
         if (crashRegime) {

@@ -65,7 +65,13 @@ namespace {
         // Empirical HMM gate thresholds (calibrated from lbrnet)
         double pareto_top_state_ratio_max = 0.25;
         double shannon_min_tenure_bars = 109.158494;
-        double taleb_signal_sigma_threshold = 9.636797;
+        // Percentile-matched: was 9.636797 (old moment-based kurtosis scale),
+        // P85.0 of the historical distribution -- see
+        // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+        // (Task 7). The live JSON override at
+        // /mnt/c/Trading/config/hmm_regime_risk_policy.json was updated the
+        // same way (its own old value, 9.697616023284109, P85.1 -> 1.8401).
+        double taleb_signal_sigma_threshold = 1.8382;
     };
 
     constexpr const char* kRiskPolicyPathWindows = "C:/Trading/config/hmm_regime_risk_policy.json";

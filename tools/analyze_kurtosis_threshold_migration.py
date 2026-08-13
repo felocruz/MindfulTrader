@@ -18,6 +18,27 @@ estimator, a completely different statistic from Taleb kurtosis and NOT
 touched by Task 6's Moors-kurtosis swap. It is deliberately excluded here.
 Only RiskManager.cpp:1758's `lrc.talebKurtosis < 3.0f` (kept below as
 "cascade_gate_low") is a genuine kurtosis threshold at that call site.
+`talebKurtosisCrisisCeiling` (ExecutionParams.h) is also excluded -- it's a
+risk-multiplier cap (fraction of size), not a kurtosis-scale value.
+
+UPDATE (fix-review pass, 2026-08-13): a full-repo grep for `talebKurtosis`
+(and aliases `kurtosis`/`chaseKurtosis` traced back to the same raw field)
+turned up three more live consumers the brief's 5-site list missed:
+  - include/TradeDecisionEngine.h:293-297 -- linear tail-risk-premium ramp
+    with anchors at 6.0 (zero penalty) and 15.0 (full penalty). Both anchors
+    map to already-computed entries above (scoring_sigmoid_center,
+    talebKurtosisHaltThreshold) -- listed again below under their own names
+    for 1:1 traceability to the ramp's two call-site literals.
+  - src/PositionManager.cpp -- GAP 25 fat-tail chase cap AND Step C
+    crash-regime stop-type selection, each duplicated across the automatic
+    and manual order-submission paths (4 literal occurrences, 1 distinct
+    old value: 10.0).
+  - src/RiskManager.cpp:68 (`taleb_signal_sigma_threshold` compiled default,
+    9.636797) feeding GetTalebSignalSigmaThreshold() -> ExecutionGate.cpp's
+    HmmRegimeGateTalebBreach entry-deny gate. A live override of this same
+    key also exists in /mnt/c/Trading/config/hmm_regime_risk_policy.json
+    (9.697616023284109) -- mapped separately below since it's a distinct
+    exact value.
 """
 import sys
 import csv
@@ -32,6 +53,18 @@ OLD_THRESHOLDS = {
     "talebKurtosisHaltThreshold (ExecutionParams.h:64)": 15.0,
     "fatTail_literal (RiskManager.cpp:805)": 8.0,
     "cascade_gate_low (RiskManager.cpp:1758, lrc.talebKurtosis)": 3.0,
+    # -- added in fix-review pass, 2026-08-13 --
+    "tailRiskPremium_ramp_start (TradeDecisionEngine.h:293, ambient)": 6.0,
+    "tailRiskPremium_ramp_end (TradeDecisionEngine.h:293, crisis)": 15.0,
+    "fatTailChaseCap_and_crashRegimeStop (PositionManager.cpp x4)": 10.0,
+    "talebSignalSigmaThreshold_compiled_default (RiskManager.cpp:68)": 9.636797,
+    "talebSignalSigmaThreshold_live_json (hmm_regime_risk_policy.json)": 9.697616023284109,
+    # -- live config overrides found at /mnt/c/Trading/config/execution_params.json;
+    # these are DIFFERENT numbers from the compiled ExecutionParams.h defaults (a
+    # prior manual live tune), so must be percentile-matched separately, not just
+    # inherit the compiled-default mapping above.
+    "talebKurtosisCrisisEnter_live_json (execution_params.json)": 17.33,
+    "talebKurtosisCrisisExit_live_json (execution_params.json)": 3.64,
 }
 
 

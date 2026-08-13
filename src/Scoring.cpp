@@ -183,12 +183,17 @@ PatternType Scoring::StringToPatternType(const std::string& name) const {
 // Source: lbrnet/core/scoring.py -> get_climate_impact_score
 //
 // "The Gang" Rules Implementation (continuous, not discrete tiers):
-// 1. Taleb (Kurtosis): fragility penalty via sigmoid 1/(1+exp(0.5*(kurtosis-center))),
-//    gated on kurtosis > gate, with NO artificial floor. gate/center are
-//    percentile-matched to the Moors-kurtosis scale (Task 7) -- see the
-//    call site below. The 0.5 steepness coefficient is unchanged (out of
-//    scope for a percentile-matching pass; percentile matching only carries
-//    point thresholds across the scale change, not slope).
+// 1. Taleb (Kurtosis): fragility penalty via sigmoid 1/(1+exp(steepness*(kurtosis-
+//    center))), gated on kurtosis > gate, with NO artificial floor. gate/center/
+//    steepness are all re-derived for the Moors-kurtosis scale (Task 7) -- see
+//    the call site below. Steepness was NOT left at the old 0.5: the Moors
+//    distribution is ~20x more compressed (std 0.37 vs old 7.4), so the old
+//    slope value would have made this control nearly inert on the new scale
+//    (empirically verified: unchanged 0.5 would drop the fraction of real
+//    samples reaching a strong risk-off penalty <0.1 from 13.6% to 0.056%,
+//    a >200x reduction). Re-derived empirically from the real 57,256-sample
+//    paired distribution to reproduce the SAME real-world trigger frequency
+//    (13.6% of samples land below penalty 0.1) -- see call site.
 // 2. Shannon (Entropy, in BITS): thresholds are normalized H/Hmax ratios scaled by
 //    kShannonMaxEntropyBits (=log2(NUM_BINS)). High entropy boosts mean-reversion and
 //    cuts trend (hard-zero for patterns in neither bucket); low entropy boosts trend.
@@ -206,8 +211,17 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
     // .superpowers/sdd/2026-08-13-observation-vector-institutional-elevation/
     // task-7-report.md).
+    // Steepness (9.7409, was 0.5) derived empirically, not percentile-matched
+    // (slope isn't a point threshold): solved in closed form for the value
+    // that makes penalty(new_kurtosis)<0.1 fire on the SAME real-sample
+    // fraction (13.6%) that penalty(old_kurtosis)<0.1 fired on with the old
+    // 0.5 steepness -- i.e. same real-world "strong risk-off" trigger rate,
+    // just re-expressed on the new scale. Cross-checked against the
+    // closed-form variance-ratio approximation steepness_new ≈ steepness_old
+    // * sqrt(Var(old)/Var(new)) = 0.5 * sqrt(7.4066^2/0.3739^2) ≈ 9.91 --
+    // within 2% of the empirically-derived value, corroborating it.
     if (ctx.talebKurtosis > 1.3248f) {
-        const double fragilityPenalty = 1.0 / (1.0 + std::exp(0.5 * (static_cast<double>(ctx.talebKurtosis) - 1.6414)));
+        const double fragilityPenalty = 1.0 / (1.0 + std::exp(9.7409 * (static_cast<double>(ctx.talebKurtosis) - 1.6414)));
         multiplier *= fragilityPenalty;
     }
 

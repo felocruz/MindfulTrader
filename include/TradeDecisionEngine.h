@@ -288,13 +288,16 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
         if (in.paretoTailAlpha > 0.0f && in.paretoTailAlpha < 4.0f) {
             hillPenalty = std::clamp((4.0 - static_cast<double>(in.paretoTailAlpha)) / 2.5, 0.0, 1.0);
         }
-        // Excess kurtosis (0 = Gaussian, 6 = Student-t DOF≈5).
-        // Ambient ES/NQ excess kurtosis ≈ 3–6 during normal fat-tailed trading.
-        // Zero penalty at 6.0 (ambient baseline); full penalty at 15.0 (crisis).
-        // Layered with ExecutionParams crisis gate (κ > 5 restricts trading);
-        // this premium adds continuous cost for trades that survive the gate.
+        // Taleb (Moors octile) kurtosis. Ramp anchors percentile-matched from
+        // the old moment-based scale's original intent: zero penalty at 6.0
+        // (old, ambient baseline) -> P70.6 -> 1.6414 (new); full penalty at
+        // 15.0 (old, crisis) -> P91.9 -> 2.0064 (new) -- same two anchors as
+        // ExecutionParams' crisis-gate / halt-threshold mapping, see
+        // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+        // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-
+        // institutional-elevation/task-7-report.md).
         const double kurtosisPenalty = std::clamp(
-            (static_cast<double>(in.talebKurtosis) - 6.0) / 9.0, 0.0, 1.0);
+            (static_cast<double>(in.talebKurtosis) - 1.6414) / (2.0064 - 1.6414), 0.0, 1.0);
         // Robust Mahalanobis (16D observation vector, median/MAD estimator).
         // E[d] ≈ √p = √16 = 4.0 for typical observations.
         // Consistent with MahalanobisSizingCap() which also anchors at 4.0;
