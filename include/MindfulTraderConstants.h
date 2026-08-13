@@ -94,6 +94,8 @@ namespace PersistentVar_AdaptiveCalculators {
     const int FRACTAL_DIM_LAST_VALID_VALUE = 35; // Last valid fractal_dim for graceful degradation on a flat price window
     const int MEAN_REV_Z_LAST_VALID_VALUE = 36; // Last valid mean_rev_z for graceful degradation on a near-zero log-price std-dev
     const int CTX_REL_RANGE_LAST_VALID_VALUE = 37; // Last valid StatisticalContext.relRange for graceful degradation on a zero/unpopulated ATR (independent of dim 2's own carry-forward state)
+    const int RQA_CALIBRATED_EPSILON = 38;       // Held epsilon between recalibrations
+    const int RQA_CALLS_SINCE_CALIBRATION = 39;  // Recalibration cadence counter
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

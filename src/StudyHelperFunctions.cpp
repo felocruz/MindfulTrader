@@ -2,10 +2,12 @@
 #include <sstream>
 #include <iomanip>
 #include <random> // Added for shuffling
+#include <vector>
 #include "Logger.h"
 #include "DailyBiasEngine.h"
 #include "RingBuffer.h"
 #include "CarryForwardCalculators.h"
+#include "RQAEpsilonSelector.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -3329,7 +3331,6 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
     // RQA (Recurrence Quantification Analysis) Recurrence Rate
     // RR = (1 / N^2) * Sum(Theta(epsilon - dist(i,j)))
     // Where Theta is Heaviside step fun.
-    // Epsilon = 10% of range or 0.5 * StdDev
 
     float minP = FLT_MAX, maxP = -FLT_MAX;
     for(int i=0; i<lookback_n; i++) {
@@ -3349,23 +3350,32 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
         return lastValidRecurrenceRate;
     }
 
-    // Adaptive tolerance: mix range-based and variance-based scales.
-    float meanP = 0.0f;
-    for (int i = 0; i < lookback_n; ++i) {
-        meanP += sc.BaseData[SC_LAST][sc.Index - i];
-    }
-    meanP /= static_cast<float>(lookback_n);
+    // Epsilon: Schinkel, Dimigen & Marwan (2008) fixed-recurrence-rate method,
+    // recalibrated periodically (not every call) so recurrence_rate itself
+    // stays an informative, varying HMM feature instead of collapsing to a
+    // near-constant by construction. See SelectEpsilonForTargetRecurrenceRate
+    // (RQAEpsilonSelector.h) and Task 3's design-correction note.
+    constexpr int RQA_EPSILON_RECALIBRATION_BARS = 200;  // engineering choice, not literature-
+                                                            // prescribed -- matches this codebase's
+                                                            // existing periodic-recalibration cadence
+                                                            // convention (FeatureScaler::RECALIBRATION_INTERVAL).
+    constexpr double RQA_TARGET_RECURRENCE_RATE = 0.03;   // midpoint of Schinkel et al. (2008)'s
+                                                            // cited 0.01-0.05 practitioner range.
+    float& calibratedEpsilon = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON);
+    float& callsSinceCalibration = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALLS_SINCE_CALIBRATION);
 
-    float varP = 0.0f;
-    for (int i = 0; i < lookback_n; ++i) {
-        const float d = sc.BaseData[SC_LAST][sc.Index - i] - meanP;
-        varP += d * d;
+    if (calibratedEpsilon <= 0.0f || callsSinceCalibration >= static_cast<float>(RQA_EPSILON_RECALIBRATION_BARS)) {
+        std::vector<float> windowPrices(static_cast<size_t>(lookback_n));
+        for (int i = 0; i < lookback_n; ++i) {
+            windowPrices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - i];
+        }
+        calibratedEpsilon = static_cast<float>(
+            SelectEpsilonForTargetRecurrenceRate(windowPrices.data(), lookback_n, RQA_TARGET_RECURRENCE_RATE));
+        callsSinceCalibration = 0.0f;
     }
-    varP /= static_cast<float>(lookback_n);
-    const float stdP = std::sqrt(std::max(varP, 0.0f));
+    ++callsSinceCalibration;
 
-    float epsilon = std::max(range * 0.1f, stdP * 0.5f);
-    epsilon = std::max(epsilon, 1e-6f);
+    float epsilon = calibratedEpsilon;
     int recurCount = 0;
     int totalCount = lookback_n * lookback_n;
 
