@@ -1231,6 +1231,15 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
         (m_featureScaler.sampleCount == FeatureScaler::RANK_WINDOW ||
          (m_featureScaler.sampleCount % FeatureScaler::RECALIBRATION_INTERVAL) == 0)) {
         for (size_t i = 0; i < FeatureScaler::N_DIMS; ++i) {
+            // Dims 5 (lempel_ziv), 13 (recurrence_rate), 14 (fractal_dim) use
+            // static (non-rolling-MAD) scaling (FeatureScaler.h's
+            // LZ_STATIC_*/RECURRENCE_STATIC_*/FRACTAL_STATIC_* constants) --
+            // high dominance there cannot indicate the median/MAD collapse
+            // this diagnostic exists to catch, and dim 5 in particular is
+            // documented as normally producing ~10 discrete values. Skip to
+            // avoid masking the real target (dims 1/2) behind permanent
+            // false alarms.
+            if (i == 5 || i == 13 || i == 14) continue;
             if (m_featureScaler.dominanceRatio[i] > 0.30f) {
                 Logger::getInstance().log(
                     "FeatureScaler dominance ALERT dim=" + std::to_string(i) +

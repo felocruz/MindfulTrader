@@ -226,21 +226,27 @@ struct FeatureScaler {
     }
 
     /// Fraction of `buf` occupied by its single most-frequent exact value.
-    /// O(n^2) on up to RANK_WINDOW (500) samples -- only called from
+    /// O(n log n) via sort-then-scan-longest-equal-run on the same stack
+    /// scratch RobustLocation() already uses -- only called from
     /// Calibrate()/Recalibrate() (warmup completion + every
     /// RECALIBRATION_INTERVAL samples), never per-tick. Pure, native-testable.
     static float ComputeValueDominance(const RingBuffer<float, RANK_WINDOW + 1>& buf) {
         const int n = static_cast<int>(buf.size());
         if (n == 0) return 0.0f;
-        int maxCount = 0;
-        for (int j = 0; j < n; ++j) {
-            int count = 0;
-            for (int k = 0; k < n; ++k) {
-                if (buf[static_cast<size_t>(k)] == buf[static_cast<size_t>(j)]) ++count;
+        std::array<float, RANK_WINDOW> scratch;
+        for (int j = 0; j < n; ++j) scratch[static_cast<size_t>(j)] = buf[static_cast<size_t>(j)];
+        std::sort(scratch.begin(), scratch.begin() + n);
+        int maxRun = 1;
+        int currentRun = 1;
+        for (int j = 1; j < n; ++j) {
+            if (scratch[static_cast<size_t>(j)] == scratch[static_cast<size_t>(j - 1)]) {
+                ++currentRun;
+                maxRun = std::max(maxRun, currentRun);
+            } else {
+                currentRun = 1;
             }
-            maxCount = std::max(maxCount, count);
         }
-        return static_cast<float>(maxCount) / static_cast<float>(n);
+        return static_cast<float>(maxRun) / static_cast<float>(n);
     }
 
     /// Feed raw observation, return hybrid-scaled values.
@@ -453,6 +459,7 @@ struct FeatureScaler {
         latestLogMedian.fill(0.0f);
         latestLogScale.fill(0.0f);
         calibration = {};
+        dominanceRatio.fill(0.0f);
         calibrated = false;
         modeMapValidated = false;
         modeMapIsValid = false;

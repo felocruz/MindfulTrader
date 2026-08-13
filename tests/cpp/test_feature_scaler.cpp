@@ -160,6 +160,25 @@ int main() {
               approx(FeatureScaler::ComputeValueDominance(buf), 0.0f, 1e-6f));
     }
 
+    // Calibrate()/Recalibrate() wiring: 500 identical raw observations fill
+    // every rolling buffer with one repeated value, triggering Calibrate()
+    // at sampleCount == RANK_WINDOW (per the existing warmup-boundary test
+    // above). dominanceRatio should come out ~1.0 for both a SOFTLOGZ dim
+    // (dim 0) and a LOGZ dim (dim 2) -- not just the pure ComputeValueDominance
+    // function in isolation, but the actual field FeatureScaler populates.
+    {
+        FeatureScaler fs;
+        std::array<float, FeatureScaler::N_DIMS> result{};
+        for (int i = 0; i < static_cast<int>(FeatureScaler::RANK_WINDOW); ++i) {
+            result = fs.UpdateAndNormalize(MakeObs(5.0f));
+        }
+        check("calibrate_wiring_softlogz_dim_dominance_is_one",
+              approx(fs.dominanceRatio[0], 1.0f, 1e-6f));
+        check("calibrate_wiring_logz_dim_dominance_is_one",
+              approx(fs.dominanceRatio[2], 1.0f, 1e-6f));
+        (void)result;
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

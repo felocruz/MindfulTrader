@@ -2709,8 +2709,8 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     ///
     /// Institutional Regime Adjustment:
     ///   Normal volatility: skewness as-is (baseline)
-    ///   High-vol trending (>1.2x avg): amplify x1.3 (rallies steeper, crashes sharp)
-    ///   Low-vol ranging (<0.8x avg): dampen x0.8 (noise creates spurious asymmetry)
+    ///   High-vol trending (>1.2× avg): amplify × 1.3× (rallies steeper, crashes sharp)
+    ///   Low-vol ranging (<0.8× avg): dampen × 0.8× (noise creates spurious asymmetry)
     constexpr int SKEW_WINDOW = 100;
     if (sc.Index < SKEW_WINDOW) return 0.0f;
 
@@ -2765,8 +2765,8 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
         atrAvg /= VOL_COMPARE_WINDOW;
         float vol_ratio = atrCurrent / std::max(atrAvg, 0.0001f);
         float regime_mult = 1.0f;
-        if (vol_ratio > 1.2f) regime_mult = 1.30f;
-        if (vol_ratio < 0.8f) regime_mult = 0.80f;
+        if (vol_ratio > 1.2f) regime_mult = 1.30f;   // Trending: steeper rallies
+        if (vol_ratio < 0.8f) regime_mult = 0.80f;   // Ranging: flatten spurious skew
         skewness *= regime_mult;
     }
 
@@ -3151,8 +3151,15 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
     // instead of a fabricated "1.0 = flat line" reading -- checked before the
     // path-length scan below, so the expensive computation is still skipped on
     // the degenerate path exactly as before -- same sentinel-collapse fix
-    // already applied to dims 1/2/3/7/8/11/12.
-    if (maxP <= minP) return lastValidFractalDim;
+    // already applied to dims 1/2/3/7/8/10/11/12/13. Guarded against the
+    // uninitialized 0.0f default (no prior valid value yet): fractal_dim's
+    // contract is [1.0, 2.0], and an out-of-contract 0.0f trips the hard
+    // structuralInRange gate downstream, stalling the HMM inference path --
+    // fall back to the same cold-start "Brownian guess" this function already
+    // returns elsewhere instead.
+    if (maxP <= minP) {
+        return (lastValidFractalDim >= 1.0f) ? lastValidFractalDim : 1.5f;
+    }
 
     const int segments = lookback_n - 1;
     if (segments <= 0) return 1.5f; // Unreachable in practice (lookback_n always >=30) -- defensive, true cold-start shape
