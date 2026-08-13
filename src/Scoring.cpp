@@ -183,9 +183,12 @@ PatternType Scoring::StringToPatternType(const std::string& name) const {
 // Source: lbrnet/core/scoring.py -> get_climate_impact_score
 //
 // "The Gang" Rules Implementation (continuous, not discrete tiers):
-// 1. Taleb (Kurtosis): fragility penalty via sigmoid 1/(1+exp(0.5*(kurtosis-6.0))),
-//    gated on kurtosis > 2.5, with NO artificial floor
-//    (kurtosis=3 => ~0.95, =6 => ~0.50, =10 => ~0.08).
+// 1. Taleb (Kurtosis): fragility penalty via sigmoid 1/(1+exp(0.5*(kurtosis-center))),
+//    gated on kurtosis > gate, with NO artificial floor. gate/center are
+//    percentile-matched to the Moors-kurtosis scale (Task 7) -- see the
+//    call site below. The 0.5 steepness coefficient is unchanged (out of
+//    scope for a percentile-matching pass; percentile matching only carries
+//    point thresholds across the scale change, not slope).
 // 2. Shannon (Entropy, in BITS): thresholds are normalized H/Hmax ratios scaled by
 //    kShannonMaxEntropyBits (=log2(NUM_BINS)). High entropy boosts mean-reversion and
 //    cuts trend (hard-zero for patterns in neither bucket); low entropy boosts trend.
@@ -198,9 +201,13 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     double multiplier = 1.0;
 
     // --- 1. FRAGILITY PENALTY (Taleb Kurtosis) — No artificial floor ---
-    // Sigmoid to zero: kurtosis=3 → ~0.95, kurtosis=6 → ~0.50, kurtosis=10 → ~0.08
-    if (ctx.talebKurtosis > 2.5f) {
-        const double fragilityPenalty = 1.0 / (1.0 + std::exp(0.5 * (static_cast<double>(ctx.talebKurtosis) - 6.0)));
+    // gate=2.5 (old) -> P30.5 -> 1.3248 (new); center=6.0 (old) -> P70.6 -> 1.6414
+    // (new), percentile-matched on real MES data -- see
+    // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
+    // .superpowers/sdd/2026-08-13-observation-vector-institutional-elevation/
+    // task-7-report.md).
+    if (ctx.talebKurtosis > 1.3248f) {
+        const double fragilityPenalty = 1.0 / (1.0 + std::exp(0.5 * (static_cast<double>(ctx.talebKurtosis) - 1.6414)));
         multiplier *= fragilityPenalty;
     }
 

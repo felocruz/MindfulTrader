@@ -502,10 +502,15 @@ void MarketClimateIndicator::UpdateContext(const LocalRiskContext& ctx, HMMState
 
     // --- STEP 1: PHYSICS VETO (SAFETY FIRST) ---
     // "The Gang" Rules:
-    // Taleb: Kurtosis > 4.0 = Fat Tail Risk. Stop fading moves.
+    // Taleb: Kurtosis > 4.0 (old moment-based scale) = Fat Tail Risk. Stop fading moves.
     // Shannon: Entropy > 0.6 = Random Walk. Stop trend following.
 
-    bool isFragile = (kurtosis > 4.0f);
+    // Percentile-matched to the pre-Task-6 moment-based threshold's original
+    // intent (was 4.0 excess-kurtosis, P51.4 of the historical distribution)
+    // -- see tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+    // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-institutional-
+    // elevation/task-7-report.md).
+    bool isFragile = (kurtosis > 1.4753f);
     bool isChaos = (entropy > 0.6f * kShannonMaxEntropyBits);
 
     if (isFragile) {

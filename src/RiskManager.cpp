@@ -798,11 +798,16 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
     // Layer B: gate on a SESSION-AWARE ROLLING PERCENTILE of raw Amihud illiquidity,
     // not the raw value against a fixed constant (the raw value is non-stationary in
     // price/volume regime, so a fixed 0.80/0.40 was meaningless across regimes).
-    // In crash regimes (DOF ≤ 4 / kurtosis > 8) tighten the veto from p90 → p75.
+    // In crash regimes (DOF ≤ 4 / kurtosis > 8 [old scale]) tighten the veto
+    // from p90 → p75. kurtosis threshold percentile-matched: was 8.0
+    // (moment-based), P80.1 of the historical distribution -- see
+    // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
+    // .superpowers/sdd/2026-08-13-observation-vector-institutional-elevation/
+    // task-7-report.md).
     {
         const auto* hmmGate = InferenceManager::Instance().HmmState();
         const float gateDof = hmmGate ? hmmGate->Dof() : 30.0f;
-        const bool fatTail = (gateDof <= 4.0f) || (ctx.talebKurtosis > 8.0f);
+        const bool fatTail = (gateDof <= 4.0f) || (ctx.talebKurtosis > 1.7592f);
         const float amihudPctThreshold = fatTail ? 0.75f : 0.90f;
         if (ctx.amihudPercentile > amihudPctThreshold) {
             return Result<void>::Failure(
@@ -1752,10 +1757,16 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
         if (modelConfidence > 0.90f)       cascadeCount++;  // Pareto: strong conviction
         if (hmmInd && hmmInd->TransitionRisk() < 0.15f)
                                            cascadeCount++;  // HMM: stable regime
+        // rk is the Hill tail-index estimator (GetCachedHillAlpha), a
+        // different statistic from Taleb kurtosis -- untouched by Task 6's
+        // Moors-kurtosis swap, threshold left as-is.
         const float rk = ContextManager::Instance().GetCachedHillAlpha();
         if (rk > 2.5f || rk <= 0.0f)      cascadeCount++;  // Taleb: finite variance (or no data)
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
-        if (lrc.isValid && lrc.talebKurtosis < 3.0f)
+        // Percentile-matched: was 3.0 (old moment-based scale), P38.7 of the
+        // historical distribution -- see tools/analyze_kurtosis_threshold_
+        // migration.py, run 2026-08-13 (Task 7).
+        if (lrc.isValid && lrc.talebKurtosis < 1.3809f)
                                            cascadeCount++;  // Taleb: normal tails
 
         if (cascadeCount >= 5) {

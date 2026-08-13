@@ -55,13 +55,23 @@ struct ExecutionParams {
     double drawdownHalt               = 0.25;
 
     // ── Taleb kurtosis crisis gate (hysteresis) ──
-    float  talebKurtosisCrisisEnter   = 5.0f;
-    float  talebKurtosisCrisisExit    = 3.0f;
+    // Enter/Exit percentile-matched to the pre-Task-6 moment-based scale's
+    // original intent (Enter: was 5.0, P62.7 -> 1.5650; Exit: was 3.0, P38.7
+    // -> 1.3809) -- see tools/analyze_kurtosis_threshold_migration.py, run
+    // 2026-08-13 (Task 7, .superpowers/sdd/2026-08-13-observation-vector-
+    // institutional-elevation/task-7-report.md). CrisisCeiling is a risk-
+    // multiplier cap (fraction of normal size), not a kurtosis-scale value
+    // -- unaffected by the Moors-kurtosis swap, left as-is.
+    float  talebKurtosisCrisisEnter   = 1.5650f;
+    float  talebKurtosisCrisisExit    = 1.3809f;
     float  talebKurtosisCrisisCeiling = 0.35f;
 
     // ── Hard-gate regime critical cutoffs (single source of truth shared by
     //    EvaluateHardGates and ValidateOrder's regime filter) ──
-    float  talebKurtosisHaltThreshold = 15.0f;  // kurtosis above this = flash-crash block
+    // Percentile-matched: was 15.0 (old moment-based scale), P91.9 of the
+    // historical distribution -- see tools/analyze_kurtosis_threshold_
+    // migration.py, run 2026-08-13 (Task 7).
+    float  talebKurtosisHaltThreshold = 2.0064f;  // kurtosis above this = flash-crash block
     float  shannonEntropyHaltFrac     = 0.90f;  // fraction of kShannonMaxEntropyBits = chaos block
 
     // ── Shared TRAP contract (cross-runtime parity with Python) ──
