@@ -258,11 +258,13 @@ int main() {
 
     // Defensive guard: std::max(entropy, 0.0) ensures the result is never
     // negative. Analysis confirms this guard is structurally unreachable given
-    // the current constraints (m_countP >= 10, NUM_BINS = 10):
-    // - Minimum entropy occurs with 2-bin (1-sample split): entropy >= 1/N * log2(N)
-    // - Maximum bias occurs with all 10 bins: bias = 9 / (2*N*ln2)
-    // - For N >= 10: entropy >= 0.332 bits > bias <= 0.065 bits
-    // Therefore entropy always exceeds bias and the floor never triggers.
+    // the current constraints (m_countP ∈ [10, 50] per WINDOW_SIZE_P, NUM_BINS=10):
+    // Across N ∈ [10, 50], entropy always exceeds bias:
+    // - Worst case for floor (largest bias, lowest entropy): N=10, m=10
+    //   entropy ≈ 3.32 bits (uniform 10-bin) > bias ≈ 0.649 bits (ratio ≈ 5.1)
+    // - Best case for floor (smallest bias, lowest entropy): N=50, m=2
+    //   entropy ≈ 0.141 bits (1-49 split) > bias ≈ 0.014 bits (ratio ≈ 10)
+    // Therefore entropy > bias always holds across the entire domain.
     // This test documents the guard exists and returns 0 in the hypothetical
     // unreachable case.
     {
