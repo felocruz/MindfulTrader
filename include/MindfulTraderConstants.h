@@ -91,6 +91,7 @@ namespace PersistentVar_AdaptiveCalculators {
     const int CORRECTION_ACTION_LAST_VALID_VALUE = 32; // Last valid correction_action for graceful degradation on a near-zero full-window variance rate
     const int SKEWNESS_LAST_VALID_VALUE = 33; // Last valid skewness_idx for graceful degradation on a near-zero 100-bar return variance
     const int RECURRENCE_RATE_LAST_VALID_VALUE = 34; // Last valid recurrence_rate for graceful degradation on a flat price window
+    const int FRACTAL_DIM_LAST_VALID_VALUE = 35; // Last valid fractal_dim for graceful degradation on a flat price window
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

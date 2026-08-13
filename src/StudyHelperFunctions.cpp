@@ -3136,7 +3136,7 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
     // D = 1 + ln(L) / ln(2*N)
     // L = Sum of euclidean distances between normalized points
 
-    if (sc.Index < lookback_n) return 1.5f; // Brownian guess
+    if (sc.Index < lookback_n) return 1.5f; // Brownian guess -- true cold-start, no prior value exists yet
 
     float minP = FLT_MAX, maxP = -FLT_MAX;
     for(int i=0; i<lookback_n; i++) {
@@ -3145,10 +3145,17 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
         if(p > maxP) maxP = p;
     }
 
-    if (maxP <= minP) return 1.0f; // Flat line
+    float& lastValidFractalDim = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::FRACTAL_DIM_LAST_VALID_VALUE);
+
+    // Degenerate (flat price window) carries the last valid value forward
+    // instead of a fabricated "1.0 = flat line" reading -- checked before the
+    // path-length scan below, so the expensive computation is still skipped on
+    // the degenerate path exactly as before -- same sentinel-collapse fix
+    // already applied to dims 1/2/3/7/8/11/12.
+    if (maxP <= minP) return lastValidFractalDim;
 
     const int segments = lookback_n - 1;
-    if (segments <= 0) return 1.5f;
+    if (segments <= 0) return 1.5f; // Unreachable in practice (lookback_n always >=30) -- defensive, true cold-start shape
 
     double length = 0.0;
     double priceRange = maxP - minP;
@@ -3166,12 +3173,16 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
         length += std::sqrt(dx*dx + dy*dy);
     }
 
+    // Degenerate (zero-length path -- should be unreachable once maxP>minP is
+    // established above; kept as a defensive carry-forward, not a fresh sentinel).
     if (length <= 0.0) {
-        return 1.5f;
+        return lastValidFractalDim;
     }
     const float dim = static_cast<float>(
         1.0 + std::log(length) / std::log(2.0 * static_cast<double>(segments)));
-    return std::clamp(dim, 1.0f, 2.0f);
+    const float fractalDim = std::clamp(dim, 1.0f, 2.0f);
+    lastValidFractalDim = fractalDim;
+    return fractalDim;
 }
 
 float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
