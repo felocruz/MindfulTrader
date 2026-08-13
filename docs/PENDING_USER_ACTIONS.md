@@ -196,16 +196,25 @@ paths), consistent with a shared "no new price data" cause rather than a defect 
 - Dim 15 (`mean_rev_z` carry-forward on degenerate std-dev): `9f83127`
 - StatisticalContext.relRange (carry-forward on ATR edge case): `9679f4c`
 - FeatureScaler dominance diagnostic (new `ALERT` for single-value ratios on adaptive dims): `97540e3`
+- Final-review fix wave (O(n²)→O(n log n) dominance scan, `fractal_dim` out-of-contract carry-forward
+  guard, dangling doc refs, `Reset()`/test/false-positive-dim fixes): `031959d`
 
-**Deploy steps:**
+**Deploy status: DONE, initial verification PASS (2026-08-12 23:02-23:09).** DLL built from `031959d`
+(SHA256-verified identical between `build-windows/bin/MindfulTrader.dll` and the deployed
+`/mnt/c/SierraChart2/Data/MindfulTrader.dll`), Sierra Chart restarted, data collection run started
+23:03:14. First ~9,000 writes showed zero errors/crashes, `quality_ready` climbing normally
+(8,840/9,000), `stale(dim0=0,dim6=0,dim8=0)` at every digest (no frozen-sentinel signature), no
+`TS2 StructuralObs reject` and no `FeatureScaler dominance ALERT` yet (expected — too early to reach
+either's sample threshold). **Steps 2-3 below (multi-thousand-sample verification) still needed** —
+this initial check only confirms the DLL loads and runs, not the full per-dim acceptance criteria.
 
-1. Build: `./build_dll.sh --no-clean` (must succeed with 0 errors).
-2. Copy the resulting `bin/MindfulTrader.dll` to the currently-deployed DLL path,
-   `/mnt/c/SierraChart2/Data/MindfulTrader.dll`.
-3. Restart Sierra Chart (or reload the study instance) so the new DLL is actually picked up.
-4. Run a historical replay through `BackTesterStudy` (or a live session) long enough to accumulate
-   several thousand `ContextManager::ObservationStaleness ALERT` samples.
-5. Grep `/mnt/c/Trading/logs/MindfulTrader.log` for `ObservationStaleness ALERT` and `FeatureScaler dominance ALERT` and tabulate per dim, the alert count, max stale run, and whether values vary or sit at a single frozen sentinel.
+**Remaining deploy steps:**
+
+1. ~~Build~~ / ~~Copy DLL~~ / ~~Restart Sierra Chart~~ — done 2026-08-12, see above.
+2. Run a historical replay through `BackTesterStudy` (or a live session) long enough to accumulate
+   several thousand `ContextManager::ObservationStaleness ALERT` samples (and to cross the
+   `RECALIBRATION_INTERVAL`=5000-sample threshold for the first `FeatureScaler dominance ALERT` window).
+3. Grep `/mnt/c/Trading/logs/MindfulTrader.log` for `ObservationStaleness ALERT` and `FeatureScaler dominance ALERT` and tabulate per dim, the alert count, max stale run, and whether values vary or sit at a single frozen sentinel.
 
 **Per-dim acceptance criteria:**
 
@@ -215,4 +224,4 @@ paths), consistent with a shared "no new price data" cause rather than a defect 
 
 ---
 
-*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`), Section 6 updated 2026-08-12 alongside this plan (`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`) to mark the fix implemented. Section 6 updated again and Section 8 added 2026-08-12 alongside this plan's fix round 1 (dim 12's dominant-term fix), restoring a concrete batched-deploy verification recipe and recording dim 3's live-current-bar read as a deliberate, reviewed deferral; Section 7 updated to remove its dangling gitignored `.superpowers/sdd/**` report reference. Section 9 added 2026-08-12 alongside the carry-forward completion batch (`docs/superpowers/plans/2026-08-12-observation-vector-carry-forward-completion.md`), recording all five fixes and the diagnostic as pending deploy + re-verification.*
+*Generated 2026-08-04, alongside the Volume Profile Value Area feature (`docs/superpowers/plans/2026-08-04-volume-profile-daily-bias.md`, merged to `master` at `8251fb7`). Section 5 added 2026-08-04 alongside the Phase 1 hardening branch (`docs/superpowers/plans/2026-08-04-phase1-hardening.md`). Section 6 added 2026-08-12 alongside the tick-native micro-asymmetry fix (`docs/superpowers/plans/2026-08-12-tick-native-toxicity-illiquidity.md`), Section 6 updated 2026-08-12 alongside this plan (`docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md`) to mark the fix implemented. Section 6 updated again and Section 8 added 2026-08-12 alongside this plan's fix round 1 (dim 12's dominant-term fix), restoring a concrete batched-deploy verification recipe and recording dim 3's live-current-bar read as a deliberate, reviewed deferral; Section 7 updated to remove its dangling gitignored `.superpowers/sdd/**` report reference. Section 9 added 2026-08-12 alongside the carry-forward completion batch (`docs/superpowers/plans/2026-08-12-observation-vector-carry-forward-completion.md`), recording all five fixes and the diagnostic as pending deploy + re-verification. Section 9 updated 2026-08-12 (23:09) after user deploy + initial log check passed: added the final-review fix-wave commit (`031959d`) to the bundled list and recorded initial-verification-PASS status; full multi-thousand-sample per-dim acceptance criteria still open, see the Remaining deploy steps.*
