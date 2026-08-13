@@ -316,8 +316,7 @@ namespace MindfulTrader {
                 entropy -= p * std::log2(p);
             }
 
-            // Miller (1955) bias correction for the small-sample plug-in Shannon
-            // entropy estimator: bias ~ (m-1)/(2N ln2) bits, m = occupied bins.
+            // Apply Miller-Madow bias correction (see Doxygen comment above for details).
             if (occupiedBins > 1) {
                 const double bias = (static_cast<double>(occupiedBins) - 1.0) / (2.0 * totalCount * std::log(2.0));
                 entropy -= bias;

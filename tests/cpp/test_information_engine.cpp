@@ -199,17 +199,15 @@ int main() {
     // Miller-Madow entropy bias correction test. For small sample sizes,
     // the plug-in Shannon entropy estimator is biased. Miller (1955) provides
     // the correction: bias ~ (m-1)/(2N*ln2) bits, where m = occupied bins,
-    // N = sample count. This test verifies the correction is applied.
-    //
-    // Setup: Feed 50 uniform random observations, verify:
-    // (1) Corrected entropy < plug-in entropy (bias > 0), proving the
-    //     correction was subtracted
-    // (2) For uniform distribution across m occupied bins, the correction
-    //     should be approximately (m-1)/(2*50*ln2)
+    // N = sample count. This test uses a closed-form numeric assertion:
+    // construct a known input distribution, compute expected entropy by hand,
+    // assert function output matches to tolerance. This approach fails if the
+    // correction is removed (verified empirically by reviewer).
     {
         InformationEngine engine;
 
-        // Pre-warm with many varied observations to stabilize the EMA.
+        // Pre-warm with many observations to stabilize the EMA, ensuring
+        // consistent bin mapping for the 50 test observations.
         for (int i = 0; i < 200; ++i) {
             static const double warmupSequence[] = {
                 -1.0, -0.5, -0.2, 0.0, 0.2, 0.5, 1.0
@@ -218,11 +216,8 @@ int main() {
             engine.AddObservation(warmupSequence[i % kWarmupSize]);
         }
 
-        // Feed 50 diverse observations. With the stabilized EMA, these will
-        // spread across multiple bins. The exact distribution depends on the
-        // final EMA value, but the test verifies:
-        // - Miller-Madow correction IS applied (entropy reduced from plug-in)
-        // - Correction follows the formula (m-1)/(2*N*ln2) where m=# occupied bins
+        // Feed 50 test observations. With stabilized EMA ~1.8, these produce
+        // a known histogram: bins {0,1,2,3,4,5,6,7} with counts {4,7,5,5,9,14,3,3}.
         static const double testSequence[] = {
             -8.0, -4.0, -2.5, -1.2, -0.5, -0.2, 0.0, 0.2, 0.5, 1.2,
             -8.0, -4.0, -2.5, -1.2, -0.5, -0.2, 0.0, 0.2, 0.5, 1.2,
@@ -235,16 +230,46 @@ int main() {
             engine.AddObservation(testSequence[i]);
         }
 
-        // The test verifies Miller-Madow is applied by checking that the
-        // entropy is strictly less than the plug-in value (the bias term is
-        // always positive for m > 1).
-        const double entropy = engine.GetShannonEntropy();
-        const double maxPossible = std::log2(10.0);
+        // Hand-calculated expected value (verified empirically; confirmed that
+        // this assertion FAILS if Miller-Madow correction is removed):
+        // - m = 8 occupied bins, N = 50 samples
+        // - Plugin entropy = 2.799599503186903
+        // - Miller-Madow bias = (8-1)/(2*50*ln2) = 0.100988652862227
+        // - Corrected = 2.698610850324676
+        const double expected_corrected_entropy = 2.698610850324676;
+        const double uncorrected_plugin_entropy = 2.799599503186903;
 
-        check("miller_madow_corrected_entropy_is_strictly_less_than_uncorrected_plug_in_value",
-              entropy < maxPossible);
-        check("shannon_entropy_after_miller_madow_correction_is_non_negative",
-              entropy >= 0.0);
+        check("miller_madow_entropy_matches_closed_form_formula",
+              approx(engine.GetShannonEntropy(), expected_corrected_entropy, 1e-6));
+        check("miller_madow_entropy_is_less_than_uncorrected_plugin_value",
+              engine.GetShannonEntropy() < uncorrected_plugin_entropy);
+    }
+
+    // Edge case: single bin occupied (m=1). Miller-Madow correction should not
+    // apply (m-1=0), so entropy should be exactly 0.0 (log2(1)=0).
+    {
+        InformationEngine engine;
+        for (int i = 0; i < 50; ++i) {
+            engine.AddObservation(0.0);  // All zeros land in same bin
+        }
+        check("shannon_entropy_single_occupied_bin_is_zero",
+              engine.GetShannonEntropy() == 0.0);
+    }
+
+    // Edge case: verify std::max(entropy, 0.0) guard. In practice, Miller-Madow
+    // bias is bounded by the entropy itself, but the guard ensures we never
+    // return negative entropy even in degenerate cases.
+    {
+        InformationEngine engine;
+        // Highly skewed distribution (low entropy to start).
+        for (int i = 0; i < 40; ++i) {
+            engine.AddObservation(0.0);
+        }
+        for (int i = 0; i < 10; ++i) {
+            engine.AddObservation(2.0);
+        }
+        check("shannon_entropy_never_negative_after_correction",
+              engine.GetShannonEntropy() >= 0.0);
     }
 
     std::printf("\nGetLempelZivComplexity unit tests\n");
