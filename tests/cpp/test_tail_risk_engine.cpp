@@ -45,8 +45,9 @@ int main() {
     // A genuine outlier (~50x the median tail magnitude) reliably enters the
     // scanned k-range and swings the old fixed-k=25/no-smoothing computation
     // by ~25%, while the stability-region + EWMA-smoothed computation moves
-    // by <1% (confirmed empirically against both the pre-fix and post-fix
-    // implementations before finalizing this test).
+    // by ~6% (confirmed empirically against both the pre-fix and post-fix
+    // implementations before finalizing this test, and re-verified after the
+    // 2026-08-13 post-review k-selector fix).
     const double alphaBefore = engine.GetHillAlpha();
     engine.AddObservation(0.05);  // one genuine outlier (~50x median tail magnitude)
     const double alphaAfter = engine.GetHillAlpha();
