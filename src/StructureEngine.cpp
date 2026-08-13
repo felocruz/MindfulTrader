@@ -85,9 +85,11 @@ float StructureEngine::GetRecurrenceRate() const {
 float StructureEngine::GetFractalDimension() const {
     if (m_prices.size() < WINDOW_SIZE) return 1.5f; // Neutral Brownian
 
-    // Simple robust estimator: Path Length / Log-Range
-    // D = log(L) / log(d) is Hausdorff, but for time series we use Sevcik's or similar.
-    // Let's use a simpler "Roughness" proxy:
+    // Path-length/displacement roughness ratio -- NOT Sevcik's method (that's
+    // a log-log calculation, 1 + ln(L)/ln(2*segments); this is an unlogged
+    // ratio with no citable name). Corrected 2026-08-13, was previously
+    // mislabeled -- see docs/superpowers/specs/2026-08-12-gang-literature-
+    // grounding-spec.md Finding 3.
     // Path Length L = sum(|close_i - close_{i-1}|)
     // Displacement D = max_high - min_low
     // Normalized L is scale-invariant.
