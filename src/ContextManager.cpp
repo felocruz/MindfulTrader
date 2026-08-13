@@ -326,8 +326,20 @@ float ContextManager::GetAdaptiveMahalanobisEpsilon(
     const float entropy_multiplier = 1.0f + (0.35f * entropy_clamped);
 
     // Fragility term: elevate threshold in fat-tail stress unless movement is truly structural.
-    const float kurtosis_excess = std::max(realized_kurtosis - 3.0f, 0.0f);
-    const float kurtosis_multiplier = 1.0f + std::min(kurtosis_excess * 0.05f, 0.25f);
+    // Migrated to the Moors octile-kurtosis scale 2026-08-13 (final-review pass). This site was
+    // missed by Task 7's migration sweep because its grep keyed on `talebKurtosis`/`chaseKurtosis`
+    // and this parameter is named `realized_kurtosis`. Left on the old scale the term was inert:
+    // Moors kurtosis is clamped to [0,5] and realistically <= ~3, so `k - 3.0` was almost always
+    // 0 and the multiplier was permanently 1.0. Anchors use Task 7's own published percentile
+    // mapping on the 57,256-sample paired CSV, so trigger frequency is preserved:
+    //   ramp start   old 3.0 (Gaussian neutral)      -> P38.7 -> 1.3809
+    //   saturation   old 8.0 (fat-tail gate)         -> P80.1 -> 1.7592
+    // Slope re-derived so the cap is still reached exactly at saturation:
+    //   old 0.05 = 0.25 / (8.0 - 3.0); new 0.6609 = 0.25 / (1.7592 - 1.3809).
+    constexpr float KURT_FRAGILITY_RAMP_START = 1.3809f;
+    constexpr float KURT_FRAGILITY_SLOPE = 0.6609f;
+    const float kurtosis_excess = std::max(realized_kurtosis - KURT_FRAGILITY_RAMP_START, 0.0f);
+    const float kurtosis_multiplier = 1.0f + std::min(kurtosis_excess * KURT_FRAGILITY_SLOPE, 0.25f);
 
     return base_epsilon * velocity_multiplier * entropy_multiplier * kurtosis_multiplier;
 }

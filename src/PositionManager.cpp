@@ -1835,8 +1835,22 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
         if (lrc.isValid) {
-            const bool longAgainstLeftTail  = (isLongTrade && lrc.talebSkewness < -1.0f);
-            const bool shortAgainstRightTail = (!isLongTrade && lrc.talebSkewness > 1.0f);
+            // Percentile-matched to the Bowley quartile-skewness scale 2026-08-13
+            // (final-review pass, same methodology as Task 7's kurtosis migration).
+            // Task 6 (298b9e0) replaced moment-based skewness with Bowley (1920)
+            // quartile skewness, which is bounded [-1,+1] by construction; Task 7's
+            // migration sweep grepped for `talebKurtosis` and did not cover this
+            // site, leaving the old moment-scale +/-1.0 literal in place. On real
+            // MES 15-min data (74,985 rolling 100-bar windows) the Bowley statistic
+            // never exceeds +/-0.54, so the gate had become DEAD -- it fired on
+            // 14.7%/17.4% of windows on the old scale and 0.000% on the new one.
+            // +/-1.0 sits at P85.3 / P17.4 of the old distribution -> +/-0.1544 on
+            // the new scale, restoring 14.7%/14.9% firing rates. (Both scales apply
+            // the identical ATR regime multiplier downstream of the statistic, so
+            // percentile ordering is preserved across the migration.)
+            constexpr float kBowleySkewGate = 0.1544f;
+            const bool longAgainstLeftTail  = (isLongTrade && lrc.talebSkewness < -kBowleySkewGate);
+            const bool shortAgainstRightTail = (!isLongTrade && lrc.talebSkewness > kBowleySkewGate);
             if (longAgainstLeftTail || shortAgainstRightTail) {
                 skewnessForcePassive = true;
             }

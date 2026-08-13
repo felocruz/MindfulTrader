@@ -72,6 +72,14 @@ struct ExecutionParams {
     // historical distribution -- see tools/analyze_kurtosis_threshold_
     // migration.py, run 2026-08-13 (Task 7).
     float  talebKurtosisHaltThreshold = 2.0064f;  // kurtosis above this = flash-crash block
+    // ENTROPY SCALE NOTE (2026-08-13, final-review Finding 7): GetShannonEntropy()
+    // now subtracts a Miller-Madow bias term, shifting entropy DOWN ~4% at the
+    // steady-state window (N=50), up to ~20% during warmup (N=10). This fraction
+    // was evaluated and deliberately NOT re-derived: the shift is an order of
+    // magnitude smaller than the kurtosis 3.0 -> 1.233 change directly above
+    // (which DID get a full empirical re-derivation, Task 7), and it moves the
+    // halt gate conservatively (harder to trip a chaos block). Full rationale at
+    // InformationEngine.h's GetShannonEntropy() doc comment.
     float  shannonEntropyHaltFrac     = 0.90f;  // fraction of kShannonMaxEntropyBits = chaos block
 
     // ── Shared TRAP contract (cross-runtime parity with Python) ──
@@ -157,14 +165,84 @@ struct ExecutionParams {
             elderDrawdown15PctSizing50 = j.value("elder_drawdown_15pct_sizing_50", elderDrawdown15PctSizing50);
             drawdownHalt               = j.value("drawdown_halt",                  drawdownHalt);
 
-            // Taleb kurtosis crisis gate
+            // ── Taleb kurtosis gates (STRICT validation — fail closed) ──────
+            // SCALE GUARD (final-review Finding 9, 2026-08-13). Task 6 replaced
+            // moment-based excess kurtosis with Moors (1988) octile kurtosis, a
+            // completely different scale: CalculateRealizedKurtosis now clamps
+            // its output to [0, 5] and realistically returns <= ~3, whereas the
+            // old statistic routinely reached 10-20. A stale old-scale override
+            // in /mnt/c/Trading/config/execution_params.json (e.g. the real
+            // pre-Task-7 values `taleb_kurtosis_halt_threshold: 15.0` /
+            // `taleb_kurtosis_crisis_enter: 17.33`) would therefore fail OPEN --
+            // silently unreachable, so the flash-crash block never fires -- with
+            // no other symptom. Task 7 restamped the live JSON, but nothing
+            // stopped a stale copy being restored, and these are safety gates.
+            //
+            // These are ENTRY-BLOCKING / risk-tightening gates, so
+            // TRADE_EXECUTION_SYSTEM.md §14.3's non-negotiable invariant
+            // ("fail-closed for new entries, fail-open for protective exits")
+            // requires REFUSING TO ARM on an implausible value, not quietly
+            // substituting a default that may itself be wrong. Hence `throw`,
+            // matching trap_config.contract_version's precedent below: the catch
+            // sets loadStatus = PARSE_FAILED, which RiskManager::Initialize
+            // treats as FATAL and aborts initialization on — a real deny state,
+            // not a warning. The catch also restores compiled defaults so the
+            // object is never left half-overridden.
+            //
+            // Additionally enforces TRADE_EXECUTION_SYSTEM.md §13.3's mandatory
+            // hysteresis ordering for threshold-based degraders: a config whose
+            // enter/exit values were swapped would pass a per-value range check
+            // but is still a real bug.
+            constexpr float kKurtosisMoorsClampCeiling = 5.0f;  // == CalculateRealizedKurtosis's KURT_CLAMP_HI
+
             talebKurtosisCrisisEnter   = j.value("taleb_kurtosis_crisis_enter",   talebKurtosisCrisisEnter);
             talebKurtosisCrisisExit    = j.value("taleb_kurtosis_crisis_exit",    talebKurtosisCrisisExit);
+            // NOTE: talebKurtosisCrisisCeiling is a risk-MULTIPLIER cap (a size
+            // fraction), not a kurtosis-scale value, so it is not guarded here.
             talebKurtosisCrisisCeiling = j.value("taleb_kurtosis_crisis_ceiling", talebKurtosisCrisisCeiling);
 
             // Hard-gate regime critical cutoffs
             talebKurtosisHaltThreshold = j.value("taleb_kurtosis_halt_threshold", talebKurtosisHaltThreshold);
             shannonEntropyHaltFrac     = j.value("shannon_entropy_halt_frac",     shannonEntropyHaltFrac);
+
+            auto requireMoorsScale = [&](const char* key, float value) {
+                if (!(value < kKurtosisMoorsClampCeiling) || value < 0.0f) {
+                    throw std::runtime_error(
+                        std::string(key) + " = " + std::to_string(value) +
+                        " is not on the Moors octile-kurtosis scale (valid range [0,5); "
+                        "CalculateRealizedKurtosis clamps its output to [0,5], so this "
+                        "threshold is unreachable and the gate would never fire). This is "
+                        "almost certainly a stale pre-Task-7 old-moment-scale value — "
+                        "restamp the config using the Task 7 percentile mapping table.");
+                }
+            };
+            requireMoorsScale("taleb_kurtosis_crisis_enter",   talebKurtosisCrisisEnter);
+            requireMoorsScale("taleb_kurtosis_crisis_exit",    talebKurtosisCrisisExit);
+            requireMoorsScale("taleb_kurtosis_halt_threshold", talebKurtosisHaltThreshold);
+
+            // Hysteresis ordering (TRADE_EXECUTION_SYSTEM.md §13.3, "mandatory
+            // for threshold-based degraders: separate enter and clear
+            // thresholds"). Crisis mode is entered above `enter` and cleared
+            // below `exit`, so exit must sit strictly below enter or the degrader
+            // chatters / never clears. A config with the two swapped passes every
+            // per-value range check and is still a real bug.
+            //
+            // Deliberately NOT asserted: `crisis_enter <= halt_threshold`. The
+            // live tune legitimately sets crisis-enter (P93.8) ABOVE the compiled
+            // halt default (P91.9) — Task 7 percentile-matching preserved that
+            // pre-existing relative ordering rather than second-guessing it, so
+            // an escalation-ordering assertion here would reject a valid config.
+            if (!(talebKurtosisCrisisExit < talebKurtosisCrisisEnter)) {
+                throw std::runtime_error(
+                    "taleb_kurtosis_crisis_exit (" + std::to_string(talebKurtosisCrisisExit) +
+                    ") must be strictly below taleb_kurtosis_crisis_enter (" +
+                    std::to_string(talebKurtosisCrisisEnter) + ") — hysteresis ordering violated");
+            }
+            if (!(shannonEntropyHaltFrac > 0.0f) || shannonEntropyHaltFrac > 1.0f) {
+                throw std::runtime_error(
+                    "shannon_entropy_halt_frac must be a fraction in (0,1] of kShannonMaxEntropyBits, got " +
+                    std::to_string(shannonEntropyHaltFrac));
+            }
 
             // Shared trap config contract (strict validation when present)
             if (j.contains("trap_config") && j["trap_config"].is_object()) {
@@ -252,10 +330,21 @@ struct ExecutionParams {
                 " | drawdown_halt=" + std::to_string(drawdownHalt));
 
         } catch (const std::exception& e) {
+            // Roll back to compiled defaults. Keys are assigned in place as they
+            // are read, so without this reset a throw part-way through (from a
+            // trap_config validation failure, or the kurtosis scale/hysteresis
+            // guards above) would leave a HALF-OVERRIDDEN object while the log
+            // claimed "using compiled defaults" — the worst possible outcome for
+            // a safety-gate config, and the reason those guards can safely throw
+            // (final-review Finding 9, 2026-08-13). RiskManager::Initialize
+            // treats PARSE_FAILED as FATAL and refuses to arm, per
+            // TRADE_EXECUTION_SYSTEM.md §14.3's fail-closed-for-entries invariant.
+            const std::string reason = e.what();
+            *this = ExecutionParams{};
             loadStatus = LoadStatus::PARSE_FAILED;
             Logger::getInstance().log(
-                "ExecutionParams: PARSE FAILED at " + path + " (" + e.what() +
-                ") — using compiled defaults");
+                "ExecutionParams: PARSE FAILED at " + path + " (" + reason +
+                ") — compiled defaults restored; RiskManager will refuse to arm");
         }
     }
 };

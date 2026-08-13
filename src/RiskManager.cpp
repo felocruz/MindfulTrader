@@ -192,7 +192,38 @@ namespace {
                 const auto& gates = j["empirical_gate_thresholds"];
                 policy.pareto_top_state_ratio_max = gates.value("pareto_top_state_ratio_max", policy.pareto_top_state_ratio_max);
                 policy.shannon_min_tenure_bars = gates.value("shannon_min_tenure_bars", policy.shannon_min_tenure_bars);
+
+                // SCALE GUARD (final-review Finding 9, 2026-08-13) -- the second
+                // of the two live JSON config files carrying Moors-scale kurtosis
+                // thresholds (the other is execution_params.json, guarded in
+                // ExecutionParams::LoadFromFile). Per TRADE_EXECUTION_SYSTEM.md
+                // §H.6 this key is the source for the HmmRegimeGateTalebBreach
+                // entry-DENY gate, and it is compared against Moors octile
+                // kurtosis, which CalculateRealizedKurtosis clamps to [0, 5]. A
+                // stale old-moment-scale override here (this file's own pre-Task-7
+                // value was 9.697616, documented in that spec as "9.698 sigma")
+                // is provably unreachable, so the deny gate would silently never
+                // fire -- a fail-OPEN on an entry gate with no other symptom.
+                //
+                // §14.3 ("fail-closed for new entries") requires refusing to arm,
+                // not substituting a default: throw into the catch below, which
+                // resets to compiled defaults, forces strict_mode ON (this file's
+                // strict_mode defaults to false and the live file does not set
+                // it) and sets PARSE_FAILED — so
+                // ComputeInstitutionalRiskMultiplier's strict_failure_cap deny
+                // path engages regardless of what the rejected file said.
+                constexpr double kKurtosisMoorsClampCeiling = 5.0;  // == CalculateRealizedKurtosis's KURT_CLAMP_HI
                 policy.taleb_signal_sigma_threshold = gates.value("taleb_signal_sigma_threshold", policy.taleb_signal_sigma_threshold);
+                if (!(policy.taleb_signal_sigma_threshold < kKurtosisMoorsClampCeiling) ||
+                    policy.taleb_signal_sigma_threshold < 0.0) {
+                    throw std::runtime_error(
+                        std::string("empirical_gate_thresholds.taleb_signal_sigma_threshold = ") +
+                        std::to_string(policy.taleb_signal_sigma_threshold) +
+                        " is not on the Moors octile-kurtosis scale (valid range [0,5); "
+                        "CalculateRealizedKurtosis clamps to [0,5], so the HmmRegimeGateTalebBreach "
+                        "deny gate would never fire). Almost certainly a stale pre-Task-7 "
+                        "old-moment-scale value — restamp using the Task 7 percentile mapping table.");
+                }
             }
 
             policy.load_status = HMMRiskPolicy::LoadStatus::LOADED_FROM_FILE;
@@ -216,10 +247,20 @@ namespace {
                 " | taleb_sigma=" + std::to_string(policy.taleb_signal_sigma_threshold)
             );
         } catch (const std::exception& e) {
+            // Fail closed (TRADE_EXECUTION_SYSTEM.md §14.3). Keys are assigned in
+            // place as they are read, so without this reset a throw part-way
+            // through would leave a HALF-OVERRIDDEN policy in force. Reset to
+            // compiled defaults and force strict_mode ON, so
+            // ComputeInstitutionalRiskMultiplier's strict_failure_cap deny path
+            // engages instead of the rejected file's own (possibly absent)
+            // strict_mode setting (final-review Finding 9, 2026-08-13).
+            policy = HMMRiskPolicy{};
+            policy.strict_mode = true;
             policy.load_status = HMMRiskPolicy::LoadStatus::PARSE_FAILED;
             Logger::getInstance().log(
                 std::string("RiskManager: Failed to parse HMM risk policy at ") +
-                kRiskPolicyPathWindows + " (" + e.what() + ")"
+                kRiskPolicyPathWindows + " (" + e.what() +
+                ") — compiled defaults restored, STRICT MODE forced (strict_failure_cap applies)"
             );
         }
 
