@@ -8,6 +8,7 @@
 #include "RingBuffer.h"
 #include "CarryForwardCalculators.h"
 #include "RQAEpsilonSelector.h"
+#include "RobustMoments.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2667,26 +2668,22 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
         return 3.0f;  // Neutral kurtosis baseline
     }
 
-    float m4 = 0.0f;
-    for (float ret : returns) {
-        float diff = ret - mean_ret;
-        m4 += diff * diff * diff * diff;
+    const float moorsKurtosis = MoorsKurtosis(returns);
+    float kurtosis;
+    if (std::isnan(moorsKurtosis)) {
+        if (sc.Index > 0 && std::isfinite(prevKurtosis)) {
+            return std::clamp(prevKurtosis, -5.0f, 50.0f);
+        }
+        kurtosis = 1.23f;  // Moors' N(0,1) neutral baseline, replaces the old 3.0f
+                            // excess-kurtosis neutral baseline -- different scale.
+    } else {
+        kurtosis = moorsKurtosis;
     }
-    m4 /= KURT_WINDOW;
 
-    // Sample Kurtosis Formula (Unbiased Estimator - Sierra Chart's approach)
-    // More statistically rigorous than simple Fisher-Pearson adjustment
-    // adjustment = (n-1)(n+1) / [(n-2)(n-3)]
-    // correction = 3(n-1)² / [(n-2)(n-3)]
-    // This provides better small-sample statistics for our 100-bar window
-    constexpr float n_f = static_cast<float>(KURT_WINDOW);
-    float adjustment = ((n_f - 1.0f) * (n_f + 1.0f)) / ((n_f - 2.0f) * (n_f - 3.0f));
-    float bias_correction = 3.0f * (n_f - 1.0f) * (n_f - 1.0f) / ((n_f - 2.0f) * (n_f - 3.0f));
-
-    float var_squared = variance * variance;
-    float kurtosis = adjustment * (m4 / var_squared) - bias_correction;
-
-    // ELITE FIX #3: Regime adjustment (PhD-level risk management)
+    // ELITE FIX #3: Regime adjustment -- unchanged mechanism, now applied to
+    // Moors kurtosis instead of moment-based kurtosis. Re-tuning these
+    // multipliers against the new statistic's distribution is Task 7's job,
+    // not this task's -- do not hand-adjust here.
     float atrCurrent = atrArray[sc.Index];
     constexpr int VOL_COMPARE_WINDOW = 20;
     if (sc.Index >= VOL_COMPARE_WINDOW) {
@@ -2702,7 +2699,8 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
         kurtosis *= regime_mult;
     }
 
-    return std::clamp(kurtosis, -5.0f, 50.0f);
+    return std::clamp(kurtosis, -5.0f, 50.0f);  // clamp bounds also need Task 7's
+                                                  // re-derivation against Moors' scale
 }
 
 float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
@@ -2745,18 +2743,15 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     if (variance < SKEW_VARIANCE_EPS) {
         return lastValidSkewness;
     }
-    float stddev = std::sqrt(variance);
-
-    float m3 = 0.0f;
-    for (float ret : returns) {
-        float diff = ret - mean_ret;
-        m3 += diff * diff * diff;
+    const float bowleySkewness = BowleySkewness(returns);
+    float skewness;
+    if (std::isnan(bowleySkewness)) {
+        return lastValidSkewness;
     }
-    m3 /= SKEW_WINDOW;
+    skewness = bowleySkewness;
 
-    float skewness = m3 / (stddev * stddev * stddev);
-
-    // ELITE FIX #4: Regime adjustment (Wyckoff-aligned)
+    // ELITE FIX #4: Regime adjustment -- unchanged mechanism, now applied to
+    // Bowley skewness instead of moment-based skewness.
     float atrCurrent = atrArray[sc.Index];
     constexpr int VOL_COMPARE_WINDOW = 20;
     if (sc.Index >= VOL_COMPARE_WINDOW) {
