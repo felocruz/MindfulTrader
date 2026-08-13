@@ -131,19 +131,34 @@ observations rather than N raw ticks.
    level — this codebase's HMM consumes already-scaled features, so this precedent doesn't transfer
    mechanically, only in spirit. Bulla & Bulla (2006, Computational Statistics & Data Analysis, Student-t
    HMMs) addresses fat-tailed emissions but not held-value/imputation preprocessing.
-4. **Is dedupe-at-ingestion itself a named technique? No.** Not in market microstructure, robust statistics,
+4. **Is dedupe-at-ingestion itself a named technique? No, but a closely-related principle is — precisely
+   scoped, 2026-08-13 addendum.** Not itself named in market microstructure, robust statistics,
    HMM/state-space, or general streaming-ML feature engineering literature. "Plateau"/"flat spot"
    terminology exists but in unrelated signal-processing contexts (e.g. cosmic-ray rejection in imaging).
+   External review (Gemini, via `../lbrnet/logs/rc_gemini.log` `GEMINI_BRIEF_089_RESPONSE`) correctly
+   points out that skipping duplicate-value pushes turns the rolling window from a clock-time window
+   (last N ticks) into an **event-time / information-time window** (last N *distinct* observations) —
+   and event-time sampling (tick bars, volume bars, information-driven bars) is itself a well-established
+   market-microstructure convention (Mandelbrot & Taylor's early trade-time sampling; formalized in
+   Easley, López de Prado & O'Hara's information-driven-bars work) for exactly the reason given here:
+   removing zero-information/stale observations from corrupting a statistic computed over the window.
+   **Scoped precisely, not overclaimed**: that literature is about *raw price-bar construction* (deciding
+   when a new *bar* forms), not *feature-scaler rolling-window ingestion* (deciding when a new *sample*
+   enters an already-formed dim's window) — this fix applies the same underlying principle one layer
+   downstream of where the cited literature classically applies it, not a direct implementation of it.
 
-**Honest verdict:** the proposed fix is **partially grounded — a principled synthesis, not an
+**Honest verdict:** the proposed fix is **partially grounded — a principled synthesis, not a direct
 implementation of an established named method.** The direction (a stale/repeated reading shouldn't count
-as a fresh independent draw) is strongly consistent with two independent bodies of consensus practice
-(microstructure's stale-tick-exclusion convention; HMM's missing-data-marginalization convention), and the
-Shannon zero-marginal-information framing is sound information theory, correctly applied. But no source
-directly prescribes deduplication as a preprocessing step for a rolling median/MAD estimator specifically,
-and classical robust statistics doesn't treat tie-contamination as a distinct problem from outlier-
-contamination at all. Document and defend this internally as exactly that synthesis — not as "the
-literature says to do this."
+as a fresh independent draw) is strongly consistent with three independent bodies of consensus practice
+(microstructure's stale-tick-exclusion convention; HMM's missing-data-marginalization convention; and, per
+the 2026-08-13 addendum above, event-time/information-time sampling's rationale for excluding
+non-informative observations from a windowed statistic), and the Shannon zero-marginal-information framing
+is sound information theory, correctly applied. But no source directly prescribes deduplication as a
+preprocessing step for a rolling median/MAD estimator specifically, classical robust statistics doesn't
+treat tie-contamination as a distinct problem from outlier-contamination at all, and the closest named
+convention (event-time bars) classically operates one layer upstream (bar formation, not post-formation
+feature-window ingestion). Document and defend this internally as a synthesis that sits adjacent to real
+named conventions, not as "the literature says to do this."
 
 **Status: `plausible-engineering-choice`** (low-risk given it changes only which observations enter an
 already-correct estimator, not the estimator itself — but should be presented to stakeholders with the
@@ -173,3 +188,4 @@ These are naming/labeling/dead-code issues the inventory surfaced. They don't ha
 - **2026-08-12** — Correction: the "Taleb Cliff" row's citation to `ContextManager.cpp:706-718` was off by a few lines (correct range `693-725`); added Finding 9 clarifying that this live feature is unrelated to the deleted `ChandelierStopManager` execution class (verified deleted, commit `9ee5326`) — same underlying Chandelier math, two independent fates.
 - **2026-08-12** — Decision: kurtosis and skewness escalated `under-powered` → `pending-replacement`, and explicitly excluded from the incremental-accumulator DOD performance pass (`docs/superpowers/plans/2026-08-12-observation-vector-incremental-accumulators.md`). Rationale: speeding up the current moment-based formula would optimize a statistic already flagged as likely wrong, and risks burying the correctness question once it's fast and "working." Noted that a robust quantile/L-moment-based replacement is a materially bigger implementation lift than the accumulator work proceeding for log-variance-ratio/burstiness, since it needs a sliding order-statistics structure, not a running sum.
 - **2026-08-13** — **Consensus institutional-practice pass** (5 parallel literature-research threads, one per pillar plus a new cross-pillar `FeatureScaler` thread). Confirmed still-current: Miller-Madow entropy correction, Sevcik fractal dimension (upgraded to `validated`), Danielsson bootstrap k-selection lineage. Made concrete/actionable: Bowley skewness + Moors kurtosis as the named Kim & White replacement formulas, with a streaming-quantile feasibility note (t-digest vs. cheap full-resort at N=100) and a Winsorization interim fix; Schinkel et al. (2008) fixed-recurrence-rate RQA epsilon as a concrete replacement for the current range/SD heuristic; Resnick-Stărică Hill-plot stability-region selector as a cheap (non-bootstrap) k-selection upgrade path. Added two new Pareto-pillar rows (alpha EWMA-smoothing as an honestly-labeled engineering choice; intraday-seasonality as an open, uninvestigated gap specific to this codebase's 15-min cadence). Added the new **Cross-Pillar: FeatureScaler Ingestion** section grounding the dims-1/2 median-collapse fix under discussion — verdict: a principled synthesis of microstructure stale-tick-exclusion and HMM missing-data-marginalization consensus, honestly **not** an implementation of any single named technique; robust-statistics literature confirmed silent on tie/repeat-contamination of the median as distinct from outlier-contamination. No code changed in this pass — literature-grounding only, per explicit instruction to fortify the research before any further design/implementation work.
+- **2026-08-13** — Cross-Pillar FeatureScaler section, addendum from external review (Gemini, `../lbrnet/logs/rc_gemini.log` `GEMINI_BRIEF_089_RESPONSE`/`GEMINI_BRIEF_090`-adjacent exchange): added a fourth supporting citation — event-time/information-time sampling (tick bars, volume bars; Mandelbrot & Taylor trade-time sampling; Easley/López de Prado/O'Hara information-driven bars) — as a named convention sharing the dedupe fix's underlying rationale (exclude non-informative observations from a windowed statistic), precisely scoped as applying one layer upstream (bar formation) of where this fix applies (post-formation feature-window ingestion), not claimed as a direct implementation. Also confirms (independently, via the same exchange) that Task 7's percentile/CDF-matching approach for kurtosis threshold migration is the correct method, not a linear rescale off the 3.0→1.233 baseline shift alone — validates a decision already built into Task 7 before this exchange, no plan change needed.
