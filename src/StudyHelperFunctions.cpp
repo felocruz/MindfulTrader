@@ -2709,8 +2709,8 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     ///
     /// Institutional Regime Adjustment:
     ///   Normal volatility: skewness as-is (baseline)
-    ///   High-vol trending (>1.2× avg): amplify × 1.3× (rallies steeper, crashes sharp)
-    ///   Low-vol ranging (<0.8× avg): dampen × 0.8× (noise creates spurious asymmetry)
+    ///   High-vol trending (>1.2x avg): amplify x1.3 (rallies steeper, crashes sharp)
+    ///   Low-vol ranging (<0.8x avg): dampen x0.8 (noise creates spurious asymmetry)
     constexpr int SKEW_WINDOW = 100;
     if (sc.Index < SKEW_WINDOW) return 0.0f;
 
@@ -2730,9 +2730,19 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     }
     variance /= SKEW_WINDOW;
 
+    float& lastValidSkewness = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::SKEWNESS_LAST_VALID_VALUE);
+
     // ES 15s log-return variance is typically very small; avoid collapsing to zero.
+    // Degenerate (near-flat return window) carries the last valid value forward
+    // instead of a fabricated exact-zero "no skew" reading -- returning before
+    // the regime-adjustment block below means a carried-forward value is never
+    // re-multiplied by a fresh regime factor -- same sentinel-collapse fix
+    // already applied to dims 1/2/3/7/8/11/12
+    // (docs/superpowers/plans/2026-08-12-observation-vector-carry-forward-completion.md).
     constexpr float SKEW_VARIANCE_EPS = 1e-10f;
-    if (variance < SKEW_VARIANCE_EPS) return 0.0f;
+    if (variance < SKEW_VARIANCE_EPS) {
+        return lastValidSkewness;
+    }
     float stddev = std::sqrt(variance);
 
     float m3 = 0.0f;
@@ -2755,12 +2765,14 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
         atrAvg /= VOL_COMPARE_WINDOW;
         float vol_ratio = atrCurrent / std::max(atrAvg, 0.0001f);
         float regime_mult = 1.0f;
-        if (vol_ratio > 1.2f) regime_mult = 1.30f;   // Trending: steeper rallies
-        if (vol_ratio < 0.8f) regime_mult = 0.80f;   // Ranging: flatten spurious skew
+        if (vol_ratio > 1.2f) regime_mult = 1.30f;
+        if (vol_ratio < 0.8f) regime_mult = 0.80f;
         skewness *= regime_mult;
     }
 
-    return std::clamp(skewness, -1.5f, 1.5f);
+    skewness = std::clamp(skewness, -1.5f, 1.5f);
+    lastValidSkewness = skewness;
+    return skewness;
 }
 
 float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float volumeSma, float prev_fragility) {

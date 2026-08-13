@@ -89,6 +89,7 @@ namespace PersistentVar_AdaptiveCalculators {
     const int FISHER_INFO_LAST_VALID_VALUE = 30;     // Last valid fisher_info for graceful degradation on a flat lookback price range
     const int AMIHUD_LAST_VALID_VALUE = 31;          // Last valid amihud_illiquidity for graceful degradation on a thin/illiquid window
     const int CORRECTION_ACTION_LAST_VALID_VALUE = 32; // Last valid correction_action for graceful degradation on a near-zero full-window variance rate
+    const int SKEWNESS_LAST_VALID_VALUE = 33; // Last valid skewness_idx for graceful degradation on a near-zero 100-bar return variance
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection
