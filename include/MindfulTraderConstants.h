@@ -94,8 +94,15 @@ namespace PersistentVar_AdaptiveCalculators {
     const int FRACTAL_DIM_LAST_VALID_VALUE = 35; // Last valid fractal_dim for graceful degradation on a flat price window
     const int MEAN_REV_Z_LAST_VALID_VALUE = 36; // Last valid mean_rev_z for graceful degradation on a near-zero log-price std-dev
     const int CTX_REL_RANGE_LAST_VALID_VALUE = 37; // Last valid StatisticalContext.relRange for graceful degradation on a zero/unpopulated ATR (independent of dim 2's own carry-forward state)
-    const int RQA_CALIBRATED_EPSILON = 38;       // Held epsilon between recalibrations
-    const int RQA_CALLS_SINCE_CALIBRATION = 39;  // Recalibration cadence counter
+    const int RQA_CALIBRATED_EPSILON = 38;       // Held epsilon between recalibrations (persistent FLOAT)
+    const int RQA_LAST_CALIBRATION_BAR_INDEX = 39; // Bar index (sc.Index) of the last RQA epsilon recalibration
+                                                   // (persistent INT). Replaces the former
+                                                   // RQA_CALLS_SINCE_CALIBRATION call counter, which counted
+                                                   // ticks -- AutoLoop=1 invokes CalculateRecurrenceRate on
+                                                   // every tick, so a call counter recalibrated ~every 200
+                                                   // ticks instead of every 200 bars (fixed 2026-08-13).
+                                                   // Same bar-advancement-gate convention as
+                                                   // LAST_OBS_UPDATE_INDEX / LAST_AMIHUD_SAMPLE_INDEX.
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

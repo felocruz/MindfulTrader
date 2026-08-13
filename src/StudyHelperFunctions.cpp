@@ -2635,14 +2635,36 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc) {
 
 float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFloatArrayRef atrArray) {
     /// Realized Kurtosis - ELITE: Regime-Adjusted Implementation #3
-    /// Detects tail risk (excess kurtosis >3 = panic/euphoria, 0 = normal, <-2 = flat/trapped)
+    /// Detects tail risk via Moors (1988) octile kurtosis, NOT the old
+    /// moment-based excess kurtosis (replaced 2026-08-13, commit 298b9e0).
+    /// Scale: structurally non-negative; 1.233 = the N(0,1) reference value
+    /// (the neutral baseline, replacing the old scale's 3.0/0.0); 1.0 =
+    /// uniform/platykurtic (flat, trapped); >1.5 = fat-tailed
+    /// panic/euphoria. Realistically <= ~3 before the regime multiplier.
+    /// Every migrated risk threshold lives on THIS scale (halt 2.0064,
+    /// crisis-enter 1.5650, fatTail 1.7592, crash-regime 1.8530,
+    /// isFragile 1.4753, signal-sigma 1.8382) -- never compare against the
+    /// old 3/4/5/8/10/15 literals.
     ///
     /// Institutional Regime Adjustment:
     ///   Normal volatility: kurtosis as-is (baseline)
     ///   High volatility (>1.3× avg): scale UP 1.25× (panic amplifies tail risk)
     ///   Low volatility (<0.7× avg): scale DOWN 0.75× (flat creates false positives)
     constexpr int KURT_WINDOW = 100;
-    if (sc.Index < KURT_WINDOW) return 3.0f;
+    /// Moors' N(0,1) reference value. Replaces the old moment-based scale's
+    /// 3.0f neutral -- on the Moors scale 3.0 sits ABOVE every migrated risk
+    /// threshold above, so returning it during cold start tripped all of them
+    /// simultaneously for the first ~100 bars of any replay/backtest/export
+    /// (final-review Finding 2, fixed 2026-08-13).
+    constexpr float KURT_NEUTRAL_BASELINE = 1.23f;
+    /// Moors kurtosis is a ratio of ordered octile gaps, so it is structurally
+    /// non-negative; with the 1.25x high-vol regime multiplier the realistic
+    /// ceiling is ~4. The old [-5, 50] clamp was inherited from the
+    /// moment-based statistic and is inert on this scale (resolves the
+    /// self-assigned "needs Task 7's re-derivation" TODO left here).
+    constexpr float KURT_CLAMP_LO = 0.0f;
+    constexpr float KURT_CLAMP_HI = 5.0f;
+    if (sc.Index < KURT_WINDOW) return KURT_NEUTRAL_BASELINE;
 
     std::array<float, KURT_WINDOW> returns{};
     for (int i = 0; i < KURT_WINDOW; ++i) {
@@ -2660,33 +2682,35 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
     }
     variance /= KURT_WINDOW;
 
+    // Shared degradation policy for both guards below (degenerate variance and
+    // a NaN Moors ratio): carry the previous value forward when one exists,
+    // otherwise fall back to the neutral baseline.
+    const bool hasCarryForward = (sc.Index > 0 && std::isfinite(prevKurtosis));
+    const float carriedKurtosis = hasCarryForward
+                                      ? std::clamp(prevKurtosis, KURT_CLAMP_LO, KURT_CLAMP_HI)
+                                      : KURT_NEUTRAL_BASELINE;
+
     // ES 15s log-return variance is typically very small; avoid hard-zero fallback.
     // Returning 0.0f here created a pathological floor-lock in the rank-percentile
     // scaler (Dim 8 zero-trap). Use a neutral/carry-forward value instead.
     constexpr float KURT_VARIANCE_EPS = 1e-10f;
     if (variance < KURT_VARIANCE_EPS) {
-        if (sc.Index > 0 && std::isfinite(prevKurtosis)) {
-            return std::clamp(prevKurtosis, -5.0f, 50.0f);
-        }
-        return 3.0f;  // Neutral kurtosis baseline
+        return carriedKurtosis;
     }
 
     const float moorsKurtosis = MoorsKurtosis(returns);
     float kurtosis;
     if (std::isnan(moorsKurtosis)) {
-        if (sc.Index > 0 && std::isfinite(prevKurtosis)) {
-            return std::clamp(prevKurtosis, -5.0f, 50.0f);
-        }
-        kurtosis = 1.23f;  // Moors' N(0,1) neutral baseline, replaces the old 3.0f
-                            // excess-kurtosis neutral baseline -- different scale.
+        if (hasCarryForward) return carriedKurtosis;
+        kurtosis = KURT_NEUTRAL_BASELINE;
     } else {
         kurtosis = moorsKurtosis;
     }
 
     // ELITE FIX #3: Regime adjustment -- unchanged mechanism, now applied to
-    // Moors kurtosis instead of moment-based kurtosis. Re-tuning these
-    // multipliers against the new statistic's distribution is Task 7's job,
-    // not this task's -- do not hand-adjust here.
+    // Moors kurtosis instead of moment-based kurtosis. Task 7 re-derived the
+    // CONSUMER thresholds against the new statistic's distribution rather than
+    // re-tuning these multipliers, so they stay as-is.
     float atrCurrent = atrArray[sc.Index];
     constexpr int VOL_COMPARE_WINDOW = 20;
     if (sc.Index >= VOL_COMPARE_WINDOW) {
@@ -2702,8 +2726,7 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
         kurtosis *= regime_mult;
     }
 
-    return std::clamp(kurtosis, -5.0f, 50.0f);  // clamp bounds also need Task 7's
-                                                  // re-derivation against Moors' scale
+    return std::clamp(kurtosis, KURT_CLAMP_LO, KURT_CLAMP_HI);
 }
 
 float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
@@ -3325,6 +3348,13 @@ float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
 
 
 float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
+    // kMaxLookback matches the [10,40] adaptive observation window contract
+    // (CalculateAdaptiveObservationWindow's own std::clamp(..., 10, 40), then
+    // TripleScreen2's std::max(30, ...)) -- defensive upper bound so the
+    // fixed-capacity scratch buffer below can never be written out of range.
+    // Same pattern as CalculateVolConvexity/CalculateMeanReversionZ above.
+    constexpr int kMaxLookback = 40;
+    lookback_n = std::clamp(lookback_n, 2, kMaxLookback);
     if (sc.Index < lookback_n) return 0.0f;
 
     // RQA (Recurrence Quantification Analysis) Recurrence Rate
@@ -3358,21 +3388,39 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
                                                             // prescribed -- matches this codebase's
                                                             // existing periodic-recalibration cadence
                                                             // convention (FeatureScaler::RECALIBRATION_INTERVAL).
-    constexpr double RQA_TARGET_RECURRENCE_RATE = 0.03;   // midpoint of Schinkel et al. (2008)'s
-                                                            // cited 0.01-0.05 practitioner range.
+    // Target is the FULL-MATRIX recurrence rate (LOI included), matching what
+    // this function actually measures below. Schinkel, Dimigen & Marwan (2008)
+    // cite a 0.01-0.05 practitioner band; the band's midpoint (0.03) is
+    // UNREACHABLE at this study's window sizes because the LOI alone
+    // contributes 1/n, i.e. 0.0333 at the n=30 floor TripleScreen2 enforces
+    // (std::max(30, adaptiveWindow)). The feasible sub-band at n=30 is
+    // [0.0333, 0.05], so 0.05 -- the top of Schinkel's cited range -- is the
+    // only value with real headroom across the production n in [30,40]:
+    // it selects M=8 off-diagonal pairs at n=30 and M=20 at n=40, rather than
+    // the 0-3 pairs a lower target would leave (fixed 2026-08-13; previously
+    // 0.03 was applied directly to the off-diagonal ranking, so achieved RR
+    // came out at 0.03 + 1/n ~= 0.06, roughly 2x the intended target and
+    // outside the cited band).
+    constexpr double RQA_TARGET_RECURRENCE_RATE = 0.05;
     float& calibratedEpsilon = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON);
-    float& callsSinceCalibration = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALLS_SINCE_CALIBRATION);
+    int& lastCalibrationBarIndex = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_CALIBRATION_BAR_INDEX);
 
-    if (calibratedEpsilon <= 0.0f || callsSinceCalibration >= static_cast<float>(RQA_EPSILON_RECALIBRATION_BARS)) {
-        std::vector<float> windowPrices(static_cast<size_t>(lookback_n));
+    // Gate on BAR advancement, not call count. AutoLoop=1 means this function
+    // runs on every incoming tick, so the previous call counter recalibrated
+    // roughly every 200 ticks (seconds) rather than every 200 bars -- which
+    // both defeated the "hold epsilon fixed so recurrence_rate stays an
+    // informative, varying feature" design intent and dragged the selector's
+    // O(n^2 log n) work onto the per-tick path (fixed 2026-08-13).
+    if (calibratedEpsilon <= 0.0f || lastCalibrationBarIndex <= 0 ||
+        (sc.Index - lastCalibrationBarIndex) >= RQA_EPSILON_RECALIBRATION_BARS) {
+        std::array<float, kMaxLookback> windowPrices{};  // fixed-capacity: no heap alloc on the ACSIL path
         for (int i = 0; i < lookback_n; ++i) {
             windowPrices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - i];
         }
         calibratedEpsilon = static_cast<float>(
             SelectEpsilonForTargetRecurrenceRate(windowPrices.data(), lookback_n, RQA_TARGET_RECURRENCE_RATE));
-        callsSinceCalibration = 0.0f;
+        lastCalibrationBarIndex = sc.Index;
     }
-    ++callsSinceCalibration;
 
     float epsilon = calibratedEpsilon;
     int recurCount = 0;

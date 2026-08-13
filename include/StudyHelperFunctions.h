@@ -259,11 +259,14 @@ float CalculatePathEfficiencySNR(SCStudyInterfaceRef sc, float atr10, int lookba
 /// Hurst Exponent (Index 6): Rescaled Range Analysis for persistence detection
 float CalculateHurstExponent(SCStudyInterfaceRef sc);
 
-/// Realized Kurtosis: 4th moment with bias correction (fat tail detector)
+/// Realized Kurtosis: Moors (1988) octile kurtosis (fat tail detector).
+/// 1.233 = N(0,1) neutral, structurally non-negative, clamped [0,5].
+/// NOT the old moment-based excess kurtosis (replaced 2026-08-13, 298b9e0).
 /// prevKurtosis: carry-forward value from previous bar (for low-variance fallback)
 float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFloatArrayRef atrArray);
 
-/// Skewness: 3rd moment directional bias
+/// Skewness: Bowley (1920) quartile skewness, directional bias, bounded [-1,+1]
+/// (0 = symmetric). NOT the old 3rd moment (replaced 2026-08-13, 298b9e0).
 float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray);
 
 /// Liquidity Fragility (Index 11): Bid-Ask spread volatility stress
