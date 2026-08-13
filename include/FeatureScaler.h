@@ -86,8 +86,26 @@ struct FeatureScaler {
     /// dims below), so real variation spans the intended [-2,+2] ToSoftLogZ range
     /// instead of a narrow off-center sliver. See docs/hmm/STUDENT_T_HMM_RUNBOOK.md
     /// (lbrnet) item 4b and logs/rc_gemini.log CLAUDE_BRIEF_024/025 for derivation.
-    static constexpr float RECURRENCE_STATIC_CENTER = 0.329f;    ///< empirical median (was 0.5)
-    static constexpr float RECURRENCE_STATIC_SCALE = 0.083f;     ///< 1.4826*raw MAD (was 0.25)
+    /// Dim 13 RE-derived 2026-08-13 (final-review Finding 1). The 2026-07-23
+    /// constants (center 0.329, scale 0.083) were calibrated against the OLD
+    /// RQA epsilon heuristic max(range*0.1, std*0.5). That heuristic was
+    /// replaced by a fixed-target-recurrence-rate selector (RQAEpsilonSelector.h;
+    /// target 0.05 full-matrix, line-of-identity included) and the raw dim moved
+    /// to a ~0.033-0.15 band, so the old constants mapped every production value
+    /// to z ~= -3.2 -- a Soft-Log-Z p01..p99 span of only 0.215, i.e. the
+    /// dimension-collapse pathology this initiative exists to remove.
+    /// Methodology (same as Task 7's kurtosis re-derivation: real data, not
+    /// synthetic): tools/rqa_recurrence_calibration.cpp runs the shipped
+    /// CalculateRecurrenceRate logic verbatim (n=30 -- TripleScreen2's
+    /// slow_window_n is deterministically 30; bar-gated 200-bar epsilon
+    /// recalibration) over 18,742 real 60-minute MES bars resampled from
+    /// lbrnet/data/raw/mes_ripple_15m.parquet (2023-06-04 to 2026-08-10).
+    /// Result: median 0.04667, MAD 0.00667 -> 1.4826*MAD = 0.00988. Stable
+    /// across split-halves and 3 yearly sub-periods (median 0.0444-0.0489,
+    /// scale 0.0099-0.0132). Verified non-degenerate: Soft-Log-Z p01..p99 span
+    /// widens from 0.215 (old) to 2.80 (new), 34 distinct scaled values.
+    static constexpr float RECURRENCE_STATIC_CENTER = 0.0467f;   ///< empirical median (was 0.329)
+    static constexpr float RECURRENCE_STATIC_SCALE = 0.0099f;    ///< 1.4826*raw MAD (was 0.083)
     static constexpr float FRACTAL_STATIC_CENTER = 1.289f;       ///< empirical median (was 1.5)
     static constexpr float FRACTAL_STATIC_SCALE = 0.101f;        ///< 1.4826*raw MAD (was 0.25)
 
@@ -162,6 +180,16 @@ struct FeatureScaler {
     /// ACSIL/Logger dependency by design) so a caller with Logger access can
     /// flag a sentinel-collapse signature
     /// (docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md D2).
+    ///
+    /// SEMANTIC SHIFT (2026-08-13, final-review pass): Task 1's consecutive-identical
+    /// dedupe (`3d5f9af`) drops repeats BEFORE they reach the rolling buffer this
+    /// diagnostic scans, so this ratio now measures dominance among DISTINCT
+    /// observations, no longer fraction-of-time-held. The 0.30 ALERT threshold
+    /// documented in that spec was calibrated on the OLD (pre-dedupe) meaning and
+    /// is therefore harder to trip now; reconsider it if it starts firing
+    /// unexpectedly post-dedupe (a post-dedupe hit is a stronger signal than a
+    /// pre-dedupe one -- it means genuinely distinct samples keep landing on the
+    /// same exact value, not merely that a held value repeated).
     std::array<float, N_DIMS> dominanceRatio = {};
 
     bool calibrated = false;                               ///< Set once at warmup completion

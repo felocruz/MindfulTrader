@@ -80,12 +80,17 @@ int main() {
         fs.UpdateAndNormalize(MakeObs(0.0f));  // sample 1: discarded (always zero)
         auto obs = MakeObs(0.0f);
         obs[5] = 1.0f;     // LZ_STATIC_CENTER=0.5, LZ_STATIC_SCALE=0.25 -> z=2.0
-        obs[13] = 0.6f;    // RECURRENCE_STATIC_CENTER=0.329, SCALE=0.083 -> z=3.2650...
+        // Probe value moved from 0.6 to 0.09 alongside the 2026-08-13
+        // re-derivation of the recurrence constants (final-review Finding 1):
+        // 0.6 is unreachable for the post-Task-3 RQA statistic, whose real
+        // 60-min MES range is ~0.033-0.15, so 0.09 is an upper-tail-but-real
+        // probe. z = (0.09-0.0467)/0.0099 = 4.373738 (float32).
+        obs[13] = 0.09f;   // RECURRENCE_STATIC_CENTER=0.0467, SCALE=0.0099 -> z=4.3737...
         obs[14] = 1.5f;    // FRACTAL_STATIC_CENTER=1.289, SCALE=0.101 -> z=2.0891...
         const auto result = fs.UpdateAndNormalize(obs);
         // Independently computed via Python: math.copysign(math.log1p(abs(z)), z)
         check("static_lz_dim_exact_value", approx(result[5], 1.0986122886681096f));
-        check("static_recurrence_dim_exact_value", approx(result[13], 1.4504563053371764f));
+        check("static_recurrence_dim_exact_value", approx(result[13], 1.6815237207713019f));
         check("static_fractal_dim_exact_value", approx(result[14], 1.127882670968223f));
     }
 
