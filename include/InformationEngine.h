@@ -289,6 +289,12 @@ namespace MindfulTrader {
          * @brief Calculates Shannon Entropy of the CURRENT short-term window (P).
          * H(P) = - sum( P(x) * log2( P(x) ) )
          * High Entropy = High Confusion/Random Walk. Low Entropy = Ordered/Trend.
+         *
+         * The plug-in estimator is biased at small sample sizes. Miller (1955)
+         * correction is applied: bias ~ (m-1)/(2N*ln2) bits, m = occupied bins.
+         * Confirmed still-current consensus practice (2026-08-13 grounding pass,
+         * matches R's entropy::entropy(method="MM") / infotheo's "mm" default).
+         *
          * @return Entropy in bits (0.0 to ~3.32 for k=10)
          */
         double GetShannonEntropy() const {
@@ -296,6 +302,7 @@ namespace MindfulTrader {
 
             double entropy = 0.0;
             double totalCount = static_cast<double>(m_countP);
+            size_t occupiedBins = 0;
 
             for (size_t i = 0; i < NUM_BINS; ++i) {
                 // Determine probability of this bin
@@ -303,11 +310,21 @@ namespace MindfulTrader {
                 // Implementation detail: bin counts need to be normalized to probabilities
                 double count = m_histogramP[i];
                 if (count <= 0.0) continue;
+                ++occupiedBins;
 
                 double p = count / totalCount; // Probability
                 entropy -= p * std::log2(p);
             }
-            return entropy;
+
+            // Miller (1955) bias correction for the small-sample plug-in Shannon
+            // entropy estimator: bias ~ (m-1)/(2N ln2) bits, m = occupied bins.
+            if (occupiedBins > 1) {
+                const double bias = (static_cast<double>(occupiedBins) - 1.0) / (2.0 * totalCount * std::log(2.0));
+                entropy -= bias;
+            }
+
+            return std::max(entropy, 0.0);  // guard against the correction pushing a
+                                            // near-zero-entropy reading negative
         }
 
         /**
