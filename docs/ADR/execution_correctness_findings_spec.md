@@ -863,9 +863,22 @@ Once this finding's fix ships and the raw signal is available on the wire,
 value** — see `docs/ADR/params_convergence_spec.md` PC-15 for the full tracking
 record and removal instructions on that side.
 
-**Not yet fixed here.** Requires its own separate, explicit authorization
-given the live-trading stakes and schema-change blast radius — this finding is
-preparation/tracking only.
+**RESOLVED — C++ side, 2026-07-15 (commit `1190e1f`, `master`).** The fix landed
+as a dedicated `RiskGateContext` table (not an `AsymmetryContext` extension —
+see `docs/ADR/risk_gate_context_wire_spec.md`, which superseded this finding's
+"add a field to `AsymmetryContext`" framing: `AsymmetryContext` is a fixed-size
+struct and can't be extended additively). `ContextManager::EmitTrainingContext()`
+now populates `MarketObservation.risk_gate_context.spread_stress` from the raw
+`m_localRiskContext.spreadStress` on every `.context` write. **Verified 2026-08-12**
+against the actual repo state (this finding's original text was stale — it still
+read "not yet fixed" a month after the fix shipped).
+
+**Still open: the `lbrnet` co-evolution (§6 of `risk_gate_context_wire_spec.md`)
+was never done.** `context_stream.py` has no `RiskGateContext` reader, and
+`_LIQ_FRAGILITY_TAIL_THRESHOLD` in `backtest_runner.py` is still the live
+stopgap — verified 2026-08-12, zero commits touch either file for this. The raw
+signal has been available on the wire for a month; nothing on the Python side
+reads it yet. Tracked separately (lbrnet-side work, out of this repo's scope).
 
 ---
 
@@ -937,9 +950,17 @@ removal-for-removal once the C++ fix ships (there is no rebase to undo, only
 a gate to reintroduce once the raw signal exists on the wire — see
 `docs/ADR/params_convergence_spec.md` PC-16 for the full tracking record).
 
-**Not yet fixed here.** Requires its own separate, explicit authorization
-given the live-trading stakes and schema-change blast radius — this finding is
-preparation/tracking only.
+**RESOLVED — C++ side, 2026-07-15 (commit `1190e1f`, `master`).** Same
+`RiskGateContext` table as Finding 19 — `ContextManager::EmitTrainingContext()`
+populates `MarketObservation.risk_gate_context.pareto_tail_alpha` from the raw
+`m_localRiskContext.paretoTailAlpha` (i.e. `m_cachedHillAlpha`) on every
+`.context` write. **Verified 2026-08-12**, same staleness correction as Finding 19.
+
+**Still open: `lbrnet` never re-added the removed gate against the new raw
+field.** No commit touches `context_stream.py`/`backtest_runner.py` for
+`RiskGateContext`. Unlike Finding 19, there's no stopgap to delete here (the
+gate was fully removed) — just a gate to reintroduce, reading the now-available
+real Hill alpha instead of the unusable proxy. Tracked separately (lbrnet-side).
 
 ---
 
@@ -1005,9 +1026,17 @@ exact representation mismatch when consumed outside the HMM. Given
 a broader pattern — worth a dedicated audit if further gate-parity issues
 surface, but not actioned preemptively here.
 
-**Not yet fixed here.** Requires its own separate, explicit authorization
-given the live-trading stakes and schema-change blast radius — this finding is
-preparation/tracking only.
+**RESOLVED — C++ side, 2026-07-15 (commit `1190e1f`, `master`).** Same
+`RiskGateContext` table as Findings 19/20 — `ContextManager::EmitTrainingContext()`
+populates `MarketObservation.risk_gate_context.amihud_illiquidity` from the raw
+`m_localRiskContext.amihudIlliquidity` on every `.context` write. **Verified
+2026-08-12**, same staleness correction as Findings 19/20.
+
+**Still open: the `lbrnet` co-evolution was never done.**
+`_AMIHUD_ILLIQUIDITY_TAIL_THRESHOLD_NORMAL`/`_FAT_TAIL` in `backtest_runner.py`
+are still the live stopgaps — verified 2026-08-12, zero commits touch
+`context_stream.py`/`backtest_runner.py` for `RiskGateContext`. Tracked
+separately (lbrnet-side work, out of this repo's scope).
 
 ---
 
