@@ -3304,7 +3304,15 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
     }
 
     float range = maxP - minP;
-    if (range <= 0.00001f) return 1.0f; // Flat line = 100% recurrence
+    float& lastValidRecurrenceRate = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RECURRENCE_RATE_LAST_VALID_VALUE);
+    // Degenerate (flat price window) carries the last valid value forward
+    // instead of a fabricated "1.0 = 100% recurrence" reading -- checked before
+    // the O(n^2) distance-matrix loop below, so the expensive computation is
+    // still skipped on the degenerate path exactly as before -- same
+    // sentinel-collapse fix already applied to dims 1/2/3/7/8/11/12.
+    if (range <= 0.00001f) {
+        return lastValidRecurrenceRate;
+    }
 
     // Adaptive tolerance: mix range-based and variance-based scales.
     float meanP = 0.0f;
@@ -3341,7 +3349,9 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
         }
     }
 
-    return std::clamp((float)recurCount / (float)totalCount, 0.0f, 1.0f);
+    const float recurrenceRate = std::clamp((float)recurCount / (float)totalCount, 0.0f, 1.0f);
+    lastValidRecurrenceRate = recurrenceRate;
+    return recurrenceRate;
 }
 
 // 4282
