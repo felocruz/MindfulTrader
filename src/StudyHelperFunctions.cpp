@@ -618,6 +618,15 @@ static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc) {
     }
 
     sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::LAST_OBS_UPDATE_INDEX, -1);
+
+    // RQA epsilon recalibration state must reset alongside the rest of this
+    // function's adaptive state -- otherwise a chart reload/symbol change
+    // rewinds sc.Index while these persistent vars keep their prior session's
+    // values, freezing epsilon (calibrated to a different instrument's price
+    // scale) for ~200 bars into the new session instead of recalibrating
+    // immediately (2026-08-13 final-review fix-wave re-review finding).
+    sc.SetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON, 0.0f);
+    sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_CALIBRATION_BAR_INDEX, -1);
 }
 
 // Pattern Detection Constants
@@ -2905,7 +2914,13 @@ void UpdateObservationVectorSubgraphs(
     if (sc.Index < WARMUP_BARS) {
         Subgraph_PathEfficiencySNR[sc.Index] = 0.5f;
         Subgraph_HurstExponent[sc.Index] = 0.5f;
-        Subgraph_RealizedKurtosis[sc.Index] = 3.0f;
+        Subgraph_RealizedKurtosis[sc.Index] = 1.23f;  // Moors octile-kurtosis N(0,1) baseline
+                                                        // (Task 6, 2026-08-13) -- was the old
+                                                        // moment-kurtosis neutral baseline 3.0f,
+                                                        // which is now ABOVE every migrated risk
+                                                        // threshold on this scale (final-review
+                                                        // fix-wave re-review finding: this warmup
+                                                        // seed was missed by Finding 2's sweep).
         Subgraph_SkewnessIdx[sc.Index] = 0.0f;
         Subgraph_AmihudIlliquidity[sc.Index] = 0.5f;
         Subgraph_LiqFragility[sc.Index] = 0.0f;
