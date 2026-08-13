@@ -766,12 +766,15 @@ SCSFExport scsf_Screen2_KeltnerChannel(SCStudyInterfaceRef sc)
         }
 
         // 3. Relative Range: Current bar range normalized by ATR (already O(1))
-        if (Array_AtrKeltner[sc.Index] > 0.0f) {
-            float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
-            ctx.relRange = barRange / Array_AtrKeltner[sc.Index];
-        } else {
-            ctx.relRange = 0.0f;
-        }
+        // Degenerate (unpopulated/zero ATR) carries the last valid value forward
+        // instead of a fabricated exact-zero reading -- this is
+        // StatisticalContext's independent sibling of dim 2's own
+        // relative_range fix (TripleScreen2.cpp:273-274), feeding
+        // TrainingEvent.rel_range, not the ObservationData vector
+        // (docs/superpowers/plans/2026-08-12-statistical-context-relrange-sentinel-gap.md).
+        float& lastValidCtxRelRange = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::CTX_REL_RANGE_LAST_VALID_VALUE);
+        ctx.relRange = cfc::ComputeRelativeRange(sc.High[sc.Index], sc.Low[sc.Index], Array_AtrKeltner[sc.Index], lastValidCtxRelRange);
+        lastValidCtxRelRange = ctx.relRange;
 
         // 4. Velocity: Change in oscillator_310 (momentum acceleration)
         if (sc.Index >= 1) {
