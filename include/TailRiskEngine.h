@@ -3,8 +3,6 @@
 #include <vector>
 #include <cmath>
 #include <algorithm>
-#include <numeric>
-#include <limits>
 
 namespace MindfulTrader {
 

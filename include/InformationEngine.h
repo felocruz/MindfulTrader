@@ -2,9 +2,7 @@
 
 #include <cmath>
 #include <algorithm>
-#include <numeric>
 #include <array>
-#include <string>
 #include <cstdint>
 
 namespace MindfulTrader {

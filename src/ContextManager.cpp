@@ -690,7 +690,11 @@ void ContextManager::UpdatePriceStructure(SCStudyInterfaceRef sc, float high, fl
         m_latestInstitutionalMetrics.elderImpulse = clv;
     }
 
-    // Taleb Cliff: Chandelier Stop distance normalized by ATR
+    // "Taleb Cliff": distance-to-invalidation framing overlaid on the canonical
+    // Chandelier Exit parameters (Chuck LeBeau) -- 22-period lookback, 3.0x ATR
+    // stop. Credit LeBeau for the indicator itself; "Taleb Cliff" is this
+    // codebase's interpretive name for using it as a risk/regime signal, not a
+    // claim that Taleb defined these parameters.
     const float atr = (m_hasRippleContext && m_rippleContext.volatility > 0.0f)
         ? m_rippleContext.volatility
         : sc.TickSize;

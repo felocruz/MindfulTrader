@@ -2328,7 +2328,10 @@ int CalculateFisherAdaptiveWindow(SCStudyInterfaceRef sc, float coherence_score)
 }
 
 float CalculatePathEfficiencySNR(SCStudyInterfaceRef sc, [[maybe_unused]] float atr10, int lookback_n) {
-    /// Spectral Entropy - ELITE: O(1) Rolling Window Implementation (Reference: Elder's Efficiency Ratio)
+    /// Path-Efficiency SNR (Kaufman's Efficiency Ratio, squared) -- ELITE: O(1)
+    /// Rolling Window Implementation. Reference: Perry Kaufman, "Trading Systems
+    /// and Methods" (1998) -- NOT a Shannon-entropy measure despite the historical
+    /// "Spectral Entropy" name; that label is dropped here as inaccurate.
     /// Measures market signal purity: how much price moved directionally vs total movement
     /// Formula: SNR = efficiency_ratio^2, where efficiency = |net_change| / Σ|moves|
     ///
@@ -2750,8 +2753,9 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     }
     skewness = bowleySkewness;
 
-    // ELITE FIX #4: Regime adjustment -- unchanged mechanism, now applied to
-    // Bowley skewness instead of moment-based skewness.
+    // ELITE FIX #4: Regime adjustment (house-tuned multiplier, no direct
+    // methodological link to Wyckoff's framework -- see docs/superpowers/specs/
+    // 2026-08-12-gang-literature-grounding-spec.md Pillar 3)
     float atrCurrent = atrArray[sc.Index];
     constexpr int VOL_COMPARE_WINDOW = 20;
     if (sc.Index >= VOL_COMPARE_WINDOW) {
