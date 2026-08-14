@@ -275,7 +275,7 @@ Not yet committed to git, same as Tasks 2-3.
 
 ---
 
-### Task 5: Gang-doc + governance doc sync (Unit E, doc portion)
+### Task 5: Gang-doc + governance doc sync (Unit E, doc portion) — **DONE**
 
 **Depends on:** Tasks 2-4's final numbers (this task documents what actually shipped, not a
 placeholder).
@@ -285,15 +285,29 @@ placeholder).
 - `../docs/RISK_MANAGEMENT_SYSTEM.md` (§5.3, §10)
 - `../docs/TRADE_EXECUTION_SYSTEM.md` (§H.6)
 
-- [ ] **Step 1: Commit the corrected Gang-doc entries.** Gemini proposed three entries
-  (`GEMINI_BRIEF_099_RESPONSE` Entries A-C) for the raw-clamp question and the winsorization-methodology
-  question — write them now with the actual measured/shipped numbers (`45.0`, `4587.0`, the real GPD
-  parameters from D7, plus whatever Tasks 2-4 produce for the other dims), not the earlier illustrative
-  placeholders those entries were drafted against.
-- [ ] **Step 2: Sync `RISK_MANAGEMENT_SYSTEM.md` §5.3/§10 and `TRADE_EXECUTION_SYSTEM.md` §H.6** to the
-  post-2026-08-13 Moors-kurtosis numbers (these sections still cite the pre-migration moment-based
-  kurtosis figures).
-- [ ] **Step 3: Commit, doc-only, no code changes.**
+- [x] **Step 1: Commit the corrected Gang-doc entries.** Five rows added (raw `[-6,+6]` clamp as a
+  domain-validity guardrail; Weibull/bounded winsorization bounds; Frechet/unbounded winsorization
+  bounds at `p=1/N`; macro-scale shrinkage/floor as a Ledoit-Wolf+GARCH-omega synthesis; a new
+  Mandelbrot-pillar "DFA Memory-Clustering" finding for `dim6`) with the actual shipped numbers, not
+  Gemini's original illustrative Entry A-C placeholders. Commit `86dfd25`.
+  **Unplanned but necessary detour:** re-verifying these numbers directly against `FeatureScaler.h`
+  (rather than copying from the correspondence log) surfaced a real transposition bug —
+  `DIM_WINSOR_SIGMA_OVERRIDE[0]`/`[9]` had `dim0`'s and `dim9`'s derived bounds swapped, flattening
+  `dim0`'s genuine Fréchet tail to `dim9`'s tight `10.0` Weibull-wall bound. Fixed via TDD (direct
+  value-equality regression test, since neither the existing smoke check nor a rate-taper check can
+  distinguish the swap) before writing the doc, commit `f7c47bf`, full `./build_dll.sh --no-clean`
+  verified.
+- [x] **Step 2: Sync `RISK_MANAGEMENT_SYSTEM.md` §5.3/§10 and `TRADE_EXECUTION_SYSTEM.md` §H.6** to the
+  post-2026-08-13 Moors-kurtosis numbers. §5.3/§10: `KURTOSIS_EMERGENCY_ENTER/EXIT` 5.0/3.0 →
+  `talebKurtosisCrisisEnter/Exit` 1.5650/1.3809 (`ExecutionParams.h` compiled defaults). §H.6: the
+  HMM-regime Taleb DENY gate 9.698σ → 1.8382 (Moors scale, `RiskManager.cpp`'s
+  `taleb_signal_sigma_threshold` compiled default), with a scale-note explaining why the old figure is
+  now unreachable and guarded against in the JSON-override parser (final-review Finding 9).
+- [x] **Step 3: Commit, doc-only, no code changes.** The Gang-doc commit (`86dfd25`) is doc-only as
+  planned; the transposition fix that made it possible to write correct numbers was committed
+  separately first (`f7c47bf`), not folded into the doc commit. `RISK_MANAGEMENT_SYSTEM.md`/
+  `TRADE_EXECUTION_SYSTEM.md` live outside this repo's git tree (untracked directory) — edited
+  directly, no commit applicable.
 
 ---
 
