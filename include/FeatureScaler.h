@@ -398,7 +398,7 @@ struct FeatureScaler {
     /// (N=74,464) return level = 344.53, same convention as dim3/dim0/dim7.
     /// Set to 345.0.
     inline static constexpr std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {
-        10.0f,    //  0  log_variance_ratio   GPD-derived on corrected z, just past the theoretical wall
+        262.0f,   //  0  log_variance_ratio   GPD-derived on corrected z, Frechet (xi=+0.2533), p=1/N return level
         45.0f,    //  1  burstiness_index     GPD+bootstrap derived (D7)
         0.0f,     //  2  relative_range
         4587.0f,  //  3  correction_action    GPD-derived, p=1/N return level (D7)
@@ -407,7 +407,7 @@ struct FeatureScaler {
         345.0f,   //  6  hurst_exponent       GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition
         36.0f,    //  7  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
         20.0f,    //  8  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
-        262.0f,   //  9  tail_index           GPD-derived on corrected z, p=1/N return level
+        10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
         0.0f,     // 10  skewness_idx         audited, negligible clip rate, no action needed
         0.0f,     // 11  amihud_illiquidity   audited, 0.000% production clip rate, no action needed
         0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it

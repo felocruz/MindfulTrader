@@ -372,6 +372,19 @@ int main() {
         std::printf("  [info] dim9 real-data max|z| after shrinkage: %.2f (pre-fix: 1963.12)\n", maxAbsZ);
         check("dim9: shrinkage bounds real-data max|z| (was 1963, scale-collapse artifact)",
               maxAbsZ < 150.0);
+        // dim9 (tail_index) is Weibull/bounded (xi=-0.3259, theoretical wall
+        // 9.687) -- its DIM_WINSOR_SIGMA_OVERRIDE must be 10.0, NOT dim0's
+        // 262.0. A transposition between the dim0/dim9 array entries is
+        // invisible to both the maxAbsZ<150 check above (either value passes
+        // it) and a rate-taper check (real data never gets near either bound
+        // in this fixture, so both values show a trivially-tapering rate) --
+        // lastRawZ is also, by design, the PRE-winsorization diagnostic value
+        // (see UpdateAndNormalize: ToSoftLogZ applies the override to
+        // result[i], not to lastRawZ), so no behavioral check on lastRawZ can
+        // distinguish the two either. The only check that actually catches
+        // this class of bug is asserting the derived value directly.
+        check("dim9: DIM_WINSOR_SIGMA_OVERRIDE[9] is its own derived Weibull-wall bound (10.0), not dim0's (262.0)",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f);
     }
     {
         FeatureScaler fs;
@@ -385,6 +398,13 @@ int main() {
         std::printf("  [info] dim0 real-data max|z| after shrinkage: %.2f (pre-fix: 175.93)\n", maxAbsZ);
         check("dim0: shrinkage bounds real-data max|z| (was -176, scale-collapse artifact)",
               maxAbsZ < 150.0);
+        // dim0 (log_variance_ratio) is Frechet/unbounded (xi=+0.2533), GPD
+        // p=1/N return level 262.0 -- must not be flattened to dim9's tight
+        // 10.0 Weibull-wall bound. Same transposition risk as above, mirror
+        // check from the other side (see dim9's comment for why only a
+        // direct value check catches this).
+        check("dim0: DIM_WINSOR_SIGMA_OVERRIDE[0] is its own derived Frechet p=1/N bound (262.0), not dim9's (10.0)",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 262.0f);
     }
     {
         FeatureScaler fs;
