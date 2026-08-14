@@ -241,10 +241,15 @@ emphatically (0.000% vs. production's already-tiny 0.035%), the same "cheap chec
 closure Task 3 used for `dim11`/`dim15`.
 
 - [x] **Step 1: dim4 (`vol_convexity`, 2.713%)** — TS3, bar-gated, full-history replica (75,059-sample).
-  Found a real but small tail (85 exceedances, 0.11%, `xi=+0.2022`) with an **ambiguous** scale-collapse
-  signature — 2 of the top-5 events' local MAD sit ~17x below the series' own p1, the other 3 don't, a
-  genuinely mixed signal unlike every other traced dim's clean all-or-nothing result. Bound left at
-  default, deferred pending a less ambiguous re-derivation — same disclosed-caveat treatment as `dim6`.
+  A top-5-event sample initially looked ambiguous (2 contaminated, 3 clean) and was first deferred with
+  the same caution as `dim6` -- **superseded same day**: classifying the FULL 85-event population
+  resolved it decisively (51/60% contaminated, 34/40% genuine, the same majority-contaminated pattern
+  already confirmed on 5 other dims). Generalized shrinkage to the LOGZ path for the first time
+  (`SHRINKAGE_SCALE_MIN[4]=0.211521`, shared `ComputeShrinkageZ()` helper extracted from the
+  SOFTLOGZ-only version) rather than deferring further. Corrected fit: `n_tail=76`, `shape(xi)=-0.3580`
+  (Weibull/bounded), theoretical endpoint `8.837`. `LOGZ_WINSOR_SIGMA_OVERRIDE[4]=12.0`. Full
+  confidence, no caveat -- unlike `dim6`, this one didn't need better data, just a bigger sample of the
+  data already in hand.
 - [x] **Step 2: dim2 (`relative_range`, 0.035%)** — closed clean via the cheap screen described above,
   zero exceedances, no dedicated replica needed.
 - [x] **Step 3: dim12 (`liq_fragility`, 0.727%)** — TS3, bar-gated, full-history replica (75,051-sample).
@@ -300,15 +305,18 @@ placeholder).
 Task 1 (deploy+validate D1-D8, incl. light dim12 spot-check) -- NOT YET RUN, needs explicit go-ahead
 Task 2 (dim9/dim0/dim7 — DONE, surfaced D8's shrinkage generalization)
 Task 3 (dim6/dim8/dim10/dim11/dim15 — DONE, dim6 flagged approximate-formula)
-Task 4 (dim2/dim4/dim12 — DONE, dim4 flagged ambiguous-signal, dim2/dim12 confident)
+Task 4 (dim2/dim4/dim12 — DONE, all three full confidence: dim4's initial ambiguity resolved same-day)
         │
         └─→ Task 5 (doc sync, ready now) ─→ Task 6 (pointers)
 ```
 
-**All per-dim auditing (Tasks 2-4) is complete.** Every one of the 16 dims has been audited: 13 done or
-closed clean with full confidence, 2 (`dim6`, `dim4`) done with the fix mechanism in place but the exact
-bound number deliberately deferred pending less-approximate data, 1 (`dim2`) closed via a cheap screen
-whose result was corroborated by production telemetry. Remaining work is Task 5 (doc sync — ready to
-start now that real numbers exist for every dim), Task 6 (pointers, can be filed any time), and Task 1
+**All per-dim auditing (Tasks 2-4) is complete.** Every one of the 16 dims has been audited: 14 done or
+closed clean with full confidence, 1 (`dim6`) done with the fix mechanism in place but the exact bound
+number deliberately deferred pending a less-approximate DFA replica, 1 (`dim2`) closed via a cheap
+screen whose result was corroborated by production telemetry. `dim4` started in the same category as
+`dim6` (ambiguous top-5-event sample) but a same-day full-population classification resolved it and
+required generalizing shrinkage to the LOGZ path for the first time — full confidence now, no caveat.
+Remaining work is Task 5 (doc sync — ready to start now that real numbers exist for every dim), Task 6
+(pointers, can be filed any time), and Task 1
 (production validation — genuinely useful, still un-started, still needs your explicit go-ahead to
 deploy).

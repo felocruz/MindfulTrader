@@ -54,7 +54,7 @@ dims can use the matching timeframe's pre-aggregated file — `mes_tide_240m.par
 | 1 | `burstiness_index` | SOFTLOGZ | TS2 (60min) | `CalculateBurstiness` -> `cfc::ComputeBurstinessIndex` | `[-6,+6]`, verified (D6) | 7.848% (pre-fix) | **done** |
 | 2 | `relative_range` | LOGZ | **TS2 (60min), live (references `sc.Index`)** confirmed (`TripleScreen2.cpp:273`) | `ComputeRelativeRange` (`CarryForwardCalculators.h`) | simple ratio, no clamp needed | 0.035% | **done, closed clean** — full-history bar-close screen (18,761 real 60min-bar windows) found ZERO exceedances, matching production's already-tiny rate; no dedicated tick-level replica needed (the cheap check already answered the question convincingly, despite the formula technically being live-referenced). |
 | 3 | `correction_action` | SOFTLOGZ | TS2 (60min) | `CalculateRealizedVarianceRatio` -> `cfc::ComputeBurstinessIndex` | `[-10,+6]`, verified (D6) | 10.078% (pre-fix) | **done** |
-| 4 | `vol_convexity` | LOGZ | **TS3 (15min), bar-gated/historical-only** confirmed via source comment (never reads the live bar) | `CalculateVolConvexity` (`StudyHelperFunctions.cpp:3322`) | unaudited | 2.713% | **done, with a caveat** — real full-history (75,059-sample) replica found a small but real tail (85 exceedances, xi=+0.2022) with an AMBIGUOUS scale-collapse signature (2 of 5 top events look contaminated, 3 don't) — a genuinely mixed signal, not the clean pattern every other traced dim showed. Bound left at the default pending a less ambiguous re-derivation, same treatment as dim6. |
+| 4 | `vol_convexity` | LOGZ | **TS3 (15min), bar-gated/historical-only** confirmed via source comment (never reads the live bar) | `CalculateVolConvexity` (`StudyHelperFunctions.cpp:3322`) | unaudited | 2.713% | **done, full confidence** — a top-5-sample check first looked ambiguous, but classifying the FULL 85-event population resolved it: 51 (60%) contaminated, 34 (40%) genuine, the same scale-collapse pattern as dim3/dim9/dim0/dim7/dim6, just not yet checked at population scale. Shrinkage generalized to the LOGZ path for the first time (`SHRINKAGE_SCALE_MIN[4]=0.211521`, shared `ComputeShrinkageZ()` helper). Corrected fit: n_tail=76, shape(xi)=-0.3580 (Weibull/bounded), theoretical endpoint 8.837. `LOGZ_WINSOR_SIGMA_OVERRIDE[4]=12.0`, real margin given the modest sample. |
 | 5 | `lempel_ziv` | SOFTLOGZ (static) | n/a | LZ76 on n=64 binary string | discrete, bounded `[0,1]` by construction | 0.000% | **exempt** (bounded, non-adaptive by design) |
 | 6 | `hurst_exponent` | SOFTLOGZ | **TS1 (240min), confirmed** — two `CalculateHurstExponent` overloads exist (`StudyHelperFunctions.cpp:2489`/`2639`); confirmed the observation-vector write is `TripleScreen1.cpp:629` (`obs->mutate_hurst_exponent(hurst)`, fed by the `:483` `macro_window_n`-based overload) — `TripleScreen2.cpp:715`'s call feeds a different, non-observation-vector consumer | `CalculateHurstExponent(sc, macro_window_n, 8)` | not shared, raw is a DFA slope clamped `[0,1.5]` at the source | shrinkage enabled (D8, floor=0.00297), z-layer bound intentionally left at default pending an exact-formula re-derivation | **done, with a caveat** — confirmed the same scale-collapse signature as dim3/dim9/dim0/dim7 (4th independent confirmation), but the replica is a Python re-implementation of DFA, not the exact C++ algorithm; the qualitative fix (shrinkage) is trusted, the exact winsor bound is not, so it's deliberately not set yet. See D8 addendum. |
 | 7 | `micro_asymmetry` | SOFTLOGZ | **TS3 (15min), per-tick, confirmed** (`TripleScreen3.cpp:640-657`, reads accumulating `sc.AskVolume`/`BidVolume` every tick) | `ComputeMicroAsymmetry` (`OrderFlowAsymmetryEngine.h:26`); bounded `[-1,1]` by construction, no raw clamp needed | shrinkage enabled (D8, floor=0.00733), `DIM_WINSOR_SIGMA_OVERRIDE[7]=36.0` (GPD-derived on corrected z, p=1/N return level) | **done** — Gemini's `12.0` prior was superseded, not confirmed: real trace found the same scale-collapse signature as dim3/dim9/dim0 (top-10 events' local MAD all below the series' own p1), needed D8's shrinkage fix first; corrected GPD fit gives xi=+0.0580 (barely Frechet) |
@@ -83,14 +83,17 @@ scale-collapse signature D4 originally found for `dim3` — of five dims checked
 (`dim9`, `dim0`, `dim7`, `dim6` show it; `dim8` doesn't), four needed the fix. Remaining: `dim4`, `dim2`
 (Unit C, LOGZ). Three (5, 13, 14) are exempt by construction (bounded, static-scaled, already re-derived
 against real data). `dim12` is resolved (not an anomaly — corrected above) and gets its routine bound
-check in Unit C. **Update (2026-08-14, Task 4 complete):** all 16 dims now audited. Final tally: 13 done
-or closed clean with confidence (1, 3, 9, 0, 7, 8, 10, 11, 12, 15, plus 5/13/14 exempt by construction);
-2 done with an explicitly disclosed lower-confidence caveat (`dim6`'s DFA approximation, `dim4`'s
-ambiguous small-sample signal) — both fixed the *mechanism* (shrinkage or per-dim override capability)
-while deferring the *exact number* rather than shipping a number that isn't fully trusted; `dim2` closed
-clean via a cheap screen without needing the full replica treatment its live-bar reference would
-otherwise call for, since two independent measurements (production telemetry + a large real bar-close
-sample) already agreed emphatically. Zero dims remain unaudited.
+check in Unit C. **Update (2026-08-14, Task 4 complete):** all 16 dims now audited. Final tally: 14 done
+or closed clean with confidence (1, 3, 9, 0, 7, 8, 10, 11, 12, 15, 4, 2, plus 5/13/14 exempt by
+construction); 1 done with an explicitly disclosed lower-confidence caveat (`dim6`'s DFA approximation)
+— fixed the *mechanism* (shrinkage) while deferring the *exact number* rather than shipping one that
+isn't fully trusted. `dim4` initially looked ambiguous from a top-5-event sample, but classifying its
+FULL 85-event population (2026-08-14, later same-day follow-up) resolved it decisively (60%
+contaminated / 40% genuine, same pattern as every other confirmed dim) — shrinkage was generalized to
+the LOGZ path for the first time to fix it, now full-confidence. `dim2` closed clean via a cheap screen
+without needing the full replica treatment its live-bar reference would otherwise call for, since two
+independent measurements (production telemetry + a large real bar-close sample) already agreed
+emphatically. Zero dims remain unaudited; one (`dim6`) has a disclosed, intentional numeric gap.
 
 ## The Audit Methodology (codified from D1-D7, as a repeatable playbook)
 
@@ -209,11 +212,18 @@ sampling. `dim2` (confirmed live-referenced, `TripleScreen2.cpp:273`) closed cle
 full-history bar-close screen (zero exceedances across 18,761 real windows) rather than the full
 tick-level rebuild its live-bar reference would otherwise call for — justified because both independent
 signals (that screen and production telemetry) already agreed emphatically, the same "the cheap check
-already answered convincingly" closure Task 3 used for `dim11`/`dim15`. `dim4` and `dim12` diverged:
-`dim12` traced clean (207 real exceedances, no contamination signature, genuinely bounded Weibull tail)
-and got a confident bound (`12.0`); `dim4` showed a real but small, partially-ambiguous signal (85
-exceedances, mixed contamination evidence) and got the mechanism without the exact number, same
-disclosed-caveat treatment as `dim6`.
+already answered convincingly" closure Task 3 used for `dim11`/`dim15`. `dim12` traced clean (207 real
+exceedances, no contamination signature, genuinely bounded Weibull tail) and got a confident bound
+(`12.0`) directly. `dim4` initially looked like the same ambiguous case as `dim6` — a top-5-event sample
+split 2 contaminated / 3 clean, no clear verdict — but classifying the FULL 85-event population
+(same-day follow-up, not deferred) resolved it decisively: 51 (60%) contaminated, 34 (40%) genuine, the
+identical majority-contaminated pattern already confirmed on 5 other dims. That meant `dim4` needed
+shrinkage, not a `dim6`-style deferral — and since shrinkage had only ever been built for the SOFTLOGZ
+path, this required generalizing it to LOGZ for the first time: extracted the shared blend computation
+into `ComputeShrinkageZ()` (used by both paths now) rather than duplicating the ~40-line mechanism a
+second time. Corrected fit on the shrinkage-blended z: `xi=-0.3580` (Weibull/bounded), theoretical
+endpoint `8.837`, `n_tail=76`. `LOGZ_WINSOR_SIGMA_OVERRIDE[4]=12.0` — real margin given the still-modest
+sample, same proportional-margin logic as `dim8`'s smaller-sample case. Full confidence, no caveat.
 
 ### Unit D — Production validation of D1-D7
 
@@ -243,9 +253,10 @@ the audit methodology itself gets one real-world confirmation before being appli
 
 - **[MET]** Every one of the 16 dims has a winsorization bound (or an explicit, documented
   static/structural exemption) traceable to real-data derivation via the methodology above — not an
-  inherited or unquestioned default. Two dims (`dim6`, `dim4`) have the mechanism fixed but the exact
-  bound value deliberately deferred pending less-approximate/less-ambiguous data — a disclosed,
-  intentional gap, not an unaudited one.
+  inherited or unquestioned default. One dim (`dim6`) has the mechanism fixed but the exact bound value
+  deliberately deferred pending a less-approximate DFA replica — a disclosed, intentional gap, not an
+  unaudited one. (`dim4` was initially in this same category but was fully resolved the same day —
+  full-population exceedance classification replaced ambiguity with a decisive verdict.)
 - **[MET]** No dim has a known, open, uncharacterized anomaly (closes `dim12`).
 - **[NOT MET, next step]** D1-D8 (and every unit added by this spec) validated against at least one
   live production collection run, not only native tests — Unit D, blocked on your explicit go-ahead to

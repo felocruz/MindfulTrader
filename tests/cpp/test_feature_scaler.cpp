@@ -19,6 +19,7 @@
 #include "fixtures_dim6_raw.h"
 #include "fixtures_dim8_raw.h"
 #include "fixtures_dim12_raw.h"
+#include "fixtures_dim4_raw.h"
 
 #include <cmath>
 #include <cstdio>
@@ -477,6 +478,35 @@ int main() {
                     rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12], rateRail * 100.0);
         check("dim12: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < 0.05 && rateRail < rate6 / 2.0);
+    }
+
+    // --- dim4 (vol_convexity): first LOGZ dim to need shrinkage (D8
+    // generalized further, 2026-08-14 dim4 follow-up). Full 85-event
+    // population classification (not just a top-5 sample) resolved an
+    // initially-ambiguous signal: 60% contaminated, 40% genuine -- shrinkage
+    // handles the contaminated majority without needing to hand-separate the
+    // two populations. Assert bounded max|z|, same pattern dim6/dim9/dim0/
+    // dim7's shrinkage tests use, plus the rail-taper check dim12's uses.
+    {
+        FeatureScaler fs;
+        double maxAbsZ = 0.0;
+        size_t hits6 = 0, hitsRail = 0;
+        for (size_t i = 0; i < DIM4_FIXTURE_N; ++i) {
+            auto obs = MakeObs(0.0f);
+            obs[4] = DIM4_FIXTURE_RAW[i];
+            const auto result = fs.UpdateAndNormalize(obs);
+            const float absZ = std::fabs(result[4]);
+            maxAbsZ = std::max(maxAbsZ, static_cast<double>(absZ));
+            if (absZ >= 6.0f) ++hits6;
+            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[4]) ++hitsRail;
+        }
+        const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM4_FIXTURE_N);
+        const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM4_FIXTURE_N);
+        std::printf("  [info] dim4 real-data max|z| after shrinkage: %.2f  |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
+                    maxAbsZ, rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[4], rateRail * 100.0);
+        check("dim4: shrinkage keeps real-data max|z| bounded (no unbounded blowup)", maxAbsZ < 100.0);
+        check("dim4: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
+              rateRail < 0.05 && (rate6 == 0.0 || rateRail < rate6 / 2.0));
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",

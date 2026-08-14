@@ -151,12 +151,27 @@ struct FeatureScaler {
     ///                   bounded [-1,1] by construction (ofae::
     ///                   ComputeMicroAsymmetry), still shows the same
     ///                   collapse-then-modest-deviation signature.
+    ///   dim4 (0.211521): vol_convexity, window=500. p1=0.177302
+    ///                    p5=0.211521(chosen) p25=0.250188 p50=0.282043.
+    ///                    First LOGZ dim to use this mechanism (originally
+    ///                    SOFTLOGZ-only) -- found via the same top-|z|-event
+    ///                    trace, then confirmed at full population scale
+    ///                    (not just the top 5): of 85 real exceedance events,
+    ///                    51 (60%) showed the collapsed-local-MAD signature,
+    ///                    34 (40%) did not -- a genuinely mixed population,
+    ///                    unlike every other traced dim's clean all-or-
+    ///                    nothing result. Shrinkage handles the contaminated
+    ///                    majority without needing to first separate the two
+    ///                    populations by hand; ComputeShrinkageZ() (shared
+    ///                    helper, extracted from the SOFTLOGZ-only version
+    ///                    that existed before this) is now used by both
+    ///                    scaling paths.
     inline static constexpr std::array<float, N_DIMS> SHRINKAGE_SCALE_MIN = {
         0.000389f,  //  0  log_variance_ratio   confirmed collapse signature (z=-176 traced)
         0.0f,       //  1  burstiness_index     disabled -- tail decays cleanly under generic path + wide bound
         0.0f,       //  2  relative_range       disabled -- LOGZ, 0.035% clip rate, no evidence of need
         0.00007f,   //  3  correction_action    original D4 derivation
-        0.0f,       //  4  vol_convexity        disabled -- unaudited, no evidence yet
+        0.211521f,  //  4  vol_convexity        LOGZ dim, confirmed collapse signature (see LOGZ generalization note below)
         0.0f,       //  5  lempel_ziv           disabled -- static scaler, not applicable
         0.00297f,   //  6  hurst_exponent       confirmed collapse signature -- see caveat below
         0.00733f,   //  7  micro_asymmetry      confirmed collapse signature (z=438 traced)
@@ -207,14 +222,7 @@ struct FeatureScaler {
     /// `std::clamp(zLog, -ENERGY_WINSOR_SIGMA, ENERGY_WINSOR_SIGMA)` was
     /// unconditional, same gap SOFTLOGZ's `DIM_WINSOR_SIGMA_OVERRIDE` closed
     /// for that path. Same 0.0f-sentinel convention (no override = use the
-    /// flat 6.0 default). Unlike SOFTLOGZ, no dim here needed a shrinkage
-    /// mechanism -- LOGZ's own log1p pre-transform (`ToLogEnergy`, applied to
-    /// the raw value BEFORE the rolling median/MAD, unlike SOFTLOGZ which
-    /// applies its compression AFTER) already compresses magnitude before the
-    /// z-score ever sees it, and the two dims with real signal (`dim4`,
-    /// `dim12`) traced clean or only weakly ambiguous, not the same
-    /// dramatic collapse-then-modest-deviation pattern found repeatedly on
-    /// the SOFTLOGZ side.
+    /// flat 6.0 default).
     ///   dim2 (relative_range): audited, full-history bar-close screen
     ///     (75,085 real 15-min-aggregated 60min bars -> 18,761 valid
     ///     windows) found ZERO exceedances, matching production's own
@@ -224,15 +232,20 @@ struct FeatureScaler {
     ///     dim11/dim15).
     ///   dim4 (vol_convexity): confirmed bar-gated/historical-only by source
     ///     comment (`StudyHelperFunctions.cpp`, `CalculateVolConvexity`) --
-    ///     no live-bar undersampling risk. Full-history (75,059-sample)
-    ///     replica found a real but small tail (85 exceedances, 0.11%,
-    ///     xi=+0.2022) with an AMBIGUOUS scale-collapse signature (2 of the
-    ///     top-5 events' local MAD sit ~17x below the series' own p1, the
-    ///     other 3 sit at/above it -- a genuinely mixed signal, not the
-    ///     clean all-or-nothing pattern every other traced dim showed).
-    ///     Left at 0.0f (default) pending a less ambiguous re-derivation --
-    ///     same "trust the direction, not the exact number" treatment as
-    ///     dim6's approximate-DFA case.
+    ///     no live-bar undersampling risk. First-pass full-history
+    ///     (75,059-sample) replica found a real but small tail (85
+    ///     exceedances, 0.11%) with what looked like an ambiguous
+    ///     scale-collapse signature in a top-5 sample. Classifying the FULL
+    ///     85-event population (not just the top 5) resolved it decisively:
+    ///     51 (60%) showed the collapsed-local-MAD signature, 34 (40%) were
+    ///     genuine -- dim4 needed SHRINKAGE_SCALE_MIN (see that array's
+    ///     doc comment), the first LOGZ dim to use the mechanism (originally
+    ///     SOFTLOGZ-only, generalized via the shared ComputeShrinkageZ()
+    ///     helper). Corrected fit on the shrinkage-blended z: n_tail=76
+    ///     (0.10%), shape(xi)=-0.3580 (Weibull/bounded), theoretical endpoint
+    ///     8.837. Set to 12.0 -- real margin (~36%) given the still-modest
+    ///     sample size, same proportional-margin logic as dim8's smaller-
+    ///     sample case.
     ///   dim12 (liq_fragility): also bar-gated/historical-only (confirmed
     ///     via source). Full-history (75,051-sample) replica: clean trace
     ///     (top-5 events' local MAD all comfortably above the series' p1),
@@ -244,7 +257,7 @@ struct FeatureScaler {
         0.0f, 0.0f,
         0.0f,   //  2  relative_range   audited, closed clean (0 exceedances on 18,761 real bars)
         0.0f,
-        0.0f,   //  4  vol_convexity    audited, real-but-small ambiguous signal -- bound intentionally deferred
+        12.0f,  //  4  vol_convexity    GPD-derived on corrected (shrinkage-blended) z, real margin above the theoretical wall
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         12.0f,  // 12  liq_fragility    GPD-derived, clean trace, real margin above the theoretical wall
         0.0f, 0.0f, 0.0f,
@@ -619,6 +632,54 @@ struct FeatureScaler {
         return static_cast<float>(maxRun) / static_cast<float>(n);
     }
 
+    /// Shared shrinkage-blend z computation (D8), used by both the SOFTLOGZ
+    /// and LOGZ paths for any dim with a nonzero SHRINKAGE_SCALE_MIN entry --
+    /// extracted 2026-08-14 (Task 4's dim4 follow-up) when dim4 (a LOGZ dim)
+    /// independently needed the identical mechanism dim3/dim9/dim0/dim7/dim6
+    /// already had, rather than duplicating the blend logic a second time.
+    /// Caller must have already handled the macroScaleEwma[i]<=0.0f
+    /// bootstrap-guard case (both paths' guard response differs slightly --
+    /// SOFTLOGZ also zeroes lastRawZ[i] since LOGZ dims don't populate that
+    /// diagnostic array -- so that check stays at each call site, not here).
+    /// `current` is the value being scaled: the raw state value for SOFTLOGZ,
+    /// the log-energy value (post-ToLogEnergy) for LOGZ; `median`/`madScale`
+    /// are that path's own RobustLocation() output on its own rolling buffer.
+    float ComputeShrinkageZ(size_t i, float current, float median, float madScale) {
+        // Compression ratio in log-space, computed against the PRE-update
+        // macro reference: how far has the live local MAD shrunk relative to
+        // its own long-horizon anchor? ratio == midpoint -> w == 0.5;
+        // ratio >> midpoint (healthy, local as/more dispersed than its own
+        // history) -> w -> 1 (trust local); ratio << midpoint (compressed
+        // regime) -> w -> 0 (shrink toward macroScaleEwma).
+        const float macroRef = std::max(macroScaleEwma[i], ABSOLUTE_FLOOR);
+        const float compressionRatio = madScale / macroRef;
+        const float logRatio = std::log(std::max(compressionRatio, ABSOLUTE_FLOOR)
+            / SHRINKAGE_RATIO_MIDPOINT);
+        const float w = 1.0f / (1.0f + std::exp(-SHRINKAGE_STEEPNESS * logRatio));
+        lastLocalMad[i] = madScale;
+        lastShrinkageWeight[i] = w;
+
+        // Ratchet: gate the anchor's own update rate by w. A plain, always-on
+        // EWMA erodes right along with madScale during a sufficiently long
+        // quiet regime (measured, dim3: 0.093 -> 0.031 over ~35k samples
+        // leading into the known pathological event, ~3x decay despite a
+        // ~13.9k-sample half-life) -- which undermines the whole point of
+        // having a "long-horizon, regime-resistant" anchor. Scaling the
+        // update weight by w means the anchor only tracks fresh data during
+        // periods it currently judges healthy, and nearly freezes while
+        // local is judged compressed -- same principle as GARCH's omega
+        // being a stable, broadly-estimated floor rather than something that
+        // keeps drifting downward with every quiet spell.
+        const float updateWeight = (1.0f - MACRO_SCALE_DECAY) * w;
+        macroScaleEwma[i] = std::max(
+            (1.0f - updateWeight) * macroScaleEwma[i] + updateWeight * std::abs(current - median),
+            SHRINKAGE_SCALE_MIN[i]);
+
+        const float scaleEffective = std::max(
+            w * madScale + (1.0f - w) * macroRef, ABSOLUTE_FLOOR);
+        return (current - median) / scaleEffective;
+    }
+
     /// Feed raw observation, return hybrid-scaled values.
     /// Safe from bar 1: returns neutral defaults until warmup.
     std::array<float, N_DIMS> UpdateAndNormalize(const std::array<float, N_DIMS>& raw) {
@@ -732,44 +793,8 @@ struct FeatureScaler {
                         continue;
                     }
 
-                    // Compression ratio in log-space, computed against the
-                    // PRE-update macro reference: how far has the live local
-                    // MAD shrunk relative to its own long-horizon anchor?
-                    // ratio == midpoint -> w == 0.5; ratio >> midpoint (healthy,
-                    // local as/more dispersed than its own history) -> w -> 1
-                    // (trust local); ratio << midpoint (compressed regime) -> w -> 0
-                    // (shrink toward macroScaleEwma).
-                    const float macroRef = std::max(macroScaleEwma[i], ABSOLUTE_FLOOR);
-                    const float compressionRatio = madScale / macroRef;
-                    const float logRatio = std::log(std::max(compressionRatio, ABSOLUTE_FLOOR)
-                        / SHRINKAGE_RATIO_MIDPOINT);
-                    const float w = 1.0f / (1.0f + std::exp(-SHRINKAGE_STEEPNESS * logRatio));
-                    lastLocalMad[i] = madScale;
-                    lastShrinkageWeight[i] = w;
-
-                    // Ratchet: gate the anchor's own update rate by w. A plain,
-                    // always-on EWMA erodes right along with madScale during a
-                    // sufficiently long quiet regime (measured: 0.093 -> 0.031
-                    // over ~35k samples leading into the known pathological
-                    // event, ~3x decay despite a ~13.9k-sample half-life) --
-                    // which undermines the whole point of having a "long-
-                    // horizon, regime-resistant" anchor. Scaling the update
-                    // weight by w means the anchor only tracks fresh data
-                    // during periods it currently judges healthy, and nearly
-                    // freezes while local is judged compressed -- same
-                    // principle as GARCH's omega being a stable, broadly-
-                    // estimated floor rather than something that keeps
-                    // drifting downward with every quiet spell.
-                    const float updateWeight = (1.0f - MACRO_SCALE_DECAY) * w;
-                    macroScaleEwma[i] = std::max(
-                        (1.0f - updateWeight) * macroScaleEwma[i] + updateWeight * std::abs(current - median),
-                        SHRINKAGE_SCALE_MIN[i]);
-
-                    const float scaleEffective = std::max(
-                        w * madScale + (1.0f - w) * macroRef, ABSOLUTE_FLOOR);
-
                     calibration[i].carryForwardCount = 0;
-                    const float z = (current - median) / scaleEffective;
+                    const float z = ComputeShrinkageZ(i, current, median, madScale);
                     lastRawZ[i] = z;
                     const float shrinkWinsorSigma = (DIM_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
                         ? DIM_WINSOR_SIGMA_OVERRIDE[i] : STATE_WINSOR_SIGMA;
@@ -817,6 +842,26 @@ struct FeatureScaler {
 
             latestLogMedian[i] = median;
             latestLogScale[i] = madScale;
+
+            // Shrinkage-blended scale, same mechanism/array as the SOFTLOGZ
+            // path above (D8, generalized to LOGZ 2026-08-14 when dim4
+            // independently showed the identical scale-collapse signature --
+            // see SHRINKAGE_SCALE_MIN's doc comment and ComputeShrinkageZ()).
+            if (SHRINKAGE_SCALE_MIN[i] > 0.0f) {
+                if (macroScaleEwma[i] <= 0.0f) {
+                    result[i] = 0.0f;
+                    calibration[i].carryForwardCount = 0;
+                    continue;
+                }
+                calibration[i].carryForwardCount = 0;
+                const float zLog = ComputeShrinkageZ(i, currentLog, median, madScale);
+                const float energyWinsorSigma = (LOGZ_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
+                    ? LOGZ_WINSOR_SIGMA_OVERRIDE[i] : ENERGY_WINSOR_SIGMA;
+                result[i] = std::clamp(zLog, -energyWinsorSigma, energyWinsorSigma);
+                calibration[i].lastValidScaled = result[i];
+                calibration[i].hasValidScaled = true;
+                continue;
+            }
 
             if (madScale < calibration[i].minScaleFloor) {
                 // Shannon decay: carry-forward value decays toward neutral

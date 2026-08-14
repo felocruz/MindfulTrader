@@ -422,6 +422,25 @@ software bug is present. All three bounds implemented directly (no bootstrap cer
 originally-surprising `45`, the qualitative finding here, not the third decimal digit, is what's
 load-bearing). Re-verified end to end: native suite green, `build_dll.sh` succeeds cleanly.
 
+**D8 addendum (same day, later pass) -- `dim4` needed the same mechanism, extended to the LOGZ path
+for the first time.** Auditing the LOGZ dims (full-coverage spec's Task 4) found `dim4` (`vol_convexity`)
+showing an apparently ambiguous version of the same signature: a top-5-event sample split 2
+contaminated / 3 clean, no clear verdict, initially treated with the same "defer the number" caution as
+`dim6`. Classifying the FULL 85-event population (not just the top 5) resolved it decisively: 51 (60%)
+contaminated, 34 (40%) genuine -- the identical majority-contaminated pattern already confirmed on five
+other dims, just not yet checked at population scale. `dim4` genuinely needed shrinkage, not a
+deferral. Since shrinkage had only ever been implemented for the SOFTLOGZ path, this required
+generalizing it a second time -- extracted the ~40-line blend computation (compression-ratio sigmoid,
+ratcheted macro-anchor update, effective-scale blend) into a shared `ComputeShrinkageZ()` member
+function used by both `UpdateAndNormalize()` branches, rather than duplicating it. `SHRINKAGE_SCALE_MIN`
+and `DIM_WINSOR_SIGMA_OVERRIDE`/`LOGZ_WINSOR_SIGMA_OVERRIDE` are genuinely mode-agnostic now, both
+literally and architecturally. Corrected fit on the shrinkage-blended log-energy z: `n_tail=76` (0.10%),
+`shape(xi)=-0.3580` (Weibull/bounded), theoretical endpoint `8.837`. `LOGZ_WINSOR_SIGMA_OVERRIDE[4]=12.0`
+-- real margin (~36%) given the still-modest sample, same proportional-margin logic as `dim8`'s smaller
+sample. Regression-verified: `dim3`'s numbers unchanged, `dim12`'s LOGZ bound unaffected by the new LOGZ
+shrinkage branch (its `SHRINKAGE_SCALE_MIN[12]` stays `0.0f`, so it never enters that branch). Native
+suite green, `build_dll.sh` clean.
+
 ## Implementation: five real bugs found and fixed during test-driven development, not five iterations of tuning
 
 Built a native (`g++`, no Sierra Chart deps) characterization test against a real, contiguous
