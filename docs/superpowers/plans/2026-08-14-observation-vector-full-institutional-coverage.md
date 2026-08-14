@@ -311,14 +311,22 @@ placeholder).
 
 ---
 
-### Task 6: Cross-repo/environment pointers (Unit E, remainder) — tracked, not executed from this repo
+### Task 6: Cross-repo/environment pointers (Unit E, remainder) — tracked, not executed from this repo — **FLAGGED, awaiting action outside this session**
 
-- [ ] **`lbrnet/scripts/context_preflight.py`'s D3 `chronic_zero_threshold` gate** — `lbrnet`-repo work.
-  Do not implement from this repo; file/track it in the `lbrnet` session instead, per the standing
-  no-cross-repo-scope-mixing convention.
-- [ ] **Config drift**: `/mnt/c/Trading/config/`'s two JSON files carry their own copy of pre-D1-D7
-  thresholds and won't pick up Tasks 2-5's numbers automatically — flag to the user as a manual sync
-  needed on the live machine; do not attempt to edit files outside the repo without explicit direction.
+- [x] **`lbrnet/scripts/context_preflight.py`'s D3 `chronic_zero_threshold` gate** — `lbrnet`-repo work.
+  Not implemented from this repo (correct per the standing no-cross-repo-scope-mixing convention —
+  `lbrnet` is a separate repo/session). **Action needed:** raise this in a dedicated `lbrnet` session so
+  it gets tracked there; this plan only records that the gate was never implemented
+  (`docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md`'s original D3 scope)
+  and remains open.
+- [x] **Config drift**: `/mnt/c/Trading/config/`'s two live JSON config files (execution params +
+  empirical gate thresholds) carry their own copies of pre-D1-D9 thresholds — including the pre-Task-6
+  kurtosis scale and the pre-2026-08-14 winsorization bounds — and won't pick up this initiative's
+  numbers automatically; they live outside this repo (and outside git entirely) so were not edited.
+  **Action needed from the user:** manually sync those two files on the live trading machine before the
+  next production deployment, or confirm `ExecutionParams`'s load-time scale guards (final-review
+  Finding 9) are sufficient to fail closed in the meantime rather than silently running stale
+  thresholds.
 
 ---
 
