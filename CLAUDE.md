@@ -200,7 +200,7 @@ Size-prefixed FlatBuffer records, one per event. Record ordering:
 - `../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md` — TRAP weighting policy table (normative default for native trap-risk thresholds)
 
 ### Active Roadmaps
-- `../docs/ROADMAP_EXECUTION_ENGINE.md` — `PositionManager`/`RiskManager` refactor spec
+- `../docs/ROADMAP_EXECUTION_ENGINE.md` — **SUPERSEDED 2026-08-14**, do not implement; all four proposed upgrades already exist under different (mostly more sophisticated) mechanisms, see the doc's own "Superseded" section for the per-item mapping
 - `../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` — `ContextManager` architecture baseline and remaining hardening work
 - `../docs/SCHEMA_DRIVEN_SERIALIZATION_PARITY_INITIATIVE.md` — active initiative: eliminating train/live serialization drift between C++ event path and Python training ingestion
 - `docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit). Finding 1 (`UpdateContext()` never called — entire regime-defense subsystem runs on frozen state) — RESOLVED (commit `097e11b`; `SyncRegimeState()` wired into `Update()`, `regime_state_wiring_fix_spec.md`); Finding 12 is a Python-port parity gap, not a C++ fix.

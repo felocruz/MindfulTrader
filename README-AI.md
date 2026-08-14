@@ -131,7 +131,7 @@ Size-prefixed FlatBuffer records: `RunManifest` → `DecisionEvent`(s) → `Pred
 - `../lbrnet/docs/labeling/LABELING_AND_AUGMENTATION_SPEC.md` — TRAP weighting policy table (normative default)
 
 ### Active Roadmaps
-- `../docs/ROADMAP_EXECUTION_ENGINE.md` — `PositionManager`/`RiskManager` refactor spec
+- `../docs/ROADMAP_EXECUTION_ENGINE.md` — **SUPERSEDED 2026-08-14**, do not implement; all four proposed upgrades already exist under different (mostly more sophisticated) mechanisms, see the doc's own "Superseded" section for the per-item mapping
 - `../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` — `ContextManager` architecture baseline and remaining hardening
 - `../docs/SCHEMA_DRIVEN_SERIALIZATION_PARITY_INITIATIVE.md` — eliminating train/live serialization drift
 - `docs/ADR/execution_correctness_findings_spec.md` — 12 verified correctness/parity findings across `PositionManager`/`RiskManager`/`ChandelierStopManager`/`Scoring`/`ExecutionGate` (2026-07-10 audit); Finding 1 (`UpdateContext()` never called) — RESOLVED (commit `097e11b`; `SyncRegimeState()` wired into `Update()`, `regime_state_wiring_fix_spec.md`); Finding 12 is a Python-port parity gap, not a C++ fix
