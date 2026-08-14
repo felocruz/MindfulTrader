@@ -3095,7 +3095,11 @@ float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n) {
     double rv_recent_rate = rv_recent / half;
 
     float& lastValidCorrectionAction = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::CORRECTION_ACTION_LAST_VALID_VALUE);
-    const float correctionAction = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_full_rate, lastValidCorrectionAction);
+    // dim3's own asymmetric backstop, not dim1's shared default -- see
+    // ComputeBurstinessIndex's doc comment (CarryForwardCalculators.h) for
+    // the real-data derivation (true range [-6.160,+0.787], already clipping
+    // 3/606,577 real events under the old shared [-6,+6]).
+    const float correctionAction = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_full_rate, lastValidCorrectionAction, -10.0f, 6.0f);
     lastValidCorrectionAction = correctionAction;
     return correctionAction;
 }

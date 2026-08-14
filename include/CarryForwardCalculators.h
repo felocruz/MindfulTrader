@@ -21,18 +21,39 @@
 
 namespace cfc {
 
-// Dim 1 (burstiness_index): log(recent-half realized-range rate / older-half
-// realized-range rate), clamped to [-6, 6]. Degenerate when the older half's
-// rate is below the numerical floor (near-flat range over that half) — carries
-// the last valid value forward instead of a fabricated exact-zero "no change"
-// reading.
-inline float ComputeBurstinessIndex(double rvRecentRate, double rvOlderRate, float lastValidValue) {
+// Dim 1 (burstiness_index) / dim 3 (correction_action): log(recent-window
+// realized-variance rate / reference-window rate), clamped to a data-error
+// backstop range (NOT a statistical winsorization bound -- that job belongs
+// to FeatureScaler's WIDE_STATE_WINSOR_SIGMA/DIM3_WIDE_WINSOR_SIGMA on the
+// z-scored output, several orders of magnitude further out; see that file).
+// Degenerate when the reference rate is below the numerical floor (near-flat
+// range/return over that window) — carries the last valid value forward
+// instead of a fabricated exact-zero "no change" reading.
+//
+// Default bound [-6,+6] is dim1's (CalculateBurstiness: disjoint recent-half
+// vs older-half, symmetric by construction) -- verified on real 60-minute MES
+// bars (mes_wave_60m.parquet, 19,592 bars, adaptive window range [10,40]):
+// true range [-4.587, +5.082], 0/606,577 window/bar combinations clip.
+//
+// dim3 (CalculateRealizedVarianceRatio, StudyHelperFunctions.cpp) passes its
+// own [-10,+6] -- its formula compares a recent-half window against the FULL
+// window (recent is a subset of full), which makes the raw ratio structurally
+// asymmetric: positive ratios are mechanically small (recent variance can't
+// exceed full-window variance by much) while negative ratios are not (a quiet
+// recent half against a volatile historical full window is comparatively
+// unbounded). The shared default was already clipping real data: true range
+// [-6.160, +0.787] on the same real-data sweep, with 3/606,577 combinations
+// exceeding -6.0 -- not hypothetical, an already-occurring truncation of
+// legitimate quiet-regime readings. [-10,+6] gives real margin below the
+// observed -6.160 extreme.
+inline float ComputeBurstinessIndex(double rvRecentRate, double rvOlderRate, float lastValidValue,
+                                     float clampLow = -6.0f, float clampHigh = 6.0f) {
     constexpr double kFloor = 1e-12;
     if (rvOlderRate < kFloor) {
         return lastValidValue;
     }
     const float ratio = static_cast<float>(std::log(std::max(rvRecentRate, kFloor) / rvOlderRate));
-    return std::clamp(ratio, -6.0f, 6.0f);
+    return std::clamp(ratio, clampLow, clampHigh);
 }
 
 // Dim 2 (relative_range): (high - low) / atr. Degenerate when atr is at/near

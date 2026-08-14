@@ -49,6 +49,31 @@ int main() {
     check("burstiness_clamps_extreme_ratio",
           approx(cfc::ComputeBurstinessIndex(1e12, 1e-12, 0.0f), 6.0f));
 
+    // --- ComputeBurstinessIndex custom clamp bounds (dim3 asymmetric fix) ---
+    // dim3's raw ratio is structurally asymmetric: its formula compares a
+    // recent-half window against the FULL window (recent is a subset of
+    // full), so positive ratios are mechanically small (recent variance
+    // can't exceed full-window variance by much) while negative ratios are
+    // not (a quiet recent half against a volatile historical full window is
+    // unbounded). Verified on real 60-minute MES bars (mes_wave_60m.parquet,
+    // 19,592 bars) swept across the full adaptive window range [10,40]: true
+    // range [-6.160, +0.787], with 3 real events (of 606,577 window/bar
+    // combinations) already clipping under the shared default [-6,+6] bound
+    // -- not a hypothetical, an already-occurring truncation of legitimate
+    // quiet-regime readings. dim3's call site now passes its own [-10,+6].
+    // ratio = log(0.0021062/1.0) = -6.16 reproduces that real boundary case.
+    check("burstiness_default_bounds_clip_real_dim3_extreme",
+          approx(cfc::ComputeBurstinessIndex(0.0021062, 1.0, 0.0f), -6.0f));
+
+    check("burstiness_dim3_custom_bounds_preserve_real_extreme",
+          approx(cfc::ComputeBurstinessIndex(0.0021062, 1.0, 0.0f, -10.0f, 6.0f), -6.16f, 0.01f));
+
+    check("burstiness_custom_bounds_still_clamp_beyond_range",
+          approx(cfc::ComputeBurstinessIndex(1e12, 1e-12, 0.0f, -10.0f, 6.0f), 6.0f));
+
+    check("burstiness_custom_bounds_clamp_negative_beyond_range",
+          approx(cfc::ComputeBurstinessIndex(1e-12, 1e12, 0.0f, -10.0f, 6.0f), -10.0f));
+
     // --- ComputeRelativeRange (dim 2) ---
     check("relative_range_normal_case",
           approx(cfc::ComputeRelativeRange(105.0f, 100.0f, 2.5f, 0.0f), 2.0f));

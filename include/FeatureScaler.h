@@ -56,10 +56,328 @@ struct FeatureScaler {
     /// and GEMINI_BRIEF_087_RESPONSE for the full derivation.
     static constexpr size_t DIM_AMIHUD_INDEX = 11;               ///< == OBS_AMIHUD_ILLIQUIDITY
     static constexpr float AMIHUD_ABSOLUTE_FLOOR = 1e-16f;       ///< Negligible vs. ABSOLUTE_FLOOR; still divide-by-zero-safe
+
+    /// Dim 3 (correction_action): the binary floor-gate + carry-forward-decay
+    /// mechanism used by the generic adaptive SOFTLOGZ path is the wrong tool
+    /// for some dims. Empirically (tick-level replica against real MES data,
+    /// matched to live telemetry within ~1pp -- see logs/rc_gemini.log
+    /// CLAUDE_BRIEF_097/098) dim3 sustains multi-recalibration-interval
+    /// stretches of tight raw-value clustering (its formula is RV_recent/
+    /// RV_full, and the recent window is a strict subset of the full one,
+    /// making quiet-then-break transitions more common than for dim1's
+    /// disjoint-halves formula). When that happens the live madScale sits
+    /// just ABOVE minScaleFloor (so the floor-gate's carry-forward branch
+    /// never engages) but is still tiny, so the raw, completely unclamped
+    /// z = (current-median)/madScale computed by the generic path can reach
+    /// z ~ 10^4-10^5 before the outer ToSoftLogZ winsorization silently
+    /// clamps it -- i.e. the failure is invisible from the public API; only
+    /// the elevated rail-hit rate shows. Root cause is a scale-RELIABILITY
+    /// problem, not a scale-MAGNITUDE problem, so instead of a binary
+    /// trust/no-trust gate, an affected dim blends the live local MAD with a
+    /// slow, continuously-updated long-horizon EWMA scale (Ledoit-Wolf-style
+    /// shrinkage target).
+    ///
+    /// GENERALIZED 2026-08-14 (was dim3-only via a single
+    /// DIM_MACRO_SHRINKAGE_INDEX constant): the same real-data trace method
+    /// D4 used for dim3 (top-|z| events' local MAD sitting at/below the
+    /// series' own p1, i.e. a modest raw deviation landing on a collapsed
+    /// scale) independently reproduced the identical signature for dim9
+    /// (tail_index, z=1963 from raw moving only 1.4->8.0 while local MAD sat
+    /// at 0.00336, far below its own p1=0.0249), dim0 (log_variance_ratio,
+    /// z=-176 from raw moving only ~0.25 while local MAD sat at 0.00144,
+    /// below its own p1), and dim7 (micro_asymmetry, z=438 with local MAD
+    /// consistently below its own p1 across all top-10 events) -- three more
+    /// dims with the exact same underlying weakness, not three unrelated
+    /// per-dim quirks. Shrinkage-toward-a-stable-anchor (Ledoit-Wolf) and a
+    /// variance floor (GARCH omega) are general small-sample scale-estimation
+    /// principles, not properties of dim3's specific formula -- treating this
+    /// as a dim3-only special case was an under-generalization now corrected.
+    /// Per-dim opt-in via a nonzero SHRINKAGE_SCALE_MIN entry (0.0f = this
+    /// dim keeps the simpler generic floor-gate/carry-forward path below --
+    /// not every dim needs this; dims with no measured collapse signature
+    /// should NOT be forced through the extra complexity). See
+    /// docs/superpowers/specs/2026-08-14-featurescaler-winsorization-and-dim3-shrinkage.md
+    /// D4 (original dim3 derivation) and its generalization addendum.
+    ///
+    /// Shrinkage-weight signal: NOT dominanceRatio[]. First implementation
+    /// tried reusing the existing D2 dominanceRatio diagnostic (exact-value
+    /// repetition) as the reliability signal, on the theory that a collapsed
+    /// window would also be a repetition-dominated one -- checked against the
+    /// real fixture and it wasn't: dominanceRatio stayed in 0.07-0.22 for the
+    /// entire ~35k-sample approach to the known pathological event (never
+    /// near enough to a 0.30 sigmoid midpoint to shrink meaningfully), while
+    /// madScale had independently collapsed to 0.22% of macroScaleEwma at
+    /// that exact point. dominanceRatio measures ONE EXACT VALUE repeating;
+    /// this failure mode is many DISTINCT values compressed into a narrow
+    /// band, which a repetition counter cannot see. The signal that actually
+    /// tracks this is the ratio between the live local MAD and the long-
+    /// horizon macro reference itself -- computed inline in UpdateAndNormalize
+    /// below. See GEMINI_BRIEF_097_RESPONSE/098_RESPONSE for the literature
+    /// grounding (RiskMetrics EWMA, GARCH variance-floor practice, MAD's
+    /// documented discontinuous-influence-function instability under regime
+    /// persistence, Ledoit-Wolf shrinkage as the blending framework).
+    ///
+    /// EWMA decay per dedupe-survived push toward a long-horizon reference
+    /// scale. 0.99995 -> half-life = ln(2)/-ln(0.99995) ~= 13,863 samples,
+    /// long enough to survive one 5,000-sample recalibration interval intact
+    /// (engineering choice -- no literature-prescribed exact figure; matches
+    /// this file's existing convention for constants like kAlphaSmoothing in
+    /// TailRiskEngine.h). Shared across every shrinkage-enabled dim -- no
+    /// evidence yet that per-dim tuning of decay/midpoint/steepness is
+    /// needed; only the scale floor itself is dim-specific (each dim's raw
+    /// value lives on a completely different magnitude).
+    static constexpr float MACRO_SCALE_DECAY = 0.99995f;
+    /// Per-dim GARCH-omega-style irreducible minimum for macroScaleEwma -- a
+    /// purely reactive EWMA-of-observed-deviations anchor cannot protect
+    /// against the FIRST large deviation after a genuinely quiet regime,
+    /// because it can only learn a "normal" scale from deviations it has
+    /// already observed (chicken-and-egg). 0.0f = shrinkage disabled for
+    /// this dim (use the generic floor-gate/carry-forward path instead);
+    /// nonzero enables shrinkage with this dim's own empirically-derived
+    /// floor -- NOT interchangeable across dims, each was derived from that
+    /// dim's own real rolling-local-MAD distribution (5th percentile,
+    /// sampled every 500 observations across the real 2023-09-01..10-20
+    /// tick-replay window, same D4 methodology, giving real margin above the
+    /// observed pathological minimum without interfering with normal
+    /// regimes):
+    ///   dim3 (0.00007): original D4 derivation, window=300.
+    ///   dim9 (0.0438):  tail_index, window=500. p1=0.0194 p5=0.0438(chosen)
+    ///                   p25=0.1907 p50=0.4372 -- Hill alpha lives on a
+    ///                   ~1.1-8.0 scale, orders of magnitude above dim3's.
+    ///   dim0 (0.000389): log_variance_ratio, window=500. p1=0.000165
+    ///                    p5=0.000389(chosen) p25=0.001741 p50=0.003405.
+    ///   dim7 (0.00733): micro_asymmetry, window=300. p1=0.004214
+    ///                   p5=0.00733(chosen) p25=0.018797 p50=0.041481 --
+    ///                   bounded [-1,1] by construction (ofae::
+    ///                   ComputeMicroAsymmetry), still shows the same
+    ///                   collapse-then-modest-deviation signature.
+    inline static constexpr std::array<float, N_DIMS> SHRINKAGE_SCALE_MIN = {
+        0.000389f,  //  0  log_variance_ratio   confirmed collapse signature (z=-176 traced)
+        0.0f,       //  1  burstiness_index     disabled -- tail decays cleanly under generic path + wide bound
+        0.0f,       //  2  relative_range       disabled -- LOGZ, 0.035% clip rate, no evidence of need
+        0.00007f,   //  3  correction_action    original D4 derivation
+        0.0f,       //  4  vol_convexity        disabled -- unaudited, no evidence yet
+        0.0f,       //  5  lempel_ziv           disabled -- static scaler, not applicable
+        0.00297f,   //  6  hurst_exponent       confirmed collapse signature -- see caveat below
+        0.00733f,   //  7  micro_asymmetry      confirmed collapse signature (z=438 traced)
+        0.0f,       //  8  fisher_info          audited 2026-08-14 -- clean, no collapse signature; needs only a wider bound (DIM_WINSOR_SIGMA_OVERRIDE), not shrinkage
+        0.0438f,    //  9  tail_index           confirmed collapse signature (z=1963 traced)
+        0.0f,       // 10  skewness_idx         audited 2026-08-14 -- 0.041% clip rate, only 31 exceedances (too few for a reliable fit); weak collapse signal present but impact is negligible, disabled per ruthless-simplicity (D8's own precedent: don't force complexity where the flat default already performs fine)
+        0.0f,       // 11  amihud_illiquidity   audited 2026-08-14 -- 0.000% real production clip rate (CLAUDE_BRIEF_095), bar-gated/historical-only construction (never sees the live still-forming bar, unlike the dims above), already has its own dedicated floor fix (AMIHUD_ABSOLUTE_FLOOR) -- no action needed
+        0.0f,       // 12  liq_fragility        disabled -- LOGZ, resolved-healthy, no evidence of need
+        0.0f,       // 13  recurrence_rate      disabled -- static scaler, not applicable
+        0.0f,       // 14  fractal_dim          disabled -- static scaler, not applicable
+        0.0f,       // 15  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
+    };
+    /// dim6's floor (0.00297) comes from a Python re-implementation of the DFA
+    /// (detrended fluctuation analysis) algorithm, not the exact production
+    /// C++ (`CalculateHurstExponent`, `StudyHelperFunctions.cpp:2489`) --
+    /// DFA's profile-construction/box-regression logic is materially more
+    /// complex to replicate exactly than dim0/dim9/dim7's simpler formulas,
+    /// unlike those three. The QUALITATIVE finding (scale-collapse signature
+    /// present) is trusted -- it is now the same signature independently
+    /// confirmed on 4 of 5 dims checked with this trace method, a
+    /// format-independent property of the shared scale-estimation mechanism,
+    /// not sensitive to DFA's exact box-counting details. The SPECIFIC floor
+    /// value carries more uncertainty than dim3/dim9/dim0/dim7's exact-formula
+    /// derivations; `DIM_WINSOR_SIGMA_OVERRIDE[6]` is deliberately left at the
+    /// default (0.0f) below rather than shipping a bound derived from the same
+    /// approximate replica -- re-derive both once an exact-formula tick
+    /// replica or real post-D8 live telemetry exists (Task 1's fresh
+    /// collection run, once it happens, is the natural source).
+    /// Compression-ratio sigmoid center: madScale/macroScaleEwma == 0.30 is
+    /// where "trust local less" begins -- i.e. the local window's dispersion
+    /// has visibly compressed to under a third of its own long-run typical
+    /// value (engineering choice, tunable; chosen to fire well before the
+    /// pathological case observed at ratio ~0.0022, with margin).
+    static constexpr float SHRINKAGE_RATIO_MIDPOINT = 0.30f;
+    /// Sigmoid steepness in log-ratio space: at ratio == midpoint * e^(+-0.15)
+    /// (roughly midpoint scaled by 1.16x / 0.86x), w moves ~0.73 <-> ~0.27
+    /// (engineering choice, tunable; solved from w=1/(1+exp(-k*0.15))=0.73).
+    static constexpr float SHRINKAGE_STEEPNESS = 6.63f;
+
     static constexpr float LOG_BPS = 10000.0f;                  ///< Basis-point multiplier inside log transform
     static constexpr float LOG_EPS = 1e-8f;                     ///< Non-zero floor before log transform
-    static constexpr float ENERGY_WINSOR_SIGMA = 6.0f;          ///< 6-sigma winsorization for energy channels
-    static constexpr float STATE_WINSOR_SIGMA = 6.0f;           ///< 6-sigma winsorization before Soft-Log map
+    static constexpr float ENERGY_WINSOR_SIGMA = 6.0f;          ///< 6-sigma winsorization for energy channels (default; see LOGZ_WINSOR_SIGMA_OVERRIDE)
+    static constexpr float STATE_WINSOR_SIGMA = 6.0f;           ///< 6-sigma winsorization before Soft-Log map (default; see DIM_WIDE_WINSOR_INDEX)
+
+    /// Per-dim override for the LOGZ path's hard z-clamp (dims 2, 4, 12 --
+    /// EXPECTED_LOGZ_DIMS), added 2026-08-14 (Task 4 of the full-coverage
+    /// audit) -- the LOGZ path previously had NO per-dim mechanism at all,
+    /// `std::clamp(zLog, -ENERGY_WINSOR_SIGMA, ENERGY_WINSOR_SIGMA)` was
+    /// unconditional, same gap SOFTLOGZ's `DIM_WINSOR_SIGMA_OVERRIDE` closed
+    /// for that path. Same 0.0f-sentinel convention (no override = use the
+    /// flat 6.0 default). Unlike SOFTLOGZ, no dim here needed a shrinkage
+    /// mechanism -- LOGZ's own log1p pre-transform (`ToLogEnergy`, applied to
+    /// the raw value BEFORE the rolling median/MAD, unlike SOFTLOGZ which
+    /// applies its compression AFTER) already compresses magnitude before the
+    /// z-score ever sees it, and the two dims with real signal (`dim4`,
+    /// `dim12`) traced clean or only weakly ambiguous, not the same
+    /// dramatic collapse-then-modest-deviation pattern found repeatedly on
+    /// the SOFTLOGZ side.
+    ///   dim2 (relative_range): audited, full-history bar-close screen
+    ///     (75,085 real 15-min-aggregated 60min bars -> 18,761 valid
+    ///     windows) found ZERO exceedances, matching production's own
+    ///     already-tiny 0.035% clip rate -- closed clean without a
+    ///     dedicated tick-level replica (the cheap check already answered
+    ///     the question convincingly, same principle Task 3 used for
+    ///     dim11/dim15).
+    ///   dim4 (vol_convexity): confirmed bar-gated/historical-only by source
+    ///     comment (`StudyHelperFunctions.cpp`, `CalculateVolConvexity`) --
+    ///     no live-bar undersampling risk. Full-history (75,059-sample)
+    ///     replica found a real but small tail (85 exceedances, 0.11%,
+    ///     xi=+0.2022) with an AMBIGUOUS scale-collapse signature (2 of the
+    ///     top-5 events' local MAD sit ~17x below the series' own p1, the
+    ///     other 3 sit at/above it -- a genuinely mixed signal, not the
+    ///     clean all-or-nothing pattern every other traced dim showed).
+    ///     Left at 0.0f (default) pending a less ambiguous re-derivation --
+    ///     same "trust the direction, not the exact number" treatment as
+    ///     dim6's approximate-DFA case.
+    ///   dim12 (liq_fragility): also bar-gated/historical-only (confirmed
+    ///     via source). Full-history (75,051-sample) replica: clean trace
+    ///     (top-5 events' local MAD all comfortably above the series' p1),
+    ///     n_tail=207 (0.28%, a real sample, not a handful of points),
+    ///     shape(xi)=-0.2276 (Weibull/bounded), theoretical endpoint 11.485.
+    ///     Set to 12.0 -- just past the wall, same "close to the theoretical
+    ///     ceiling" logic as dim1/dim9's finite-endpoint dims.
+    inline static constexpr std::array<float, N_DIMS> LOGZ_WINSOR_SIGMA_OVERRIDE = {
+        0.0f, 0.0f,
+        0.0f,   //  2  relative_range   audited, closed clean (0 exceedances on 18,761 real bars)
+        0.0f,
+        0.0f,   //  4  vol_convexity    audited, real-but-small ambiguous signal -- bound intentionally deferred
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+        12.0f,  // 12  liq_fragility    GPD-derived, clean trace, real margin above the theoretical wall
+        0.0f, 0.0f, 0.0f,
+    };
+
+    /// dim1 (burstiness_index) over-saturates under the uniform 6-sigma bound
+    /// (empirically: 7.63% rail-hit rate on a real tick-level replica against
+    /// mes_continuous_ticks.parquet, matching live telemetry's 7.85% within
+    /// 0.2pp) -- its tail tapers cleanly: full-series verification (corrected
+    /// methodology, see dim3 note below) confirms max|z|=35.86 across all
+    /// 1,467,159 real samples, only 0.1767% still beyond 25-sigma (matches
+    /// the originally-reported 0.18% almost exactly -- this number was always
+    /// sound). Widening the bound alone is the correct and sufficient fix.
+    ///
+    /// Set to 45.0 (not 25.0), the widest the evidence supports rather than a
+    /// conservative intermediate point: a Peaks-Over-Threshold GPD fit
+    /// (threshold u=6, n_tail=112,722/1,467,159=7.68%) gives shape xi=-0.1956
+    /// (Weibull/bounded domain -- a genuine finite theoretical endpoint,
+    /// u-scale/xi = 6-7.4076/(-0.1956) = 43.871), confirmed real rather than a
+    /// single-fit artifact via a 2000-resample bootstrap (2000/2000 draws
+    /// finite; endpoint distribution p5=43.25 p50=43.87 p95=44.52 max=45.12).
+    /// 45.0 clears the entire bootstrap distribution. Widening this far is
+    /// safe for the downstream consumer -- the 16D vector is a near-exclusive
+    /// Student-t HMM input (StudentTHMM, lbrnet/models/student_t_hmm.py),
+    /// whose M-step already downweights extreme observations via the
+    /// Peel & McLachlan (2000) EM weight w_i=(nu+dim)/(nu+delta_i) applied to
+    /// both the mean and (diagonal-only, so no cross-dim ill-conditioning)
+    /// covariance update -- confirmed by reading that file directly, not
+    /// assumed. See logs/rc_gemini.log CLAUDE_BRIEF_099/100 and
+    /// docs/superpowers/specs/2026-08-14-featurescaler-winsorization-and-dim3-shrinkage.md.
+    /// dim3 does NOT share dim1's bound -- an earlier version of this file did
+    /// (reasoning: "dim3's true tail is tame, max|z|=10.69, zero beyond
+    /// 25-sigma"), which was WRONG, traced to a real bug in the diagnostic
+    /// script that produced that number (constructed a std::vector<float>
+    /// from a byte range, implicitly converting each individual BYTE to a
+    /// float instead of reinterpreting 4-byte groups -- corrupted data, not a
+    /// real measurement). Corrected full-series check (proper
+    /// vector<char>+memcpy reinterpretation) shows dim3's true tail is
+    /// dramatically heavier than dim1's and shaped completely differently:
+    /// p50=9.50, p90=24.22 (already at dim1's entire bound), p99=271.61,
+    /// p99.9=393.49, max=490.19 across the real 1,467,159-sample series --
+    /// p90-to-max is a ~20x span vs. dim1's ~1.8x (19.78->35.86), i.e. a small
+    /// population of genuinely very large events, not a smoothly-tapering
+    /// tail. At 25-sigma, 0.1585% of ALL samples (9.77% of the 6-sigma
+    /// population) would still be flattened -- confirmed via cluster tracing
+    /// (see DIM_MACRO_SHRINKAGE_INDEX's Calibrate()/ratchet comments and
+    /// docs/superpowers/specs/2026-08-14-featurescaler-winsorization-and-dim3-shrinkage.md
+    /// D5) that these are genuine large market moves (healthy, non-degenerate
+    /// local/macro scales at the time), not estimator artifacts -- so per the
+    /// same Taleb/EVT reasoning that motivated D3 in the first place, they
+    /// must not be flattened either.
+    ///
+    /// Set to 4587.0 (not 500.0), the widest the evidence supports rather
+    /// than "observed max plus margin." Unlike dim1, dim3's GPD fit gives
+    /// shape xi=+0.6583 (Frechet/unbounded domain -- genuinely no finite
+    /// theoretical endpoint), so "as wide as findings can make it" cannot
+    /// mean a wall; it means the widest return level the actual collected
+    /// evidence supports without extrapolating past it. Anchored to a target
+    /// exceedance probability of p=1/N (N=1,467,159, the full historical
+    /// sample count already studied) -- "as extreme as an event we'd expect
+    /// to see about once across everything we've ever recorded" -- via the
+    /// standard POT return-level formula b = u + (scale/xi)*((p/zeta_u)^-xi - 1)
+    /// with u=6, scale=3.9710, zeta_u=n_tail/n_total=23,798/1,467,159:
+    /// p=1e-5 -> 783 | p=1/N~=6.8e-7 -> 4,587 (chosen) | p=1e-7 -> 16,228 |
+    /// p=1e-8 -> 73,889. Going past p=1/N stops being "what the findings
+    /// support" and becomes "how far we're willing to extrapolate beyond
+    /// them" -- a materially weaker justification, so 4,587 is the ceiling
+    /// this derivation defends. Safe for the downstream HMM for the same
+    /// reason as dim1's widening -- see that constant's doc comment.
+    ///
+    /// GENERALIZED 2026-08-14: was two single-dim mechanisms
+    /// (DIM_WIDE_WINSOR_INDEX/WIDE_STATE_WINSOR_SIGMA for dim1;
+    /// DIM3_WIDE_WINSOR_SIGMA hardcoded into the shrinkage branch for dim3),
+    /// now one per-dim lookup covering both paths. 0.0f = no override, use
+    /// STATE_WINSOR_SIGMA (6.0) -- the vast majority of dims have shown no
+    /// evidence of needing anything wider.
+    ///
+    /// dim9/dim0/dim7 re-derived 2026-08-14 on the CORRECTED, shrinkage-
+    /// blended z-series (SHRINKAGE_SCALE_MIN above) -- their first-pass GPD
+    /// candidates (dim9 xi=0.78/max|z|=1963 -> a 360,000-sigma "bound") were
+    /// fitted on the pre-shrinkage, scale-collapse-contaminated z and were
+    /// artifacts, not real tail signal. The corrected fit is dramatically
+    /// different in kind, not just magnitude: dim9's shape flips sign
+    /// entirely, from apparent unbounded-Frechet to genuinely bounded-
+    /// Weibull, same domain as dim1. Real 1,498,760-1,498,761-sample series
+    /// (2023-09-01..10-20), threshold u=6, same POT/GPD methodology as D7:
+    ///   dim9 (tail_index): n_tail=24,243 (1.62%), shape(xi)=-0.3259
+    ///     (Weibull/bounded), scale=1.2019 -> theoretical endpoint
+    ///     u-scale/xi = 6-1.2019/(-0.3259) = 9.687. Set to 10.0, just past
+    ///     the wall (same "close to the theoretical ceiling" logic as
+    ///     dim1's 45.0, no bootstrap ceremony needed for a ~1.7x widening
+    ///     this modest -- unlike dim1's originally-surprising 45, this
+    ///     result is small enough that the qualitative finding, xi<0 at
+    ///     all, is the load-bearing claim, not the third decimal digit).
+    ///   dim0 (log_variance_ratio): n_tail=17,584 (1.17%), shape(xi)=0.2533
+    ///     (Frechet/unbounded), scale=5.9447. p=1/N (N=1,498,761) return
+    ///     level = 261.66, same p=1/N convention as dim3. Set to 262.0.
+    ///   dim7 (micro_asymmetry): n_tail=20,994 (1.40%), shape(xi)=0.0580
+    ///     (barely Frechet, near-exponential), scale=2.2044. p=1/N return
+    ///     level = 35.69. Set to 36.0.
+    /// See docs/superpowers/specs/2026-08-14-featurescaler-winsorization-and-dim3-shrinkage.md
+    /// generalization addendum for the full derivation and the contaminated
+    /// first-pass numbers this supersedes.
+    ///
+    /// dim8 (fisher_info) audited 2026-08-14, no shrinkage needed (clean
+    /// scale-collapse trace): raw is exactly bounded [-2.6467,+2.6467] by
+    /// construction (cfc::ComputeFisherInformation's own +-0.99 clamp,
+    /// verified against source, not assumed), same "genuinely bounded"
+    /// category as dim1/dim9. Tick-level replica (sampled every 20 ticks,
+    /// TS1/240min), n=48,308 valid z, n_tail=330 (0.68%), shape(xi)=-1.2574
+    /// (Weibull), fitted endpoint 14.216 -- close to but not past the single
+    /// observed max (14.22), a smaller and less certain tail sample than
+    /// dim1/dim3/dim9/dim0/dim7's (330 vs 17,584-112,722), so set with real
+    /// margin (20.0, ~40% above the fitted endpoint) rather than sitting
+    /// right at the wall the way dim1's bootstrap-confirmed 45.0 could.
+    inline static constexpr std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {
+        10.0f,    //  0  log_variance_ratio   GPD-derived on corrected z, just past the theoretical wall
+        45.0f,    //  1  burstiness_index     GPD+bootstrap derived (D7)
+        0.0f,     //  2  relative_range
+        4587.0f,  //  3  correction_action    GPD-derived, p=1/N return level (D7)
+        0.0f,     //  4  vol_convexity
+        0.0f,     //  5  lempel_ziv           static scaler, not applicable
+        0.0f,     //  6  hurst_exponent       shrinkage enabled, bound intentionally NOT set -- see SHRINKAGE_SCALE_MIN[6]'s caveat
+        36.0f,    //  7  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
+        20.0f,    //  8  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
+        262.0f,   //  9  tail_index           GPD-derived on corrected z, p=1/N return level
+        0.0f,     // 10  skewness_idx         audited, negligible clip rate, no action needed
+        0.0f,     // 11  amihud_illiquidity   audited, 0.000% production clip rate, no action needed
+        0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
+        0.0f,     // 13  recurrence_rate      static scaler, not applicable
+        0.0f,     // 14  fractal_dim          static scaler, not applicable
+        0.0f,     // 15  mean_rev_z           audited, negligible clip rate, no action needed
+    };
     static constexpr size_t RANK_WINDOW = 500;                   ///< Max rolling window (scratch array sizing + warmup gate)
     static constexpr size_t EXPECTED_LOGZ_DIMS = 3;
     static constexpr size_t RECALIBRATION_INTERVAL = 5000;       ///< Re-examine adaptive floors every N samples
@@ -192,6 +510,30 @@ struct FeatureScaler {
     /// same exact value, not merely that a held value repeated).
     std::array<float, N_DIMS> dominanceRatio = {};
 
+    /// Long-horizon EWMA scale reference (DIM_MACRO_SHRINKAGE_INDEX only;
+    /// harmless zero-cost slot for other dims). Seeded from bufScale at
+    /// Calibrate() time, then evolves continuously per-tick via
+    /// MACRO_SCALE_DECAY -- deliberately NOT reseeded at Recalibrate(), since
+    /// a periodic snapshot is exactly the "loses memory across regime
+    /// persistence" property this exists to avoid.
+    std::array<float, N_DIMS> macroScaleEwma = {};
+
+    /// Diagnostic-only: the raw pre-winsorization z computed on the last live
+    /// (non-carry-forward) call, before ToSoftLogZ/ENERGY_WINSOR clamp it.
+    /// Same rationale as latestLogMedian/latestLogScale above -- the public
+    /// result[] is always already clamped to +-6, so an over-amplified scale
+    /// is otherwise invisible from outside the class.
+    std::array<float, N_DIMS> lastRawZ = {};
+
+    /// Diagnostic-only (DIM_MACRO_SHRINKAGE_INDEX only; harmless unused slots
+    /// for other dims): the live local madScale and shrinkage weight w behind
+    /// the last scale_effective blend, otherwise reconstructable only by
+    /// re-deriving them from lastRawZ/macroScaleEwma, which isn't possible in
+    /// general (two unknowns, one equation). Added to trace dim3's remaining
+    /// event clusters with the same precision D4's investigation used.
+    std::array<float, N_DIMS> lastLocalMad = {};
+    std::array<float, N_DIMS> lastShrinkageWeight = {};
+
     bool calibrated = false;                               ///< Set once at warmup completion
 
     bool modeMapValidated = false;
@@ -225,8 +567,8 @@ struct FeatureScaler {
         return std::log1p(magnitude * LOG_BPS);
     }
 
-    static float ToSoftLogZ(float z) {
-        const float zw = std::clamp(z, -STATE_WINSOR_SIGMA, STATE_WINSOR_SIGMA);
+    static float ToSoftLogZ(float z, float winsorSigma = STATE_WINSOR_SIGMA) {
+        const float zw = std::clamp(z, -winsorSigma, winsorSigma);
         return std::copysign(std::log1p(std::abs(zw)), zw);
     }
 
@@ -369,6 +711,74 @@ struct FeatureScaler {
 
                 const auto [median, madScale] = RobustLocation(stateBuf);
 
+                // Shrinkage-blended scale instead of the binary floor-gate
+                // below, for any dim with a nonzero SHRINKAGE_SCALE_MIN entry
+                // -- see that array's doc comment.
+                if (SHRINKAGE_SCALE_MIN[i] > 0.0f) {
+                    // Bootstrap guard: before Calibrate() has ever seeded
+                    // macroScaleEwma, it sits at its zero-initialized default,
+                    // so max(macroScaleEwma, ABSOLUTE_FLOOR) would clamp to the
+                    // bare 1e-8 floor and any nonzero raw value divided by that
+                    // explodes (measured: |z| ~ 6.8e7 on real data before the
+                    // first Calibrate() fires). The old floor-gate handled this
+                    // for free -- madScale==0 always routed to carry-forward,
+                    // which returns a safe 0.0f before hasValidScaled is ever
+                    // true. Replicate that safety explicitly here instead of
+                    // attempting a blend with no real anchor to blend against.
+                    if (macroScaleEwma[i] <= 0.0f) {
+                        result[i] = 0.0f;
+                        lastRawZ[i] = 0.0f;
+                        calibration[i].carryForwardCount = 0;
+                        continue;
+                    }
+
+                    // Compression ratio in log-space, computed against the
+                    // PRE-update macro reference: how far has the live local
+                    // MAD shrunk relative to its own long-horizon anchor?
+                    // ratio == midpoint -> w == 0.5; ratio >> midpoint (healthy,
+                    // local as/more dispersed than its own history) -> w -> 1
+                    // (trust local); ratio << midpoint (compressed regime) -> w -> 0
+                    // (shrink toward macroScaleEwma).
+                    const float macroRef = std::max(macroScaleEwma[i], ABSOLUTE_FLOOR);
+                    const float compressionRatio = madScale / macroRef;
+                    const float logRatio = std::log(std::max(compressionRatio, ABSOLUTE_FLOOR)
+                        / SHRINKAGE_RATIO_MIDPOINT);
+                    const float w = 1.0f / (1.0f + std::exp(-SHRINKAGE_STEEPNESS * logRatio));
+                    lastLocalMad[i] = madScale;
+                    lastShrinkageWeight[i] = w;
+
+                    // Ratchet: gate the anchor's own update rate by w. A plain,
+                    // always-on EWMA erodes right along with madScale during a
+                    // sufficiently long quiet regime (measured: 0.093 -> 0.031
+                    // over ~35k samples leading into the known pathological
+                    // event, ~3x decay despite a ~13.9k-sample half-life) --
+                    // which undermines the whole point of having a "long-
+                    // horizon, regime-resistant" anchor. Scaling the update
+                    // weight by w means the anchor only tracks fresh data
+                    // during periods it currently judges healthy, and nearly
+                    // freezes while local is judged compressed -- same
+                    // principle as GARCH's omega being a stable, broadly-
+                    // estimated floor rather than something that keeps
+                    // drifting downward with every quiet spell.
+                    const float updateWeight = (1.0f - MACRO_SCALE_DECAY) * w;
+                    macroScaleEwma[i] = std::max(
+                        (1.0f - updateWeight) * macroScaleEwma[i] + updateWeight * std::abs(current - median),
+                        SHRINKAGE_SCALE_MIN[i]);
+
+                    const float scaleEffective = std::max(
+                        w * madScale + (1.0f - w) * macroRef, ABSOLUTE_FLOOR);
+
+                    calibration[i].carryForwardCount = 0;
+                    const float z = (current - median) / scaleEffective;
+                    lastRawZ[i] = z;
+                    const float shrinkWinsorSigma = (DIM_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
+                        ? DIM_WINSOR_SIGMA_OVERRIDE[i] : STATE_WINSOR_SIGMA;
+                    result[i] = ToSoftLogZ(z, shrinkWinsorSigma);
+                    calibration[i].lastValidScaled = result[i];
+                    calibration[i].hasValidScaled = true;
+                    continue;
+                }
+
                 if (madScale < calibration[i].minScaleFloor) {
                     // Shannon decay: carry-forward value decays toward neutral
                     calibration[i].carryForwardCount++;
@@ -385,7 +795,10 @@ struct FeatureScaler {
 
                 calibration[i].carryForwardCount = 0;  // Reset on live signal
                 const float z = (current - median) / madScale;
-                result[i] = ToSoftLogZ(z);
+                lastRawZ[i] = z;
+                const float winsorSigma = (DIM_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
+                    ? DIM_WINSOR_SIGMA_OVERRIDE[i] : STATE_WINSOR_SIGMA;
+                result[i] = ToSoftLogZ(z, winsorSigma);
                 calibration[i].lastValidScaled = result[i];
                 calibration[i].hasValidScaled = true;
                 continue;
@@ -421,7 +834,9 @@ struct FeatureScaler {
 
             calibration[i].carryForwardCount = 0;  // Reset on live signal
             const float zLog = (currentLog - median) / madScale;
-            result[i] = std::clamp(zLog, -ENERGY_WINSOR_SIGMA, ENERGY_WINSOR_SIGMA);
+            const float energyWinsorSigma = (LOGZ_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
+                ? LOGZ_WINSOR_SIGMA_OVERRIDE[i] : ENERGY_WINSOR_SIGMA;
+            result[i] = std::clamp(zLog, -energyWinsorSigma, energyWinsorSigma);
             calibration[i].lastValidScaled = result[i];
             calibration[i].hasValidScaled = true;
         }
@@ -462,6 +877,14 @@ struct FeatureScaler {
             }
             const float floorToUse = (i == DIM_AMIHUD_INDEX) ? AMIHUD_ABSOLUTE_FLOOR : ABSOLUTE_FLOOR;
             calibration[i].minScaleFloor = std::max(floorToUse, bufScale * RELATIVE_FLOOR_FRACTION);
+            // One-time seed; the live UpdateAndNormalize() branch evolves it
+            // per-tick thereafter for any dim with shrinkage enabled. Floored
+            // only for shrinkage-enabled dims -- SHRINKAGE_SCALE_MIN[i] is
+            // empirically derived per-dim, 0.0f (no-op floor) for every
+            // other dim (macroScaleEwma is otherwise an unused, harmless
+            // slot for them).
+            macroScaleEwma[i] = (SHRINKAGE_SCALE_MIN[i] > 0.0f)
+                ? std::max(bufScale, SHRINKAGE_SCALE_MIN[i]) : bufScale;
         }
         calibrated = true;
     }
@@ -499,6 +922,10 @@ struct FeatureScaler {
         latestLogScale.fill(0.0f);
         calibration = {};
         dominanceRatio.fill(0.0f);
+        macroScaleEwma.fill(0.0f);
+        lastRawZ.fill(0.0f);
+        lastLocalMad.fill(0.0f);
+        lastShrinkageWeight.fill(0.0f);
         calibrated = false;
         modeMapValidated = false;
         modeMapIsValid = false;
