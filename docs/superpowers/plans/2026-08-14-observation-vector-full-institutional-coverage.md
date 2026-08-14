@@ -74,16 +74,27 @@ rates from `CLAUDE_BRIEF_095`'s full 2.08M-sample scan) before starting any task
 
 ---
 
-### Task 1: Production validation of D1-D7 (Unit E)
+### Task 1: Production validation of D1-D7 (Unit E) — **IN PROGRESS 2026-08-14**
 
 **Files:** none modified — this task is a live-collection run plus a comparison script, not a code
 change.
 
-- [ ] **Step 1: Confirm with the user before deploying** — this is a live-system action
-  (`./deploy_mindfultrader.sh`), not a reversible local edit. Do not proceed without explicit
-  confirmation for this specific run.
+- [x] **Step 1: Confirm with the user before deploying** — user explicitly ran this overnight
+  ("I will run the DLL overnight while I sleep").
 
-- [ ] **Step 2: Deploy and collect**
+- [x] **Step 2: Deploy and collect** — EventDataCollector Phase 1 replay running since
+  2026-08-14 16:31:35, replaying ~2023-08-16 onward (not a current-dates run). See
+  `SCRATCHPAD.md` for the full session state, `LockA` warmup trace, and preliminary
+  `.context` preflight findings (D1 sentinel-collapse fix confirmed working on real data;
+  `dim4`'s new 12.0 bound observed engaging; `dim2` observed hitting its flat -6.0 bound at
+  tick level, a minor correction to that dim's earlier "0 exceedances" bar-close-only finding;
+  `dim6`'s heavy tail not yet observed in the ~50K-row sample checked so far — replay hadn't
+  reached the September 2023 window the derivation was based on).
+
+- [ ] **Step 3: Compare live telemetry against the native-test predictions** — NOT yet done
+  precisely as scoped below; only a general `context_preflight.py` structural scan was run so
+  far (see `SCRATCHPAD.md`). This step's specific dim1/dim3 rail-hit-rate methodology still
+  needs to be run once the replay has progressed further / on the fuller file.
 
 ```bash
 ./deploy_mindfultrader.sh
