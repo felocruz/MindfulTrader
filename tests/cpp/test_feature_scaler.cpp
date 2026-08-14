@@ -400,22 +400,37 @@ int main() {
               maxAbsZ < 150.0);
     }
 
-    // --- dim6 (hurst_exponent): Task 3, same scale-collapse signature found
-    // via a tick-level DFA replica (sampled every 20 ticks, TS1/240min).
-    // Approximate formula (see SHRINKAGE_SCALE_MIN's doc comment) -- assert
-    // shrinkage keeps real-data max|z| bounded and sane, not a tight number.
+    // --- dim6 (hurst_exponent): resolved via an EXACT DFA replica (not the
+    // earlier approximate one) plus a tail-conditional noise decomposition
+    // that ruled out a DFA-instability artifact and confirmed a genuine,
+    // large Frechet tail (logs/rc_gemini.log CLAUDE_BRIEF_101/102,
+    // GEMINI_BRIEF_101/103_RESPONSE). Same rail-taper pattern dim1/dim8's
+    // tests use -- dim6's confirmed real tail is unusually heavy (14.8%
+    // post-shrinkage clip rate, ~10x every other dim), so this fixture
+    // still shows meaningful |z|>=6 activity even post-shrinkage; the
+    // load-bearing assertion is that the WIDE rail (345) tapers far below
+    // the 6-sigma rate, not that 6-sigma itself stays rare the way it does
+    // for every other dim.
     {
         FeatureScaler fs;
+        size_t hits6 = 0, hitsRail = 0;
         double maxAbsZ = 0.0;
         for (size_t i = 0; i < DIM6_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
             obs[6] = DIM6_FIXTURE_RAW[i];
             fs.UpdateAndNormalize(obs);
-            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[6])));
+            const float absZ = std::fabs(fs.lastRawZ[6]);
+            maxAbsZ = std::max(maxAbsZ, static_cast<double>(absZ));
+            if (absZ >= 6.0f) ++hits6;
+            if (absZ >= FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[6]) ++hitsRail;
         }
-        std::printf("  [info] dim6 real-data max|z| after shrinkage: %.2f\n", maxAbsZ);
-        check("dim6: shrinkage keeps real-data max|z| bounded (no unbounded blowup)",
-              maxAbsZ < 1000.0);
+        const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM6_FIXTURE_N);
+        const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM6_FIXTURE_N);
+        std::printf("  [info] dim6 real-data max|z|=%.2f  |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
+                    maxAbsZ, rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[6], rateRail * 100.0);
+        check("dim6: shrinkage keeps real-data max|z| bounded (no unbounded blowup)", maxAbsZ < 1000.0);
+        check("dim6: |z|>=DIM_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
+              rateRail < rate6 / 2.0 || rate6 == 0.0);
     }
 
     // --- dim8 (fisher_info): Task 3, clean scale-collapse trace (no

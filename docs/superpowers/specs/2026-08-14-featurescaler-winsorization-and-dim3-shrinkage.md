@@ -441,6 +441,67 @@ sample. Regression-verified: `dim3`'s numbers unchanged, `dim12`'s LOGZ bound un
 shrinkage branch (its `SHRINKAGE_SCALE_MIN[12]` stays `0.0f`, so it never enters that branch). Native
 suite green, `build_dll.sh` clean.
 
+### D9. `dim6`: exact-formula DFA replica reveals a genuinely elevated tail, empirically confirmed (not a re-estimation-noise artifact) via a Gemini-assisted tail-conditional diagnostic — **IMPLEMENTED**
+
+`dim6` was the one dim left with a disclosed caveat after D8: its raw calculator
+(`CalculateHurstExponent`) runs DFA (detrended fluctuation analysis) -- profile construction, then
+non-overlapping-segment linear regression across a range of box sizes, then a final log-fluctuation vs
+log-scale regression. The first replica was a Python re-implementation approximate in spirit, not an
+exact port, and was flagged as such rather than trusted numerically.
+
+Went back and ported the exact algorithm: every segment boundary, the exact
+`step=(maxScale-minScale>50)?2:1` scale-sampling rule, the closed-form per-segment least-squares
+identical to the C++ (not `np.polyfit`), `length=100` (representative `macro_window_n`), `minScale=8`
+(the literal call-site constant). The exact replica's raw range came out much narrower (`[0.2696,
+0.6974]`) than the earlier approximation -- itself a signal the first attempt had been materially off,
+not just imprecise.
+
+The exact-formula result was surprising enough to warrant its own investigation: pre-shrinkage
+`|z|>=6` rate `24.851%`, `max|z|=3085.93` -- an order of magnitude worse than any other dim's pre-fix
+state. Two competing explanations: genuine tail signal (same category as `dim1`/`dim3`'s original
+findings, just far more extreme), or a DFA-instability artifact from re-estimating a slow, macro-scale
+statistic every tick against a window that differs by a single point from the previous call. Wrote this
+up for Gemini (`logs/rc_gemini.log` `CLAUDE_BRIEF_101`), who identified real, checkable literature
+grounding (DFA's known 1-point-perturbation sensitivity in short windows, `s_max<=N/4` scale-range
+adequacy rules -- the latter verified exactly against the real code, `N=100 -> s_max=25`) and proposed a
+concrete empirical test: compare intra-bar tick-to-close Hurst movement (a noise measure) between
+closed-bar-cadence and tick-cadence evaluation, expressed as a noise-to-signal ratio (NSR).
+
+Ran it. The **global** NSR (`0.0937`) came out inconclusive by Gemini's own proposed thresholds
+(`<=0.05` signal, `>=0.20` noise) -- a real result, but an average over the whole series doesn't speak to
+a tail-conditional problem. Refined it: split the same comparison by whether each sample's local rolling
+MAD sat at/below its own series' 5th percentile ("collapsed") or above it ("normal"), then compared
+intra-bar noise *within* each group (`CLAUDE_BRIEF_102`):
+
+```
+Collapsed-regime: mean|diff|=0.007471  std(diff)=0.009192
+Normal-regime:    mean|diff|=0.035155  std(diff)=0.039423
+Ratio (collapsed std / normal std): 0.233 -- noise is 4.3x SMALLER during collapse
+```
+
+This is the opposite of what a re-estimation-noise artifact predicts (noise should grow, or at least not
+shrink, during the episodes producing extreme z-scores). Gemini concurred (`GEMINI_BRIEF_103`
+response, appended as part of the `102` thread): the DFA-instability hypothesis is empirically dead, and
+the mechanism is the same scale-collapse-then-modest-deviation pattern D2/D4 originally found for
+`dim3` and D8 reconfirmed on four more dims -- `dim6` just spends far more of its time in tight,
+quiet-then-shift dynamics than any of them, which is why its post-shrinkage residual is an order of
+magnitude above every other dim's post-fix state rather than a new failure category.
+
+Shrinkage was already live (from the earlier approximate pass); re-derived its floor from the exact
+replica's local-MAD distribution (`0.000145`, 5th percentile). Post-shrinkage: `|z|>=6` rate
+`14.803%` (down from `24.851%`), `max|z|=160.11` (down from `3085.93`, shrinkage alone cut the worst
+events 19x), a real, large tail: `n_tail=11,023` (14.80% -- the biggest confirmed-genuine tail sample of
+any dim in this initiative), `shape(xi)=+0.3014` (Frechet/unbounded), `scale=6.5672`. `p=1/N`
+(`N=74,464`) return level `344.53`, same convention as `dim3`/`dim0`/`dim7`. Set
+`DIM_WINSOR_SIGMA_OVERRIDE[6]=345.0`.
+
+Fixture regenerated from the exact replica (`fixtures_dim6_raw.h`, replacing the approximate-formula
+version); test upgraded from a bare "stays bounded" check to the same rail-taper pattern
+dim1/dim8/dim9's tests use, adapted to acknowledge `dim6`'s genuinely elevated (not artifact-driven)
+6-sigma rate on this fixture. Re-verified end to end: native suite green, `build_dll.sh` clean. This
+closes the last disclosed gap in the full-coverage audit -- all 16 dims are now resolved with full
+confidence, zero caveats remaining.
+
 ## Implementation: five real bugs found and fixed during test-driven development, not five iterations of tuning
 
 Built a native (`g++`, no Sierra Chart deps) characterization test against a real, contiguous
@@ -511,16 +572,20 @@ z-layer bounds this section covers.
 
 ## Status / What's NOT done
 
-- **D1 through D8 are all implemented, test-covered, and verified against the real project build**
+- **D1 through D9 are all implemented, test-covered, and verified against the real project build**
   (`include/FeatureScaler.h`, `include/CarryForwardCalculators.h`, `src/StudyHelperFunctions.cpp`,
   `tests/cpp/test_feature_scaler.cpp`, `tests/cpp/test_carry_forward_calculators.cpp`,
   `tests/cpp/fixtures_dim1_raw.h`, `tests/cpp/fixtures_dim3_raw.h`, `tests/cpp/fixtures_dim9_raw.h`,
-  `tests/cpp/fixtures_dim0_raw.h`, `tests/cpp/fixtures_dim7_raw.h`). Full native suite passes, zero
-  regressions; `build_dll.sh` succeeds cleanly after each. Final state: `dim1` raw clamp `[-6,+6]`
-  (unchanged, D6), z-layer bound `45` (D7); `dim3` raw clamp `[-10,+6]` (D6), z-layer bound `4587`
-  (D7); `dim9`/`dim0`/`dim7` gained shrinkage (D8, generalized from `dim3`'s D2/D4) plus their own
-  z-layer bounds (`10`/`262`/`36`, derived on the corrected z per D8) — none shared across dims, at
-  either layer, for any of the five.
+  `tests/cpp/fixtures_dim0_raw.h`, `tests/cpp/fixtures_dim7_raw.h`, `tests/cpp/fixtures_dim6_raw.h`,
+  `tests/cpp/fixtures_dim4_raw.h`, `tests/cpp/fixtures_dim12_raw.h`, `tests/cpp/fixtures_dim8_raw.h`).
+  Full native suite passes, zero regressions; `build_dll.sh` succeeds cleanly after each. Final state:
+  `dim1` raw clamp `[-6,+6]` (unchanged, D6), z-layer bound `45` (D7); `dim3` raw clamp `[-10,+6]` (D6),
+  z-layer bound `4587` (D7); `dim9`/`dim0`/`dim7` gained shrinkage (D8, generalized from `dim3`'s D2/D4)
+  plus their own z-layer bounds (`10`/`262`/`36`); `dim4` gained shrinkage too (D8 addendum, first LOGZ
+  dim, bound `12`); `dim6` gained shrinkage plus a GPD-derived bound of `345` after an exact-formula
+  replica and a Gemini-assisted diagnostic ruled out an estimation-noise artifact (D9); `dim8`/`dim12`
+  needed only a wider bound, no shrinkage (`20`/`12`) — none shared across dims, at either layer, for
+  any of them.
 - **`dim9`/`dim7` are DONE, not open** — corrected from an earlier draft of this doc. Gemini's stated
   prior (25.0/12.0) was checked and superseded: both needed the D8 shrinkage generalization first,
   then their own GPD-derived bounds (`10.0`/`36.0`), not Gemini's literature-only numbers.
@@ -546,26 +611,28 @@ z-layer bounds this section covers.
   Never reopened afterward. See
   `docs/superpowers/specs/2026-08-14-observation-vector-full-institutional-coverage-spec.md`'s
   Purpose section for the full correction.
-- **Remaining SOFTLOGZ/LOGZ dims (0 is now done via D8; 2, 4, 6, 8, 10, 11, 12, 15 remain) and the
-  LOGZ-path per-dim override mechanism are tracked in the full-coverage spec/plan above, not this
-  one** — this spec's scope is `dim1`/`dim3`/`dim9`/`dim0`/`dim7` specifically.
+- **All 16 dims in the observation vector are now resolved with full confidence — see the
+  full-coverage spec/plan for the complete per-dim record**; this spec's own scope is
+  `dim1`/`dim3`/`dim9`/`dim0`/`dim7`/`dim4`/`dim6` specifically (the dims that needed shrinkage or a
+  D2/D4/D8/D9-style investigation). `dim8`/`dim12`/`dim2`/`dim10`/`dim11`/`dim15` are covered in the
+  full-coverage spec directly.
 
 ## Recommendation
 
-D1 through D8 are code-complete, test-verified, and build-verified against the real project;
+D1 through D9 are code-complete, test-verified, and build-verified against the real project;
 `dim3`'s remaining tail is traced and closed (one real artifact fixed via D4, three genuine tail
 events correctly preserved, D5 corrected the winsorization bound to match dim3's actual measured
 tail rather than a borrowed, too-narrow value from dim1, D6 fixed an already-occurring raw-clamp
 truncation, D7 widened both z-layer bounds to the maximum each dim's own findings can defend after
-directly verifying the downstream Student-t HMM's own robustness, and D8 generalized D2/D4's
-shrinkage mechanism to `dim9`/`dim0`/`dim7` after the same scale-collapse signature was traced on
-all three independently — catching that their first-pass GPD bounds were fitted on contaminated
-data before shipping a wrong number). Nothing blocks moving forward. Not yet deployed or validated
-against a fresh live collection run — next step is
-`./deploy_mindfultrader.sh` and a fresh collection run to empirically confirm all eight fixes in
-production the way this investigation confirmed them in a native test harness — see
-`docs/superpowers/specs/2026-08-14-observation-vector-full-institutional-coverage-spec.md`'s Unit E
-for that task. The remaining SOFTLOGZ/LOGZ dims (2, 4, 6, 8, 10, 11, 12, 15) are that same spec's
-Units B/C, using this doc's D8-generalized shrinkage mechanism and the same real-data-first
-methodology — do not implement bounds for any of them from a literature prior alone, same
-discipline that caught dim9/dim0/dim7's contaminated first-pass numbers before they shipped.
+directly verifying the downstream Student-t HMM's own robustness, D8 generalized D2/D4's shrinkage
+mechanism to `dim9`/`dim0`/`dim7`/`dim4` after the same scale-collapse signature was traced on each
+independently, and D9 closed the last holdout — `dim6` — via an exact-formula DFA replica and a
+Gemini-assisted tail-conditional diagnostic that empirically ruled out an estimation-instability
+artifact before any bound shipped). Nothing blocks moving forward, and the full 16D vector now
+carries zero disclosed caveats. Not yet deployed or validated against a fresh live collection run —
+next step is `./deploy_mindfultrader.sh` and a fresh collection run to empirically confirm every fix
+in production the way this investigation confirmed them in a native test harness — see
+`docs/superpowers/specs/2026-08-14-observation-vector-full-institutional-coverage-spec.md`'s Unit D
+for that task, plus that spec's Unit E for the still-open Gang-doc/governance-doc sync — the same
+verify-before-shipping discipline that caught `dim9`/`dim0`/`dim7`'s contaminated first-pass numbers
+and `dim6`'s false noise hypothesis before either was allowed to ship.

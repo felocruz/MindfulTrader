@@ -173,7 +173,7 @@ struct FeatureScaler {
         0.00007f,   //  3  correction_action    original D4 derivation
         0.211521f,  //  4  vol_convexity        LOGZ dim, confirmed collapse signature (see LOGZ generalization note below)
         0.0f,       //  5  lempel_ziv           disabled -- static scaler, not applicable
-        0.00297f,   //  6  hurst_exponent       confirmed collapse signature -- see caveat below
+        0.000145f,  //  6  hurst_exponent       confirmed collapse signature, exact-formula-derived (see below)
         0.00733f,   //  7  micro_asymmetry      confirmed collapse signature (z=438 traced)
         0.0f,       //  8  fisher_info          audited 2026-08-14 -- clean, no collapse signature; needs only a wider bound (DIM_WINSOR_SIGMA_OVERRIDE), not shrinkage
         0.0438f,    //  9  tail_index           confirmed collapse signature (z=1963 traced)
@@ -184,22 +184,36 @@ struct FeatureScaler {
         0.0f,       // 14  fractal_dim          disabled -- static scaler, not applicable
         0.0f,       // 15  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
     };
-    /// dim6's floor (0.00297) comes from a Python re-implementation of the DFA
-    /// (detrended fluctuation analysis) algorithm, not the exact production
-    /// C++ (`CalculateHurstExponent`, `StudyHelperFunctions.cpp:2489`) --
-    /// DFA's profile-construction/box-regression logic is materially more
-    /// complex to replicate exactly than dim0/dim9/dim7's simpler formulas,
-    /// unlike those three. The QUALITATIVE finding (scale-collapse signature
-    /// present) is trusted -- it is now the same signature independently
-    /// confirmed on 4 of 5 dims checked with this trace method, a
-    /// format-independent property of the shared scale-estimation mechanism,
-    /// not sensitive to DFA's exact box-counting details. The SPECIFIC floor
-    /// value carries more uncertainty than dim3/dim9/dim0/dim7's exact-formula
-    /// derivations; `DIM_WINSOR_SIGMA_OVERRIDE[6]` is deliberately left at the
-    /// default (0.0f) below rather than shipping a bound derived from the same
-    /// approximate replica -- re-derive both once an exact-formula tick
-    /// replica or real post-D8 live telemetry exists (Task 1's fresh
-    /// collection run, once it happens, is the natural source).
+    /// dim6's floor (0.000145) was RE-DERIVED 2026-08-14 (same-day follow-up)
+    /// against an EXACT port of the production DFA algorithm
+    /// (`CalculateHurstExponent`, `StudyHelperFunctions.cpp:2489`) -- the
+    /// first attempt used a Python re-implementation approximate in spirit,
+    /// not an exact port (different scale-selection sampling), and was
+    /// correctly flagged as lower-confidence pending this re-derivation.
+    /// The exact replica ported every detail: the `step=(maxScale-minScale>50)
+    /// ?2:1` scale-sampling rule, the closed-form per-segment least-squares
+    /// identical to the C++ (not `np.polyfit`), `length=100`
+    /// (representative `macro_window_n`), `minScale=8` (the literal call-site
+    /// constant). Result was surprising enough to warrant a dedicated
+    /// investigation (`logs/rc_gemini.log` `CLAUDE_BRIEF_101`/`102`,
+    /// `GEMINI_BRIEF_101`/`103_RESPONSE`): pre-shrinkage `|z|>=6` rate was
+    /// `24.851%` with `max|z|=3085.93` -- an order of magnitude worse than
+    /// any other dim's pre-fix state. Two competing hypotheses: genuine tail
+    /// signal, or a DFA-instability artifact of re-estimating a slow,
+    /// macro-timescale statistic every tick. Settled empirically via a
+    /// tail-conditional noise decomposition (compare intra-bar tick-to-close
+    /// Hurst movement during collapsed-local-MAD periods vs normal periods):
+    /// noise was **4.3x SMALLER** during the exact episodes producing the
+    /// extreme z-scores (`std=0.0092` vs `0.0394`), the opposite of what an
+    /// instability artifact would show -- ruling out the DFA-noise hypothesis
+    /// and confirming this is the same scale-collapse-then-modest-deviation
+    /// mechanism as dim3/dim9/dim0/dim7/dim4, just far more prevalent for
+    /// this dim (quiet Hurst clusters are common, real regime shifts from
+    /// them are frequent). Post-shrinkage: `|z|>=6` rate `14.803%`,
+    /// `max|z|=160.11` (shrinkage alone cut the worst events 19x), a real,
+    /// large (`n_tail=11,023`) GPD-characterizable tail, `shape(xi)=+0.3014`
+    /// (Frechet/unbounded) -- see `DIM_WINSOR_SIGMA_OVERRIDE[6]`'s comment
+    /// for the resulting bound.
     /// Compression-ratio sigmoid center: madScale/macroScaleEwma == 0.30 is
     /// where "trust local less" begins -- i.e. the local window's dispersion
     /// has visibly compressed to under a third of its own long-run typical
@@ -373,6 +387,16 @@ struct FeatureScaler {
     /// dim1/dim3/dim9/dim0/dim7's (330 vs 17,584-112,722), so set with real
     /// margin (20.0, ~40% above the fitted endpoint) rather than sitting
     /// right at the wall the way dim1's bootstrap-confirmed 45.0 could.
+    ///
+    /// dim6 (hurst_exponent) resolved 2026-08-14 -- see SHRINKAGE_SCALE_MIN's
+    /// doc comment for the full investigation (exact-formula DFA replica,
+    /// tail-conditional noise decomposition ruling out a DFA-instability
+    /// artifact, `logs/rc_gemini.log` CLAUDE_BRIEF_101/102,
+    /// GEMINI_BRIEF_101/103_RESPONSE). Post-shrinkage: n_tail=11,023 (14.80%
+    /// -- the largest confirmed-genuine tail of any dim in this initiative),
+    /// shape(xi)=+0.3014 (Frechet/unbounded), scale=6.5672. p=1/N
+    /// (N=74,464) return level = 344.53, same convention as dim3/dim0/dim7.
+    /// Set to 345.0.
     inline static constexpr std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {
         10.0f,    //  0  log_variance_ratio   GPD-derived on corrected z, just past the theoretical wall
         45.0f,    //  1  burstiness_index     GPD+bootstrap derived (D7)
@@ -380,7 +404,7 @@ struct FeatureScaler {
         4587.0f,  //  3  correction_action    GPD-derived, p=1/N return level (D7)
         0.0f,     //  4  vol_convexity
         0.0f,     //  5  lempel_ziv           static scaler, not applicable
-        0.0f,     //  6  hurst_exponent       shrinkage enabled, bound intentionally NOT set -- see SHRINKAGE_SCALE_MIN[6]'s caveat
+        345.0f,   //  6  hurst_exponent       GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition
         36.0f,    //  7  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
         20.0f,    //  8  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
         262.0f,   //  9  tail_index           GPD-derived on corrected z, p=1/N return level

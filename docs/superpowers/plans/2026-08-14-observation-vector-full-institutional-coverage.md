@@ -189,12 +189,21 @@ needed: its own source comment confirms it's bar-gated/historical-only by design
 explicitly, unlike every other dim checked so far), so its already-near-zero production clip rate
 (`0.000%`) could be trusted directly.
 
-- [x] **Step 1: dim6 (`hurst_exponent`, 3.256%)** — TS1, tick-level DFA replica (sampled every 20 ticks
-  — Python re-implementation of DFA, not the exact C++ algorithm, disclosed as a real limitation).
-  Confirmed the scale-collapse signature — 4th independent confirmation of the same mechanism D4
-  originally found for `dim3`. Enabled shrinkage (`floor=0.00297`). **z-layer bound deliberately NOT
-  set** — the qualitative fix is trusted, the specific number from an approximate-formula replica is
-  not; flagged for re-derivation once a faithful DFA replica or real post-D8 live telemetry exists.
+- [x] **Step 1: dim6 (`hurst_exponent`, 3.256%)** — TS1, tick-level DFA replica. First pass used a
+  Python re-implementation approximate in spirit, not an exact port; confirmed the scale-collapse
+  signature (4th confirmation) and enabled shrinkage, but deliberately left the z-layer bound unset
+  pending better data. **Superseded same day**: built an exact port of `CalculateHurstExponent`
+  (every segment boundary, exact scale-sampling rule, closed-form regression matching the C++), which
+  revealed a genuinely elevated tail (pre-shrinkage `|z|>=6` rate `24.851%`, `max|z|=3085.93` — an
+  order of magnitude worse than any other dim). Consulted Gemini (`logs/rc_gemini.log`
+  `CLAUDE_BRIEF_101`/`102`, `GEMINI_BRIEF_101`/`103_RESPONSE`) to distinguish genuine tail signal from
+  a DFA-instability artifact; a tail-conditional noise decomposition (Gemini's proposed diagnostic,
+  refined to condition on the local-MAD collapse rather than averaging globally) empirically ruled out
+  the instability hypothesis — intra-bar noise was 4.3x *smaller*, not larger, during the exact
+  episodes producing the extreme z-scores. Re-derived the shrinkage floor from the exact replica
+  (`0.000145`) and the bound from the corrected fit: `n_tail=11,023` (14.80%), `shape(xi)=+0.3014`,
+  `p=1/N` return level `344.53`. Set `DIM_WINSOR_SIGMA_OVERRIDE[6]=345.0`. Full confidence, no caveat —
+  the last holdout in the entire 16D audit is now closed.
 - [x] **Step 2: dim8 (`fisher_info`, 2.012%)** — TS1, tick-level replica using the *exact* raw formula
   (verified against `cfc::ComputeFisherInformation`'s source, including its `+-0.99` clamp — simple
   enough to replicate exactly, unlike DFA). Clean scale-collapse trace (no shrinkage needed). GPD fit:
@@ -302,21 +311,23 @@ placeholder).
 ## Sequencing summary
 
 ```
-Task 1 (deploy+validate D1-D8, incl. light dim12 spot-check) -- NOT YET RUN, needs explicit go-ahead
+Task 1 (deploy+validate D1-D9, incl. light dim12 spot-check) -- NOT YET RUN, needs explicit go-ahead
 Task 2 (dim9/dim0/dim7 — DONE, surfaced D8's shrinkage generalization)
-Task 3 (dim6/dim8/dim10/dim11/dim15 — DONE, dim6 flagged approximate-formula)
+Task 3 (dim6/dim8/dim10/dim11/dim15 — DONE, dim6 fully resolved same-day via exact-formula replica)
 Task 4 (dim2/dim4/dim12 — DONE, all three full confidence: dim4's initial ambiguity resolved same-day)
         │
         └─→ Task 5 (doc sync, ready now) ─→ Task 6 (pointers)
 ```
 
-**All per-dim auditing (Tasks 2-4) is complete.** Every one of the 16 dims has been audited: 14 done or
-closed clean with full confidence, 1 (`dim6`) done with the fix mechanism in place but the exact bound
-number deliberately deferred pending a less-approximate DFA replica, 1 (`dim2`) closed via a cheap
-screen whose result was corroborated by production telemetry. `dim4` started in the same category as
-`dim6` (ambiguous top-5-event sample) but a same-day full-population classification resolved it and
-required generalizing shrinkage to the LOGZ path for the first time — full confidence now, no caveat.
-Remaining work is Task 5 (doc sync — ready to start now that real numbers exist for every dim), Task 6
-(pointers, can be filed any time), and Task 1
-(production validation — genuinely useful, still un-started, still needs your explicit go-ahead to
-deploy).
+**All per-dim auditing (Tasks 2-4) is complete, and every dim is fully resolved with zero disclosed
+caveats.** Both dims that went through an intermediate "mechanism fixed, number deferred" state during
+the audit were closed out the same day: `dim4` via full-population exceedance classification (60%
+contaminated / 40% genuine, needed LOGZ shrinkage), `dim6` via an exact-formula DFA replica plus a
+Gemini-assisted tail-conditional noise decomposition (`logs/rc_gemini.log` `CLAUDE_BRIEF_101`/`102`)
+that empirically ruled out a DFA-instability artifact before any bound shipped — `dim6`'s confirmed
+tail (`n_tail=11,023`, 14.80% post-shrinkage) is the largest of any dim in this initiative, genuine, not
+contamination. `dim2` closed via a cheap screen corroborated by production telemetry. Final tally: 15
+done or closed clean with full confidence, plus 3 exempt by construction — 16 of 16. Remaining work is
+Task 5 (doc sync — ready to start now that real numbers exist for every dim), Task 6 (pointers, can be
+filed any time), and Task 1 (production validation — genuinely useful, still un-started, still needs
+your explicit go-ahead to deploy).
