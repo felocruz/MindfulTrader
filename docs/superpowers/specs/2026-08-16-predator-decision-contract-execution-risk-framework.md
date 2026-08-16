@@ -115,7 +115,7 @@ act when fusion itself may be wrong, stale, or unavailable.
 |---|---|---|---|---|
 | HMM regime layer | is the macro layer | Mahalanobis-tick-triggered | tick-reactive within its own scope | **Predator-mature** |
 | TRAP anticipatory τ* | Regime state (DofStopScale/Elkan costs) | Per-tick threshold recompute | Yes — cost-sensitive threshold conditioned on regime | **Predator-grade design, not yet wired live** (Unit 3-gated) |
-| Elder Breakout | Present but non-functional (identical for both directions) | Yes, tick-reactive | **Confirmed broken** — see finding above | **Contract violation — first-wave fix** |
+| Elder Breakout | Hurst exponent (persistence), via the *separate*, correctly-implemented slope+Hurst multiplier already in the same function (`TripleScreen3.cpp:1078-1104`) | Yes, tick-reactive | **The live decision's fusion was never actually broken.** The broken `screenAligned` logic lived in a fully dead, zero-consumer side computation (`ChannelSqueeze()`/`ImpulseAligned()`/`ScreenAligned()`) that never fed `breakoutQuality` or training export. **Removed outright 2026-08-16** rather than repaired (`4b0753a`) — nothing to fuse, because nothing read it. | **Predator-grade on the live path; dead code removed, no design fix was needed** |
 | Kangaroo Tail | `atSupportLevel`/`atResistanceLevel` (structural) | Yes, tick-reactive | **Audited 2026-08-16 — correctly direction-discriminating** (bullish requires at-support, bearish requires at-resistance, `TripleScreen3.cpp:849-877`) | **Predator-grade, no fix needed** |
 | Momentum Pinball | Hurst exponent (persistence) | Yes, tick-reactive | **Audited 2026-08-16 — correctly direction-discriminating** (`slopeAligned` checks slope sign against the *specific* signal direction, continuous regime-conditioned multiplier, `TripleScreen3.cpp:935-965`) | **Predator-grade, no fix needed** |
 | Turtle Soup | Yes (20-bar reference window) | No — bar-close gated | N/A, no fast signal yet | **Historian — sniper-ization candidate** (own unit) |
@@ -124,9 +124,12 @@ act when fusion itself may be wrong, stale, or unavailable.
 
 ## First-Wave Concrete Work
 
-1. **Elder Breakout directional-fusion fix** (new finding from this framework, not previously tracked)
-   — replace the non-directional Screen-1-alignment bonus with a real regime-conditioned fusion rule
-   that actually discriminates bullish from bearish regime support, satisfying contract element #3.
+1. **Elder Breakout directional-fusion fix — DONE 2026-08-16, resolved as a deletion, not a redesign
+   (`4b0753a`).** Tracing consumers found `ChannelSqueeze()`/`ImpulseAligned()`/`ScreenAligned()` had
+   zero call sites anywhere — the broken logic was fully dead code, never reaching the live entry
+   decision (which already had correct Hurst+slope fusion elsewhere in the same function). Removed
+   outright per the standing dead-code-removal mandate, rather than designing a replacement fusion rule
+   nobody would have read either.
 2. **Kangaroo Tail / Momentum Pinball Predator-contract audit — DONE 2026-08-16, both pass.** Neither
    needs a fix; see the Maturity Inventory above for the specific evidence. This audit itself is the
    proof the contract is a real filter, not just a way to flag Elder Breakout after the fact — passing
