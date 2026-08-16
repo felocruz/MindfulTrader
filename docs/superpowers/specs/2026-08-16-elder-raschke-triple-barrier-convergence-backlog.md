@@ -52,7 +52,7 @@ function (latching bracket state for the time-barrier check) but rename/reword s
 second, competing live stop/target source exists. `ChandelierStopManager` no longer exists in the
 codebase at all — remove any remaining language implying otherwise.
 
-## Unit 3: `ExitReason_TRAP` Schema Gap
+## Unit 3: `ExitReason_TRAP` Schema Gap — **DEFERRED 2026-08-16, not dropped**
 
 **Problem**: `BackTesterStudy.cpp:1199-1208` maps native TRAP exits to `ExitReason_MANUAL` with an
 explicit `TODO(schema)` — `.btst` replay data cannot currently attribute TRAP exits. This blocks
@@ -62,6 +62,18 @@ per `CLAUDE.md`'s Trap Detection section) — the gate exists on paper with no i
 **Scope**: add `ExitReason_TRAP` (and confirm `REGIME_INVALIDATION` is separately representable,
 see Unit 4) to the relevant FlatBuffer schema; regenerate per `regenerate_schema.sh`; wire
 `BackTesterStudy.cpp`'s mapping to the new value.
+
+**Why deferred, not just reordered**: `ExitReason` lives in `backtest_schema.fbs`, consumed only by
+`scsf_BackTester`/`.btst` files — the SC-replay backtester, which per the governance spec's promotion
+ladder only runs *after* the twin has already justified a change. The Python twin does not need this
+fix at all — it computes TRAP/`REGIME_INVALIDATION` attribution independently via
+`scan_lookahead_hybrid()`/`compute_barriers()` (the same function the training labeler uses), not by
+reading `.btst`'s `ExitReason` enum. So F₀.₂₅ and any other TRAP-attribution metric can already be
+measured in the twin without this unit. Additionally, `MindfulTrader.dll` is one shared binary across
+every study — deploying a fix here to test it live would require Sierra Chart to reload the whole
+module, interrupting whatever `EventDataCollectorStudy` collection is running at the time, which is
+its own reason not to build-and-deploy this prematurely. Revisit once a twin-validated change is ready
+for SC-replay confirmation and actually needs TRAP-exit attribution in `.btst` output.
 
 ## Unit 4: `REGIME_INVALIDATION` Live-Side Enforcement
 
