@@ -10,6 +10,7 @@
 #pragma once
 
 #include "PredatorContext.h"
+#include "ClassifierParams.h"
 
 #include <algorithm>
 #include <cmath>
@@ -61,4 +62,39 @@ inline TurtleSoupMicroSignal EvaluateTurtleSoupOptionA(
     }
 
     return sig;  // isValid stays false — no penetrate-then-reject shape forming yet
+}
+
+// Option B: hand-crafted logistic regression inference (not m2cgen-generated, not a
+// linked ML runtime library -- per docs/superpowers/specs/2026-08-16-ects-prefix-training-infrastructure-spec.md's
+// deployment guidance). Weights/bias come from ClassifierParams, loaded from
+// config/classifier_params.json's "turtle_soup_option_b" section. Feature order MUST match
+// that section's "feature_names": [penetration_atr, close_position, elapsed_fraction].
+//
+// Golden-vector regression test requirement (mandatory before this is ever wired live):
+// this function's output must be verified against the Python model's own predict_proba()
+// for a comprehensive set of real inputs -- not just the synthetic weights used here to
+// prove the inference math compiles and runs correctly.
+inline TurtleSoupMicroSignal EvaluateTurtleSoupOptionB(
+    const ClassifierParams& params,
+    float penetrationAtr, float closePosition, float elapsedFraction
+) {
+    TurtleSoupMicroSignal sig{};
+    sig.earliness = elapsedFraction;
+
+    if (!params.isLoaded || params.weights.size() != 3) {
+        return sig;  // inert until a real trained model is loaded — isValid stays false
+    }
+
+    const float logit = params.weights[0] * penetrationAtr
+                       + params.weights[1] * closePosition
+                       + params.weights[2] * elapsedFraction
+                       + params.bias;
+    const float probability = 1.0f / (1.0f + std::exp(-logit));
+
+    // Map probability [0,1] to score [-1,+1] the same way Option A's score is signed:
+    // > 0.5 is bullish-leaning, < 0.5 is bearish-leaning.
+    sig.score = (probability - 0.5f) * 2.0f;
+    sig.confidence = std::fabs(probability - 0.5f) * 2.0f;
+    sig.isValid = true;
+    return sig;
 }

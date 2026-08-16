@@ -3,6 +3,7 @@
 // Build: g++ -std=c++17 -Wall -Wextra -I include tests/cpp/TestTurtleSoupFusion.cpp -o /tmp/t_ts && /tmp/t_ts
 
 #include "TurtleSoupFusion.h"
+#include "ClassifierParams.h"
 
 #include <cmath>
 #include <cstdio>
@@ -67,6 +68,27 @@ int main() {
             /*atr=*/1.0f, /*elapsedFraction=*/0.5f
         );
         check("no extreme penetration -> isValid false (no setup forming)", sig.isValid == false);
+    }
+
+    // --- Option B: hand-crafted logistic regression inference ---
+    {
+        // Synthetic test weights (not a real trained model -- proves the inference math only).
+        ClassifierParams params{};
+        params.weights = {2.0f, -1.0f, 0.5f};  // [penetration_atr, close_position, elapsed_fraction]
+        params.bias = 0.0f;
+        params.isLoaded = true;
+
+        // Strong positive penetration, high close position -> should score clearly bullish
+        TurtleSoupMicroSignal sig = EvaluateTurtleSoupOptionB(params, /*penetrationAtr=*/1.0f, /*closePosition=*/0.2f, /*elapsedFraction=*/0.5f);
+        check("Option B: isValid true when params.isLoaded", sig.isValid == true);
+        check("Option B: positive score for strong bullish features",
+              sig.score > 0.0f);
+
+        // Unloaded params (inert default) -> isValid false, never fires
+        ClassifierParams unloaded{};
+        TurtleSoupMicroSignal inert = EvaluateTurtleSoupOptionB(unloaded, 1.0f, 0.2f, 0.5f);
+        check("Option B: unloaded params -> isValid false (inert until real model exists)",
+              inert.isValid == false);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURES\n", g_failures);
