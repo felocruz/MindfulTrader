@@ -92,7 +92,11 @@ push is a pending decision, ask before doing it (see end of this entry).
      to a genuinely different, currently-unimplemented concept, deliberately not conflated with this
      fix and deferred as a separate future idea (see the conversation, not yet its own spec/unit).
      Fix proceeds in this batch as originally scoped, no blocker.
-   - Kangaroo Tail / Momentum Pinball audit against the 5-element contract.
+   - Kangaroo Tail / Momentum Pinball audit against the 5-element contract — **DONE 2026-08-16, both
+     pass, no fix needed** (Kangaroo Tail: `atSupportLevel`/`atResistanceLevel` correctly
+     direction-discriminating; Momentum Pinball: `slopeAligned` + Hurst-conditioned continuous
+     multiplier, genuinely regime-aware fusion). Remaining in this batch: Elder Breakout's fix, Turtle
+     Soup's sniper-ization design.
    - **Turtle Soup sniper-ization — still an open design question, not yet spec'd**: cheap intra-bar
      heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
      application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly
