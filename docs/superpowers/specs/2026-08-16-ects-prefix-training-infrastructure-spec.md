@@ -80,11 +80,19 @@ consumer once built.
 
 ## Model & Deployment Guidance (general, applies to every consumer)
 
-- **Classical, non-deep-learning classifiers** (scikit-learn logistic regression, or gradient-boosted
-  trees only if logistic regression proves insufficient) over engineered prefix features. This
-  genuinely satisfies ECTS's definitional bar (Xing, Pei & Philip 2009 — prefix discrimination +
-  earliness-accuracy tradeoff, neither requiring deep learning) without deep-learning engineering
-  weight. `scikit-learn` is already in `lbrnet`'s environment; no new dependency for prototyping.
+- **Classical, non-deep-learning classifiers only** — this genuinely satisfies ECTS's definitional bar
+  (Xing, Pei & Philip 2009 — prefix discrimination + earliness-accuracy tradeoff, neither requiring
+  deep learning) without deep-learning engineering weight. `scikit-learn` is already in `lbrnet`'s
+  environment; no new dependency for prototyping.
+- **Start with logistic regression, Python-side, for the first consumer (Turtle Soup).** Simplest
+  possible model, essentially risk-free to port to C++ later (a weight vector, a bias, a sigmoid).
+- **Memorialized standing intent (2026-08-16): gradient-boosted trees will also genuinely be tried on
+  the Python side, for every consumer, not held back as a contingency-only fallback triggered solely
+  by logistic regression "proving insufficient."** The point is real model-selection rigor — compare
+  both empirically inside the Predator-equipped twin and let the gating metrics decide, rather than
+  stopping at the first model that seems adequate. This is Python-side-only prototyping either way;
+  it does not change the C++ deployment decision below, which still only happens for whichever model
+  (if either) actually wins its consumer's empirical comparison.
 - **No live Python round-trip for inference, ever, for any consumer.** Verified directly: this
   codebase has zero existing precedent for C++-side model deployment, and only `libzmq`/`libsodium`
   exist as third-party C++ dependencies today, both manually vendored under the WSL→Windows `clang-cl`
