@@ -1,0 +1,12 @@
+{
+  "_version": "1.0.0",
+  "_owner": "MindfulTrader C++ execution layer",
+  "_generated_by": "manual placeholder pending first real training run (see docs/superpowers/specs/2026-08-16-ects-prefix-training-infrastructure-spec.md handoff)",
+  "turtle_soup_option_b": {
+    "model_type": "logistic_regression",
+    "weights": [],
+    "bias": 0.0,
+    "feature_names": ["penetration_atr", "close_position", "elapsed_fraction"],
+    "_note": "Empty weights = inert/neutral until a real trained model is dropped in by a future lbrnet-rooted session, per the ECTS infrastructure spec's handoff."
+  }
+}
