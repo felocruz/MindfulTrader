@@ -1,0 +1,29 @@
+{
+  "policy_id": "hmm_regime_risk_policy_prod",
+  "policy_version": "1.0.0",
+  "_owner": "manual/MindfulTrader",
+  "_generated_by": "manual/MindfulTrader",
+  "_version_scheme_note": "Converted from date+v-suffix scheme (was '2026-06-11.v3') to unified semver 2026-08-15, per docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md Unit C. Starting at 1.0.0 -- no direct numeric predecessor to increment from.",
+  "state_weights": {
+    "COILED_SPRING": 1.00,
+    "GAUSSIAN_STABLE": 1.20,
+    "GAUSSIAN_FRAGILE": 0.90,
+    "PARETO_MOMENTUM": 0.75
+  },
+  "entropy_penalty": 0.50,
+  "transition_penalty": 0.25,
+  "confidence_floor": 0.20,
+  "transition_floor": 0.70,
+  "min_multiplier": 0.00,
+  "max_multiplier": 1.50,
+  "empirical_gate_thresholds": {
+    "_owner": "lbrnet/calibrate_hmm_gate_thresholds.py",
+    "_generated_by": "lbrnet/calibrate_hmm_gate_thresholds.py",
+    "generated_at_utc": "2026-04-15T13:01:33Z",
+    "pareto_top_state_ratio_max": 0.5,
+    "shannon_min_tenure_bars": 143.5184571838369,
+    "taleb_signal_sigma_threshold": 1.8401,
+    "_taleb_signal_sigma_threshold_note": "percentile-matched to Moors-kurtosis scale, Task 7, 2026-08-13: was 9.697616023284109 (old moment-based scale), P85.1 of the historical distribution -> 1.8401. See tools/analyze_kurtosis_threshold_migration.py in MindfulTrader repo. Value here was NOT re-run through the lbrnet empirical-calibration job that originally generated it (generated_at_utc/window_count_used left as-is) -- only the kurtosis-scale conversion was applied; a future lbrnet recalibration pass will naturally regenerate this on the new scale. Compiled C++ default synced to this exact value in src/RiskManager.cpp:74 per docs/superpowers/plans/2026-08-15-risk-gate-audit-unit-b.md Task 2.",
+    "window_count_used": 34
+  }
+}

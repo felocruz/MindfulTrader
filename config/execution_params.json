@@ -1,0 +1,199 @@
+{
+  "_version": "1.1.0",
+  "_description": "P-AER execution parameters — hero-attributed tuning knobs",
+  "_updated": "2026-07-13",
+  "elder_2pct_rule_frac": 0.02,
+  "max_risk_per_trade_frac": 0.02,
+  "elder_portfolio_heat_frac": 0.06,
+  "elder_6pct_rule_frac": 0.06,
+  "elder_loss_streak_breaker": 2,
+  "max_trades_per_day": 4,
+  "elder_revenge_cooloff_min": 30,
+  "max_daily_win_pct": 0.05,
+  "daily_win_warning_pct": 0.03,
+  "rapid_fire_limit_per_min": 2,
+  "min_pattern_quality_base": 0.6,
+  "probation_quality_floor": 0.8,
+  "raschke_opening_quality_floor": 0.7,
+  "raschke_lunch_deadzone_floor": 0.8,
+  "raschke_afternoon_quality_floor": 0.65,
+  "live_toxic_score_threshold": 0.65,
+  "live_hostile_score_threshold": 0.85,
+  "live_force_flat_confidence_cap": 0.7,
+  "regime_latency_optimal_us": 8000,
+  "regime_latency_breaker_us": 25000,
+  "regime_latency_min_factor": 0.6,
+  "latency_gate_observe_only": true,
+  "elder_drawdown_10pct_sizing_75": 0.1,
+  "elder_drawdown_15pct_sizing_50": 0.15,
+  "drawdown_halt": 0.25,
+  "_taleb_kurtosis_note": "percentile-matched to Moors-kurtosis scale, Task 7, 2026-08-13: crisis_enter was 17.33 (old moment-based scale, P93.8) -> 2.0761; crisis_exit was 3.64 (P47.4) -> 1.4437. crisis_ceiling is a risk-multiplier cap, not a kurtosis-scale value -- unaffected, unchanged. See tools/analyze_kurtosis_threshold_migration.py in MindfulTrader repo.",
+  "taleb_kurtosis_crisis_enter": 2.0761,
+  "taleb_kurtosis_crisis_exit": 1.4437,
+  "taleb_kurtosis_crisis_ceiling": 0.35,
+  "trap_config": {
+    "contract_version": "v1",
+    "trap_refactor_mode": "directional_trap_passthrough_with_validation",
+    "trap_caution_threshold": 0.45,
+    "trap_emit_threshold": 0.65,
+    "trap_hard_stop_threshold": 0.8,
+    "trap_structural_floor": 0.2,
+    "trap_entry_score_min": 80,
+    "trap_mfe_mae_ratio_max": 0.2,
+    "trap_stop_stress_min": 0.9,
+    "weights": {
+      "elder_raschke": 0.35,
+      "shannon": 0.1,
+      "mandelbrot": 0.1,
+      "taleb": 0.15,
+      "pareto": 0.1,
+      "hmm": 0.2
+    },
+    "reliability_bounds": {
+      "min": 0.7,
+      "max": 1.15
+    }
+  },
+  "diagnostic_mode": false,
+  "tde_shadow_enabled": true,
+  "tde_conviction_floor": 0.6,
+  "tde_position_cap": 10,
+  "_owner": "manual/MindfulTrader",
+  "_generated_by": "manual/MindfulTrader",
+  "featurescaler_winsorization": {
+    "_owner": "manual/MindfulTrader",
+    "_generated_by": "manual/MindfulTrader (docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md Unit C; values carried forward verbatim from include/FeatureScaler.h compiled defaults, zero behavior change on first load)",
+    "_updated": "2026-08-15",
+    "state_winsor_sigma": 6,
+    "dims": [
+      {
+        "index": 0,
+        "name": "log_variance_ratio",
+        "dim_winsor_sigma_override": 262,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0.000389,
+        "note": "GPD-derived on corrected z, Frechet (xi=+0.2533), p=1/N return level; shrinkage: confirmed collapse signature (z=-176 traced)"
+      },
+      {
+        "index": 1,
+        "name": "burstiness_index",
+        "dim_winsor_sigma_override": 45,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "GPD+bootstrap derived (D7); shrinkage disabled -- tail decays cleanly under generic path + wide bound"
+      },
+      {
+        "index": 2,
+        "name": "relative_range",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "audited, closed clean (0 exceedances on 18,761 real bars); shrinkage disabled -- LOGZ, 0.035% clip rate, no evidence of need"
+      },
+      {
+        "index": 3,
+        "name": "correction_action",
+        "dim_winsor_sigma_override": 4587,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 7e-05,
+        "note": "GPD-derived, p=1/N return level (D7); shrinkage: original D4 derivation"
+      },
+      {
+        "index": 4,
+        "name": "vol_convexity",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 12,
+        "shrinkage_scale_min": 0.211521,
+        "note": "LOGZ dim, GPD-derived on corrected (shrinkage-blended) z, real margin above theoretical wall; first LOGZ dim to use the shrinkage mechanism"
+      },
+      {
+        "index": 5,
+        "name": "lempel_ziv",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "static scaler, not applicable -- no winsorization/shrinkage override"
+      },
+      {
+        "index": 6,
+        "name": "hurst_exponent",
+        "dim_winsor_sigma_override": 345,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0.000145,
+        "note": "GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition; shrinkage: exact-formula-derived"
+      },
+      {
+        "index": 7,
+        "name": "micro_asymmetry",
+        "dim_winsor_sigma_override": 36,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0.00733,
+        "note": "GPD-derived on corrected z, p=1/N return level; shrinkage: confirmed collapse signature, z=438 traced"
+      },
+      {
+        "index": 8,
+        "name": "fisher_info",
+        "dim_winsor_sigma_override": 20,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "GPD-derived, margin above a smaller-sample fit; audited 2026-08-14, clean, no shrinkage needed"
+      },
+      {
+        "index": 9,
+        "name": "tail_index",
+        "dim_winsor_sigma_override": 10,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0.0438,
+        "note": "GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall; shrinkage: confirmed collapse signature, z=1963 traced"
+      },
+      {
+        "index": 10,
+        "name": "skewness_idx",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "audited, negligible clip rate, no action needed; shrinkage disabled per ruthless-simplicity (D8 precedent)"
+      },
+      {
+        "index": 11,
+        "name": "amihud_illiquidity",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "audited, 0.000% production clip rate, no action needed; has its own dedicated AMIHUD_ABSOLUTE_FLOOR fix instead of shrinkage"
+      },
+      {
+        "index": 12,
+        "name": "liq_fragility",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 12,
+        "shrinkage_scale_min": 0,
+        "note": "LOGZ dim, GPD-derived, clean trace, real margin above the theoretical wall; shrinkage disabled -- resolved-healthy, no evidence of need"
+      },
+      {
+        "index": 13,
+        "name": "recurrence_rate",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "static scaler, not applicable"
+      },
+      {
+        "index": 14,
+        "name": "fractal_dim",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "static scaler, not applicable"
+      },
+      {
+        "index": 15,
+        "name": "mean_rev_z",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "audited, 0.028% clip rate, only 14 exceedances, negligible, no action needed"
+      }
+    ]
+  }
+}
