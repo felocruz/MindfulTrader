@@ -135,6 +135,10 @@ ContextManager& ContextManager::Instance() {
     return instance;
 }
 
+ContextManager::ContextManager() {
+    FeatureScaler::LoadConfig();
+}
+
 // State Setters
 void ContextManager::SetWaveContext(StatisticalContext&& ctx) {
     if (!std::isfinite(ctx.volatility) || !std::isfinite(ctx.efficiency)) {

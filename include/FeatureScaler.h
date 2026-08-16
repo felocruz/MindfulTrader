@@ -15,8 +15,12 @@
 #include <cassert>
 #include <cstdint>
 #include <utility>
+#include <fstream>
+#include <string>
+#include <nlohmann/json.hpp>
 #include "generated/mts_schema_contract_generated.h"
 #include "RingBuffer.h"
+#include "Logger.h"
 
 /// Hybrid Feature Scaler: Soft-Log-Z state channels + winsorized Log-Z energy channels.
 ///
@@ -166,7 +170,7 @@ struct FeatureScaler {
     ///                    helper, extracted from the SOFTLOGZ-only version
     ///                    that existed before this) is now used by both
     ///                    scaling paths.
-    inline static constexpr std::array<float, N_DIMS> SHRINKAGE_SCALE_MIN = {
+    inline static std::array<float, N_DIMS> SHRINKAGE_SCALE_MIN = {  // compiled defaults; overwritten in place by LoadConfig()
         0.000389f,  //  0  log_variance_ratio   confirmed collapse signature (z=-176 traced)
         0.0f,       //  1  burstiness_index     disabled -- tail decays cleanly under generic path + wide bound
         0.0f,       //  2  relative_range       disabled -- LOGZ, 0.035% clip rate, no evidence of need
@@ -228,7 +232,7 @@ struct FeatureScaler {
     static constexpr float LOG_BPS = 10000.0f;                  ///< Basis-point multiplier inside log transform
     static constexpr float LOG_EPS = 1e-8f;                     ///< Non-zero floor before log transform
     static constexpr float ENERGY_WINSOR_SIGMA = 6.0f;          ///< 6-sigma winsorization for energy channels (default; see LOGZ_WINSOR_SIGMA_OVERRIDE)
-    static constexpr float STATE_WINSOR_SIGMA = 6.0f;           ///< 6-sigma winsorization before Soft-Log map (default; see DIM_WIDE_WINSOR_INDEX)
+    static inline float STATE_WINSOR_SIGMA = 6.0f;              ///< 6-sigma winsorization before Soft-Log map (default; see DIM_WIDE_WINSOR_INDEX). Compiled default; overwritten in place by LoadConfig() if config/execution_params.json is present.
 
     /// Per-dim override for the LOGZ path's hard z-clamp (dims 2, 4, 12 --
     /// EXPECTED_LOGZ_DIMS), added 2026-08-14 (Task 4 of the full-coverage
@@ -267,7 +271,7 @@ struct FeatureScaler {
     ///     shape(xi)=-0.2276 (Weibull/bounded), theoretical endpoint 11.485.
     ///     Set to 12.0 -- just past the wall, same "close to the theoretical
     ///     ceiling" logic as dim1/dim9's finite-endpoint dims.
-    inline static constexpr std::array<float, N_DIMS> LOGZ_WINSOR_SIGMA_OVERRIDE = {
+    inline static std::array<float, N_DIMS> LOGZ_WINSOR_SIGMA_OVERRIDE = {  // compiled defaults; overwritten in place by LoadConfig()
         0.0f, 0.0f,
         0.0f,   //  2  relative_range   audited, closed clean (0 exceedances on 18,761 real bars)
         0.0f,
@@ -397,7 +401,7 @@ struct FeatureScaler {
     /// shape(xi)=+0.3014 (Frechet/unbounded), scale=6.5672. p=1/N
     /// (N=74,464) return level = 344.53, same convention as dim3/dim0/dim7.
     /// Set to 345.0.
-    inline static constexpr std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {
+    inline static std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {  // compiled defaults; overwritten in place by LoadConfig()
         262.0f,   //  0  log_variance_ratio   GPD-derived on corrected z, Frechet (xi=+0.2533), p=1/N return level
         45.0f,    //  1  burstiness_index     GPD+bootstrap derived (D7)
         0.0f,     //  2  relative_range
@@ -415,6 +419,71 @@ struct FeatureScaler {
         0.0f,     // 14  fractal_dim          static scaler, not applicable
         0.0f,     // 15  mean_rev_z           audited, negligible clip rate, no action needed
     };
+
+    enum class ConfigLoadStatus : uint8_t { DEFAULTS, LOADED_FROM_FILE, FILE_MISSING, PARSE_FAILED };
+    static inline ConfigLoadStatus configLoadStatus = ConfigLoadStatus::DEFAULTS;
+    static constexpr const char* kConfigPathWindows = "C:/Trading/config/execution_params.json";
+
+    /// Loads STATE_WINSOR_SIGMA/DIM_WINSOR_SIGMA_OVERRIDE/LOGZ_WINSOR_SIGMA_OVERRIDE/
+    /// SHRINKAGE_SCALE_MIN from config/execution_params.json's "featurescaler_winsorization"
+    /// section, called exactly once from ContextManager's constructor (never per-tick).
+    /// Fail-closed: parses into locals first and only commits on full success, so a
+    /// mid-parse exception never leaves the live static arrays partially overwritten;
+    /// on any failure the compiled defaults above remain in effect and the failure is
+    /// loudly logged (never silent), matching this repo's established config-load convention
+    /// (ExecutionParams::LoadFromFile, RiskManager.cpp's GetHMMRiskPolicy).
+    static void LoadConfig(const std::string& path = kConfigPathWindows) {
+        std::ifstream in(path);
+        if (!in.is_open()) {
+            configLoadStatus = ConfigLoadStatus::FILE_MISSING;
+            Logger::getInstance().log(
+                "FeatureScaler: config FILE_MISSING at " + path + " -- using compiled defaults");
+            return;
+        }
+        try {
+            const std::string payload((std::istreambuf_iterator<char>(in)),
+                                       std::istreambuf_iterator<char>());
+            nlohmann::json j = nlohmann::json::parse(payload);
+
+            if (!j.contains("featurescaler_winsorization") ||
+                !j["featurescaler_winsorization"].is_object()) {
+                configLoadStatus = ConfigLoadStatus::PARSE_FAILED;
+                Logger::getInstance().log(
+                    "FeatureScaler: 'featurescaler_winsorization' section missing at " + path +
+                    " -- using compiled defaults");
+                return;
+            }
+            const auto& fw = j["featurescaler_winsorization"];
+
+            float newStateWinsorSigma = STATE_WINSOR_SIGMA;
+            std::array<float, N_DIMS> newDimWinsor = DIM_WINSOR_SIGMA_OVERRIDE;
+            std::array<float, N_DIMS> newLogzWinsor = LOGZ_WINSOR_SIGMA_OVERRIDE;
+            std::array<float, N_DIMS> newShrinkageMin = SHRINKAGE_SCALE_MIN;
+
+            newStateWinsorSigma = fw.value("state_winsor_sigma", newStateWinsorSigma);
+            if (fw.contains("dims") && fw["dims"].is_array()) {
+                for (const auto& d : fw["dims"]) {
+                    const size_t idx = d.value("index", N_DIMS);
+                    if (idx >= N_DIMS) { continue; }
+                    newDimWinsor[idx] = d.value("dim_winsor_sigma_override", newDimWinsor[idx]);
+                    newLogzWinsor[idx] = d.value("logz_winsor_sigma_override", newLogzWinsor[idx]);
+                    newShrinkageMin[idx] = d.value("shrinkage_scale_min", newShrinkageMin[idx]);
+                }
+            }
+
+            STATE_WINSOR_SIGMA = newStateWinsorSigma;
+            DIM_WINSOR_SIGMA_OVERRIDE = newDimWinsor;
+            LOGZ_WINSOR_SIGMA_OVERRIDE = newLogzWinsor;
+            SHRINKAGE_SCALE_MIN = newShrinkageMin;
+            configLoadStatus = ConfigLoadStatus::LOADED_FROM_FILE;
+        } catch (const std::exception& e) {
+            configLoadStatus = ConfigLoadStatus::PARSE_FAILED;
+            Logger::getInstance().log(
+                std::string("FeatureScaler: config PARSE_FAILED at ") + path + " (" + e.what() +
+                ") -- using compiled defaults");
+        }
+    }
+
     static constexpr size_t RANK_WINDOW = 500;                   ///< Max rolling window (scratch array sizing + warmup gate)
     static constexpr size_t EXPECTED_LOGZ_DIMS = 3;
     static constexpr size_t RECALIBRATION_INTERVAL = 5000;       ///< Re-examine adaptive floors every N samples

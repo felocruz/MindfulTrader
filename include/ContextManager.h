@@ -282,7 +282,7 @@ public:
     std::array<float, OBSERVATION_VECTOR_SIZE> BuildObservationVector();
 
 private:
-    ContextManager() = default;
+    ContextManager();
     ~ContextManager() = default;
 
 public:

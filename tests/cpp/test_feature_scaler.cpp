@@ -8,7 +8,11 @@
 //
 // Build & run natively (no Sierra Chart deps — FeatureScaler.h was extracted
 // from ContextManager.h specifically to make this possible):
-//   g++ -std=c++17 -I include -I include/generated tests/cpp/test_feature_scaler.cpp -o /tmp/fs_test && /tmp/fs_test
+//   g++ -std=c++17 -I include -I include/generated -I /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include tests/cpp/test_feature_scaler.cpp src/Logger.cpp -o /tmp/fs_test && /tmp/fs_test
+// (the vcpkg -I was added once FeatureScaler.h gained a LoadConfig() method
+// that depends on nlohmann::json, a header-only vcpkg dependency; src/Logger.cpp
+// is linked in for the same reason — LoadConfig()'s loud-log-on-failure calls
+// Logger::getInstance(), which is declared but not defined in Logger.h)
 
 #include "FeatureScaler.h"
 #include "fixtures_dim1_raw.h"
@@ -23,6 +27,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 
 namespace {
 
@@ -542,6 +547,42 @@ int main() {
         check("dim4: shrinkage keeps real-data max|z| bounded (no unbounded blowup)", maxAbsZ < 100.0);
         check("dim4: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < 0.05 && (rate6 == 0.0 || rateRail < rate6 / 2.0));
+    }
+
+    // FeatureScaler::LoadConfig() overrides compiled defaults from a config
+    // file. Placed at the end of main() -- after every pre-existing check --
+    // since it mutates the shared static arrays these earlier checks assert
+    // compiled-default values against (e.g. DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f).
+    {
+        const std::string path = "/tmp/test_featurescaler_config.json";
+        {
+            std::ofstream out(path);
+            out << R"({
+  "featurescaler_winsorization": {
+    "state_winsor_sigma": 7.5,
+    "dims": [
+      {"index": 9, "dim_winsor_sigma_override": 99.0, "logz_winsor_sigma_override": 0.0, "shrinkage_scale_min": 0.0438}
+    ]
+  }
+})";
+        }
+        FeatureScaler::LoadConfig(path);
+        check("config_load_status_is_loaded_from_file",
+              FeatureScaler::configLoadStatus == FeatureScaler::ConfigLoadStatus::LOADED_FROM_FILE);
+        check("config_overrides_state_winsor_sigma", FeatureScaler::STATE_WINSOR_SIGMA == 7.5f);
+        check("config_overrides_dim9_winsor_override",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 99.0f);
+        check("config_leaves_untouched_dims_at_compiled_default",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 262.0f);
+        std::remove(path.c_str());
+    }
+    {
+        // Falls back to compiled defaults, loudly, on a missing file.
+        FeatureScaler::LoadConfig("/tmp/does_not_exist_featurescaler_config.json");
+        check("config_load_status_is_file_missing",
+              FeatureScaler::configLoadStatus == FeatureScaler::ConfigLoadStatus::FILE_MISSING);
+        check("missing_config_keeps_previously_loaded_state_winsor_sigma_unchanged",
+              FeatureScaler::STATE_WINSOR_SIGMA == 7.5f);
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
