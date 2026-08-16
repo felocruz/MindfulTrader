@@ -113,7 +113,7 @@ in `backtest_runner.py`) but were never aggregated against the ruling's stated t
 3. If the thresholds do *not* justify it: document the negative result and close this unit — Rank 3
    (accept the give-back) remains the correct baseline per the ruling's own Q4 sequencing logic.
 
-## Unit 6: ADR Corpus Reconciliation
+## Unit 6: ADR Corpus Reconciliation — **DONE 2026-08-16**
 
 **Problem**: two same-day rulings directly contradict each other and were never reconciled against
 one another — `triple_barrier_favorable_exit_ruling.md` rules "REMOVE FROM BOTH REPOS" for
