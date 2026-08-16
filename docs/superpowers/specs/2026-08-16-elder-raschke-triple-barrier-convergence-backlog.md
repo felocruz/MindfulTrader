@@ -194,12 +194,12 @@ Not actionable as simple fixes — each needs its own investigation before any i
   too expensive against the SC-replay backtester) — not scheduled as its own unit yet, but explicitly
   unblocked by adopting the governance spec.
 
-## Unit 10: Cross-Language Enum Header Consolidation into `RcEnums.h` (Cheap, Low-Priority)
+## Unit 10: Cross-Language Enum Header Consolidation into `rc_enums.h` (Cheap, Low-Priority)
 
 **Problem**: discovered while building `PredatorContext.h` (Predator infrastructure plan, Task 1) —
 `HMMStateEnum` lived inline in `Indicator.h`, which includes `sierrachart.h`, so anything needing the
 enum without ACSIL dragged in the whole SC header transitively. Fixed narrowly by extracting it into
-`include/RcEnums.h`, named to mirror `lbrnet/lbrnet/core/rc_enums.py` (the Python cross-language-parity
+`include/rc_enums.h`, named to mirror `lbrnet/lbrnet/core/rc_enums.py` (the Python cross-language-parity
 enum module) rather than a one-off `HMMStateEnum.h`, so it can serve as the single canonical home for
 future extractions instead of spawning another single-enum header each time. `MacdEnum`,
 `KangarooTailEnum`, `TurtleSoupEnum`, `MomentumPinballEnum`, `ElderBreakoutEnum`, and `NR7Enum` are
@@ -209,7 +209,7 @@ out of scope for a Task-1 dependency fix.
 
 **Scope**: migrate `MacdEnum`/`KangarooTailEnum`/`TurtleSoupEnum`/`MomentumPinballEnum`/
 `ElderBreakoutEnum`/`NR7Enum` (and any other cross-language-parity enum found scattered elsewhere) into
-`include/RcEnums.h`, updating every include site and re-running the full native test suite plus
+`include/rc_enums.h`, updating every include site and re-running the full native test suite plus
 `./build_dll.sh` to confirm zero behavior change. Purely mechanical (move + re-point includes), no
 logic changes — still deserves its own isolated commit given the number of touched files.
 

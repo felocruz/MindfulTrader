@@ -399,9 +399,12 @@ the Predator Decision Contract's own Maturity Inventory. Do not wire it live as 
         check("symmetric distances -> tau* == 0.5", std::fabs(r1.effectiveThreshold - 0.5f) < 1e-4f);
         check("confidence 0.6 < tau* 0.5 is FALSE so shouldExit is true (0.6 >= 0.5)", r1.shouldExit == true);
 
-        // Asymmetric: stop much closer than target -> tau* low -> easier to trigger exit
-        TauStarFusionResult r2 = FuseTauStar(ctx, /*distanceToTarget=*/8.0, /*distanceToStop=*/1.0, /*modelConfidence=*/0.2);
-        check("stop much closer than target -> tau* < 0.5", r2.effectiveThreshold < 0.5f);
+        // Asymmetric: target much closer than stop -> C_FP small, C_FN large -> tau* low
+        // (corrected 2026-08-16 during execution: the original scenario here, target=8/stop=1,
+        // actually computes 8/(8+1)=0.889, not "low" -- verified against Elkan's derivation;
+        // this scenario, target=1/stop=8, correctly computes 1/(1+8)=0.111)
+        TauStarFusionResult r2 = FuseTauStar(ctx, /*distanceToTarget=*/1.0, /*distanceToStop=*/8.0, /*modelConfidence=*/0.2);
+        check("target much closer than stop -> tau* < 0.5", r2.effectiveThreshold < 0.5f);
 
         // Confidence below threshold -> should not exit
         TauStarFusionResult r3 = FuseTauStar(ctx, /*distanceToTarget=*/2.0, /*distanceToStop=*/2.0, /*modelConfidence=*/0.1);

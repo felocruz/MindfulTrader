@@ -11,7 +11,7 @@
 // Every fusion free function in PredatorFusion.h takes this by const-reference — no
 // allocation, no indirection, no virtual dispatch.
 //
-// Includes the ACSIL-independent extracted headers (LocalRiskContext.h, RcEnums.h),
+// Includes the ACSIL-independent extracted headers (LocalRiskContext.h, rc_enums.h),
 // not ContextManager.h/Indicator.h directly, so this header — and everything that composes
 // it (PredatorFusion.h, its native tests) — stays includable with just `-I include`, no
 // sierrachart.h on the path (same convention as IndicatorComputations.h).
@@ -19,7 +19,7 @@
 #pragma once
 
 #include "LocalRiskContext.h"
-#include "RcEnums.h"
+#include "rc_enums.h"
 
 struct PredatorContext {
     LocalRiskContext gang{};

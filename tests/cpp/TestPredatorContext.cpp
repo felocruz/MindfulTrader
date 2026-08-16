@@ -1,6 +1,6 @@
-// tests/cpp/test_predator_context.cpp — standalone unit tests for PredatorContext assembly.
+// tests/cpp/TestPredatorContext.cpp — standalone unit tests for PredatorContext assembly.
 //
-// Build: g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_context.cpp -o /tmp/t_pc && /tmp/t_pc
+// Build: g++ -std=c++17 -Wall -Wextra -I include tests/cpp/TestPredatorContext.cpp -o /tmp/t_pc && /tmp/t_pc
 
 #include "PredatorContext.h"
 
