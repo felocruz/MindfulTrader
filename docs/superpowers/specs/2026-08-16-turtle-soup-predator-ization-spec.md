@@ -8,7 +8,9 @@ Pinball audit are both done).
 **Governing methodology**: `docs/superpowers/specs/2026-08-16-execution-risk-coevolution-governance-spec.md`
 for twin-first validation; `docs/superpowers/specs/2026-08-16-predator-context-fusion-infrastructure-spec.md`
 for the shared `PredatorContext`/free-function dispatch conventions this spec's micro-signal function
-plugs into.
+plugs into; `docs/superpowers/specs/2026-08-16-ects-prefix-training-infrastructure-spec.md` for
+Option B's general dataset-construction/stopping-rule/twin-extension mechanics — **this spec is that
+infrastructure's first consumer, not a duplicate of it.**
 
 ## Purpose
 
@@ -19,45 +21,26 @@ requires knowing the bar's final close. This spec brings it to Predator-grade wi
 mechanism blind — the design was pressure-tested against the literature via a second-opinion channel
 before being written down.
 
-## Background: The Bridge Plan and Its Literature Grounding
+## Background: The Bridge Plan
 
 Two candidate micro-signal designs were surfaced: a cheap intra-bar geometric heuristic (reusing
 Kangaroo Tail's proven tail-to-body-ratio/close-position approach, applied against the 20-bar extreme
 instead of a single bar), or a genuine ECTS (Early Classification of Time Series) model trained on
-partial-bar prefixes. Rather than pick blind, this was put to `lbrnet/logs/rc_gemini.log`
-`CLAUDE_BRIEF_103` for a literature pressure-test. The result confirms the **bridge plan**: ship the
-heuristic now (this DLL has never reached production — that's a standing priority), build the ECTS
-model as a parallel, non-blocking track, and swap it in later at a single, well-defined seam.
+partial-bar prefixes. The result, after a literature pressure-test (`lbrnet/logs/rc_gemini.log`
+`CLAUDE_BRIEF_103`) confirms the **bridge plan**: ship the heuristic now (this DLL has never reached
+production — that's a standing priority), build the ECTS model as a parallel, non-blocking track using
+the general infrastructure in `2026-08-16-ects-prefix-training-infrastructure-spec.md`, and swap it in
+later at a single, well-defined seam — **if it actually wins its own empirical comparison against the
+heuristic**, which is a genuinely open question for this specific pattern (small-sample, single-pattern,
+single-instrument — see that spec's honest discussion of why the heuristic winning is a real
+possibility, not a hedge).
 
-**Key findings from the literature review, credited to that exchange:**
-
-- **The classical-classifier approach is a legitimate, fully-grounded ECTS instance, not a
-  simplification of it.** Xing, Pei & Philip's (2009) foundational ECTS formulation has two
-  requirements — prefix feature extraction and an earliness/accuracy tradeoff — neither of which
-  mandates deep learning. A gradient-boosted-trees or logistic-regression classifier over engineered
-  prefix features (elapsed-bar-fraction, penetration-so-far vs. the 20-bar extreme, tail-shape-so-far,
-  ATR-normalized distance) satisfies the definition directly.
-- **Two concrete dataset-construction guardrails, both adopted into this spec's Option B design**:
-  (1) sample prefixes by time-elapsed or volume fraction, not raw tick count — tick count varies
-  systematically with volatility, so fixed-tick sampling would bias the dataset toward whatever regime
-  produces more ticks per unit time; (2) the label must require a minimum forward-return threshold in
-  addition to geometric pattern completion — labeling on shape alone risks training a model that
-  recognizes "looks like Turtle Soup" without recognizing "was actually profitable," a real and
-  non-obvious failure mode distinct from ordinary overfitting.
-- **The stopping-rule literature already in use elsewhere in this system generalizes cleanly here.**
-  Dachraoui et al. (2015)'s cost-based sequential framework remains the right foundation; Elkan
-  (2001)'s cost-sensitive threshold (already the basis of TRAP's τ*) extends naturally to
-  regime-conditioning Turtle Soup's own early-decision threshold. The "penetrate-then-reject" shape
-  is, formally, a drift-reversal detection problem — Moustakides (1986)/Shiryaev sequential
-  change-point detection (the same theoretical family `CLAUDE.md` already cites for TRAP's Shiryaev-Wald
-  framing) is the correct connecting citation, not a new, unrelated theory.
-- **The bridge-plan's core premise holds**: Option A and Option B are interchangeable at a single seam
-  — how the micro-signal gets computed — provided that seam is a standardized, bounded output
-  (score, confidence, earliness, validity) that the macro-fusion layer consumes without caring how it
-  was produced. This matches, and plugs directly into, the free-function convention already
-  established in `PredatorContext`/`PredatorFusion` (a plain result struct returned by a free function,
-  consistent with this codebase's DOD/no-virtual-dispatch discipline — the same interface *shape* the
-  literature review proposed, expressed the way the rest of this codebase's hot-path logic already is).
+**The bridge-plan's seam, specifically**: Option A and Option B are interchangeable at a single point
+— how the micro-signal gets computed — provided that seam is a standardized, bounded output (score,
+confidence, earliness, validity) that the macro-fusion layer consumes without caring how it was
+produced. This matches, and plugs directly into, the free-function convention already established in
+`PredatorContext`/`PredatorFusion` (a plain result struct returned by a free function, consistent with
+this codebase's DOD/no-virtual-dispatch discipline).
 
 ## Design
 
@@ -94,39 +77,25 @@ per contract element 5).
 
 ### Option B: ECTS Classifier (parallel track, does not block Option A's ship)
 
-**Staged, cost-ordered plan (refined 2026-08-16) — cheap Python-side proof before any C++ commitment:**
+Built using the general capability specced in `2026-08-16-ects-prefix-training-infrastructure-spec.md`
+— this section covers only what's Turtle-Soup-*specific*; the dataset-construction methodology,
+stopping-rule theory, and Python-twin Predator extension are that spec's concern, not duplicated here.
 
-1. **Offline dataset construction** from `mes_continuous_ticks.parquet` (already available, no new
-   live collection needed): for each historical bar, reconstruct multiple prefix snapshots at
-   elapsed-time/volume fractions τ ∈ {0.1, 0.2, ..., 0.9}, each labeled with the bar's real eventual
-   outcome — WEAK/STRONG/EXTREME/NONE **and** whether the resulting trade would have cleared a minimum
-   forward-return threshold (the profitability guardrail above).
-2. **Model prototyping, Python-only, `scikit-learn`** (logistic regression first; gradient-boosted
-   trees only if that proves insufficient) over engineered features (elapsed-fraction,
-   penetration-so-far/ATR, tail-shape-so-far, tick-level momentum) — not a deep sequence model.
-   Already in `lbrnet`'s environment; no new dependency for this stage.
-3. **Bring the Predator architecture to the Python twin itself** — implement the same
-   macro-input/micro-input/fusion-rule shape (mirroring this spec's C++ design, not a parallel
-   invention) inside the backtester, so the classifier's *decision*, not just its raw prediction
-   accuracy, gets validated end-to-end. This is a genuine, real piece of work (the twin needs its own
-   Predator-context-equivalent assembly and fusion logic), not a rubber-stamp step.
-4. **Stopping rule**: Dachraoui-style cost-based earliness/accuracy tradeoff, with the decision
-   threshold conditioned on regime state via the same Elkan (2001) cost-sensitive formula τ* already
-   used for TRAP — reusing, not reinventing, this project's existing theoretical apparatus.
-5. **Twin validation gate**: measure real gating metrics via this Predator-equipped twin. **Only if
-   this proves the fusion decision genuinely works** does the plan proceed to step 6 — this is the
-   actual cost-ordering point: the expensive, harder-to-reverse step (C++ porting) is deliberately
-   deferred until the cheap step has earned it, not attempted first.
-6. **`m2cgen` port to C++** (only after step 5 passes) — transpile the validated model into
-   dependency-free C++ source, sidestepping the cross-compilation risk of vendoring a real ML runtime
-   library into this WSL→Windows `clang-cl` toolchain. `EvaluateTurtleSoupOptionB()` then replaces
+**Turtle-Soup-specific application, staged and cost-ordered:**
+
+1. Extract Turtle-Soup-specific features per prefix snapshot (penetration-so-far vs. the 20-bar
+   extreme, tail-shape-so-far, ATR-normalized distance, elapsed-bar-fraction) using the
+   infrastructure's general dataset-construction methodology.
+2. Prototype with `scikit-learn` (logistic regression first) and compare against Option A **inside
+   the Predator-equipped twin** — an empirical, apples-to-apples comparison, not an assumption that
+   the classifier wins.
+3. **Only if the classifier demonstrably beats the heuristic** on real gating metrics: hand-port to
+   C++ per the infrastructure spec's deployment guidance (hand-crafted, not auto-generated; golden-vector
+   regression-tested against the Python model). `EvaluateTurtleSoupOptionB()` then replaces
    `EvaluateTurtleSoupOptionA()` at the single call site that currently invokes Option A — no change
-   to the macro input, fusion rule, or safety subordination on the C++ side.
-
-**Honest, named cost**: whichever model ships to C++, retraining it requires a full recompile and DLL
-redeploy — `MindfulTrader.dll` is one shared binary, so redeploying interrupts whatever live
-collection is running at the time. This is a real, recurring operational cost of doing inference in
-C++ rather than Python, weighed consciously here, not discovered later.
+   to the macro input, fusion rule, or safety subordination.
+4. **If it doesn't win**: Option A remains the shipped answer, and the classifier's negative result is
+   still real, useful information — a documented, honest outcome, not a failure requiring justification.
 
 ## Test Plan
 
@@ -151,43 +120,31 @@ C++ rather than Python, weighed consciously here, not discovered later.
 
 ## Non-Goals
 
-- **No deep sequence model** (LSTM/Transformer-based early-exit) for Option B — classical GBT/logistic
-  regression is the literature-grounded, lower-risk choice per the review above.
-- **No live retraining pipeline** — Option B's model training is an offline, batch process against
-  already-collected tick data; nothing about live collection changes for this spec.
 - **No schema changes.**
+- **No commitment that Option B beats Option A** — see the infrastructure spec and the Background
+  section above; this is a genuinely open empirical question, not assumed either way.
 - **No commitment to a ship date for Option B** — it is a parallel, non-blocking track; Option A alone
   satisfies this spec's acceptance criteria.
-- **No live Python round-trip for Option B's inference.** Verified directly: this codebase has zero
-  existing precedent for C++-side model deployment (no ONNX/treelite/LightGBM/XGBoost/m2cgen anywhere
-  in `src`/`include`), and only `libzmq`/`libsodium` exist as third-party C++ dependencies today, both
-  manually vendored under the WSL→Windows `clang-cl` cross-compilation setup. A per-tick ZMQ round-trip
-  to Python would reintroduce the exact latency this initiative exists to remove — Kangaroo Tail and
-  Momentum Pinball, the two already-audited reference patterns, both run fully in-process in C++ with
-  no network round-trip; even the HMM's own live channel is Mahalanobis-gated, not evaluated every
-  tick. Inference must be C++-native once Option B ships, which is precisely why the staged plan above
-  proves the concept cheaply in Python first before paying that porting cost.
-- **No new C++ ML runtime library** (ONNX Runtime, LightGBM C API, treelite) unless plain logistic
-  regression proves insufficient — those all require vendoring a real prebuilt library into a
-  cross-compilation setup that has already proven non-trivial for just two dependencies. `m2cgen`
-  (generates plain, dependency-free C++ source, not a linked runtime) is the fallback if a GBT is
-  genuinely needed, precisely because it avoids that integration risk entirely.
+- **General ECTS mechanics (dataset construction, stopping-rule theory, deployment/library guidance)
+  are the infrastructure spec's concern, not re-specified here** — see
+  `2026-08-16-ects-prefix-training-infrastructure-spec.md`.
 
 ## Investigation Log
 
 - **2026-08-16**: Design pressure-tested via `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_103`/response
   before being written down, rather than decided from first principles alone. The literature review
   confirmed the classical-classifier approach is genuine ECTS (not a shortcut), surfaced two real
-  dataset-construction guardrails (fractional sampling, profitability-inclusive labeling) adopted
-  directly into Option B's design, and connected the stopping-rule question to this project's own
-  existing Shiryaev-Wald/Elkan theoretical foundation rather than a new one. One implementation-detail
-  mismatch (a proposed virtual-interface mechanism) was resolved in favor of this codebase's existing
-  free-function/DOD convention — the underlying architectural idea (a standardized, swappable
-  micro-signal output) was sound either way; only the C++ mechanism needed adapting to a
-  project-specific constraint that hadn't been stated in the original brief.
-- **2026-08-16 (later, same day)**: Feasibility check (where does the classifier live, what libraries
-  exist) done before committing to Option B's plan, not assumed — confirmed zero existing C++
+  dataset-construction guardrails (fractional sampling, profitability-inclusive labeling), and
+  connected the stopping-rule question to this project's own existing Shiryaev-Wald/Elkan theoretical
+  foundation rather than a new one. One implementation-detail mismatch (a proposed virtual-interface
+  mechanism) was resolved in favor of this codebase's existing free-function/DOD convention.
+- **2026-08-16 (later)**: Feasibility check (where does the classifier live, what libraries exist)
+  done before committing to Option B's plan, not assumed — confirmed zero existing C++
   model-deployment precedent and a real, non-trivial cross-compilation cost to any new C++ ML runtime
-  library. Refined Option B into the staged plan above: `scikit-learn` prototype + a Predator-equipped
-  Python twin proves the fusion decision cheaply first; `m2cgen` porting to C++ only happens after that
-  proof, not before. This is a deliberate cost-ordering choice, not a scope cut.
+  library.
+- **2026-08-16 (later still)**: User correctly reframed Option B as a general capability question
+  rather than Turtle-Soup-specific, surfacing a second real consumer (TRAP's own already-deferred ECTS
+  need). Split the general mechanics out into
+  `2026-08-16-ects-prefix-training-infrastructure-spec.md`, mirroring the
+  `PredatorContext`/`PredatorFusion` infrastructure-vs-consumer pattern — this spec now covers only
+  what's Turtle-Soup-specific.
