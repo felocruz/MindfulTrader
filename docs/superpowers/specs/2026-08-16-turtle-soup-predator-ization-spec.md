@@ -94,22 +94,39 @@ per contract element 5).
 
 ### Option B: ECTS Classifier (parallel track, does not block Option A's ship)
 
+**Staged, cost-ordered plan (refined 2026-08-16) — cheap Python-side proof before any C++ commitment:**
+
 1. **Offline dataset construction** from `mes_continuous_ticks.parquet` (already available, no new
    live collection needed): for each historical bar, reconstruct multiple prefix snapshots at
    elapsed-time/volume fractions τ ∈ {0.1, 0.2, ..., 0.9}, each labeled with the bar's real eventual
    outcome — WEAK/STRONG/EXTREME/NONE **and** whether the resulting trade would have cleared a minimum
    forward-return threshold (the profitability guardrail above).
-2. **Model**: gradient-boosted trees (or logistic regression) over engineered features
-   (elapsed-fraction, penetration-so-far/ATR, tail-shape-so-far, tick-level momentum) — not a deep
-   sequence model. `scikit-learn` is already in `lbrnet`'s environment; no new dependency.
-3. **Stopping rule**: Dachraoui-style cost-based earliness/accuracy tradeoff, with the decision
+2. **Model prototyping, Python-only, `scikit-learn`** (logistic regression first; gradient-boosted
+   trees only if that proves insufficient) over engineered features (elapsed-fraction,
+   penetration-so-far/ATR, tail-shape-so-far, tick-level momentum) — not a deep sequence model.
+   Already in `lbrnet`'s environment; no new dependency for this stage.
+3. **Bring the Predator architecture to the Python twin itself** — implement the same
+   macro-input/micro-input/fusion-rule shape (mirroring this spec's C++ design, not a parallel
+   invention) inside the backtester, so the classifier's *decision*, not just its raw prediction
+   accuracy, gets validated end-to-end. This is a genuine, real piece of work (the twin needs its own
+   Predator-context-equivalent assembly and fusion logic), not a rubber-stamp step.
+4. **Stopping rule**: Dachraoui-style cost-based earliness/accuracy tradeoff, with the decision
    threshold conditioned on regime state via the same Elkan (2001) cost-sensitive formula τ* already
    used for TRAP — reusing, not reinventing, this project's existing theoretical apparatus.
-4. **Twin validation**: per the governance spec's promotion ladder — measure real gating metrics via
-   the Python twin before this ever reaches the SC-replay backtester.
-5. **The swap**: once validated, `EvaluateTurtleSoupOptionB()` replaces `EvaluateTurtleSoupOptionA()`
-   at the single call site that currently invokes Option A — no change to the macro input, fusion
-   rule, or safety subordination.
+5. **Twin validation gate**: measure real gating metrics via this Predator-equipped twin. **Only if
+   this proves the fusion decision genuinely works** does the plan proceed to step 6 — this is the
+   actual cost-ordering point: the expensive, harder-to-reverse step (C++ porting) is deliberately
+   deferred until the cheap step has earned it, not attempted first.
+6. **`m2cgen` port to C++** (only after step 5 passes) — transpile the validated model into
+   dependency-free C++ source, sidestepping the cross-compilation risk of vendoring a real ML runtime
+   library into this WSL→Windows `clang-cl` toolchain. `EvaluateTurtleSoupOptionB()` then replaces
+   `EvaluateTurtleSoupOptionA()` at the single call site that currently invokes Option A — no change
+   to the macro input, fusion rule, or safety subordination on the C++ side.
+
+**Honest, named cost**: whichever model ships to C++, retraining it requires a full recompile and DLL
+redeploy — `MindfulTrader.dll` is one shared binary, so redeploying interrupts whatever live
+collection is running at the time. This is a real, recurring operational cost of doing inference in
+C++ rather than Python, weighed consciously here, not discovered later.
 
 ## Test Plan
 
@@ -141,6 +158,20 @@ per contract element 5).
 - **No schema changes.**
 - **No commitment to a ship date for Option B** — it is a parallel, non-blocking track; Option A alone
   satisfies this spec's acceptance criteria.
+- **No live Python round-trip for Option B's inference.** Verified directly: this codebase has zero
+  existing precedent for C++-side model deployment (no ONNX/treelite/LightGBM/XGBoost/m2cgen anywhere
+  in `src`/`include`), and only `libzmq`/`libsodium` exist as third-party C++ dependencies today, both
+  manually vendored under the WSL→Windows `clang-cl` cross-compilation setup. A per-tick ZMQ round-trip
+  to Python would reintroduce the exact latency this initiative exists to remove — Kangaroo Tail and
+  Momentum Pinball, the two already-audited reference patterns, both run fully in-process in C++ with
+  no network round-trip; even the HMM's own live channel is Mahalanobis-gated, not evaluated every
+  tick. Inference must be C++-native once Option B ships, which is precisely why the staged plan above
+  proves the concept cheaply in Python first before paying that porting cost.
+- **No new C++ ML runtime library** (ONNX Runtime, LightGBM C API, treelite) unless plain logistic
+  regression proves insufficient — those all require vendoring a real prebuilt library into a
+  cross-compilation setup that has already proven non-trivial for just two dependencies. `m2cgen`
+  (generates plain, dependency-free C++ source, not a linked runtime) is the fallback if a GBT is
+  genuinely needed, precisely because it avoids that integration risk entirely.
 
 ## Investigation Log
 
@@ -154,3 +185,9 @@ per contract element 5).
   free-function/DOD convention — the underlying architectural idea (a standardized, swappable
   micro-signal output) was sound either way; only the C++ mechanism needed adapting to a
   project-specific constraint that hadn't been stated in the original brief.
+- **2026-08-16 (later, same day)**: Feasibility check (where does the classifier live, what libraries
+  exist) done before committing to Option B's plan, not assumed — confirmed zero existing C++
+  model-deployment precedent and a real, non-trivial cross-compilation cost to any new C++ ML runtime
+  library. Refined Option B into the staged plan above: `scikit-learn` prototype + a Predator-equipped
+  Python twin proves the fusion decision cheaply first; `m2cgen` porting to C++ only happens after that
+  proof, not before. This is a deliberate cost-ordering choice, not a scope cut.
