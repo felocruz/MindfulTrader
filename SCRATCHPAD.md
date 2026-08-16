@@ -76,21 +76,26 @@ push is a pending decision, ask before doing it (see end of this entry).
 1. Whoever resumes: **read the three specs in commit order** (governance → Predator Decision Contract
    → PredatorContext/PredatorFusion infrastructure) before touching anything — the infrastructure spec
    assumes the contract spec's five elements as given.
-2. **Turtle Soup sniper-ization is still an open design question**, not yet spec'd: cheap intra-bar
-   heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
-   application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly tied
-   to the SAME deferred "intra-bar re-inference" gap `CLAUDE.md`'s Trap Detection section already
-   named for the τ* layer. Don't design this blind; it needs its own brainstorming pass.
-3. The PredatorContext/PredatorFusion infrastructure spec is **implementation-ready but
+2. The PredatorContext/PredatorFusion infrastructure spec is **implementation-ready but
    `writing-plans` was never invoked** — next concrete step when resumed, if the user wants to move
    from spec to code.
-4. First-wave Predator-contract work not started: Elder Breakout directional-fusion fix, Kangaroo
-   Tail/Momentum Pinball audit against the 5-element contract.
-5. Backlog Units 1 (parity-contract test infra), 4 (`REGIME_INVALIDATION` wiring), 5
+3. **First-wave Predator-contract work, folded into one unified effort (2026-08-16, post-break
+   decision — Turtle Soup's sniper-ization is not a separate thread, it's part of this same batch,
+   matching how the Predator Decision Contract spec's own "First-Wave Concrete Work" section already
+   listed it):**
+   - Elder Breakout directional-fusion fix (confirmed broken, `TripleScreen3.cpp:1162-1173`).
+   - Kangaroo Tail / Momentum Pinball audit against the 5-element contract.
+   - **Turtle Soup sniper-ization — still an open design question, not yet spec'd**: cheap intra-bar
+     heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
+     application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly
+     tied to the SAME deferred "intra-bar re-inference" gap `CLAUDE.md`'s Trap Detection section
+     already named for the τ* layer. Don't design this blind; resolve it as part of this same
+     brainstorming pass, not in isolation.
+4. Backlog Units 1 (parity-contract test infra), 4 (`REGIME_INVALIDATION` wiring), 5
    (profit-protection measurement via the Python twin — was queued before the sniper/historian/Predator
    detour pulled focus away), 7 (Triple Screen fidelity), 8 (doc sync), 9 (flagged research) — none
    started.
-6. PCH spec — deliberately deferred, no timeline attached.
+5. PCH spec — deliberately deferred, no timeline attached.
 
 ### Housekeeping
 
