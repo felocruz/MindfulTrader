@@ -1115,68 +1115,6 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         const auto elderBreakoutIndicator = indMgr.GetIndicator<ElderBreakout>(IndicatorKey::ELDER_BREAKOUT);
         if (elderBreakoutIndicator && breakoutEnum != ElderBreakoutEnum::NONE) {
             elderBreakoutIndicator->Update(breakoutEnum);
-            // Note: SetMetrics() called later with enhanced quality after context calculation
-
-            // Context 1: Channel Squeeze (+0.2)
-            // ATR declining = bands narrowing = compression before expansion
-            bool channelSqueeze = false;
-            if (sc.Index >= 5) {
-                float avgPrevATR = 0.0f;
-                for (int i = 1; i <= 5; i++) {
-                    avgPrevATR += Subgraph_AtrTemp3[sc.Index - i];
-                }
-                avgPrevATR /= 5.0f;
-
-                if (atr < avgPrevATR * 0.9f) {  // ATR declined 10%+ = squeeze
-                    channelSqueeze = true;
-                }
-            }
-
-            // Context 2: Impulse Aligned (+0.1)
-            // DOD/SoA migration (Task 7): read straight from the packed array — no
-            // pointer, no null check, always a valid value. INTERM_IMP is a
-            // two-row key (Int8 signal + impulse_run_length companion), so the
-            // explicit (Key, Block) form is required.
-            bool impulseAligned = false;
-            {
-                const ImpulseEnum impulseEnum = static_cast<ImpulseEnum>(
-                    indMgr.GetValue<IndicatorKey::INTERM_IMP, mts::StorageBlock::Int8>());
-                bool impulseGreen = (impulseEnum == ImpulseEnum::GREEN);
-                bool impulseRed = (impulseEnum == ImpulseEnum::RED);
-
-                if ((breakoutEnum == ElderBreakoutEnum::BULLISH_WEAK ||
-                     breakoutEnum == ElderBreakoutEnum::BULLISH_STRONG ||
-                     breakoutEnum == ElderBreakoutEnum::BULLISH_EXTREME) && impulseGreen) {
-                    impulseAligned = true;
-                }
-                else if ((breakoutEnum == ElderBreakoutEnum::BEARISH_WEAK ||
-                          breakoutEnum == ElderBreakoutEnum::BEARISH_STRONG ||
-                          breakoutEnum == ElderBreakoutEnum::BEARISH_EXTREME) && impulseRed) {
-                    impulseAligned = true;
-                }
-            }
-
-            // Context 3: HMM State Alignment (reuses cached hmmIndicator from climate assessment)
-            bool screenAligned = false;
-            if (hmmIndicator) {
-                // HMM states are non-directional; momentum regimes support breakouts in either direction.
-                bool screen1Bullish = (currentHmmState == HMMStateEnum::GAUSSIAN_STABLE || currentHmmState == HMMStateEnum::PARETO_MOMENTUM);
-                bool screen1Bearish = (currentHmmState == HMMStateEnum::GAUSSIAN_STABLE || currentHmmState == HMMStateEnum::PARETO_MOMENTUM);
-
-                if ((breakoutEnum == ElderBreakoutEnum::BULLISH_WEAK ||
-                     breakoutEnum == ElderBreakoutEnum::BULLISH_STRONG ||
-                     breakoutEnum == ElderBreakoutEnum::BULLISH_EXTREME) && screen1Bullish) {
-                    screenAligned = true;
-                }
-                else if ((breakoutEnum == ElderBreakoutEnum::BEARISH_WEAK ||
-                          breakoutEnum == ElderBreakoutEnum::BEARISH_STRONG ||
-                          breakoutEnum == ElderBreakoutEnum::BEARISH_EXTREME) && screen1Bearish) {
-                    screenAligned = true;
-                }
-            }
-
-            // Update context in indicator (Pure Data - No Scoring)
-            elderBreakoutIndicator->SetContext(channelSqueeze, impulseAligned, screenAligned);
 
             // Update indicator with raw quality score (Physics only)
             elderBreakoutIndicator->SetMetrics(breakoutDistance, hurstValue, breakoutVolumeSpike, consolidationBars, isGap, breakoutQuality);

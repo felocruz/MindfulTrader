@@ -1319,11 +1319,6 @@ public:
     bool IsGap() const { return m_isGap; }  // Did price gap beyond the band?
     float QualityScore() const { return m_qualityScore; }  // 0.0-1.0 overall pattern quality
 
-    // Context
-    bool ChannelSqueeze() const { return m_channelSqueeze; }  // Keltner bands narrowing (ATR compression)
-    bool ImpulseAligned() const { return m_impulseAligned; }  // Impulse color matches breakout direction
-    bool ScreenAligned() const { return m_screenAligned; }  // Screen1 regime matches breakout direction
-
     // Companion Float32-block dual-write target (indicator-manager-dod-soa
     // plan, Task 4). Brings the base template's int8 overload into scope
     // alongside this float one.
@@ -1338,12 +1333,6 @@ public:
         m_isGap = isGap;
         m_qualityScore = quality;
         if (m_packedSlotF32) { *m_packedSlotF32 = m_qualityScore; }
-    }
-
-    void SetContext(bool channelSqueeze, bool impulseAligned, bool screenAligned) {
-        m_channelSqueeze = channelSqueeze;
-        m_impulseAligned = impulseAligned;
-        m_screenAligned = screenAligned;
     }
 
     // FlatBuffer serialization - Export quality score to TrainingEvent
@@ -1362,9 +1351,6 @@ private:
     int m_consolidationBars = 0;  // Number of bars spent near band before breakout
     bool m_isGap = false;  // True if price gapped beyond band
     float m_qualityScore = 0.0f;  // 0.0-1.0 combined quality metric
-    bool m_channelSqueeze = false;  // Keltner bands narrowing (ATR declining)
-    bool m_impulseAligned = false;  // Impulse color supports breakout direction
-    bool m_screenAligned = false;  // Screen1 regime supports breakout direction
     float* m_packedSlotF32 = nullptr;
 };
 
