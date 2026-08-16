@@ -71,7 +71,10 @@ namespace {
         // (Task 7). The live JSON override at
         // /mnt/c/Trading/config/hmm_regime_risk_policy.json was updated the
         // same way (its own old value, 9.697616023284109, P85.1 -> 1.8401).
-        double taleb_signal_sigma_threshold = 1.8382;
+        // Compiled default synced to that exact live value 2026-08-15 (was
+        // 1.8382, a stale near-duplicate never updated to match) -- see
+        // docs/ADR/gate_stack_stationarity_audit_findings.md finding 8.
+        double taleb_signal_sigma_threshold = 1.8401;
     };
 
     constexpr const char* kRiskPolicyPathWindows = "C:/Trading/config/hmm_regime_risk_policy.json";
