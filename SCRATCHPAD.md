@@ -1,6 +1,54 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-16 (afternoon/evening, session paused for a long break by explicit user request)
+Last updated: 2026-08-16 (evening) — Predator infrastructure + Turtle Soup Option A IMPLEMENTED
+
+## 2026-08-16 (evening) — Predator infrastructure + Turtle Soup Option A implemented and committed
+## (was SPEC-only as of the previous entry below). Read this FIRST.
+
+Executed `docs/superpowers/plans/2026-08-16-predator-infrastructure-and-turtle-soup.md` inline,
+all 7 tasks, in this same session. Full clean `./build_dll.sh` green; all 4 native test suites
+`ALL PASS`. Commits (in order): `PredatorContext` (Task 1), `FusionKey`/`PredatorFusion`
+applicability-mask dispatch (Task 2), `FuseTauStar` (Task 3), `EvaluateTurtleSoupOptionA` +
+live wiring (Task 4), `ClassifierParams` scaffold (Task 5), `EvaluateTurtleSoupOptionB` scaffold
+(Task 6) — plus several small naming-cleanup commits along the way (see git log).
+
+**What's actually live now**: Turtle Soup evaluates the current, still-forming bar every tick
+(the `lastProcessedBarTS`/once-per-closed-bar gate is gone entirely), gated behind the new
+applicability-mask dispatch (`ComputeApplicabilityMask`) so the entry-side fusion structurally
+cannot fire while in a position. `FuseTauStar` and `EvaluateTurtleSoupOptionB` are built, unit-
+tested, and confirmed via `grep` to have zero call sites in `src/` — deliberately not wired live
+per the plan's own scope boundary (τ* gated on backlog Unit 3's `ExitReason_TRAP` schema work;
+Option B gated on a future lbrnet-rooted training run).
+
+**Real bugs caught and fixed during execution, not just spec-following**:
+1. A genuine plan bug caught in critical review *before* any code was written: Task 4's original
+   draft would have reassigned the shared `signalBarIndex` variable (`sc.Index - 1` → `sc.Index`),
+   silently breaking the unrelated "CRITICAL FIX — MOVED FROM TURTLE SOUP" normalized-anchors block
+   further down in the same function, which reuses that same variable independently of Turtle
+   Soup's own gating. Fixed by introducing a separate `currentBarIndex` variable instead, leaving
+   `signalBarIndex` completely untouched.
+2. Task 1 discovered `PredatorContext.h` needed `LocalRiskContext` (from `ContextManager.h`) and
+   `HMMStateEnum` (from `Indicator.h`) — both files transitively pull in `sierrachart.h`, which
+   would have broken native testability. Fixed by extracting both into their own ACSIL-independent
+   headers (`LocalRiskContext.h`, `rc_enums.h` — the latter deliberately named to mirror lbrnet's
+   `core/rc_enums.py`, not renamed to PascalCase despite the rest of this session's new files
+   following that convention), matching the existing `MacdEnum`/`IndicatorComputations.h`
+   extraction precedent. Logged the pre-existing scattered `MacdEnum`/`KangarooTailEnum`/etc.
+   consolidation into `rc_enums.h` as a new Unit 10 in the convergence backlog (not done now).
+3. Task 3's own test had a real math bug: the "stop much closer than target" scenario computed
+   tau*=0.889, not "low" as its own comment claimed — verified against Elkan's actual cost-
+   minimization derivation directly. `FuseTauStar`'s implementation was correct throughout; only
+   the test's chosen numbers were backwards. Fixed in both the test and the plan doc.
+4. Task 4's own test had a similar bug: the bearish Turtle-Soup-Option-A scenario's `closeSoFar`
+   put `closePosition` on the wrong side of the 0.45 threshold the bearish branch requires (0.73
+   instead of ≤0.45) — the scenario would never have triggered. Fixed the test data.
+
+**Explicitly NOT done, by design**: the lbrnet-rooted handoff (ECTS prefix-training, Python-twin
+Predator extension, empirical Option A vs. Option B comparison) has not been written yet — that's
+the next pending task, per the user's own instruction ("create a clear, actionable handoff...
+for a separate lbrnet-rooted session").
+
+---
 
 ## 2026-08-16 (afternoon/evening) — Long brainstorming arc: converged the execution/risk system
 ## toward "The Predator Decision Contract" + its concrete C++ infrastructure spec. Nothing implemented
