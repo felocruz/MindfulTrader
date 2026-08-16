@@ -84,6 +84,14 @@ push is a pending decision, ask before doing it (see end of this entry).
    matching how the Predator Decision Contract spec's own "First-Wave Concrete Work" section already
    listed it):**
    - Elder Breakout directional-fusion fix (confirmed broken, `TripleScreen3.cpp:1162-1173`).
+     **Provenance checked 2026-08-16 (post-break)**: the pattern itself is legitimate, not fabricated —
+     `IndicatorComputations.h:1170-1219`'s `ElderBreakoutEnum`/`DetectElderBreakout()` genuinely
+     combines Elder's real, documented Keltner-Channel usage with Raschke's WEAK/STRONG/EXTREME
+     strength grading. It's a **continuation** breakout (trade with the break, expect it to hold), not
+     a fake/failed-breakout fade — the user's own recollection of "Elder trading fake breakouts" refers
+     to a genuinely different, currently-unimplemented concept, deliberately not conflated with this
+     fix and deferred as a separate future idea (see the conversation, not yet its own spec/unit).
+     Fix proceeds in this batch as originally scoped, no blocker.
    - Kangaroo Tail / Momentum Pinball audit against the 5-element contract.
    - **Turtle Soup sniper-ization — still an open design question, not yet spec'd**: cheap intra-bar
      heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
