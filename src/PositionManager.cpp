@@ -352,11 +352,18 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
         // Notify RiskManager that position opened (cache unrealized P&L tracking)
         RiskManager::Instance().OnPositionOpened(sc);
 
-        // === Triple-Barrier shadow (Phase 1, step 1a — NON-DESTRUCTIVE A/B) ===
-        // Compute engine barriers alongside the live pattern/Chandelier stop+target
-        // and log the comparison. Drives NO orders (Chandelier remains authoritative);
-        // validates the D1 live-source mapping numerically on replay data before the
-        // engine-driven cutover. See docs/ADR/triple_barrier_cutover_phase1_plan.md.
+        // === Post-fill Triple-Barrier bracket latch + diagnostic re-log ===
+        // The SC bracket was already submitted using this same engine's output (see
+        // "STEP C: TRIPLE-BARRIER ENGINE BARRIERS" earlier in this file — the single
+        // source of truth for stop/target). This block re-derives the identical
+        // barriers post-fill purely to (a) latch them via OpenBracket() below, which
+        // the per-tick vertical/time-barrier check in Update() reads, and (b) log a
+        // diagnostic line for replay verification. It does not drive a second,
+        // competing order source — ChandelierStopManager no longer exists in this
+        // codebase. The "[TB-SHADOW]" log tag and "LIVE" vs "ENGINE" comparison below
+        // are leftover naming from the pre-cutover phase (see
+        // docs/ADR/triple_barrier_cutover_phase1_plan.md) and should read as one
+        // engine's output logged twice, not two systems being compared.
         try {
             const int tbRawPattern = m_openTrade.GetPatternId();
             const bool tbValid = (tbRawPattern >= 1 &&

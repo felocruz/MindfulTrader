@@ -7,12 +7,14 @@
 // single active position's immutable bracket, and resolves the first-hit-wins
 // race each tick (regime-invalidation → vertical → lower → upper, §4.4).
 //
-// STATUS (Phase 1, additive): this compiles into the DLL but is NOT yet wired
-// into PositionManager, and does NOT delete ChandelierStopManager. Those are the
-// later, destructive Phase-1 steps. The barrier MATH lives in the pure core and
-// is verified natively against the golden-vector fixture; this layer is validated
-// at integration level (build + replay), per the cross-compilation testing
-// posture.
+// STATUS (post Phase 1 cutover): wired into PositionManager and authoritative —
+// `PositionManager.cpp`'s "STEP C" block unconditionally overwrites the pattern
+// stop/target with this engine's output before the SC bracket order is built.
+// `ChandelierStopManager` was deleted entirely as part of this cutover (see
+// docs/ADR/triple_barrier_cutover_phase1_plan.md). The barrier MATH lives in the
+// pure core and is verified natively against the golden-vector fixture; this
+// layer is validated at integration level (build + replay), per the
+// cross-compilation testing posture.
 
 #pragma once
 
