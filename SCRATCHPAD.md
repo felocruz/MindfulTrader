@@ -1,6 +1,108 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-16 07:45
+Last updated: 2026-08-16 (afternoon/evening, session paused for a long break by explicit user request)
+
+## 2026-08-16 (afternoon/evening) — Long brainstorming arc: converged the execution/risk system
+## toward "The Predator Decision Contract" + its concrete C++ infrastructure spec. Nothing implemented
+## yet — everything below is SPEC/DESIGN, committed to git, ready for `writing-plans` when resumed.
+## Read this FIRST — it supersedes nothing above, it continues from the morning's Task 1 closure.
+
+**User is taking a long break and explicitly asked for continuity insurance against a power outage.**
+All work below is committed locally (9 commits, `6ba7b3e`..`36d5788`) — **NOT yet pushed to origin**;
+push is a pending decision, ask before doing it (see end of this entry).
+
+### The arc, in order
+
+1. **Governance spec** (`docs/superpowers/specs/2026-08-16-execution-risk-coevolution-governance-spec.md`):
+   established the C++/Python twin-first promotion ladder (Python twin → SC-replay backtester → paper
+   → live) and the mechanical parity-contract test as the real co-evolution enforcement (narrative
+   scratchpad notes are a complement, not a substitute — this was an explicit user decision after two
+   documentation-drift near-misses earlier the same day).
+2. **Convergence backlog** (`docs/superpowers/specs/2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md`):
+   9 units cataloged from a literature-grounded audit of the 16D risk-gate system, Triple Screen, and
+   the Chandelier→Triple-Barrier migration (three research-agent reports, not reproduced here — read
+   the spec). **Unit 2 (stale-comment cleanup) DONE. Unit 6 (ADR corpus reconciliation) DONE. Unit 3
+   (`ExitReason_TRAP` schema) explicitly DEFERRED** (rationale: the Python twin doesn't need it to
+   measure TRAP attribution; `MindfulTrader.dll` is one shared binary, so deploying it would interrupt
+   whatever `EventDataCollectorStudy` collection is running). **Units 1, 4, 5, 7, 8, 9 — not started.**
+3. **PCH/include-hygiene spec** (`docs/superpowers/specs/2026-08-16-pch-and-include-hygiene-spec.md`):
+   discovered mid-session that `MindfulTrader_Precompiled.h` bundles 20 actively-developed project
+   headers into the PCH, defeating its purpose (verified empirically: touching `PositionManager.h`
+   forces a 70s/35-file full rebuild vs. 21s/2-file for an unrelated header). Refined design: a new,
+   narrowly-scoped `include/pch.h` becomes the sole precompile target, `MindfulTrader_Precompiled.h` is
+   retired entirely (not kept in slimmed form). **Deliberately deferred** ("leave this beast for a
+   later time") — spec is complete and ready, nothing implemented.
+4. **The "historian vs. sniper" investigation** (folded into the Predator Decision Contract spec, not
+   its own doc): direct code verification found TS3's primary trigger patterns are NOT uniformly
+   bar-close-gated as first assumed — Kangaroo Tail, Momentum Pinball, and Elder Breakout are genuinely
+   tick-reactive (`TripleScreen3.cpp:837-847`, `:918-924`, `:1063-1069`, all read the current forming
+   bar, no gate); Turtle Soup is the one deliberate exception (`:1215-1241`, explicit
+   "Institutional timing contract: Process ONCE per closed bar"). **Two of the model's own
+   over-generalizations were caught and corrected mid-investigation** by the user's skepticism — worth
+   remembering as a pattern: don't trust a single example (Turtle Soup) or a research agent's blanket
+   claim without checking the other call sites directly.
+5. **Found: lbrnet already has a "Predator" concept** — `lbrnet/docs/architecture/PHASE_3_MULTISCALE_PREDATOR_BLUEPRINT.md`
+   (Gemini's blueprint, not yet implemented — a dual-attention Transformer fusing 50 sparse macro
+   bar-close frames with 150 sub-second micro order-flow updates via cross-attention). Real precursor
+   groundwork already exists: `lbrnet/lbrnet/data/multiscale_bars.py` (Ripple/Wave/Tide bar-cache),
+   with `bar_type` IDs 1/2/3 already reserved "so a future C++/wire version reuses the same numbering."
+6. **The Predator Decision Contract** (`docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md`):
+   the C++ execution/risk analog of lbrnet's Predator blueprint — a decision discipline, not a neural
+   architecture. **Five required elements**: (1) explicit macro input, (2) explicit micro input,
+   (3) explicit fusion rule (regime-conditioned threshold, template = TRAP's τ*), (4) twin-validation
+   before promotion, (5) **subordinate to safety, no exception** — generalizes `CLAUDE.md`'s existing
+   "native governs, model may lead but never suppress" TRAP philosophy to every current/future
+   Predator-grade decision, verified against the real call order (`PositionManager.cpp:241-268`'s
+   `m_exitSubmittedThisTick` guard). Real, found violation: **Elder Breakout's directional-fusion bonus
+   is broken by construction** — `screen1Bullish`/`screen1Bearish` are set to the identical condition
+   (`TripleScreen3.cpp:1162-1173`), proving "tick-reactive" ≠ "Predator-grade." First-wave work
+   (Elder Breakout fix, Kangaroo Tail/Momentum Pinball audit, Turtle Soup sniper-ization, Units 4/5
+   reframed) is named but **none of it is implemented yet**.
+7. **PredatorContext/PredatorFusion infrastructure spec** (`docs/superpowers/specs/2026-08-16-predator-context-fusion-infrastructure-spec.md`):
+   the concrete C++ mechanism, requested explicitly before any individual pattern gets fixed. A unified
+   `PredatorContext` struct (composes existing `LocalRiskContext` + HMM state, DOD-consistent, zero new
+   computation), a free-function-per-decision fusion interface (no virtual dispatch), and a
+   broad-phase/narrow-phase applicability-bitmask dispatch that **reuses `IndicatorManager`'s existing
+   dirty-mask idiom** — both a real perf win under `AutoLoop=1` and the *structural* enforcement of
+   contract element 5 (an entry-fusion bit provably cannot be set while `inPosition` is true). τ*
+   migrates onto the new interface as a byte-identical, regression-tested reference implementation —
+   this is infrastructure, not a new decision, so it's validated by native unit tests (mechanism), not
+   the twin (policy) — an explicit, sourced design decision (Hydra OS mechanism/policy separation,
+   Cohn's testing pyramid, Mike Acton's DOD testing practice, and this project's own prior use of the
+   identical split for `test_feature_scaler.cpp`).
+
+### What's next, in the order it was queued (nothing started yet)
+
+1. Whoever resumes: **read the three specs in commit order** (governance → Predator Decision Contract
+   → PredatorContext/PredatorFusion infrastructure) before touching anything — the infrastructure spec
+   assumes the contract spec's five elements as given.
+2. **Turtle Soup sniper-ization is still an open design question**, not yet spec'd: cheap intra-bar
+   heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
+   application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly tied
+   to the SAME deferred "intra-bar re-inference" gap `CLAUDE.md`'s Trap Detection section already
+   named for the τ* layer. Don't design this blind; it needs its own brainstorming pass.
+3. The PredatorContext/PredatorFusion infrastructure spec is **implementation-ready but
+   `writing-plans` was never invoked** — next concrete step when resumed, if the user wants to move
+   from spec to code.
+4. First-wave Predator-contract work not started: Elder Breakout directional-fusion fix, Kangaroo
+   Tail/Momentum Pinball audit against the 5-element contract.
+5. Backlog Units 1 (parity-contract test infra), 4 (`REGIME_INVALIDATION` wiring), 5
+   (profit-protection measurement via the Python twin — was queued before the sniper/historian/Predator
+   detour pulled focus away), 7 (Triple Screen fidelity), 8 (doc sync), 9 (flagged research) — none
+   started.
+6. PCH spec — deliberately deferred, no timeline attached.
+
+### Housekeeping
+
+- **Push to origin**: not yet done, explicitly pending a decision — ask before pushing, per standing
+  git-safety convention, even though the user's stated concern this time (power-outage data loss) is
+  exactly the risk pushing would mitigate that local commits alone don't.
+- The 4 pre-existing uncommitted files from before this session started (`.claude/settings.local.json`,
+  `data/NH_NL.csv`, `data/daily_high_low.csv`, `docs/ADR/amihud_gate_percentile_spec.md`) are still
+  untouched, still unexplained — not this session's work, don't assume what they are.
+- The `EventDataCollectorStudy` live collection from the morning (`event_data_20260815_230249.*`) was
+  last confirmed still actively growing — status not re-checked at session pause; check freshness
+  before trusting it for any future twin-measurement work (Unit 5).
 
 ## 2026-08-16 (morning) — Task 1 (observation-vector production validation) CLOSED: dim3's
 ## non-reconciliation root-caused as a stale pre-fix baseline, not a defect. Read this FIRST.
