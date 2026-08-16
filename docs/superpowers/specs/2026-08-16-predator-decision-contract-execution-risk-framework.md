@@ -10,7 +10,7 @@ not an implementation of it or a prerequisite for it.
 — every decision built under this contract is validated through that spec's twin-first promotion
 ladder, not a new validation process.
 **Reframes, does not duplicate**: `docs/superpowers/specs/2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md`
-Units 4 and 5, and the in-progress Turtle Soup sniper-ization brainstorm — see First-Wave Work below.
+Units 4 and 5, and the in-progress Turtle Soup Predator-ization brainstorm — see First-Wave Work below.
 
 ## Purpose
 
@@ -118,7 +118,7 @@ act when fusion itself may be wrong, stale, or unavailable.
 | Elder Breakout | Hurst exponent (persistence), via the *separate*, correctly-implemented slope+Hurst multiplier already in the same function (`TripleScreen3.cpp:1078-1104`) | Yes, tick-reactive | **The live decision's fusion was never actually broken.** The broken `screenAligned` logic lived in a fully dead, zero-consumer side computation (`ChannelSqueeze()`/`ImpulseAligned()`/`ScreenAligned()`) that never fed `breakoutQuality` or training export. **Removed outright 2026-08-16** rather than repaired (`4b0753a`) — nothing to fuse, because nothing read it. | **Predator-grade on the live path; dead code removed, no design fix was needed** |
 | Kangaroo Tail | `atSupportLevel`/`atResistanceLevel` (structural) | Yes, tick-reactive | **Audited 2026-08-16 — correctly direction-discriminating** (bullish requires at-support, bearish requires at-resistance, `TripleScreen3.cpp:849-877`) | **Predator-grade, no fix needed** |
 | Momentum Pinball | Hurst exponent (persistence) | Yes, tick-reactive | **Audited 2026-08-16 — correctly direction-discriminating** (`slopeAligned` checks slope sign against the *specific* signal direction, continuous regime-conditioned multiplier, `TripleScreen3.cpp:935-965`) | **Predator-grade, no fix needed** |
-| Turtle Soup | Yes (20-bar reference window) | No — bar-close gated | N/A, no fast signal yet | **Historian — sniper-ization candidate** (own unit) |
+| Turtle Soup | Yes (20-bar reference window) | No — bar-close gated | N/A, no fast signal yet | **Historian — Predator-ization candidate** (own unit) |
 | `REGIME_INVALIDATION` | `StructureTest` `DECISIVE_*` (macro) | Needs tick-evaluation wiring | Not yet built | **First-wave candidate = backlog Unit 4** |
 | Profit-protection/Trend-Scanning | HMM regime-gated (per ADR) | MFE/slope significance | Designed, not built | **First-wave candidate = backlog Unit 5** |
 
@@ -135,7 +135,7 @@ act when fusion itself may be wrong, stale, or unavailable.
    proof the contract is a real filter, not just a way to flag Elder Breakout after the fact — passing
    two out of three checked patterns confirms "tick-reactive" and "Predator-grade" aren't automatically
    the same thing in *either* direction (can fail, as Elder Breakout did; can also genuinely pass).
-3. **Turtle Soup sniper-ization** — referenced, not designed here; its own brainstorming thread is
+3. **Turtle Soup Predator-ization** — referenced, not designed here; its own brainstorming thread is
    in progress (cheap intra-bar heuristic vs. first real application of ECTS-style prefix training is
    an open decision in that thread, not this spec).
 4. **`REGIME_INVALIDATION` wiring** (backlog Unit 4) — now explicitly framed as building this

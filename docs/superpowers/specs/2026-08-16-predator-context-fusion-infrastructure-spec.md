@@ -94,7 +94,7 @@ the empirical, real-data-driven derivation of the actual bound *values*):
   C++ unit tests — deterministic, golden-vector, no twin involved. It makes no trading decision on its
   own; there is nothing for the twin to validate.
 - **Each concrete fusion decision** built on top of it (τ*'s eventual live wiring, Elder Breakout's
-  fix, Turtle Soup's sniper-ization) is validated through the governance spec's twin-first promotion
+  fix, Turtle Soup's Predator-ization) is validated through the governance spec's twin-first promotion
   ladder, per that decision's own gating metrics — unchanged by this spec.
 
 ## Test Plan

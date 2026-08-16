@@ -56,7 +56,7 @@ push is a pending decision, ask before doing it (see end of this entry).
    `m_exitSubmittedThisTick` guard). Real, found violation: **Elder Breakout's directional-fusion bonus
    is broken by construction** — `screen1Bullish`/`screen1Bearish` are set to the identical condition
    (`TripleScreen3.cpp:1162-1173`), proving "tick-reactive" ≠ "Predator-grade." First-wave work
-   (Elder Breakout fix, Kangaroo Tail/Momentum Pinball audit, Turtle Soup sniper-ization, Units 4/5
+   (Elder Breakout fix, Kangaroo Tail/Momentum Pinball audit, Turtle Soup Predator-ization, Units 4/5
    reframed) is named but **none of it is implemented yet**.
 7. **PredatorContext/PredatorFusion infrastructure spec** (`docs/superpowers/specs/2026-08-16-predator-context-fusion-infrastructure-spec.md`):
    the concrete C++ mechanism, requested explicitly before any individual pattern gets fixed. A unified
@@ -80,7 +80,7 @@ push is a pending decision, ask before doing it (see end of this entry).
    `writing-plans` was never invoked** — next concrete step when resumed, if the user wants to move
    from spec to code.
 3. **First-wave Predator-contract work, folded into one unified effort (2026-08-16, post-break
-   decision — Turtle Soup's sniper-ization is not a separate thread, it's part of this same batch,
+   decision — Turtle Soup's Predator-ization is not a separate thread, it's part of this same batch,
    matching how the Predator Decision Contract spec's own "First-Wave Concrete Work" section already
    listed it):**
    - Elder Breakout directional-fusion fix — **DONE 2026-08-16 (`4b0753a`), resolved as a deletion,
@@ -97,9 +97,9 @@ push is a pending decision, ask before doing it (see end of this entry).
    - Kangaroo Tail / Momentum Pinball audit against the 5-element contract — **DONE 2026-08-16, both
      pass, no fix needed** (Kangaroo Tail: `atSupportLevel`/`atResistanceLevel` correctly
      direction-discriminating; Momentum Pinball: `slopeAligned` + Hurst-conditioned continuous
-     multiplier, genuinely regime-aware fusion). **Remaining in this batch: Turtle Soup's sniper-ization
+     multiplier, genuinely regime-aware fusion). **Remaining in this batch: Turtle Soup's Predator-ization
      design only.**
-   - **Turtle Soup sniper-ization — still an open design question, not yet spec'd**: cheap intra-bar
+   - **Turtle Soup Predator-ization — still an open design question, not yet spec'd**: cheap intra-bar
      heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
      application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly
      tied to the SAME deferred "intra-bar re-inference" gap `CLAUDE.md`'s Trap Detection section
