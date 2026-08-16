@@ -1,6 +1,6 @@
 # Predator Infrastructure, Turtle Soup Option A, and Classifier-Consumption Scaffold Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build the shared `PredatorContext`/`PredatorFusion` infrastructure, bring Turtle Soup to
 Predator-grade via a tick-reactive geometric heuristic (Option A), and scaffold the C++-side
@@ -60,7 +60,7 @@ deployment guidance).
   and `const PredatorContext& ContextManager::GetPredatorContext() const;` — every later task in this
   plan consumes this exact struct and accessor.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```cpp
 // tests/cpp/test_predator_context.cpp — standalone unit tests for PredatorContext assembly.
@@ -108,12 +108,12 @@ int main() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails (header doesn't exist yet)**
+- [x] **Step 2: Run test to verify it fails (header doesn't exist yet)**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_context.cpp -o /tmp/t_pc`
 Expected: FAIL with `fatal error: 'PredatorContext.h' file not found`
 
-- [ ] **Step 3: Create `include/PredatorContext.h`**
+- [x] **Step 3: Create `include/PredatorContext.h`**
 
 ```cpp
 // PredatorContext.h — unified macro context for the Predator Decision Contract
@@ -142,12 +142,12 @@ struct PredatorContext {
 };
 ```
 
-- [ ] **Step 4: Run test to verify it passes (compiles; ContextManager.h include resolves)**
+- [x] **Step 4: Run test to verify it passes (compiles; ContextManager.h include resolves)**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_context.cpp -o /tmp/t_pc && /tmp/t_pc`
 Expected: `ALL PASS`
 
-- [ ] **Step 5: Add the `GetPredatorContext()` accessor to `ContextManager`**
+- [x] **Step 5: Add the `GetPredatorContext()` accessor to `ContextManager`**
 
 In `include/ContextManager.h`, near the existing `GetLocalRiskContext()` accessor (line 381), add:
 
@@ -164,7 +164,7 @@ mutable PredatorContext m_predatorContext;  // Assembled lazily from m_localRisk
 
 Add `#include "PredatorContext.h"` near the top of `ContextManager.h` (alongside the other includes).
 
-- [ ] **Step 6: Implement assembly in `src/ContextManager.cpp`**
+- [x] **Step 6: Implement assembly in `src/ContextManager.cpp`**
 
 Find `ContextManager`'s per-tick update entry point (the function that already refreshes
 `m_localRiskContext` — grep `m_localRiskContext =` or `m_localRiskContext\.` in
@@ -187,13 +187,13 @@ if (const auto* hmm = InferenceManager::Instance().HmmState()) {
 Add `#include "InferenceManager.h"` to `src/ContextManager.cpp` if not already present (check first
 with `grep -n "InferenceManager.h" src/ContextManager.cpp`).
 
-- [ ] **Step 7: `./build_dll.sh --no-clean` and confirm clean**
+- [x] **Step 7: `./build_dll.sh --no-clean` and confirm clean**
 
 Run: `./build_dll.sh --no-clean`
 Expected: `✓ Build completed` — this proves `ContextManager.cpp`/`.h` compile with the new member and
 accessor in the real cross-compilation toolchain, not just the standalone g++ test harness.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add include/PredatorContext.h include/ContextManager.h src/ContextManager.cpp tests/cpp/test_predator_context.cpp
@@ -221,7 +221,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   `uint64_t ComputeApplicabilityMask(bool inPosition, HMMStateEnum regime)` — Task 3's `FuseTauStar()`
   and Task 4/6's Turtle Soup functions are dispatched through this.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```cpp
 // tests/cpp/test_predator_fusion_dispatch.cpp — applicability-mask dispatch tests.
@@ -266,12 +266,12 @@ int main() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_fusion_dispatch.cpp -o /tmp/t_pfd`
 Expected: FAIL with `fatal error: 'PredatorFusion.h' file not found`
 
-- [ ] **Step 3: Create `include/FusionKey.h`**
+- [x] **Step 3: Create `include/FusionKey.h`**
 
 ```cpp
 // FusionKey.h — bit-index enum for the Predator applicability-mask dispatch
@@ -293,7 +293,7 @@ enum class FusionKey : uint8_t {
 };
 ```
 
-- [ ] **Step 4: Create `include/PredatorFusion.h`**
+- [x] **Step 4: Create `include/PredatorFusion.h`**
 
 ```cpp
 // PredatorFusion.h — free-function fusion interface + applicability-mask dispatch.
@@ -336,17 +336,17 @@ inline uint64_t ComputeApplicabilityMask(bool inPosition, HMMStateEnum /*regime*
 }
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_fusion_dispatch.cpp -o /tmp/t_pfd && /tmp/t_pfd`
 Expected: `ALL PASS`
 
-- [ ] **Step 6: `./build_dll.sh --no-clean`**
+- [x] **Step 6: `./build_dll.sh --no-clean`**
 
 Expected: `✓ Build completed` (these are new, additive headers — nothing includes them yet, so this
 just confirms no syntax/include-path regressions).
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add include/FusionKey.h include/PredatorFusion.h tests/cpp/test_predator_fusion_dispatch.cpp
@@ -383,7 +383,7 @@ tested function, but does NOT change that existing telemetry-only handling.** Wi
 exit action remains gated on backlog Unit 3's `ExitReason_TRAP` schema work (currently deferred), per
 the Predator Decision Contract's own Maturity Inventory. Do not wire it live as part of this task.
 
-- [ ] **Step 1: Write the failing test (append to `test_predator_fusion_dispatch.cpp`)**
+- [x] **Step 1: Write the failing test (append to `test_predator_fusion_dispatch.cpp`)**
 
 ```cpp
     // --- FuseTauStar: Elkan (2001) cost-sensitive threshold, tau* = C_FP / (C_FP + C_FN) ---
@@ -412,12 +412,12 @@ the Predator Decision Contract's own Maturity Inventory. Do not wire it live as 
     }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_fusion_dispatch.cpp -o /tmp/t_pfd`
 Expected: FAIL with `error: 'FuseTauStar' was not declared`
 
-- [ ] **Step 3: Implement in `include/PredatorFusion.h`**
+- [x] **Step 3: Implement in `include/PredatorFusion.h`**
 
 Append:
 
@@ -449,18 +449,18 @@ inline TauStarFusionResult FuseTauStar(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_fusion_dispatch.cpp -o /tmp/t_pfd && /tmp/t_pfd`
 Expected: `ALL PASS`
 
-- [ ] **Step 5: `./build_dll.sh --no-clean`; confirm no call site wires this to a live action**
+- [x] **Step 5: `./build_dll.sh --no-clean`; confirm no call site wires this to a live action**
 
 Run: `./build_dll.sh --no-clean` — expect green.
 Run: `grep -rn "FuseTauStar" src/` — expect **zero results** (header-only, not yet called from any
 `.cpp` file). This confirms the "computed but not wired live" scope boundary held.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add include/PredatorFusion.h tests/cpp/test_predator_fusion_dispatch.cpp
@@ -493,7 +493,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   and `TurtleSoupMicroSignal EvaluateTurtleSoupOptionA(...)` — Task 6's Option B produces the same
   struct shape, at the same call site, later.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```cpp
 // tests/cpp/test_turtle_soup_fusion.cpp — Option A geometric heuristic + fusion tests.
@@ -568,12 +568,12 @@ int main() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_turtle_soup_fusion.cpp -o /tmp/t_ts`
 Expected: FAIL with `fatal error: 'TurtleSoupFusion.h' file not found`
 
-- [ ] **Step 3: Create `include/TurtleSoupFusion.h`**
+- [x] **Step 3: Create `include/TurtleSoupFusion.h`**
 
 ```cpp
 // TurtleSoupFusion.h — Turtle Soup Predator-ization, Option A (tick-reactive geometric
@@ -642,12 +642,12 @@ inline TurtleSoupMicroSignal EvaluateTurtleSoupOptionA(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_turtle_soup_fusion.cpp -o /tmp/t_ts && /tmp/t_ts`
 Expected: `ALL PASS`
 
-- [ ] **Step 5: Commit the pure-function layer before touching the live call site**
+- [x] **Step 5: Commit the pure-function layer before touching the live call site**
 
 ```bash
 git add include/TurtleSoupFusion.h tests/cpp/test_turtle_soup_fusion.cpp
@@ -661,7 +661,7 @@ site (next commit).
 Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 ```
 
-- [ ] **Step 6: Remove the once-per-closed-bar gate in `src/TripleScreen3.cpp`**
+- [x] **Step 6: Remove the once-per-closed-bar gate in `src/TripleScreen3.cpp`**
 
 Locate the block at `TripleScreen3.cpp:1154-1176` (the "Institutional timing contract" comment,
 `lastProcessedBarTS`/`signalBarIndex`/`runTurtleSoup` gating). Per the standing dead-code-removal
@@ -732,7 +732,7 @@ for `prevWindowLastIndex` (currently `signalBarIndex - 1`); change it to `signal
 i.e. the last fully-closed bar, which is correct and requires no further edit beyond the
 `signalBarIndex` reassignment above).
 
-- [ ] **Step 7: Wire the fusion call at the same call site**
+- [x] **Step 7: Wire the fusion call at the same call site**
 
 Immediately after the existing `DetectTurtleSoup(...)` call (which remains, unchanged, as the
 existing quality/strength classification used for `soupIndicator->SetMetrics(...)` and the
@@ -760,7 +760,7 @@ existing quality/strength classification used for `soupIndicator->SetMetrics(...
 Add `#include "TurtleSoupFusion.h"` and `#include "PredatorContext.h"` to the top of
 `src/TripleScreen3.cpp` if not already present.
 
-- [ ] **Step 8: Remove the now-redundant `screenAligned` HMM-alignment block for Turtle Soup**
+- [x] **Step 8: Remove the now-redundant `screenAligned` HMM-alignment block for Turtle Soup**
 
 This block (`TripleScreen3.cpp:1272-1283` in the pre-edit file, "Context: HMM State Alignment") is
 **not** the Elder-Breakout-style bug (it genuinely discriminates direction — bullish checks
@@ -769,7 +769,7 @@ Predator audit is **not being replaced** by this task — leave it exactly as-is
 modify it; only the gating (`lastProcessedBarTS`) and the `DetectTurtleSoup()` input source
 (`sc.Index` vs `sc.Index - 1`) change in this task.
 
-- [ ] **Step 9: `./build_dll.sh` (full, not `--no-clean`) and confirm green**
+- [x] **Step 9: `./build_dll.sh` (full, not `--no-clean`) and confirm green**
 
 Run: `./build_dll.sh`
 Expected: `✓ Build completed` with zero warnings-as-errors from the removed `lastProcessedBarTS`
@@ -777,13 +777,13 @@ persistent variable (confirm no "unused variable" error survives — `sc.GetPers
 side effects via Sierra Chart's persistent-storage API, so removing the call entirely, not just the
 variable, is what matters. Re-check the diff shows the whole `sc.GetPersistentInt(101)` line is gone).
 
-- [ ] **Step 10: Run the native test suite one more time to confirm no regression**
+- [x] **Step 10: Run the native test suite one more time to confirm no regression**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_turtle_soup_fusion.cpp -o /tmp/t_ts && /tmp/t_ts`
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_predator_fusion_dispatch.cpp -o /tmp/t_pfd && /tmp/t_pfd`
 Expected: `ALL PASS` for both.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add src/TripleScreen3.cpp
@@ -815,7 +815,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   `static ClassifierParams ClassifierParams::LoadConfig(const std::string& consumerKey, const std::string& path = kConfigPathWindows);`
   — Task 6 consumes this for Turtle Soup's `"turtle_soup_option_b"` section.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```cpp
 // tests/cpp/test_classifier_params.cpp — config-driven classifier parameter loading.
@@ -880,12 +880,12 @@ int main() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_classifier_params.cpp -o /tmp/t_cp`
 Expected: FAIL with `fatal error: 'ClassifierParams.h' file not found`
 
-- [ ] **Step 3: Create `config/classifier_params.json`** (the git-tracked source of truth, sectioned by
+- [x] **Step 3: Create `config/classifier_params.json`** (the git-tracked source of truth, sectioned by
   consumer, matching `execution_params.json`/`hmm_regime_risk_policy.json`'s existing provenance
   convention)
 
@@ -904,7 +904,7 @@ Expected: FAIL with `fatal error: 'ClassifierParams.h' file not found`
 }
 ```
 
-- [ ] **Step 4: Create `include/ClassifierParams.h`**
+- [x] **Step 4: Create `include/ClassifierParams.h`**
 
 ```cpp
 // ClassifierParams.h — config-driven classifier parameter loading, following
@@ -963,16 +963,16 @@ struct ClassifierParams {
 };
 ```
 
-- [ ] **Step 5: Run test to verify it passes**
+- [x] **Step 5: Run test to verify it passes**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include -I /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include tests/cpp/test_classifier_params.cpp -o /tmp/t_cp && /tmp/t_cp`
 Expected: `ALL PASS`
 
-- [ ] **Step 6: `./build_dll.sh --no-clean`**
+- [x] **Step 6: `./build_dll.sh --no-clean`**
 
 Expected: `✓ Build completed`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add config/classifier_params.json include/ClassifierParams.h tests/cpp/test_classifier_params.cpp
@@ -1003,7 +1003,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
   `TripleScreen3.cpp` in this task** — Option A remains the active call site until a real trained
   model wins its twin-based comparison (a separate, future decision).
 
-- [ ] **Step 1: Write the failing test (append to `test_turtle_soup_fusion.cpp`)**
+- [x] **Step 1: Write the failing test (append to `test_turtle_soup_fusion.cpp`)**
 
 ```cpp
     // --- Option B: hand-crafted logistic regression inference ---
@@ -1028,12 +1028,12 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
     }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include -I /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include tests/cpp/test_turtle_soup_fusion.cpp -o /tmp/t_ts`
 Expected: FAIL with `error: 'EvaluateTurtleSoupOptionB' was not declared`
 
-- [ ] **Step 3: Implement in `include/TurtleSoupFusion.h`**
+- [x] **Step 3: Implement in `include/TurtleSoupFusion.h`**
 
 ```cpp
 #include "ClassifierParams.h"
@@ -1074,19 +1074,19 @@ inline TurtleSoupMicroSignal EvaluateTurtleSoupOptionB(
 }
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `g++ -std=c++17 -Wall -Wextra -I include -I /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include tests/cpp/test_turtle_soup_fusion.cpp -o /tmp/t_ts && /tmp/t_ts`
 Expected: `ALL PASS`
 
-- [ ] **Step 5: `./build_dll.sh --no-clean`; confirm this is NOT wired to the live call site**
+- [x] **Step 5: `./build_dll.sh --no-clean`; confirm this is NOT wired to the live call site**
 
 Run: `./build_dll.sh --no-clean` — expect green.
 Run: `grep -rn "EvaluateTurtleSoupOptionB" src/` — expect **zero results**. This confirms Option B
 exists, compiles, and is tested, but `TripleScreen3.cpp` still only calls Option A — the scope
 boundary from this plan's header (no live-behavior change beyond Task 4) held for this task too.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add include/TurtleSoupFusion.h tests/cpp/test_turtle_soup_fusion.cpp
@@ -1107,12 +1107,12 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ### Task 7: Final Verification
 
-- [ ] **Step 1: Full clean build**
+- [x] **Step 1: Full clean build**
 
 Run: `./build_dll.sh` (no `--no-clean` — a genuine from-scratch build)
 Expected: `✓ Build completed`, zero warnings-as-errors.
 
-- [ ] **Step 2: Run every native test written in this plan**
+- [x] **Step 2: Run every native test written in this plan**
 
 ```bash
 for t in test_predator_context test_predator_fusion_dispatch test_turtle_soup_fusion test_classifier_params; do
@@ -1124,7 +1124,7 @@ done
 
 Expected: `ALL PASS` for all four.
 
-- [ ] **Step 3: Confirm the scope boundary held — grep for anything accidentally wired live**
+- [x] **Step 3: Confirm the scope boundary held — grep for anything accidentally wired live**
 
 ```bash
 grep -rn "FuseTauStar\|EvaluateTurtleSoupOptionB" src/
@@ -1133,13 +1133,13 @@ grep -rn "FuseTauStar\|EvaluateTurtleSoupOptionB" src/
 Expected: zero results (both remain header-only, uncalled from any `.cpp`, per this plan's explicit
 scope).
 
-- [ ] **Step 4: Update `SCRATCHPAD.md`** with a dated entry recording: `PredatorContext`/`PredatorFusion`
+- [x] **Step 4: Update `SCRATCHPAD.md`** with a dated entry recording: `PredatorContext`/`PredatorFusion`
 infrastructure built and tested; Turtle Soup Option A live and tick-reactive (Elder Breakout, Kangaroo
 Tail/Momentum Pinball audit, and now Turtle Soup Option A — the entire first-wave Predator batch is
 now actually implemented, not just spec'd); `ClassifierParams`/`EvaluateTurtleSoupOptionB()` scaffolded
 and tested but deliberately not live, awaiting the lbrnet-rooted training handoff.
 
-- [ ] **Step 5: Final commit**
+- [x] **Step 5: Final commit**
 
 ```bash
 git add SCRATCHPAD.md
