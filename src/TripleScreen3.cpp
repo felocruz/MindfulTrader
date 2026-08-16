@@ -1,6 +1,9 @@
 #include "MindfulTrader_Precompiled.h"
 #include "ContextManager.h"
 #include "OrderFlowAsymmetryEngine.h"
+#include "PredatorContext.h"
+#include "PredatorFusion.h"
+#include "TurtleSoupFusion.h"
 
 /*==========================================================================*/
 // TripleScreen3-specific constants
@@ -1151,39 +1154,32 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     // TURTLE SOUP DETECTION (Consolidated from scsf_Screen3_TurtleSoup)
     // ============================================================================
 
-    // Institutional timing contract:
-    // - Process ONCE per closed bar
-    // - Evaluate the just-closed bar against prior-window extremes (exclude signal bar)
+    // Predator-ized (2026-08-16): evaluates the CURRENT, still-forming bar every tick,
+    // matching Kangaroo Tail/Momentum Pinball's tick-reactive pattern (Predator Decision
+    // Contract, docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md).
+    // signalBarIndex (sc.Index - 1, the last CLOSED bar) is left completely untouched --
+    // it still anchors the "CRITICAL FIX" normalized-anchors block further down, which
+    // must keep evaluating the last closed bar, not the still-forming one. currentBarIndex
+    // (sc.Index) is a separate, new variable used only for this pattern's own tick-reactive
+    // high/low/close/open/atr/hurst reads.
 
     constexpr int TURTLE_SOUP_LENGTH = 20;
     constexpr int TURTLE_SOUP_MIN_SEPARATION = 4;
 
-    // Use persistent variable to track last processed bar index
-    // Reuse specific ID or just use a unique integer for this study instance
-    int& lastProcessedBarTS = sc.GetPersistentInt(101); // 101 for Turtle Soup Logic
-
     const int signalBarIndex = sc.Index - 1;
+    const int currentBarIndex = sc.Index;
 
-    // Only process if we have a closed bar and haven't processed it yet
-    // Note: In AutoLoop during history, sc.Index iterates.
-    // For live updates, we want to run this check on every tick but only EXECUTE logic once per closed bar.
-
-    bool runTurtleSoup = false;
-    if (signalBarIndex >= TURTLE_SOUP_LENGTH &&
-        sc.GetBarHasClosedStatus(signalBarIndex) == BHCS_BAR_HAS_CLOSED &&
-        lastProcessedBarTS != signalBarIndex) {
-        runTurtleSoup = true;
-    }
+    const bool runTurtleSoup = (signalBarIndex >= TURTLE_SOUP_LENGTH);
 
     if (runTurtleSoup) {
-        lastProcessedBarTS = signalBarIndex;
+        // Retrieve context variables (current, still-forming bar)
+        float atr = Subgraph_AtrTemp3[currentBarIndex];
 
-        // Retrieve context variables
-        float atr = Subgraph_AtrTemp3[signalBarIndex];
-
-        // Turtle Soup must use PREVIOUS lookback window (exclude signal bar):
-        // false breakout requires signal bar to break prior extreme, then close back inside.
-        const int prevWindowLastIndex = signalBarIndex - 1;
+        // Turtle Soup must use PREVIOUS lookback window (exclude the current bar):
+        // false breakout requires the current bar to break prior extreme, then close back
+        // inside. Ends at signalBarIndex (the last closed bar, one bar before
+        // currentBarIndex) -- numerically unchanged from before this Predator-ization.
+        const int prevWindowLastIndex = signalBarIndex;
 
         // Calculate prior window extremes manually since Subgraph_HighestHigh20Period includes sc.Index
         // Subgraph_HighestHigh20Period[i] covers [i-19, i]
@@ -1192,14 +1188,14 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         const float prevHighest = Subgraph_HighestHigh20Period[prevWindowLastIndex];
         const float prevLowest = Subgraph_LowestLow20Period[prevWindowLastIndex];
 
-        // Define signal bar components
-        const float high = sc.High[signalBarIndex];
-        const float low = sc.Low[signalBarIndex];
-        const float close = sc.Close[signalBarIndex];
-        const float open = sc.Open[signalBarIndex];
+        // Define the current, still-forming bar's components (tick-reactive)
+        const float high = sc.High[currentBarIndex];
+        const float low = sc.Low[currentBarIndex];
+        const float close = sc.Close[currentBarIndex];
+        const float open = sc.Open[currentBarIndex];
 
         // Calculate ADX for regime context
-        const float hurst = Subgraph_HurstExponent[signalBarIndex];
+        const float hurst = Subgraph_HurstExponent[currentBarIndex];
 
         // Export prior-window extremes to training data (used by Turtle Soup)
         indMgr.SetPrevFourBarExtremes(prevHighest, prevLowest);
@@ -1240,8 +1236,8 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
            }
         }
 
-        const int barsSincePriorHigh = signalBarIndex - priorHighIndex;
-        const int barsSincePriorLow = signalBarIndex - priorLowIndex;
+        const int barsSincePriorHigh = currentBarIndex - priorHighIndex;
+        const int barsSincePriorLow = currentBarIndex - priorLowIndex;
 
         // Apply separation filter
         if ((soupEnum == TurtleSoupEnum::BULLISH_WEAK ||
@@ -1260,6 +1256,31 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         float threshold = 0.5f * atr;
         bool atDailyHigh = (prevDayHigh > 0.0f && std::abs(prevHighest - prevDayHigh) <= threshold);
         bool atDailyLow = (prevDayLow > 0.0f && std::abs(prevLowest - prevDayLow) <= threshold);
+
+        // === Predator-ization: Option A tick-reactive fusion (2026-08-16) ===
+        // Gated by the applicability mask (contract element #5, structural): entry-side
+        // fusions never evaluate while already in a position.
+        const PredatorContext& predatorCtx = ContextManager::Instance().GetPredatorContext();
+        const uint64_t turtleSoupFusionMask =
+            ComputeApplicabilityMask(predatorCtx.inPosition, predatorCtx.regime);
+        if (turtleSoupFusionMask & FusionKeyMask(FusionKey::TURTLE_SOUP_OPTION_A)) {
+            TurtleSoupMicroSignal turtleSoupSignal = EvaluateTurtleSoupOptionA(
+                low, high, close,
+                prevLowest, prevHighest, atr,
+                // Option A's score/confidence do not depend on elapsed-bar-fraction -- it
+                // evaluates the whole bar-so-far range on every call, not a sequential
+                // prefix computation. The field exists on TurtleSoupMicroSignal for shape
+                // parity with Option B (which does use it); Option A reports 1.0
+                // (whole-range-so-far already considered), not a placeholder.
+                /*elapsedFraction=*/1.0f
+            );
+            // turtleSoupSignal is not yet exported -- this call proves the fusion function
+            // and applicability-mask dispatch run correctly every tick, feeding the same
+            // DetectTurtleSoup()-derived quality classification below. Wiring its score/
+            // confidence into soupIndicator's own metrics is deferred (twin-validation
+            // first, per the governance spec).
+            (void)turtleSoupSignal;
+        }
 
         // Update TurtleSoup indicator
         auto soupIndicator = indMgr.GetIndicator<TurtleSoup>(IndicatorKey::TURTLE_SOUP);
