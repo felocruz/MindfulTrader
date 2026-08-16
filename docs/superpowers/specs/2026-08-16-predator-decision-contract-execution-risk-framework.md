@@ -66,7 +66,7 @@ philosophically aligned — not retrofitted after the fact.
 
 ## The Predator Decision Contract
 
-Four required elements for any execution/risk decision — entry trigger, exit trigger, stop/target
+Five required elements for any execution/risk decision — entry trigger, exit trigger, stop/target
 placement, position sizing — to be considered **Predator-grade**:
 
 1. **Explicit macro/patient input** — regime state (HMM), structural level (`StructureTest`/swing
@@ -82,9 +82,32 @@ placement, position sizing — to be considered **Predator-grade**:
    without the Python twin first confirming its specific gating metrics, per
    `2026-08-16-execution-risk-coevolution-governance-spec.md`'s promotion ladder. This contract does
    not introduce a new validation process; it inherits that one.
+5. **Subordinate to safety, in both position states — non-negotiable, no exception.** Predator fusion
+   is additive and discretionary, never authoritative over safety. This is not a new rule invented for
+   this spec — it generalizes `CLAUDE.md`'s own existing TRAP philosophy ("Native is always-on and
+   authoritative; the model exit is additive... may LEAD but never SUPPRESS the floor") from "applies
+   only to TRAP" to "applies to every Predator-grade decision, present and future":
+   - **In a position**: the deterministic, non-fusion safety tier — TRAP's native reactive floor,
+     then catastrophic regime-defense (`EvaluateRegimeDefense`) — always evaluates first and can
+     always fire, completely independent of what any fusion layer concludes. Verified in the real call
+     order, `PositionManager.cpp:241-268`: `EvaluateNativeTrapFloor()` unconditional, then each
+     subsequent check gated only by `!m_exitSubmittedThisTick` (the first check to fire wins, no
+     double-exit). A Predator-grade decision may *lead* — fire earlier than the safety tier would have
+     — by independently setting the same exit flag, but must never be implemented as a condition that
+     the safety tier's own checks are wrapped in (never `if (!fusionSaysHold) { EvaluateRegimeDefense(...) }`
+     — that would let fusion suppress safety, which is exactly what this rule forbids).
+   - **Flat (no position)**: hard risk gates (`RiskManager::EvaluateHardGates()`,
+     `ExecutionGate::EvaluateEmpiricalRegimeGates()`) are a strict precondition. If they veto — e.g.
+     high Shannon entropy, one of TS3's existing hard-gate thresholds — no Predator-grade fusion
+     decision is allowed to produce an entry, regardless of what the fusion logic would otherwise
+     conclude. Fusion does not get evaluated, or its output is unconditionally discarded, until the
+     gates have already cleared the environment as safe enough to consider a trade at all.
 
 **A decision that satisfies #1 and #2 but fails #3 is not Predator-grade — it is merely fast.** Elder
-Breakout, above, is the concrete proof this distinction is real, not academic.
+Breakout, above, is the concrete proof this distinction is real, not academic. **A decision that
+violates #5 is not Predator-grade regardless of how well #1-#4 are satisfied — it is a safety
+regression**, since it would let a fusion opinion override the mechanisms that exist specifically to
+act when fusion itself may be wrong, stale, or unavailable.
 
 ## Predator Maturity Inventory (current state, established this session)
 
