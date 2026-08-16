@@ -9,13 +9,13 @@
 // inPosition is true, so it is impossible to call an entry-side fusion function on the
 // wrong side of position state, not merely disciplined against.
 //
-// Includes rc_enums.h (not Indicator.h) for HMMStateEnum, matching PredatorContext.h's own
+// Includes RcEnums.h (not Indicator.h) for HMMStateEnum, matching PredatorContext.h's own
 // ACSIL-independence convention — this header must stay includable with just `-I include`.
 
 #pragma once
 
 #include "FusionKey.h"
-#include "rc_enums.h"  // HMMStateEnum
+#include "RcEnums.h"  // HMMStateEnum
 
 #include <cstdint>
 

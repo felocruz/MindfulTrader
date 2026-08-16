@@ -1,6 +1,6 @@
 #pragma once
 
-// rc_enums.h — canonical, ACSIL-independent home for enums that must mirror
+// RcEnums.h — canonical, ACSIL-independent home for enums that must mirror
 // lbrnet's Python core/rc_enums.py for cross-language parity (name chosen to match
 // that module directly). Extracted from Indicator.h so headers composing them
 // (e.g. PredatorContext.h) stay includable with just `-I include` (no sierrachart.h

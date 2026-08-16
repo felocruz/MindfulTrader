@@ -5,7 +5,7 @@
 #include <string_view> // C++17
 #include <vector>
 #include "generated/mts_schema_generated.h"
-#include "rc_enums.h"
+#include "RcEnums.h"
 
 // Use a constexpr function for compile-time color evaluation
 constexpr int CreateRGB(int r, int g, int b) {
@@ -504,7 +504,7 @@ enum class OvernightExitTypeEnum : int8_t {
     TRAILING_STOP_EXIT = 9          // Stop moved to profit, let it run or get stopped
 };
 
-// HMMStateEnum / HMM_NO_PRIOR extracted to rc_enums.h (indicator-manager-dod-soa
+// HMMStateEnum / HMM_NO_PRIOR extracted to RcEnums.h (indicator-manager-dod-soa
 // plan precedent — same rationale as MacdEnum's extraction into IndicatorComputations.h):
 // PredatorContext.h needs the enum without pulling in sierrachart.h.
 
