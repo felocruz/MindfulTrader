@@ -97,14 +97,20 @@ push is a pending decision, ask before doing it (see end of this entry).
    - Kangaroo Tail / Momentum Pinball audit against the 5-element contract — **DONE 2026-08-16, both
      pass, no fix needed** (Kangaroo Tail: `atSupportLevel`/`atResistanceLevel` correctly
      direction-discriminating; Momentum Pinball: `slopeAligned` + Hurst-conditioned continuous
-     multiplier, genuinely regime-aware fusion). **Remaining in this batch: Turtle Soup's Predator-ization
-     design only.**
-   - **Turtle Soup Predator-ization — still an open design question, not yet spec'd**: cheap intra-bar
-     heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
-     application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly
-     tied to the SAME deferred "intra-bar re-inference" gap `CLAUDE.md`'s Trap Detection section
-     already named for the τ* layer. Don't design this blind; resolve it as part of this same
-     brainstorming pass, not in isolation.
+     multiplier, genuinely regime-aware fusion).
+   - **Turtle Soup Predator-ization — SPEC'D 2026-08-16
+     (`docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md`), not yet implemented.**
+     Bridge plan: ship a tick-reactive geometric heuristic now (Option A, reusing Kangaroo Tail's
+     proven approach against the 20-bar extreme instead of a single bar), with a classical
+     GBT/logistic-regression ECTS classifier (Option B) specced as a parallel, non-blocking track that
+     later swaps in at a single, standardized micro-signal seam. Design was pressure-tested via
+     `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_103` before being written down — two real dataset
+     guardrails adopted (fractional-not-tick sampling, profitability-inclusive labeling), stopping-rule
+     grounding tied to this project's existing Shiryaev-Wald/Elkan foundation rather than a new one.
+   - **This closes out the entire first-wave Predator batch** — Elder Breakout, Kangaroo
+     Tail/Momentum Pinball audit, and Turtle Soup's design are all done. **Only Option A's actual
+     implementation remains before this specific batch is fully shipped** (Option B is a separate,
+     later, non-blocking track per its own spec).
 4. Backlog Units 1 (parity-contract test infra), 4 (`REGIME_INVALIDATION` wiring), 5
    (profit-protection measurement via the Python twin — was queued before the sniper/historian/Predator
    detour pulled focus away), 7 (Triple Screen fidelity), 8 (doc sync), 9 (flagged research) — none
