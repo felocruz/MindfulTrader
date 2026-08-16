@@ -45,7 +45,10 @@ Every architectural component in our first production deployment must be indepen
 ### Literature Evaluation
 Yes, this is **highly grounded** and correct.
 1.  **Optimal Stopping and Drift Violation:** 
-    Under optimal stopping theory applied to financial time series (Bertram 2010, "Optimal trading strategies for ITCH-like order books"), trading patterns are entered under the assumption of a specific drift parameter $E[P_{\tau} \mid \mathcal{F}_t] > 0$. 
+    Under optimal stopping theory applied to financial time series (Bertram 2010, "Analytic
+    solutions for optimal statistical arbitrage trading" — title corrected 2026-08-16, see
+    Reconciliation Note), trading patterns are entered under the assumption of a specific drift
+    parameter $E[P_{\tau} \mid \mathcal{F}_t] > 0$. 
     If a structural level is broken against the position, the underlying statistical assumption is invalidated, and the expected drift of the remaining path immediately becomes negative:
     $$E[P_{\tau_{\text{exit}}} \mid \mathcal{F}_t] < P_t$$
     Waiting for the price to travel the remaining distance to a hard stop is mathematically sub-optimal. Immediately exiting is the optimal stopping-time decision.
@@ -96,7 +99,8 @@ We formally establish the following four papers as our system's **Single Source 
     *Grounds:* Strict train/live parity, static horizontal barriers, and the segregation of trailing rules to the meta-labeling layer.
 2.  **Marcos López de Prado (2020), *Machine Learning for Asset Managers***, Chapter 5 (Trend-Scanning).  
     *Grounds:* The long-term architecture for adaptive, slope-based exit boundaries.
-3.  **Bertram (2010), "Optimal trading strategies for ITCH-like order books"**, *Physica A*.  
+3.  **Bertram (2010), "Analytic solutions for optimal statistical arbitrage trading"** [title
+    corrected 2026-08-16, see Reconciliation Note], *Physica A*.  
     *Grounds:* Optimal stopping times under drift violation, mathematically justifying immediate exit on `TRAP_CANDIDATE`.
 4.  **Bai, J., & Perron, P. (1998), "Estimating and Testing Linear Models with Multiple Structural Changes"**, *Journal of Applied Econometrics*.  
     *Grounds:* Statistically justifying the $0.5\times \text{ATR}$ threshold buffer to establish a true structural breakout regime change.
@@ -112,6 +116,24 @@ We formally establish the following four papers as our system's **Single Source 
     *   **Keep `TRAP_CANDIDATE`** as a first-hit barrier, positioned at **Priority #1** (before the hard stop).
     *   In C++ `TripleBarrierExitManager::Evaluate()`, evaluate `StructureTest` only on the **completed bar** ($sc.Index - 1$).
     *   In Python `triple_barrier_scanner.py`, ensure that `TRAP_CANDIDATE` is evaluated only on completed historical bars using the identical $0.5\times \text{ATR}$ buffer threshold.
+
+---
+
+## Reconciliation Note (added 2026-08-16, does not alter the original ruling above)
+
+This document's Q1 verdict (**REMOVE `FAVORABLE_EXIT` FROM BOTH REPOS**) directly contradicts the
+same-day `triple_barrier_gates_parity_adjudication.md`'s Q4 verdict (**"HIGHLY LEGITIMATE — DEFER TO
+META-LABELER"**, i.e., keep it) — both documents are dated 2026-07-14, both attributed to the same
+adjudicator, and neither cross-references the other. This was never reconciled between the two
+documents themselves; it was only resolved downstream, in practice: `FAVORABLE_EXIT` was actually
+**removed** from `triple_barrier_scanner.py` on 2026-07-16 (code comment: "retired 2026-07-16, not
+reused") and `triple_barrier_cutover_phase1_plan.md` §1.3 explicitly invokes *this* ruling, not the
+gates-parity one, as the basis for that removal. **This document's verdict is what shipped.** See
+`triple_barrier_gates_parity_adjudication.md`'s own matching reconciliation note for the other side
+of this. Also corrected here: the Bertram (2010) citation's title, mistitled in two places above as
+"Optimal trading strategies for ITCH-like order books" — the real title is "Analytic solutions for
+optimal statistical arbitrage trading" (confirmed against `triple_barrier_cutover_phase1_plan.md:67`,
+which caught this same error independently).
 
 ---
 *Adjudication report saved securely at `/home/rcruz/devel/VSCode/MindfulTrader/docs/ADR/triple_barrier_favorable_exit_ruling.md`.*

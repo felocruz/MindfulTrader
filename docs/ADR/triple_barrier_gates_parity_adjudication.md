@@ -129,4 +129,25 @@ By modeling price as a path-dependent process, these methods dynamically evaluat
     *   Wire the C++ `DetectStructure()` output directly into the `TripleBarrierExitManager::Evaluate()` loop to trigger these exits natively.
 
 ---
+
+## Reconciliation Note (added 2026-08-16, does not alter the original ruling above)
+
+Section 4's verdict above (**"HIGHLY LEGITIMATE — DEFER TO META-LABELER"**, i.e., keep
+`FAVORABLE_EXIT`) directly contradicts the same-day `triple_barrier_favorable_exit_ruling.md`'s Q1
+verdict (**"REMOVE FROM BOTH REPOS"**) — both documents dated 2026-07-14, same adjudicator, neither
+cross-referencing the other. This was never reconciled between the two documents; it was resolved
+downstream in practice instead: `FAVORABLE_EXIT` was actually **removed** from
+`triple_barrier_scanner.py` on 2026-07-16, and `triple_barrier_cutover_phase1_plan.md` §1.3 invokes
+the *removal* ruling, not this document's Section 4, as the basis. **The favorable-exit ruling's
+verdict is what shipped; this document's Section 4 verdict on that specific question did not.**
+Section 6's `ExitReason` schema recommendation above (`TRAP_CANDIDATE_EXIT`/
+`FAVORABLE_STRUCTURAL_EXIT`) is superseded accordingly — no `FAVORABLE_STRUCTURAL_EXIT` value is
+needed since the mechanism it would have attributed no longer exists; the still-relevant schema gap
+(TRAP-exit attribution) is tracked separately as Unit 3 of
+`docs/superpowers/specs/2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md` (currently
+deferred pending the SC-replay confirmation stage). This document's other verdicts (Sections 1-3, 5,
+7 — `StructureTest` parity, `TRAP_CANDIDATE` priority/buffering, catastrophic-safety-rail framing)
+are unaffected by this note and remain the record.
+
+---
 *Adjudication report saved securely at `/home/rcruz/devel/VSCode/MindfulTrader/docs/ADR/triple_barrier_gates_parity_adjudication.md`.*

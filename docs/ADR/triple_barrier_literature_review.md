@@ -15,6 +15,19 @@ We analyze the theoretical foundations of path-dependent labeling, adaptive barr
 
 ---
 
+**Correction note (added 2026-08-16, original text below left intact for the record):** the same-day
+`triple_barrier_favorable_exit_ruling.md`'s Q4 self-audit retracted two citations this review still
+uses as load-bearing foundations for entire subsections below — "Zhang et al. (2020)" (Section 2B) is
+a hallucination with no real paper behind it, and "Spooner et al. (2018)" (Section 4B) is a real paper
+misapplied to a problem it doesn't address (HFT market-making, not swing-position exits). That
+retraction was never propagated back into this document. Separately, Section 5's Synthesis (point 2)
+states `FAVORABLE_EXIT` is executed in the live C++ engine — this is now factually wrong:
+`FAVORABLE_EXIT` was removed from both repos on 2026-07-16, per the favorable-exit ruling's Q1 verdict
+(see that document's own 2026-08-16 reconciliation note for the full contradiction history). See the
+inline flags at each affected section below.
+
+---
+
 ## 1. The Core Paradox of Static Boundaries (López de Prado, 2018)
 
 In *Advances in Financial Machine Learning* (AFML, Ch. 3), López de Prado introduced the Triple-Barrier Method to solve the classic "fixed horizon" labeling trap ($Y_t = \text{sign}(P_{t+h} - P_t)$). Fixed-horizon labeling is mathematically incompatible with path-dependent trading because it is blind to intra-window drawdowns. A path that moves $-10\times \text{ATR}$ before closing $+1\times \text{ATR}$ at $t+h$ is labeled "positive" ($+1$) under a fixed-horizon schema, despite being stopped out in any real portfolio.
@@ -36,7 +49,13 @@ The label is assigned based on the $t$-statistic of the slope $\beta_1$:
 $$t_{\hat{\beta}_1} = \frac{\hat{\beta}_1}{\text{SE}(\hat{\beta}_1)}$$
 The regression window expands until $|t_{\hat{\beta}_1}|$ is maximized. This creates a **fully adaptive path-dependent label** that is structurally equivalent to an adaptive exit barrier. It identifies the maximum length of a persistent trend before a reversal occurs, completely eliminating static horizontal barriers.
 
-### B. Volatility-Adjusted and Time-Decaying Barriers (Zhang et al., 2020)
+### B. Volatility-Adjusted and Time-Decaying Barriers (Zhang et al., 2020) — **RETRACTED 2026-08-16, see Correction note above**
+**"Zhang et al. (2020), 'Dynamic Barring Methods for Financial Time Series' does not exist — a
+hallucinated citation, retracted in `triple_barrier_favorable_exit_ruling.md`'s Q4 self-audit the same
+day this review was written.** The mathematical content below (time-decaying barriers as a concept)
+is not itself wrong, but it has no real citation behind it as presented — treat as an unattributed
+engineering idea, not literature-grounded, unless a real source is found.
+
 In "Dynamic Barring Methods for Financial Time Series" (Zhang, 2020), the author formalizes the use of **Time-Decaying Barriers**. 
 *   **The Math:** Profit-take and stop-loss barriers are modeled as decaying functions of holding time $\tau$:
     $$B_{\text{upper}}(\tau) = P_0 + k_{\text{up}} \cdot \text{ATR} \cdot e^{-\lambda \tau}$$
@@ -69,7 +88,13 @@ Modern extensions of the triple-barrier method utilize **Path Signatures** (from
     $$S(X)_{s, t}^n = \int_{s < u_1 < \dots < u_n < t} dX_{u_1} \otimes \dots \otimes dX_{u_n}$$
 *   **Application:** Researchers use the first few terms of the path signature (describing trend, area, and quadratic variation/volatility roughness) as inputs to a classifier that predicts whether the current path is a "normal drift" or a "reversal trap". This is the high-dimensional equivalent of our C++ `DetectStructure()` indicator.
 
-### B. Reinforcement Learning Exits (Spooner et al., 2018)
+### B. Reinforcement Learning Exits (Spooner et al., 2018) — **RETRACTED 2026-08-16, see Correction note above**
+**Spooner et al. (2018) is a real, highly-cited paper, but it addresses HFT market-making and
+limit-order-queue dynamics — not directional swing-position exits on 15-minute bars. Citing it here is
+a misapplication, retracted in `triple_barrier_favorable_exit_ruling.md`'s Q4 self-audit the same day
+this review was written.** Nothing below should be read as literature support for this system's exit
+architecture.
+
 In "Market Making via Reinforcement Learning," the authors demonstrate that an RL agent trained with a temporal-difference (TD) error reward function naturally learns to dynamically adjust its exit barriers. The agent does not use static brackets; it continuously updates its action space (Hold, Reduce, Flatten) based on the live Order Book Imbalance (OFI) and microstructural price-impact. This provides empirical proof that **dynamic path-dependent exit modification significantly outperforms static bracket execution** in out-of-sample Sharpe ratio metrics.
 
 ---
@@ -79,7 +104,7 @@ In "Market Making via Reinforcement Learning," the authors demonstrate that an R
 Our adjudicated system design beautifully synthesizes these advanced literature branches:
 
 1.  **Strict Train/Live Separation (Meta-Labeling):** We maintain a pure, static Triple-Barrier first-touch labeler to prevent polluting the primary model's classification space (López de Prado, 2018).
-2.  **Path-Dependent Adaptive Exit (`StructureTest`):** We execute adaptive exits (`TRAP_CANDIDATE` and `FAVORABLE_EXIT`) in the live C++ engine. This is mathematically justified as an optimal stopping-time filter that exits the process when the local drift parameters are violated (Bertram, 2010).
+2.  **Path-Dependent Adaptive Exit (`StructureTest`):** We execute adaptive exits (`TRAP_CANDIDATE` and `FAVORABLE_EXIT`) in the live C++ engine. This is mathematically justified as an optimal stopping-time filter that exits the process when the local drift parameters are violated (Bertram, 2010). **[Corrected 2026-08-16: `FAVORABLE_EXIT` was removed from both repos 2026-07-16, per the favorable-exit ruling's Q1 verdict — see Correction note above. Only `TRAP_CANDIDATE` remains live.]**
 3.  **Future Co-Evolution (Trend-Scanning):** In our Phase 4 roadmap, we will transition our primary labeling to López de Prado’s **Trend-Scanning Labels** (MLAM Ch. 5), allowing the target barriers themselves to adaptively scale based on path persistence (Hurst and regression t-statistics) at entry, achieving the pinnacle of institutional-grade machine learning execution.
 
 ---
