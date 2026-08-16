@@ -1517,5 +1517,18 @@ float ContextManager::CalculateBurstinessIndex(uint64_t now_us) {
     return eve::CalculateBurstinessIndex(m_eventTimestampsUS);
 }
 
+// Assemble PredatorContext from the two already-computed sources — no new computation,
+// just composition (docs/superpowers/specs/2026-08-16-predator-context-fusion-
+// infrastructure-spec.md). applicabilityMask defaults to zero here; PredatorFusion's
+// broad-phase dispatch (Task 2) computes and sets it per call site.
+const PredatorContext& ContextManager::GetPredatorContext() const {
+    m_predatorContext.gang = m_localRiskContext;
+    const auto* hmmInd = InferenceManager::Instance().HmmState();
+    m_predatorContext.regime = hmmInd ? hmmInd->Value() : HMM_NO_PRIOR;
+    m_predatorContext.inPosition = !PositionManager::Instance().IsFlat();
+    m_predatorContext.applicabilityMask = 0ULL;
+    return m_predatorContext;
+}
+
 
 // 1200

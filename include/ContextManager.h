@@ -8,6 +8,8 @@
 #include <cassert>
 #include <cstdint>
 #include "generated/mts_schema_contract_generated.h"
+#include "LocalRiskContext.h"
+#include "PredatorContext.h"
 #include "InformationEngine.h"
 #include "TailRiskEngine.h"
 #include "StructureEngine.h"
@@ -74,41 +76,9 @@ struct DailyCache {
     bool validated = false;
 };
 
-/// Elite v3.2: Unified Local Risk Context
-/// Single struct exposing all locally-computed Gang (Shannon/Taleb/Pareto) intelligence
-/// to RiskManager, PositionManager, and Scoring without Python round-trip.
-/// Replaces the fragmented ClimateMetrics ↔ InstitutionalMetrics ↔ NormalizedAnchors paths.
-struct LocalRiskContext {
-    // Shannon (Information Theory) — from InformationEngine
-    float shannonFlowEntropy = 0.0f;   // bits — flow entropy (disambiguated from schema-level Shannon)
-    float shannonEfficiency = 0.5f;    // 1 - H/Hmax — signal-to-noise ratio
-
-    // Taleb (Tail Risk) — from NormalizedAnchors + TailRiskEngine
-    float talebKurtosis = 0.0f;        // Moors (1988) octile kurtosis (1.233 = N(0,1) neutral, clamped [0,5])
-    float talebSkewness = 0.0f;        // Bowley (1920) quartile skewness (0 = symmetric, bounded [-1,+1])
-    float elderChandelierATR = 0.0f;   // Elder's Chandelier: (price - stop) / ATR distance
-    float paretoTailAlpha = 4.0f;      // Pareto tail index via Hill estimator (4.0 = safe default)
-
-    // Pareto (Structure/Flow) — from StructureEngine + ObservationData
-    float amihudIlliquidity = 0.0f;    // Amihud illiquidity (canonical: mean |log-ret| / dollar-volume; formerly 'vpin')
-    float amihudPercentile = 0.5f;     // Layer B: session-aware rolling percentile [0,1] of amihudIlliquidity — the actual gate input (p90 normal / p75 fat-tail)
-    float spreadStress = 0.0f;         // spread-stress fragility
-    float hurstExponent = 0.5f;        // persistence (>0.5 trending, <0.5 mean-reverting)
-    float fractalDim = 1.5f;           // roughness 1.0-2.0
-    float meanRevZ = 0.0f;             // distance from mean in sigma
-
-    // Raschke (Event Dynamics)
-    float raschkeBurst = 1.0f;         // CV of inter-arrival times (clustering)
-
-    // Fisher (Observation Reliability)
-    float fisherInfo = 0.0f;           // sharpness of current estimate
-
-    // Regime Duration (from MarketClimateIndicator)
-    int regimeDuration = 0;            // bars in current climate state
-
-    bool isValid = false;              // true after warmup
-    uint64_t snapshotTimestampUs = 0;  // D.6: Wall-clock time (system_clock, µs) when context was last refreshed
-};
+// LocalRiskContext extracted to LocalRiskContext.h (indicator-manager-dod-soa plan
+// precedent — same rationale as MacdEnum's extraction into IndicatorComputations.h):
+// PredatorContext.h needs the struct without pulling in sierrachart.h.
 
 /// Diagnostics for HMM trigger decisions (institutional-grade observability)
 struct HMMTriggerDiagnostics {
@@ -380,6 +350,12 @@ public:
     /// Updated every BuildObservationVector() call.
     const LocalRiskContext& GetLocalRiskContext() const { return m_localRiskContext; }
 
+    /// Predator Decision Contract's unified macro context — LocalRiskContext + HMM regime
+    /// state composed into one struct (docs/superpowers/specs/2026-08-16-predator-context-
+    /// fusion-infrastructure-spec.md). Assembled lazily on each call from the two already-
+    /// computed sources; no new computation.
+    const PredatorContext& GetPredatorContext() const;
+
     /// Update regime duration from MarketClimateIndicator
     void SetRegimeDuration(int bars) { m_localRiskContext.regimeDuration = bars; }
 
@@ -432,6 +408,10 @@ private:
 
     // Elite v3.2: Unified local risk context (public via GetLocalRiskContext())
     LocalRiskContext m_localRiskContext;
+
+    // Predator Decision Contract's unified macro context (public via GetPredatorContext()).
+    // Assembled lazily from m_localRiskContext + HMM state on each accessor call.
+    mutable PredatorContext m_predatorContext;
 
     // === Layer B: session-aware Amihud rolling-percentile estimator ===
     // Two trailing pools so the structurally-higher thin-session (overnight/globex)
