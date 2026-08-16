@@ -83,20 +83,22 @@ push is a pending decision, ask before doing it (see end of this entry).
    decision — Turtle Soup's sniper-ization is not a separate thread, it's part of this same batch,
    matching how the Predator Decision Contract spec's own "First-Wave Concrete Work" section already
    listed it):**
-   - Elder Breakout directional-fusion fix (confirmed broken, `TripleScreen3.cpp:1162-1173`).
-     **Provenance checked 2026-08-16 (post-break)**: the pattern itself is legitimate, not fabricated —
-     `IndicatorComputations.h:1170-1219`'s `ElderBreakoutEnum`/`DetectElderBreakout()` genuinely
-     combines Elder's real, documented Keltner-Channel usage with Raschke's WEAK/STRONG/EXTREME
-     strength grading. It's a **continuation** breakout (trade with the break, expect it to hold), not
-     a fake/failed-breakout fade — the user's own recollection of "Elder trading fake breakouts" refers
-     to a genuinely different, currently-unimplemented concept, deliberately not conflated with this
-     fix and deferred as a separate future idea (see the conversation, not yet its own spec/unit).
-     Fix proceeds in this batch as originally scoped, no blocker.
+   - Elder Breakout directional-fusion fix — **DONE 2026-08-16 (`4b0753a`), resolved as a deletion,
+     not a redesign.** Provenance check confirmed the pattern is legitimate (real Elder Keltner-Channel
+     + Raschke strength grading, a continuation breakout, not the fake/failed-breakout fade the user
+     actually recalled — that's a separate, currently-unimplemented idea, deliberately not conflated
+     here). Tracing consumers of the broken `screenAligned` logic found `ChannelSqueeze()`/
+     `ImpulseAligned()`/`ScreenAligned()` had **zero call sites anywhere** — fully dead code, never
+     reaching the live entry decision (which already had correct Hurst+slope fusion elsewhere in the
+     same function, `TripleScreen3.cpp:1078-1104`). Removed outright (both the `TripleScreen3.cpp`
+     computation block and the three unused fields/accessors in `include/Indicator.h`) per the new
+     standing **dead-code-removal mandate** (`feedback_dead_code_removal_mandate` memory — this DLL
+     has never shipped to production, no backward-compat hacks, delete on sight). `build_dll.sh` clean.
    - Kangaroo Tail / Momentum Pinball audit against the 5-element contract — **DONE 2026-08-16, both
      pass, no fix needed** (Kangaroo Tail: `atSupportLevel`/`atResistanceLevel` correctly
      direction-discriminating; Momentum Pinball: `slopeAligned` + Hurst-conditioned continuous
-     multiplier, genuinely regime-aware fusion). Remaining in this batch: Elder Breakout's fix, Turtle
-     Soup's sniper-ization design.
+     multiplier, genuinely regime-aware fusion). **Remaining in this batch: Turtle Soup's sniper-ization
+     design only.**
    - **Turtle Soup sniper-ization — still an open design question, not yet spec'd**: cheap intra-bar
      heuristic (Kangaroo-Tail-style shape detection against the same 20-bar reference) vs. first real
      application of ECTS-style (early-classification-of-time-series) prefix-trained ML — explicitly
