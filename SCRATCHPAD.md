@@ -101,12 +101,21 @@ push is a pending decision, ask before doing it (see end of this entry).
    - **Turtle Soup Predator-ization — SPEC'D 2026-08-16
      (`docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md`), not yet implemented.**
      Bridge plan: ship a tick-reactive geometric heuristic now (Option A, reusing Kangaroo Tail's
-     proven approach against the 20-bar extreme instead of a single bar), with a classical
-     GBT/logistic-regression ECTS classifier (Option B) specced as a parallel, non-blocking track that
-     later swaps in at a single, standardized micro-signal seam. Design was pressure-tested via
-     `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_103` before being written down — two real dataset
-     guardrails adopted (fractional-not-tick sampling, profitability-inclusive labeling), stopping-rule
-     grounding tied to this project's existing Shiryaev-Wald/Elkan foundation rather than a new one.
+     proven approach against the 20-bar extreme instead of a single bar); Option B (a classifier) is a
+     parallel, non-blocking track that later swaps in at a single, standardized micro-signal seam
+     **only if it empirically beats Option A** — a genuinely open question (small-sample,
+     single-pattern), not assumed either way. Design was pressure-tested via `lbrnet/logs/rc_gemini.log`
+     `CLAUDE_BRIEF_103` before being written down.
+   - **Option B's general mechanics split into their own spec**
+     (`docs/superpowers/specs/2026-08-16-ects-prefix-training-infrastructure-spec.md`) — the offline
+     prefix-dataset construction, Dachraoui/Elkan/Shiryaev-Wald stopping-rule theory, and
+     Predator-equipped Python twin extension are a *general* capability, not Turtle-Soup-specific,
+     mirroring `PredatorContext`/`PredatorFusion`'s own infrastructure-vs-consumer split. Second real
+     consumer already identified: TRAP's own anticipatory τ* layer, which `CLAUDE.md` already names
+     "ECTS-style intra-bar-prefix training" as the prerequisite for (currently deferred for exactly
+     that reason). Deployment guidance settled: hand-crafted C++ port (not `m2cgen` auto-generated
+     code) once/if any consumer's model proves out, golden-vector regression-tested against the Python
+     model — no live Python round-trip inference, ever, for any consumer.
    - **This closes out the entire first-wave Predator batch** — Elder Breakout, Kangaroo
      Tail/Momentum Pinball audit, and Turtle Soup's design are all done. **Only Option A's actual
      implementation remains before this specific batch is fully shipped** (Option B is a separate,
