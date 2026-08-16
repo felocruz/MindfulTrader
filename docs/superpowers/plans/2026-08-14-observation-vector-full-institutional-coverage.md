@@ -74,7 +74,7 @@ rates from `CLAUDE_BRIEF_095`'s full 2.08M-sample scan) before starting any task
 
 ---
 
-### Task 1: Production validation of D1-D7 (Unit E) — **IN PROGRESS 2026-08-14**
+### Task 1: Production validation of D1-D7 (Unit E) — **DONE, dim3 gap root-caused (2026-08-16)**
 
 **Files:** none modified — this task is a live-collection run plus a comparison script, not a code
 change.
@@ -91,40 +91,54 @@ change.
   `dim6`'s heavy tail not yet observed in the ~50K-row sample checked so far — replay hadn't
   reached the September 2023 window the derivation was based on).
 
-- [ ] **Step 3: Compare live telemetry against the native-test predictions** — NOT yet done
-  precisely as scoped below; only a general `context_preflight.py` structural scan was run so
-  far (see `SCRATCHPAD.md`). This step's specific dim1/dim3 rail-hit-rate methodology still
-  needs to be run once the replay has progressed further / on the fuller file.
-
-```bash
-./deploy_mindfultrader.sh
-# Then, in Sierra Chart: run a fresh EventDataCollector replay over a representative window
-# (same 2023-09-01..10-20 window D1-D7's fixtures used, if reproducing that exact comparison
-# is the goal; otherwise any representative window is fine for a fresh-data sanity check).
-```
-
-- [ ] **Step 3: Compare live telemetry against the native-test predictions**
+- [x] **Step 3: Compare live telemetry against the native-test predictions** — **RESULTS 2026-08-15**
+  (from an lbrnet-rooted session, against the Sept 1 – Oct 20, 2023 window of the 2026-08-14
+  collection — the file's overnight replay crashed in a power outage before this could be run
+  live, but the collected data through 19:31/33 Aug 14 was intact and sufficient; see
+  `SCRATCHPAD.md`'s 2026-08-15 section for the full crash forensics).
 
 Reuse the exact validation bar `CLAUDE_BRIEF_097` established for dim1/dim3's original rail-hit rates
-(~1pp agreement between native-test fixture and live telemetry). For each of dim1/dim3, compute from the
-fresh `.context` file:
-- `|z|>=6` rate (should match the native suite's fixture-measured rates within ~1pp)
-- `|z|>=WIDE_STATE_WINSOR_SIGMA` / `|z|>=DIM3_WIDE_WINSOR_SIGMA` rate (should be at or near `0`, matching
-  the native suite's `0.0000%` result)
-- max observed `|z|` (should stay well inside the shipped bounds — `45`/`4587` — with no rail-pinning)
+(~1pp agreement between native-test fixture and live telemetry). For each of dim1/dim3, computed from the
+2026-08-14 `.context` file's Sept 1 – Oct 20, 2023 window (2,108,061 aligned pairs):
 
-- [ ] **Step 4 (light re-confirmation, not a re-investigation): spot-check `dim12`'s zero rate on the
-  fresh file** — should still be near-flat (per `CLAUDE_BRIEF_095`'s closed finding). This is a cheap
-  sanity check riding along on data Task 1 collects anyway, not a standalone investigation — if it
-  doesn't reconcile, that's a new, real finding worth its own thread, not evidence the original 095
-  scan was wrong.
+- `dim1` (`burstiness_index`): `|z|>=6` rate = **7.687%** vs. production baseline **7.848%** — 0.16pp,
+  **within the ~1pp tolerance**. Zero hits at the wide bound (45.0); max raw-z-equivalent 42.45 — matches
+  the native suite's `0.0000%` result. **PASS.**
+- `dim3` (`correction_action`): `|z|>=6` rate = **1.468%** vs. production baseline **10.078%** — an
+  **8.6pp gap, well outside the ~1pp tolerance**. Wide-bound behavior is fine (zero hits, max raw-z 31.35
+  well under 4587 — not a saturation problem), but far fewer values cross the ordinary 6-sigma threshold
+  than the documented baseline says should happen. **DOES NOT RECONCILE — see Step 5.**
 
-- [ ] **Step 5: Record the result**
+- [x] **Step 4 (light re-confirmation, not a re-investigation): spot-check `dim12`'s zero rate on the
+  fresh file** — **DONE 2026-08-16.** Confirmed on a fresh live collection
+  (`event_data_20260815_230249.context`, 500,000-row tail sample via `read_context_observations`):
+  `dim12` zero_ratio = **0.0000%** — matches `CLAUDE_BRIEF_095`'s "essentially flat 0.0%" finding.
+  Closed clean, no re-investigation needed. (Bonus: its `|z|>=6` rail rate on the same sample, 0.619%,
+  also lands within ~0.1pp of Task 4's derived `dim12` rail rate of 0.727%.)
 
-If Step 3 matches: note the confirmation in this plan's checkbox and in the dim1/dim3 spec's Status
-section. If it doesn't reconcile within ~1pp: stop and treat this as a new investigation
-(`superpowers:systematic-debugging`) before proceeding to Tasks 2-4 — the audit methodology itself needs
-to be trusted before applying it nine more times.
+- [x] **Step 5: Record the result, root cause found — reconciled, not a defect (2026-08-16)** —
+  `dim1` matches (recorded above). `dim3`'s apparent non-reconciliation (1.468% vs. the `CLAUDE_BRIEF_095`
+  baseline's 10.078%) is **not a methodology or estimator defect** — the baseline was measured on a
+  stale, pre-fix build. Root-caused via `superpowers:systematic-debugging`, evidence:
+  - `CLAUDE_BRIEF_095`'s 10.078% baseline came from `event_data_20260813_191757.context`, a collection
+    run started 2026-08-13 19:17:57. The most recent `FeatureScaler`-touching commit before that start
+    time was `d114199` (2026-08-13T17:43:27) — **before** `ee86c77` ("generalize dim3's scale-collapse
+    shrinkage fix", 2026-08-14T14:01:32). That baseline run's DLL predates the dim3 fix entirely.
+  - The 1.468% figure came from `event_data_20260814_163135.context`, started 2026-08-14 16:31:35 —
+    **after** `ee86c77`/`e2d8539`/`523d3e4`/`f7c47bf` (all committed 14:01–15:07 that same afternoon),
+    per this repo's standing rebuild-before-collection convention.
+  - A third data point gathered during this same investigation: a live spot-check on tonight's fresh
+    collection (`event_data_20260815_230249.context`, DLL rebuilt 2026-08-15 22:55 — includes every
+    fix through `a8a2f34`) shows dim3 `|z|>=6` rate = **0.0%** over a 500K-row tail sample — consistent
+    with the fix remaining effective, not a regression.
+  - The three numbers (10.078% → 1.468% → 0.0%) track the fix's deployment timeline monotonically,
+    across builds — the signature of a working fix being measured against a stale pre-fix baseline,
+    not an unresolved estimator problem. All three underlying collection runs replay from the same
+    2023-08-16 historical reset point, so this is not a calendar-window artifact either.
+  - Confidence caveat: no surviving DLL binary from the Aug 13/14 window to independently confirm
+    which exact commit was compiled into each run — this rests on commit timestamps plus the project's
+    established "rebuild before every collection run" convention, not a byte-for-byte binary check.
+  **Task 1 is closed.** No code change warranted — the fix already shipped and is confirmed working.
 
 ---
 
@@ -344,7 +358,7 @@ placeholder).
 ## Sequencing summary
 
 ```
-Task 1 (deploy+validate D1-D9, incl. light dim12 spot-check) -- NOT YET RUN, needs explicit go-ahead
+Task 1 (deploy+validate D1-D9, incl. light dim12 spot-check) -- DONE, dim3 gap root-caused 2026-08-16
 Task 2 (dim9/dim0/dim7 — DONE, surfaced D8's shrinkage generalization)
 Task 3 (dim6/dim8/dim10/dim11/dim15 — DONE, dim6 fully resolved same-day via exact-formula replica)
 Task 4 (dim2/dim4/dim12 — DONE, all three full confidence: dim4's initial ambiguity resolved same-day)
@@ -360,7 +374,7 @@ Gemini-assisted tail-conditional noise decomposition (`logs/rc_gemini.log` `CLAU
 that empirically ruled out a DFA-instability artifact before any bound shipped — `dim6`'s confirmed
 tail (`n_tail=11,023`, 14.80% post-shrinkage) is the largest of any dim in this initiative, genuine, not
 contamination. `dim2` closed via a cheap screen corroborated by production telemetry. Final tally: 15
-done or closed clean with full confidence, plus 3 exempt by construction — 16 of 16. Remaining work is
-Task 5 (doc sync — ready to start now that real numbers exist for every dim), Task 6 (pointers, can be
-filed any time), and Task 1 (production validation — genuinely useful, still un-started, still needs
-your explicit go-ahead to deploy).
+done or closed clean with full confidence, plus 3 exempt by construction — 16 of 16. **Task 1 (production
+validation) is now also DONE** (2026-08-16) — its dim3 non-reconciliation root-caused as a stale
+pre-fix baseline, not a defect (see Task 1 Step 5). Remaining work is Task 5 (doc sync — ready to start
+now that real numbers exist for every dim) and Task 6 (pointers, can be filed any time).

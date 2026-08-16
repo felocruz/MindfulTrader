@@ -1,6 +1,38 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-15 23:00 (session end)
+Last updated: 2026-08-16 07:45
+
+## 2026-08-16 (morning) — Task 1 (observation-vector production validation) CLOSED: dim3's
+## non-reconciliation root-caused as a stale pre-fix baseline, not a defect. Read this FIRST.
+
+A fresh live collection had been running since 2026-08-15 23:02:49
+(`/mnt/c/SierraChart2/Data/event_data_20260815_230249.context`, DLL rebuilt 22:55 same day, includes
+every fix through `a8a2f34`). Used it to close the two open items in
+`docs/superpowers/plans/2026-08-14-observation-vector-full-institutional-coverage.md` Task 1:
+
+- **Step 4 (dim12 zero-rate spot-check) — DONE.** 0.0000% zero_ratio on a 500K-row tail sample —
+  matches `CLAUDE_BRIEF_095`'s "essentially flat 0.0%" finding, closed clean.
+- **Step 5 (dim3 non-reconciliation, the real work) — root-caused via `superpowers:systematic-debugging`.**
+  The `CLAUDE_BRIEF_095` baseline (10.078%) came from `event_data_20260813_191757.context`, a run
+  started *before* `ee86c77` ("generalize dim3's scale-collapse shrinkage fix",
+  2026-08-14T14:01:32) was committed. The 1.468% figure (Task 1 Step 3) came from a run started
+  *after* that fix. Tonight's fresh run (latest build) shows 0.0%. All three numbers
+  (10.078% → 1.468% → 0.0%) track the fix's deployment timeline monotonically, across builds that all
+  replay from the same 2023-08-16 historical reset point (so it isn't a calendar-window artifact
+  either) — this is the signature of a working fix measured against a stale pre-fix baseline, not an
+  unresolved estimator problem. One honest caveat: no surviving DLL binary from the Aug 13/14 window
+  to independently byte-confirm which commit each run's DLL was built from — this rests on commit
+  timestamps plus the repo's established rebuild-before-collection convention.
+
+**Task 1 is now DONE.** Per the plan's own tally, all 16 dims are audited/exempt and Task 1's
+production validation is closed — only Task 5 (doc sync) and Task 6 (pointers) remain on that plan.
+
+Ad-hoc analysis scripts used (not committed, not part of the repo): `/tmp/task1_spotcheck.py`
+(dim rail-hit-rate + zero-ratio via `lbrnet`'s `read_context_observations`, tail-sampled),
+`/tmp/check_ts.py` (embedded timestamp inspection, confirmed both the fresh and the 2023-replay file
+share the identical replay start epoch `1693822631729000` = 2023-09-04). Used `mamba run -n mts`
+per this project's standing Python-env rule, not `conda run` (corrected mid-session after using
+`conda run` for the first preflight call).
 
 ## 2026-08-15 (evening) — `risk_gate_context` co-evolution spec: Units B and C SHIPPED,
 ## Unit A explicitly held. Read this FIRST — it supersedes the "NEW SPEC ready" section below.
