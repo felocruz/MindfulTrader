@@ -774,7 +774,11 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
 
     // Canonical source: use adaptive-window subgraph outputs computed by
     // UpdateObservationVectorSubgraphs(...) to avoid duplicate fixed-window paths.
-    const float skewness = Subgraph_SkewnessIdx[sc.Index];
+    // Note: skewness_idx is NOT mutated here (2026-08-27) -- ContextManager::
+    // BuildObservationVector() now sources dim 10 from ActivityClockManager's
+    // imbalance-bar returns directly (see spec's skewness_idx activity-clock
+    // replacement). Subgraph_SkewnessIdx/CalculateSkewness() stay live for
+    // anchors.skewnessIdx (PredatorContext) below, just no longer for the HMM vector.
     const float amihud = Subgraph_AmihudIlliquidity[sc.Index];
     const float liqFragility = Subgraph_LiqFragility[sc.Index];
     const float microAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
@@ -788,7 +792,6 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     // Note: Mutating canonical ObservationData fields owned by Screen 3
     auto* obs = ContextManager::Instance().GetMutableObservation();
     if (obs) {
-        obs->mutate_skewness_idx(skewness);
         obs->mutate_amihud_illiquidity(amihud);
         obs->mutate_liq_fragility(liqFragility);
         obs->mutate_mean_rev_z(meanRevZ);

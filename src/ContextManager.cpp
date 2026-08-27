@@ -37,7 +37,8 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBo
    -1.0f,   // OBS_MICRO_ASYMMETRY
    -6.0f,   // OBS_FISHER_INFO
     0.5f,   // OBS_TAIL_INDEX
-   -2.5f,   // OBS_SKEWNESS
+   -2.5f,   // OBS_SKEWNESS — BowleySkewness over ActivityClockManager's imbalance-bar returns
+            // since 2026-08-27 (was TS3 time-bar cadence); same formula/bounds, faster clock
     0.0f,   // OBS_AMIHUD_ILLIQUIDITY
     0.0f,   // OBS_LIQ_FRAGILITY
     0.5f,   // OBS_FAST_TALEB_KURTOSIS — mirrors OBS_TAIL_INDEX's floor (same quadrant, same
@@ -544,7 +545,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
         obs[OBS_TAIL_INDEX] = 0.0f;  // Warmup: TRE not yet primed
         m_cachedHillAlpha.store(4.0f, std::memory_order_relaxed);  // P1.4: assume safe during warmup
     }
-    obs[OBS_SKEWNESS] = m_observationData.skewness_idx();
     obs[OBS_AMIHUD_ILLIQUIDITY] = m_observationData.amihud_illiquidity();
     obs[OBS_LIQ_FRAGILITY] = m_observationData.liq_fragility();
 
@@ -569,8 +569,14 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             std::array<float, 100> returnsArray;
             std::copy(rawReturns, rawReturns + 100, returnsArray.begin());
             m_localRiskContext.fastTalebKurtosis = MoorsKurtosis(returnsArray);
+            // Dim 10 (skewness_idx): replaced 2026-08-27, source moved from TS3's
+            // stale (once-per-15min-bar) CalculateSkewness() to this same
+            // tick-native activity-clock buffer -- no existing gate consumed the
+            // old value, unlike kurtosis, so no additive twin was needed.
+            obs[OBS_SKEWNESS] = BowleySkewness(returnsArray);
         } else {
             m_localRiskContext.fastTalebKurtosis = 1.23f;
+            obs[OBS_SKEWNESS] = 0.0f;  // Warmup: neutral (symmetric)
         }
         obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
     }
@@ -855,10 +861,9 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
             OBS_RECURRENCE_RATE,
             OBS_FRACTAL_DIM
         };
-        static constexpr std::array<size_t, 6> kTs3Dims = {
+        static constexpr std::array<size_t, 5> kTs3Dims = {
             OBS_VOL_CONVEXITY,
             OBS_MICRO_ASYMMETRY,
-            OBS_SKEWNESS,
             OBS_AMIHUD_ILLIQUIDITY,
             OBS_LIQ_FRAGILITY,
             OBS_MEAN_REV_Z

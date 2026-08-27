@@ -181,12 +181,13 @@ struct FeatureScaler {
         0.00733f,   //  7  micro_asymmetry      confirmed collapse signature (z=438 traced)
         0.0f,       //  8  fisher_info          audited 2026-08-14 -- clean, no collapse signature; needs only a wider bound (DIM_WINSOR_SIGMA_OVERRIDE), not shrinkage
         0.0438f,    //  9  tail_index           confirmed collapse signature (z=1963 traced)
-        0.0f,       // 10  skewness_idx         audited 2026-08-14 -- 0.041% clip rate, only 31 exceedances (too few for a reliable fit); weak collapse signal present but impact is negligible, disabled per ruthless-simplicity (D8's own precedent: don't force complexity where the flat default already performs fine)
+        0.0f,       // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27: source changed from TS3 time-bar to ActivityClockManager's imbalance-bar clock (BowleySkewness now computed over a different cadence); the 2026-08-14 audit below was against the old time-bar signal and no longer applies. Disabled pending fresh audit, same conservative placeholder posture as dim13.
         0.0f,       // 11  amihud_illiquidity   audited 2026-08-14 -- 0.000% real production clip rate (CLAUDE_BRIEF_095), bar-gated/historical-only construction (never sees the live still-forming bar, unlike the dims above), already has its own dedicated floor fix (AMIHUD_ABSOLUTE_FLOOR) -- no action needed
         0.0f,       // 12  liq_fragility        disabled -- LOGZ, resolved-healthy, no evidence of need
-        0.0f,       // 13  recurrence_rate      disabled -- static scaler, not applicable
-        0.0f,       // 14  fractal_dim          disabled -- static scaler, not applicable
-        0.0f,       // 15  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
+        0.0f,       // 13  fast_taleb_kurtosis  NOT empirically calibrated yet (no historical activity-clock data to percentile-match against) -- placeholder, matches ContextManager.cpp's kObsLowerBounds/kObsUpperBounds comment
+        0.0f,       // 14  recurrence_rate      disabled -- static scaler, not applicable
+        0.0f,       // 15  fractal_dim          disabled -- static scaler, not applicable
+        0.0f,       // 16  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
     };
     /// dim6's floor (0.000145) was RE-DERIVED 2026-08-14 (same-day follow-up)
     /// against an EXACT port of the production DFA algorithm
@@ -278,6 +279,7 @@ struct FeatureScaler {
         12.0f,  //  4  vol_convexity    GPD-derived on corrected (shrinkage-blended) z, real margin above the theoretical wall
         0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
         12.0f,  // 12  liq_fragility    GPD-derived, clean trace, real margin above the theoretical wall
+        0.0f,   // 13  fast_taleb_kurtosis -- not yet calibrated (placeholder)
         0.0f, 0.0f, 0.0f,
     };
 
@@ -412,12 +414,13 @@ struct FeatureScaler {
         36.0f,    //  7  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
         20.0f,    //  8  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
         10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
-        0.0f,     // 10  skewness_idx         audited, negligible clip rate, no action needed
+        0.0f,     // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27 -- see matching SHRINKAGE_SCALE_MIN comment; source cadence changed
         0.0f,     // 11  amihud_illiquidity   audited, 0.000% production clip rate, no action needed
         0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
-        0.0f,     // 13  recurrence_rate      static scaler, not applicable
-        0.0f,     // 14  fractal_dim          static scaler, not applicable
-        0.0f,     // 15  mean_rev_z           audited, negligible clip rate, no action needed
+        0.0f,     // 13  fast_taleb_kurtosis  not yet calibrated (placeholder)
+        0.0f,     // 14  recurrence_rate      static scaler, not applicable
+        0.0f,     // 15  fractal_dim          static scaler, not applicable
+        0.0f,     // 16  mean_rev_z           audited, negligible clip rate, no action needed
     };
 
     enum class ConfigLoadStatus : uint8_t { DEFAULTS, LOADED_FROM_FILE, FILE_MISSING, PARSE_FAILED };
@@ -547,12 +550,13 @@ struct FeatureScaler {
         300,  //  7  micro_asymmetry       order flow, bursty
         500,  //  8  fisher_info           geometry, stable
         500,  //  9  tail_index            Hill needs depth
-        300,  // 10  skewness              regime-reactive
+        300,  // 10  skewness              activity-clock (imbalance-bar) cadence since 2026-08-27, regime-reactive
         300,  // 11  amihud_illiquidity    regime-sensitive
         500,  // 12  liq_fragility         LOGZ, stable
-        200,  // 13  recurrence_rate       structural, periodic
-        200,  // 14  fractal_dim           structural, slow
-        300,  // 15  mean_rev_z            medium memory
+        500,  // 13  fast_taleb_kurtosis   mirrors tail_index's window (same quadrant, uncalibrated placeholder)
+        200,  // 14  recurrence_rate       structural, periodic
+        200,  // 15  fractal_dim           structural, slow
+        300,  // 16  mean_rev_z            medium memory
     };
 
     /// Per-dimension adaptive scaling calibration.
@@ -575,12 +579,13 @@ struct FeatureScaler {
         ScaleMode::SOFTLOGZ, // 7
         ScaleMode::SOFTLOGZ, // 8
         ScaleMode::SOFTLOGZ, // 9
-        ScaleMode::SOFTLOGZ, // 10
+        ScaleMode::SOFTLOGZ, // 10  skewness_idx (activity-clock)
         ScaleMode::SOFTLOGZ, // 11
         ScaleMode::LOGZ, // 12
-        ScaleMode::SOFTLOGZ, // 13
-        ScaleMode::SOFTLOGZ, // 14
-        ScaleMode::SOFTLOGZ  // 15
+        ScaleMode::SOFTLOGZ, // 13  fast_taleb_kurtosis
+        ScaleMode::SOFTLOGZ, // 14  recurrence_rate
+        ScaleMode::SOFTLOGZ, // 15  fractal_dim
+        ScaleMode::SOFTLOGZ  // 16  mean_rev_z
     };
 
     // Rolling FIFO buffers by mode.
