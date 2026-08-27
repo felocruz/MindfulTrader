@@ -1,8 +1,11 @@
 # Session Scratchpad — Where We Left Off
 
 Last updated: 2026-08-27 — `skewness_idx`'s activity-clock replacement + a real `FeatureScaler.h`
-17-dim indexing bug fix both landed and committed (`7c51f33`); see Thread C's update below. Read
-`PRODUCTION_TRIAGE.md` row 1 (synced same day) for the terse cross-project version.
+17-dim indexing bug fix both landed and committed (`7c51f33`). **Window-widening
+(`recurrence_rate`/`fractal_dim`/`mean_rev_z`) now handed to a sibling Claude Sonnet 5 instance as
+the sole remaining item from the observation-vector batch — see Thread C's tail, "READ THIS FIRST"
+block, for the full handoff.** Read `PRODUCTION_TRIAGE.md` row 1 (synced same day) for the terse
+cross-project version.
 
 ## Thread C: Activity-clock tail-risk signal for the Student-t HMM (row 1, MindfulTrader-rooted) — DESIGN + PLAN DONE, handed to Claude Sonnet 5 for execution
 
@@ -167,6 +170,54 @@ noticed until now. All four arrays fixed to correct, explicit 17-entry mappings 
 Window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` per `docs/superpowers/specs/
 2026-08-25-observation-vector-institutional-hardening-spec.md` §5 remains **not started** — still
 needs an autocorrelation-time derivation before its proposed ~150/~600-bar targets are finalized.
+
+**HANDED TO A SIBLING CLAUDE SONNET 5 INSTANCE, 2026-08-27 — READ THIS FIRST if you are that
+instance picking this up.** This is now the sole remaining item from the original two-task
+observation-vector batch (`skewness_idx` above is done). Spec:
+`docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` §4-§6 (window
+audit + proposed targets), §5c of the sibling `2026-08-26-activity-clock-tail-risk-and-decay-spec.md`
+is unrelated to this item — don't conflate the two specs.
+
+**Current state, verified against the actual C++ source (spec §4)**:
+| Dim | Function (file:line) | Screen | Current window | Real-world span |
+|---|---|---|---|---|
+| `recurrence_rate` | `CalculateRecurrenceRate(sc, lookback_n)`, `StudyHelperFunctions.cpp:3369` | TS2, 60min | `max(30, observation_window_n)` clamped `[2,40]` | 30-40 bars = 1.25-1.67 days |
+| `fractal_dim` | `CalculateFractalDimension(sc, lookback_n)`, `StudyHelperFunctions.cpp:3177` | TS2, 60min | same as `recurrence_rate` | 30-40 bars = 1.25-1.67 days |
+| `mean_rev_z` | `CalculateMeanReversionSpeed(sc, lookback_n)`, `StudyHelperFunctions.cpp:3238` | TS3, 15min | outer z-score `n=clamp(lookback_n,5,40)`; inner lag-1 `rho` uses `m=n-1` — **same window, not independently parameterized, this is itself part of the fix** | 10-40 bars = 2.5-10 hours |
+
+Reference point: this HMM's own fitted mean regime tenure (production model, 2026-08-25 sign-off
+run) is ~589 bars at TS3/15min, ≈6.1 real days — all three dims above run well under a day against
+that reference.
+
+**Proposed targets (spec §5) — explicitly NOT finalized, do not implement these numbers directly**:
+`recurrence_rate`/`fractal_dim` → ~150 bars (≈6.25 days at 60min); `mean_rev_z`'s outer z-score →
+~600 bars (≈6.25 days at 15min), with `rho`'s inner window **decoupled** from the outer z-score's
+(give it its own explicit, likely-longer lookback — sharing one window for two statistically
+distinct estimators was an implementation shortcut, not a deliberate choice, per the spec's own
+source-reading). **Required first step**: run an autocorrelation-time diagnostic on the raw signal
+itself (same technique this project already used for the HMM's calibration holdout sizing,
+`2026-08-24-hmm-gate-threshold-calibration-institutional-grade-spec.md`) to confirm or adjust the
+~150/~600 figures before touching any window constant — don't skip straight from "too short" to
+"here's the exact number," same discipline `fast_taleb_kurtosis`'s own imbalance threshold is still
+waiting on (Task 15 of the kurtosis plan, separate, unrelated dims).
+
+**No schema impact** — confirmed by `schema/docs/ADR/2026-08-25-observation-vector-loading-
+efficiency-and-dropped-hmm-fields.md` §2: a window-size change alters what *value* a field carries,
+not its wire type/size. Purely a `MindfulTrader`-internal C++ change; no `../schema` or `lbrnet`
+commit needed for this one (unlike `fast_taleb_kurtosis`/`skewness_idx`).
+
+**Explicitly NOT part of this task, still correctly out of scope**: `hurst_exponent`/`fisher_info`
+(spec §6) — both already run on windows ≥ the 6.1-day reference; their weak HMM discrimination is
+more likely a data-quality artifact (`hurst_exponent`'s known 24.85% `|z|>=6` scale-collapse) than a
+window problem — don't widen these as a first move. The 2 C++ dead-code candidates named in the same
+spec (§3) are a separate item; `skewness_idx`'s `CalculateSkewness()` path is confirmed NOT dead as
+of `7c51f33` (still live for `anchors.skewnessIdx`/`PredatorContext`) — only `micro_asymmetry`'s
+`ofae::ComputeMicroAsymmetry()` remains a candidate.
+
+**Verification convention, same as every other item in this thread**: no native test precedent for
+these functions specifically (they live in `StudyHelperFunctions.cpp`, `#include "sierrachart.h"`
+directly) — verify via `./build_dll.sh --no-clean` succeeding cleanly, plus whatever native test
+exists for the autocorrelation-time diagnostic itself if one gets written as a reusable utility.
 
 ## Thread A: Pattern-detection hardening (row 13) — Phase 0 DONE, design DONE, 5 open questions block a plan
 
