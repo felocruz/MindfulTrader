@@ -107,12 +107,51 @@ drawdown and alpha outcomes, not from implementation effort.
 The skewed Student-t emission question from the activity-clock spec remains open and separate.
 Evaluate it independently; do not conflate it with the observation extension or gate work.
 
-## 8. Likely companion: `skewness_idx`'s activity-clock twin
+## 8. `skewness_idx` — DONE 2026-08-27 (`MindfulTrader` `7c51f33`), by REPLACEMENT not addition —
+different consequence for `lbrnet` than §1-§3, read this even though it's not a new field
 
-`MindfulTrader`'s next observation-vector step (spec §5c, not yet started, handed to a sibling
-Claude Sonnet 5 instance 2026-08-27) is `skewness_idx`'s activity-clock twin, expected to land the
-same way as this field did — directly inside `ObservationData` (an 18th field), not via `Event`/
-`HMM_OBSERVATION_EXTENSIONS`. If it ships before this handoff is picked up, everything in §1-§3
-above applies to it too (same mid-struct-insertion compatibility question, same `HMM_KEEP_DIMS`
-decision, same historical-backfill choice) — check `PRODUCTION_TRIAGE.md` row 1 for its actual
-landed state before assuming it's still pending.
+**This section's earlier prediction (that `skewness_idx`'s twin would land as an 18th
+`ObservationData` field) was wrong — corrected below with what actually happened, verified directly
+against the commit.** `skewness_idx` (dim 10) was **replaced in place**, not added alongside:
+`ObservationData` stays at 17 fields, no schema change, no `mts_schema.fbs` diff, no new consumer
+regen needed. The reasoning (kurtosis went additive/dual-clock specifically to protect 5 existing
+live gate consumers calibrated on its slow value; `skewness_idx` has zero such consumers and was
+already an HMM drop candidate for suspected staleness — replacement tests that hypothesis directly)
+is in `PRODUCTION_TRIAGE.md` row 1's 2026-08-27 update and `MindfulTrader/SCRATCHPAD.md`'s Thread C.
+
+**What this means for `lbrnet` instead — a values/semantics discontinuity, not a binary-layout
+one**: dim 10's byte offset and meaning-as-a-schema-field are unchanged, but its **computed values
+changed source** at commit `7c51f33` — before that commit, dim 10 was `CalculateSkewness()`'s stale
+TS3 time-bar value (updated once per 15-min bar close); after it, dim 10 is `BowleySkewness()` over
+`ActivityClockManager`'s imbalance-bar returns (updates far more frequently, per the same
+cadence-starvation problem this whole initiative exists to fix). **Any historical `.context`/
+`.alpha` data spanning that commit boundary has two different signals under one column name** —
+treat pre-/post-`7c51f33` `skewness_idx` data as non-homogeneous for training purposes, the same
+twin-parity discipline §3 already asks for on `fast_taleb_kurtosis`, just for a values reason
+instead of a byte-layout one. Get the exact collection timestamp of `7c51f33`'s deployment (not the
+commit timestamp — whenever the built DLL actually started running live/collecting) before mixing
+data across it.
+
+**A second, independently-found and higher-priority data-quality issue from the same commit**:
+`MindfulTrader/include/FeatureScaler.h`'s four per-dim calibration arrays (winsorization bounds,
+shrinkage scale, rolling-window size) were never updated when `fast_taleb_kurtosis` landed at real
+index 13 in the earlier commit (`ff22e48`) — each array still had only 16 entries, silently
+misassigning `recurrence_rate`/`fractal_dim`/`mean_rev_z`'s calibration by one index for the entire
+window between `ff22e48` and `7c51f33`. `mean_rev_z`'s rolling window specifically defaulted to `0`
+in that window, making its buffer pop immediately after every push — **permanently degenerate**,
+not just miscalibrated. **Any `.context`/`.alpha` data collected between `ff22e48` and `7c51f33`
+has unreliable `recurrence_rate`/`fractal_dim`/`mean_rev_z` values and a broken `mean_rev_z` — check
+collection timestamps against both commits before trusting that window's data for those 3 dims,
+independent of anything else in this handoff.** Full detail: `7c51f33`'s own commit message.
+
+**Also still open, flagged by `FeatureScaler.h`'s own inline comment (`DIM_WINSOR_SIGMA_OVERRIDE`
+index 10), not yet acted on**: `skewness_idx`'s winsorization bound was calibrated against the OLD
+time-bar cadence and is marked "NEEDS RE-AUDIT 2026-08-27 — source cadence changed" — the activity-
+clock version's distributional properties (tail behavior, clip rate) haven't been re-checked against
+the bound chosen for the old, slower-updating signal. This is a `MindfulTrader`-side follow-up, not
+`lbrnet`'s to fix, but worth knowing before treating dim 10's post-`7c51f33` values as fully
+calibrated.
+
+Window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` (§5 of the companion 2026-08-25
+hardening spec) remains **not started** as of this writing — check `PRODUCTION_TRIAGE.md` row 1
+before assuming otherwise.
