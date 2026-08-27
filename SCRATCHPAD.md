@@ -1,8 +1,8 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-27 — Thread C's post-implementation gap is now RESOLVED (see its own update
-below); the plan is code-complete and build-verified but fully uncommitted. Read `PRODUCTION_TRIAGE.md`
-row 1 (synced same day) for the terse cross-project version.
+Last updated: 2026-08-27 — `skewness_idx`'s activity-clock replacement + a real `FeatureScaler.h`
+17-dim indexing bug fix both landed and committed (`7c51f33`); see Thread C's update below. Read
+`PRODUCTION_TRIAGE.md` row 1 (synced same day) for the terse cross-project version.
 
 ## Thread C: Activity-clock tail-risk signal for the Student-t HMM (row 1, MindfulTrader-rooted) — DESIGN + PLAN DONE, handed to Claude Sonnet 5 for execution
 
@@ -135,16 +135,38 @@ already the demonstrated example, not a pending future one. Still open, a spec m
 some other purpose, and formalizing this pattern as standing policy for future dims. See
 `PRODUCTION_TRIAGE.md`'s top-of-doc callout and row 14 for the full statement.
 
-**Next MindfulTrader-owned step after this thread's commit cleanup, per spec §5c**:
-`skewness_idx`'s activity-clock twin (same move as kurtosis — `BowleySkewness` over
-`ActivityClockManager`'s imbalance-bar buffer). **Given the corrected precedent above, this should
-most likely land as a new field directly inside `ObservationData` too (an 18th field), not on
-`Event` — confirm against row 14's eventual policy spec before assuming either way.** Formula
-question already closed, infrastructure already built. A second, independent thread —
-window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` per `docs/superpowers/specs/
-2026-08-25-observation-vector-institutional-hardening-spec.md` §5 — needs an autocorrelation-time
-derivation before its proposed ~150/~600-bar targets are finalized. **Both handed to a sibling
-Claude Sonnet 5 instance, 2026-08-27** — not being executed from this session.
+**`skewness_idx` activity-clock work DONE, 2026-08-27 (commit `7c51f33`) — but landed as a
+REPLACEMENT, not an 18th field, correcting the plan the item below now describes as stale.**
+Before implementing, re-checked the "add an 18th field" premise against kurtosis's own stated
+reason for going additive (spec §4 item 4): kurtosis needed dual-clock treatment specifically to
+avoid disturbing 5 existing live gate consumers calibrated on the slow value. `skewness_idx` has
+**zero** such gate consumers (verified via grep across `RiskManager.cpp`/`Scoring.cpp`/
+`PositionManager.cpp`) — nothing to protect by adding rather than replacing. Spec §5b also already
+flagged `skewness_idx` as a genuine drop candidate for `lbrnet`'s HMM (weak cross-state
+discrimination, suspected staleness artifact) — replacing its stale TS3 time-bar source with the
+tick-native activity-clock one directly tests that hypothesis instead of shipping a redundant twin
+next to a dim about to be dropped anyway. Implemented: `ContextManager::BuildObservationVector()`
+now computes dim 10 via `BowleySkewness()` over the same imbalance-bar returns buffer already
+fetched for `fast_taleb_kurtosis` (one shared fetch, no duplicate engine work); the now-dead
+`TripleScreen3.cpp` `obs->mutate_skewness_idx()` call was removed (`Subgraph_SkewnessIdx`/
+`CalculateSkewness()` stay live for `anchors.skewnessIdx`/PredatorContext, untouched); `OBS_SKEWNESS`
+removed from `ContextManager.cpp`'s `kTs3Dims` staleness-monitoring group (no longer TS3-owned).
+`FeatureScaler.h`'s existing 2026-08-14 skewness calibration (winsor/shrinkage) is now flagged stale
+pending a fresh audit — the underlying signal's cadence changed, the old audit doesn't transfer.
+
+**Real, previously-undiscovered bug found and fixed in the same pass**: `FeatureScaler.h`'s four
+per-dim calibration arrays (`SHRINKAGE_SCALE_MIN`, `LOGZ_WINSOR_SIGMA_OVERRIDE`,
+`DIM_WINSOR_SIGMA_OVERRIDE`, `DIM_WINDOW_SIZE`) were never updated when `fast_taleb_kurtosis` landed
+at `ObservationData`'s real index 13 — each still had only 16 literal entries, silently
+misassigning `recurrence_rate`/`fractal_dim`/`mean_rev_z`'s calibration by one index since. Worst
+case: `mean_rev_z`'s `DIM_WINDOW_SIZE` defaulted to `0`, making its rolling buffer pop immediately
+after every push — permanently degenerate scaling for that dim since the kurtosis plan shipped, not
+noticed until now. All four arrays fixed to correct, explicit 17-entry mappings in the same commit.
+`./build_dll.sh --no-clean` succeeds cleanly.
+
+Window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` per `docs/superpowers/specs/
+2026-08-25-observation-vector-institutional-hardening-spec.md` §5 remains **not started** — still
+needs an autocorrelation-time derivation before its proposed ~150/~600-bar targets are finalized.
 
 ## Thread A: Pattern-detection hardening (row 13) — Phase 0 DONE, design DONE, 5 open questions block a plan
 
