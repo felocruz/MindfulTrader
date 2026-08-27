@@ -103,6 +103,8 @@ namespace PersistentVar_AdaptiveCalculators {
                                                    // ticks instead of every 200 bars (fixed 2026-08-13).
                                                    // Same bar-advancement-gate convention as
                                                    // LAST_OBS_UPDATE_INDEX / LAST_AMIHUD_SAMPLE_INDEX.
+    const int RQA_ENGINE_STATE_PTR = 40;          // Pointer to RecurrenceRateEngine (incremental RQA, O(n)/tick)
+    const int RQA_LAST_WINDOW_BAR_INDEX = 41;     // Bar index (sc.Index) the engine's closed-bar window was last rebuilt for
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

@@ -15,16 +15,17 @@
 #include <algorithm>
 #include <cstddef>
 
-/// Largest window this selector supports. Production's caller
-/// (CalculateRecurrenceRate, via TripleScreen2's
-/// slow_window_n = max(30, clamp(adaptiveWindow, 10, 40))) never exceeds 40;
-/// 64 leaves headroom while keeping the fixed-capacity pair buffer below at
-/// 64*63/2 = 2016 floats (~8 KB of stack), so this function performs ZERO heap
-/// allocation -- it is reachable from the per-tick ACSIL path (only at
-/// recalibration cadence, but CLAUDE.md's no-heap-on-hot-path rule still
-/// applies). Windows larger than this are clamped to the most recent
-/// kMaxSelectorN samples rather than silently overrunning.
-inline constexpr int kRQASelectorMaxN = 64;
+/// Largest window this selector supports. Bumped 2026-08-27 (from 64) to match
+/// RecurrenceRateEngine::kMaxClosedBars -- production's window is being widened
+/// per docs/superpowers/specs/2026-08-25-observation-vector-institutional-
+/// hardening-spec.md Section 5 (proposed ~150 bars, final size still pending
+/// that spec's own autocorrelation-time derivation). 256 leaves headroom while
+/// keeping the fixed-capacity pair buffer below at 256*255/2 = 32,640 floats
+/// (~127 KB of stack); this selector only runs at RQA_EPSILON_RECALIBRATION_BARS
+/// cadence (every 200 bars), not per-tick, so the larger stack frame is paid
+/// rarely, not on the hot path. Windows larger than this are clamped to the
+/// most recent kMaxSelectorN samples rather than silently overrunning.
+inline constexpr int kRQASelectorMaxN = 256;
 inline constexpr std::size_t kRQASelectorMaxPairs =
     static_cast<std::size_t>(kRQASelectorMaxN) * static_cast<std::size_t>(kRQASelectorMaxN - 1) / 2;
 

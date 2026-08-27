@@ -8,6 +8,7 @@
 #include "RingBuffer.h"
 #include "CarryForwardCalculators.h"
 #include "RQAEpsilonSelector.h"
+#include "RecurrenceRateEngine.h"
 #include "RobustMoments.h"
 
 /// ============================================================================
@@ -263,6 +264,18 @@ static AdaptiveCalculatorsState* GetAdaptiveCalculatorsState(SCStudyInterfaceRef
     return state;
 }
 
+static RecurrenceRateEngine* GetRecurrenceRateEngine(SCStudyInterfaceRef sc) {
+    auto* engine = static_cast<RecurrenceRateEngine*>(
+        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
+
+    if (!engine) {
+        engine = new RecurrenceRateEngine();
+        sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR, engine);
+    }
+
+    return engine;
+}
+
 static void CleanupAdaptiveWindowState(SCStudyInterfaceRef sc);
 static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc);
 
@@ -273,6 +286,14 @@ void CleanupAdaptiveCalculators(SCStudyInterfaceRef sc) {
     if (state) {
         delete state;
         sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::STATE_PTR, nullptr);
+    }
+
+    auto* rqaEngine = static_cast<RecurrenceRateEngine*>(
+        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
+
+    if (rqaEngine) {
+        delete rqaEngine;
+        sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR, nullptr);
     }
 
     CleanupAdaptiveWindowState(sc);
@@ -627,6 +648,17 @@ static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc) {
     // immediately (2026-08-13 final-review fix-wave re-review finding).
     sc.SetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON, 0.0f);
     sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_CALIBRATION_BAR_INDEX, -1);
+
+    // Same reasoning as the epsilon reset above: the engine's cached closed-bar
+    // window must not survive a chart reload/symbol change into the new
+    // session, and RQA_LAST_WINDOW_BAR_INDEX must be forced stale so the next
+    // call rebuilds rather than trusting a window built from the old session.
+    auto* rqaEngine = static_cast<RecurrenceRateEngine*>(
+        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
+    if (rqaEngine) {
+        rqaEngine->Reset();
+    }
+    sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_WINDOW_BAR_INDEX, -1);
 }
 
 // Pattern Detection Constants
@@ -3441,26 +3473,27 @@ float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
         lastCalibrationBarIndex = sc.Index;
     }
 
-    float epsilon = calibratedEpsilon;
-    int recurCount = 0;
-    int totalCount = lookback_n * lookback_n;
-
-    // Calculate distance matrix and count pairs within epsilon
-    // Optimization: Since distance is symmetric, compute i > j and double, plus diagonal (i=j, always 0 < eps)
-    // Diagonal count = N.
-    recurCount += lookback_n;
-
-    for(int i=0; i<lookback_n; i++) {
-        float p1 = sc.BaseData[SC_LAST][sc.Index - i];
-        for(int j=i+1; j<lookback_n; j++) {
-            float p2 = sc.BaseData[SC_LAST][sc.Index - j];
-            if (std::abs(p1 - p2) < epsilon) {
-                recurCount += 2; // Add both (i,j) and (j,i)
-            }
+    // Incremental engine (RecurrenceRateEngine.h): the closed-bar (i=1..n-1)
+    // pairwise recurrence count is O(n^2) but only needs recomputing when the
+    // window's composition actually changes -- a new bar closing (sc.Index
+    // advanced) or lookback_n itself changing (adaptive window resize) --
+    // NOT every tick, since only the live point (i=0, the still-forming
+    // current bar) moves between ticks within the same bar. Reduces this
+    // function's per-tick cost from O(n^2) to O(n).
+    RecurrenceRateEngine* engine = GetRecurrenceRateEngine(sc);
+    int& lastWindowBarIndex = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_WINDOW_BAR_INDEX);
+    const int closedCount = lookback_n - 1;
+    if (lastWindowBarIndex != sc.Index || engine->GetClosedCount() != closedCount) {
+        std::array<float, kMaxLookback> closedPrices{};
+        for (int i = 0; i < closedCount; ++i) {
+            closedPrices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - 1 - i];
         }
+        engine->RebuildClosedBarWindow(closedPrices.data(), closedCount, calibratedEpsilon);
+        lastWindowBarIndex = sc.Index;
     }
 
-    const float recurrenceRate = std::clamp((float)recurCount / (float)totalCount, 0.0f, 1.0f);
+    const float currentPrice = sc.BaseData[SC_LAST][sc.Index];
+    const float recurrenceRate = engine->ComputeRate(currentPrice, calibratedEpsilon);
     lastValidRecurrenceRate = recurrenceRate;
     return recurrenceRate;
 }
