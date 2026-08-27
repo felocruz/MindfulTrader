@@ -2,10 +2,15 @@
 
 Last updated: 2026-08-27 — `skewness_idx`'s activity-clock replacement + a real `FeatureScaler.h`
 17-dim indexing bug fix both landed and committed (`7c51f33`). **Window-widening
-(`recurrence_rate`/`fractal_dim`/`mean_rev_z`) now handed to a sibling Claude Sonnet 5 instance as
-the sole remaining item from the observation-vector batch — see Thread C's tail, "READ THIS FIRST"
-block, for the full handoff.** Read `PRODUCTION_TRIAGE.md` row 1 (synced same day) for the terse
-cross-project version.
+(`recurrence_rate`/`fractal_dim` ONLY — `mean_rev_z` moved out, see below) is handed to a sibling
+Claude Sonnet 5 instance — see Thread C's tail, "READ THIS FIRST" block, for the full handoff.**
+A later literature pass the same day (Clark 1973/Ané & Geman 2000/AFML ch. 2) found direct grounding
+to move `mean_rev_z` AND `hurst_exponent` to activity-clock treatment instead of time-bar widening —
+decided, NOT yet implemented, no plan written yet. Full detail: `2026-08-25-observation-vector-
+institutional-hardening-spec.md` §5a. A staleness audit also found 4 `lbrnet`-side dimensionality
+docs now stale relative to all of this — handed to `lbrnet`'s own session, not fixed here
+(`2026-08-26-activity-clock-lbrnet-handoff.md` §10). Read `PRODUCTION_TRIAGE.md` row 1 (synced same
+day) for the terse cross-project version.
 
 ## Thread C: Activity-clock tail-risk signal for the Student-t HMM (row 1, MindfulTrader-rooted) — DESIGN + PLAN DONE, handed to Claude Sonnet 5 for execution
 
@@ -315,12 +320,18 @@ compounding) the HMM's own weak-cross-state-discrimination finding.
    spec, pick this up next if continuing this thread.
 
 **Original window-widening/dead-code content from this morning's MindfulTrader spec
-(`2026-08-25-observation-vector-institutional-hardening-spec.md`) is unchanged by today's
-work** — still applicable, still not started: `recurrence_rate`/`fractal_dim` (30-40 bars @ 60min,
-propose ~150) and `mean_rev_z` (10-40 bars @ 15min, propose ~600) window-widen candidates pending a
-real autocorrelation-time derivation; `hurst_exponent`/`fisher_info` explicitly NOT a window case
-(likely data-quality artifacts instead); `skewness_idx`/`micro_asymmetry` dead-code candidates once
-lbrnet's spec lands.
+(`2026-08-25-observation-vector-institutional-hardening-spec.md`) — UPDATED 2026-08-27, see
+Thread C's tail for the full account, this paragraph is now stale as originally written.**
+`recurrence_rate`/`fractal_dim` (30-40 bars @ 60min, propose ~150) remain window-widen candidates
+pending a real autocorrelation-time derivation. `mean_rev_z` is **no longer** a window-widen
+candidate — a later literature pass (2026-08-27) found direct grounding to move it to activity-clock
+treatment instead (§5a of that spec). `hurst_exponent` is **no longer** "explicitly not a window
+case" in the sense of being excluded from further treatment either — same literature pass grounds
+an activity-clock twin for it too (its likely data-quality artifact, still real, is a separate,
+compounding issue, not a reason to skip the clock-choice question). `fisher_info` is unaffected,
+still a likely data-quality-artifact candidate, not researched for clock conversion. `skewness_idx`
+is DONE (`7c51f33`, replacement not addition); `micro_asymmetry` remains a dead-code candidate once
+`lbrnet`'s spec lands.
 
 ## Standing note for tomorrow (or any session)
 
