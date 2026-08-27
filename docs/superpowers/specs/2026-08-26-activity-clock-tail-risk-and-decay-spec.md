@@ -406,16 +406,38 @@ already names the twin-parity gap (`PRODUCTION_TRIAGE.md` row 5/7) as the single
 across the whole system, so this isn't a cost to take on carelessly.
 
 **Sequenced in, same underlying justification as kurtosis**:
-- **The long-memory/complexity family — Hurst exponent, `fractal_dim`, `recurrence_rate`,
-  `lempel_ziv`.** Different justification than Ané-Geman's kurtosis argument: these estimators have
-  hard minimum-sample-size requirements (Weron 2002's N≥256 for Hurst/DFA; this project's own audit
-  already flagged the current 100-bar window as under-powered). The morning's still-pending spec
-  (`2026-08-25-observation-vector-institutional-hardening-spec.md`) proposes fixing this by widening
-  the time window (~150 bars). An activity clock is a genuine *alternative* to that fix, not just an
-  add-on: it accumulates the needed sample count faster when markets are active (when a fresh read
-  matters most) and slower when quiet — something a fixed wider time window structurally can't do.
-  **Not yet started** — sequenced after kurtosis proves out empirically, reusing the same
-  shared `ActivityClockManager` infrastructure (§4) rather than building a second one.
+- **`hurst_exponent` — CORRECTED and STRENGTHENED, 2026-08-27, via a real literature pass (not the
+  Weron 2002 sample-size argument this bullet originally rested on).** Direct citation found:
+  trading time (cumulative trades executed) is established in the long-memory-estimation literature
+  as the more natural timescale, reducing biases regular calendar-time sampling introduces — the same
+  Clark (1973)/Ané & Geman (2000)/AFML ch. 2 lineage already grounding kurtosis, extended here on its
+  own direct merits, not by analogy. **This corrects an earlier, unresearched mid-conversation claim
+  (2026-08-27, same day) that Hurst was "genuinely time-based and resistant to clock conversion"** --
+  that reasoning was stated before checking the literature and the literature says the opposite; see
+  `2026-08-25-observation-vector-institutional-hardening-spec.md` §5a for the full citation detail
+  and the additive-vs-replace framing (has live gate consumers,
+  `StudyHelperFunctions.cpp:623`/`TripleScreen3.cpp` regime thresholds — needs kurtosis's dual-clock
+  pattern, not `skewness_idx`'s replacement pattern). **Real stakes**: `hurst_exponent` is this
+  system's single worst HMM cross-state discriminator (exactly `0.0000`) -- if clock choice is a
+  genuine contributor (not certain, but now literature-plausible), this bears directly on row 1's
+  Student-t HMM sign-off problem, not just this spec's own scope.
+- **`fractal_dim` (Sevcik) and `recurrence_rate` (RQA) — NOT literature-grounded for clock
+  conversion, corrected 2026-08-27; remain window-widening-only.** This bullet originally grouped
+  these two with `hurst_exponent` under one "long-memory/complexity family" justification (Weron
+  2002's N≥256 sample-size requirement for Hurst/DFA). **That grouping was already wrong before this
+  literature pass, independent of it**: this project's own Gang literature-grounding doc
+  (`2026-08-12-gang-literature-grounding-spec.md` row "Sevcik fractal dimension window") already
+  established that Sevcik's method is "a single-pass calculation, not a multi-scale regression like
+  DFA -- it doesn't carry DFA's same minimum-sample fragility," so Weron's N≥256 DFA-specific finding
+  never actually applied to `fractal_dim` in the first place. A separate 2026-08-27 literature search
+  specifically for RQA/Sevcik-fractal-dimension under information-driven vs. time-bar sampling found
+  **no direct precedent either way** -- silence, not a ruling. Both dims stay on
+  `2026-08-25-observation-vector-institutional-hardening-spec.md`'s pure time-bar window-widening
+  path (§5 there) until a real literature hook is found, not extended here by unsupported analogy.
+- **`lempel_ziv` — NOT examined by either literature pass (2026-08-26 or 2026-08-27); status
+  unchanged, listed here only so it isn't silently assumed either way.** Its own C++ real-fix is
+  independently deferred (`PRODUCTION_TRIAGE.md` row 3, explicit user decision, 3+ days data
+  collection cost) -- any activity-clock question for it is moot until that lands regardless.
 - **`PredictionAgeUs()` / `HmmStateAgeUs()` staleness decay** — currently wall-clock microseconds;
   the decay time constant is *already* an open, undecided parameter in
   `2026-08-24-predator-fusion-transformer-signal-decay-spec.md` ("needs empirical derivation from
@@ -455,13 +477,20 @@ the 2026-08-26 dim-accounting pass (§8, open question 11)**:
   groups dims 1/3 together in its own doc comment). May have the same kind of fixable gap §5a found
   for `burstiness_index` — not yet examined.
 
+**Moved OUT of "explicitly not generalized to," 2026-08-27 — a real literature hook was found**:
+- **`mean_rev_z`** — this bullet previously said "no literature hook connects [it] to the time-change
+  argument." That was true only until a 2026-08-27 literature pass specifically for this dim: it is
+  built on lag-1 return autocorrelation (`rho`), and separate microstructure literature (non-
+  synchronous trading, bid-ask bounce) directly establishes that **calendar-time sampling is itself a
+  source of *spurious* serial correlation** -- the exact statistic `mean_rev_z` measures. This is a
+  distinct, direct citation, not an analogy borrowed from kurtosis. Full detail, additive-vs-replace
+  framing (has a live gate consumer, `Scoring.cpp:305` -- needs kurtosis's dual-clock pattern), and
+  citations: `2026-08-25-observation-vector-institutional-hardening-spec.md` §5a.
+
 **Explicitly NOT generalized to, with reasoning**:
 - **Amihud illiquidity / LiqFragility** — already volume-normalized by construction (the formula
   itself divides by dollar volume); an activity clock is likely redundant with what the formula
   already does. No case made yet for revisiting this.
-- **`mean_rev_z` / Path Efficiency SNR** — about trend/price-structure, not distributional shape;
-  no literature hook connects them to the time-change argument the way kurtosis and the long-memory
-  family have. Not ruled out forever, just not justified today.
 
 **Not part of the final 12D vector at all, so not applicable here**: `micro_asymmetry` — corrected
 2026-08-26 (§4a): this is one of the four dims being *dropped* in the 16D→12D trim, not merely
@@ -585,8 +614,9 @@ accumulator instead of a ratio. No outstanding feasibility risk on this point.
   and the deferred intra-bar-reinference reasoning this spec's §2 mirrors.
 - `docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md` —
   "predator, not historian" philosophy this whole thread is answering to.
-- `docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` — the
-  pending window-widening recommendation §6's long-memory-family candidate is an alternative to.
+- `docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` — §5's
+  pure window-widening path (`recurrence_rate`/`fractal_dim`) and §5a (added 2026-08-27, the full
+  literature-grounded `mean_rev_z`/`hurst_exponent` activity-clock detail this spec's §6 summarizes).
 - `docs/superpowers/specs/2026-08-24-predator-fusion-transformer-signal-decay-spec.md` — the
   already-open `PredictionAgeUs()` decay-constant question §6 connects to.
 - `lbrnet/docs/superpowers/specs/2026-08-25-vol-convexity-removal-spec.md` — the 16D→12D trim this
@@ -610,6 +640,18 @@ accumulator instead of a ratio. No outstanding feasibility risk on this point.
   *Journal of the American Statistical Association*, 93(441), 359-371.
 - Ané, C. & Geman, H. (2000). "Order Flow, Transaction Clock, and Normality of Asset Returns."
   *Journal of Finance*, 55(6), 2259-2284.
+- Clark, P. K. (1973). "A Subordinated Stochastic Process Model with Finite Variance for
+  Speculative Prices." *Econometrica*, 41(1), 135-156. (The root citation Ané & Geman and AFML's
+  information-driven bars both extend — added 2026-08-27, per §6's `hurst_exponent`/`mean_rev_z`
+  correction, not previously cited here despite grounding the whole approach.)
+- Non-synchronous trading / bid-ask bounce as a source of spurious return serial correlation —
+  general microstructure finding cited 2026-08-27 (§6) grounding `mean_rev_z`'s clock-conversion
+  case specifically; exact primary citation not yet pinned to a single named paper in this pass,
+  flagged for follow-up rather than left uncited.
+- Trading-time (cumulative trades executed) as the more natural timescale for long-memory/Hurst
+  estimation, reducing regular-sampling bias — cited 2026-08-27 (§6) grounding `hurst_exponent`'s
+  clock-conversion case; exact primary citation not yet pinned to a single named paper in this pass,
+  flagged for follow-up rather than left uncited.
 - Bollerslev, T., Tauchen, G., & Zhou, H. (2009). "Expected Stock Returns and Variance Risk
   Premia." *Review of Financial Studies*, 22(11), 4463-4492. (Cited §4 item 5 — real precedent for
   divergence-as-signal, but implied-vs-realized, not the specific claim made there.)

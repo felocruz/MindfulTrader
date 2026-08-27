@@ -171,6 +171,23 @@ Window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` per `docs/superpowe
 2026-08-25-observation-vector-institutional-hardening-spec.md` §5 remains **not started** — still
 needs an autocorrelation-time derivation before its proposed ~150/~600-bar targets are finalized.
 
+**SUPERSEDED IN PART, 2026-08-27, SAME DAY — READ THIS BEFORE THE "READ THIS FIRST" BLOCK BELOW IF
+YOU ARE MID-TASK ON `mean_rev_z`'s TIME-BAR WINDOW DERIVATION.** A real literature-grounding pass
+(Clark 1973 / Ané & Geman 2000 / AFML ch. 2, plus microstructure spurious-serial-correlation and
+trading-time-for-Hurst literature) found direct institutional grounding for moving **`mean_rev_z`**
+and **`hurst_exponent`** to `ActivityClockManager`-based (activity-clock) windowing instead of a
+wider time-bar window — full detail now in `2026-08-25-observation-vector-institutional-hardening-
+spec.md` §5a and `2026-08-26-activity-clock-tail-risk-and-decay-spec.md` §6 (both updated same day).
+**`recurrence_rate`/`fractal_dim` are unaffected** — literature search found no precedent either way
+for RQA/Sevcik fractal dimension under information-driven bars, so they stay on the pure
+time-bar-widening path below exactly as scoped. If you've already run the autocorrelation-time
+diagnostic against `mean_rev_z`'s TS3 time-bar series (`tools/window_autocorrelation_diagnostic.py`),
+that measurement isn't wasted — it's a real input to what `mean_rev_z`'s *existing* time-bar gate
+value's autocorrelation looks like — but the *target* for `mean_rev_z` is no longer "a wider TS3
+window," it's an activity-clock twin (kurtosis's additive dual-clock pattern, not `skewness_idx`'s
+replacement pattern — confirmed `mean_rev_z` has a live gate consumer, `Scoring.cpp:305`). This is a
+design decision, not yet an implementation plan — `writing-plans` hasn't been invoked for it.
+
 **HANDED TO A SIBLING CLAUDE SONNET 5 INSTANCE, 2026-08-27 — READ THIS FIRST if you are that
 instance picking this up.** This is now the sole remaining item from the original two-task
 observation-vector batch (`skewness_idx` above is done). Spec:

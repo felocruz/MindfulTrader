@@ -6,6 +6,17 @@ evidence chain). **Not yet implemented.** Grounded in a literature search (Stude
 regime-switching literature) plus a direct window/timeframe audit of every candidate feature's
 actual C++ computation, run against the real source in this repo, not assumed from the Python side.
 
+**MAJOR REVISION, 2026-08-27 — Section 5's "widen the time-bar window" framing was incomplete for
+2 of its 3 dims, corrected via a real literature-grounding pass (Clark 1973 → Ané & Geman 2000 →
+AFML ch. 2), not assumption.** `mean_rev_z` and `hurst_exponent` move to **activity-clock windowing**
+(the same `ActivityClockManager` mechanism already shipped for kurtosis/`skewness_idx`), not just a
+longer time-bar window — see the new Section 5a below, which supersedes part of Section 5 and all of
+Section 6 for these two dims specifically. `recurrence_rate`/`fractal_dim` remain pure window-widening
+candidates (Section 5 unchanged) — literature search found **no** direct precedent either way for RQA
+or Sevcik fractal dimension under information-driven bars; that's silence, not a ruling, and this
+spec does not extend the AFML/Clark argument to them by unsupported analogy. Read Section 5a before
+touching `mean_rev_z`'s or `hurst_exponent`'s C++ computation under the old Section 5/6 framing.
+
 ## 1. Purpose
 
 lbrnet's Student-t HMM is dropping 4 of its 16 model-input dimensions (`vol_convexity`,
@@ -90,24 +101,98 @@ calibration holdout sizing, `docs/superpowers/specs/2026-08-24-hmm-gate-threshol
 institutional-grade-spec.md`) should confirm or adjust them before implementation, not skip
 straight from "current window is too short" to "here is the exact new number."
 
-## 6. Explicitly NOT a window-widening case: `hurst_exponent`, `fisher_info`
+## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z` and `hurst_exponent` move to
+activity-clock windowing, not time-bar widening
 
-Both already run on windows comparable to or exceeding the ~6.1-day regime-tenure reference
-(`hurst_exponent`: 8.3-33.3 days; `fisher_info`: 5-20 days) -- widening further has no clear
-justification from the sample-size argument that motivates Section 5. Yet both rank at or near the
-bottom of the HMM's cross-state discrimination ranking (`hurst_exponent` exactly 0.0000, the worst
-of all 16 dims; `fisher_info` 0.0011, third-worst). **This project's own prior audit
+**Origin of this section**: prompted by a user question during the Section 5 window-widening
+handoff ("is there institutional literature that lets us decide which dims can genuinely move to
+activity-clock windows?") — answered with a real literature pass (web search, not assumption),
+summarized here so the decision is auditable rather than a one-off chat answer.
+
+**The root citation, predating and grounding AFML itself**: Clark (1973), *A Subordinated
+Stochastic Process Model with Finite Variance for Speculative Prices*, *Econometrica* 41:135-156 --
+models price as a process subordinated to cumulative trading volume, arguing markets advance in
+"transaction time" / "business time," not calendar time, and that much of the apparent
+non-normality of returns is a clock-choice artifact, not a distributional fact about the underlying
+process. Ané & Geman (2000, *Journal of Finance* -- already cited in `2026-08-26-activity-clock-
+tail-risk-and-decay-spec.md` §3 for kurtosis specifically) is the direct modern extension. López de
+Prado's AFML ch. 2 (information-driven bars) is the engineering realization of this same,
+50-year-old theoretical claim -- not an independent finding. **AFML's own critique of time bars
+names three defects, not one**: serial correlation, heteroskedasticity, and non-normality. This
+project's existing activity-clock work (kurtosis, `skewness_idx`) has so far only acted on the
+non-normality leg (moments). The other two legs are directly relevant to two dims in this spec:
+
+- **`mean_rev_z`** is built on lag-1 return autocorrelation (`rho`) -- i.e. it *is* a serial-
+  correlation statistic, the first defect AFML names. Separate literature on market microstructure
+  (non-synchronous trading, bid-ask bounce) independently establishes that **calendar-time sampling
+  is itself a source of *spurious* serial correlation** -- autocorrelation that appears even when
+  the true underlying price process has none. That is precisely the artifact `mean_rev_z`'s
+  momentum-vs-reversion classification would be vulnerable to if computed on TS3 15-min time bars.
+  This is not an analogy borrowed from kurtosis's justification -- it is a separate, direct
+  literature result for autocorrelation-based estimators specifically.
+- **`hurst_exponent`** (long-memory/persistence estimation): direct literature support that
+  **trading time -- cumulative trades executed -- is the more natural timescale for long-memory
+  estimation, reducing biases introduced by regular (calendar-time) sampling.** This *reverses* an
+  earlier, unresearched claim made mid-conversation (2026-08-27, before this literature pass) that
+  Hurst was "genuinely time-based and resistant to clock conversion" because long-range dependence
+  is inherently about self-similarity across time lags -- that reasoning was never checked against
+  the actual literature before being stated, and the literature says the opposite. Corrected here,
+  not silently dropped.
+
+**What this means concretely, and what it does NOT mean**:
+- `mean_rev_z`'s outer z-score AND inner `rho` autocorrelation should be recomputed over
+  `ActivityClockManager`'s imbalance-bar return buffer, mirroring the kurtosis precedent -- exact
+  additive-vs-replacement choice (dual-clock twin like kurtosis, or in-place replacement like
+  `skewness_idx`) depends on whether `mean_rev_z` has live gate consumers to protect: **confirmed
+  directly, it does** (`Scoring.cpp:305`, `isMeanReversionPattern && ctx.meanRevZ > 2.0f`) -- so this
+  should follow kurtosis's **additive dual-clock** pattern, not `skewness_idx`'s replacement pattern,
+  unless that gate is being re-calibrated in the same pass.
+- `hurst_exponent` similarly needs an activity-clock twin design, not a replacement decision made
+  yet -- its own live consumers (`StudyHelperFunctions.cpp:623`, `TripleScreen3.cpp` regime
+  thresholds) are calibrated on the existing TS1/240-min value and should be checked the same way
+  before deciding additive-vs-replace.
+- **`recurrence_rate` and `fractal_dim` are explicitly NOT reframed by this section.** The literature
+  search found no direct precedent -- for or against -- testing RQA or Sevcik fractal dimension
+  under information-driven vs. time-bar sampling. Extending the Clark/AFML argument to them would be
+  an unsupported analogy, not a literature-grounded decision like the two above. They remain pure
+  window-widening candidates per Section 5, on TS2 time bars, pending either (a) a future literature
+  finding that actually covers RQA/fractal-dimension estimators under alternative clocks, or (b) an
+  explicit, flagged engineering decision to extend the pattern by analogy anyway -- not silently.
+- **Real stakes beyond this spec's own scope, named explicitly by the user**: `hurst_exponent` is
+  independently known to be the HMM's single worst cross-state discriminator (exactly `0.0000`,
+  Section 6 below) and to carry the worst scale-collapse data-quality artifact of any of the 16
+  original dims. If clock choice is a genuine contributor to that failure (not certain, but now
+  literature-plausible in a way it wasn't before this pass), this connects directly to row 1's
+  Student-t HMM sign-off problem, not just to this spec's narrower window-sizing question --
+  `PRODUCTION_TRIAGE.md` row 1 should reflect this connection, not just this spec.
+
+**Not decided by this section, left for a future implementation plan**: exact design (additive twin
+field vs. replacement, matching row 14's now-demonstrated struct-in-place-edit pattern), whether the
+existing time-bar `hurst_exponent`/`mean_rev_z` values keep their current calibrated gates untouched
+while a fast twin is added (kurtosis's pattern), and sequencing against the still-open `fisher_info`/
+`recurrence_rate`/`fractal_dim` work below.
+
+## 6. `fisher_info`: still out of scope, unresearched for this question -- do not conflate with `hurst_exponent` above
+
+`fisher_info` already runs on a window comparable to the ~6.1-day regime-tenure reference (5-20
+days) -- widening further has no clear justification from the sample-size argument that motivates
+Section 5, same as `hurst_exponent`. **Unlike `hurst_exponent`, this spec has NOT researched whether
+Clark/AFML-style clock-conversion literature applies to `fisher_info`** (Ehlers' Fisher Transform --
+a technical-analysis price transform, not a moment/autocorrelation/long-memory statistic in the same
+family as the three dims above, so the same literature may not transfer by analogy either). It ranks
+third-worst in the HMM's cross-state discrimination (0.0011). **This project's own prior audit**
 (`lbrnet/docs/superpowers/specs/2026-08-14-observation-vector-full-institutional-coverage-spec.md`
-row 6) already found `hurst_exponent` has the worst scale-collapse data-quality artifact of all 16
-dims (24.85% pre-shrinkage `|z|>=6` rate) -- a distortion of that severity plausibly explains
-near-zero discrimination on its own, independent of window length.** `fisher_info` has not yet had
-the equivalent tail-conditional noise decomposition run against it.
+row 6) already found `hurst_exponent`'s near-zero discrimination plausibly explained by its
+scale-collapse data-quality artifact (24.85% pre-shrinkage `|z|>=6` rate) independent of window
+length or clock choice -- `fisher_info` has not yet had the equivalent tail-conditional noise
+decomposition run against it.
 
 **Recommended next step, not part of this spec's own implementation scope**: run
 `fisher_info` through the same tail-conditional noise-decomposition technique already validated for
 `hurst_exponent` (`hmm_feature_selection.md`'s Phase 4 audit) before deciding whether it needs a
-data-quality fix, a drop, or is genuinely fine as-is. Do not widen its window as a first move --
-that would consume implementation effort without addressing the more likely root cause.
+data-quality fix, a drop, a clock-conversion literature check of its own, or is genuinely fine as-is.
+Do not widen its window as a first move, and do not assume Section 5a's `hurst_exponent` finding
+transfers to it without checking.
 
 ## 7. Non-goals
 
@@ -115,32 +200,63 @@ that would consume implementation effort without addressing the more likely root
   timing is MindfulTrader's own call, tracked but not executed here.
 - Not touching `vol_convexity`/`tail_index` C++ computation at all (Section 2).
 - Not deriving the exact widened window sizes with full rigor (Section 5) -- proposed targets only,
-  pending an autocorrelation-time diagnostic.
-- Not fixing `hurst_exponent`'s scale-collapse artifact or investigating `fisher_info`'s (Section
-  6) -- flagged as the right next step, not attempted here.
-- Not touching `mts_schema.fbs` -- see companion `schema/` spec.
+  pending an autocorrelation-time diagnostic. Applies only to `recurrence_rate`/`fractal_dim` now --
+  `mean_rev_z` moved to Section 5a's activity-clock design instead of a time-bar target number.
+- Not designing `mean_rev_z`/`hurst_exponent`'s activity-clock twins in implementation detail
+  (Section 5a) -- the literature grounding and additive-vs-replace framing are decided; the concrete
+  C++ design (field/state shape, gate integration) is a future implementation plan's job, same as
+  kurtosis went through its own plan before code was written.
+- Not fixing `fisher_info`'s scale-collapse/discrimination question or researching whether Clark/AFML
+  literature applies to it (Section 6) -- flagged as the right next step, not attempted here.
+- Not touching `mts_schema.fbs` -- see companion `schema/` spec. (`mean_rev_z`/`hurst_exponent`'s
+  eventual activity-clock twins would need a schema entry when implemented, same as
+  `fast_taleb_kurtosis` -- not yet filed, this spec is design-grounding only.)
 
 ## 8. Acceptance gates
 
-- Widened-window changes for `recurrence_rate`/`fractal_dim`/`mean_rev_z` are backed by an explicit
+- Widened-window changes for `recurrence_rate`/`fractal_dim` are backed by an explicit
   autocorrelation-time or equivalent derivation for the final window size, not the Section 5
   proposed-target numbers taken as final without that check.
-- `mean_rev_z`'s `rho` autocorrelation gets its own, separately-justified lookback, not the outer
-  z-score's window by default.
-- Existing MindfulTrader unit test coverage for these functions (`test_indicator_computations.cpp`
-  or equivalent) updated to reflect new window bounds, and a regression test confirms the widened
-  computation still respects the "historical-bars-only, never reads the live forming bar" contract
-  these adaptive-window functions already document for themselves.
-- `hurst_exponent`/`fisher_info` are NOT touched by this spec's own implementation -- confirmed via
-  diff review, not just stated intent.
+- `mean_rev_z`'s `rho` autocorrelation, when its activity-clock twin is implemented (Section 5a),
+  gets its own, separately-justified imbalance-bar lookback, not its outer z-score's window by
+  default -- same principle Section 5 established for the time-bar version, carried forward rather
+  than dropped when the clock changed.
+- Existing MindfulTrader unit test coverage for `recurrence_rate`/`fractal_dim`
+  (`test_indicator_computations.cpp` or equivalent) updated to reflect new window bounds, and a
+  regression test confirms the widened computation still respects the "historical-bars-only, never
+  reads the live forming bar" contract these adaptive-window functions document for themselves --
+  **flagged for direct verification before relying on it**: a 2026-08-27 code read of
+  `CalculateMeanReversionSpeed`/`CalculateRecurrenceRate` found both explicitly reference
+  `sc.BaseData[SC_LAST][sc.Index]` (the live, still-forming bar) as their current-point term, which
+  appears to be in tension with this stated contract -- resolve which is actually true (the contract
+  wording, or the current-point behavior) before writing a regression test that assumes either.
+- `hurst_exponent` and `mean_rev_z` are NOT implemented by this spec (Section 5a is a design/
+  literature-grounding decision, not an implementation) -- confirmed via diff review, not just
+  stated intent, same discipline as this section already applied to the old Section 6.
+- `fisher_info` is NOT touched by this spec's own implementation -- confirmed via diff review.
 - Cross-referenced from `lbrnet`'s companion spec and `schema/PENDING_SCHEMA_CHANGES.md` (if either
-  needs an entry -- Section 2 concludes neither does for this spec's own scope).
+  needs an entry -- Section 2 concludes neither does for this spec's own scope; a future
+  `mean_rev_z`/`hurst_exponent` activity-clock plan will need its own schema entry, tracked there,
+  not retrofitted into this spec).
 
 ## 9. Residual risk
 
-- Widening `recurrence_rate`/`fractal_dim`/`mean_rev_z`'s windows changes their live, currently-
+- Widening `recurrence_rate`/`fractal_dim`'s windows changes their live, currently-
   transmitted values for every consumer, not just the HMM training path -- confirm no other live
   C++ consumer (routing, sizing, display subgraphs) depends on the *current* short-window behavior
   before widening, the same class of check Section 3 already applies to the dead-code candidates.
 - This spec's own proposed window sizes (Section 5) are order-of-magnitude estimates pending a real
-  derivation -- do not treat ~150/~600 bars as final without that follow-up.
+  derivation -- do not treat `recurrence_rate`/`fractal_dim`'s ~150-bar target as final without that
+  follow-up.
+- Section 5a's `mean_rev_z`/`hurst_exponent` activity-clock reframe both have live gate consumers
+  calibrated on their current (time-bar) values (`Scoring.cpp:305`; `StudyHelperFunctions.cpp:623`/
+  `TripleScreen3.cpp` regime thresholds) -- an eventual implementation plan must protect those
+  exactly like kurtosis's own plan did, not silently disturb them by treating this as a like-for-like
+  swap.
+- Section 5a's literature grounding (Clark 1973; Ané & Geman 2000; AFML ch. 2) establishes that
+  calendar-time sampling is *a* source of spurious serial correlation / long-memory estimation bias
+  -- it does not establish that it is *the dominant* source for this system's specific data, or that
+  an activity-clock twin will empirically outperform the existing time-bar value once built. Same
+  epistemic caution this project already applies elsewhere (e.g. the retracted "divergence between
+  clocks is itself informative" claim, `2026-08-26-activity-clock-tail-risk-and-decay-spec.md` §4
+  item 5) -- an empirical backtest comparison remains the real test, not the literature alone.
