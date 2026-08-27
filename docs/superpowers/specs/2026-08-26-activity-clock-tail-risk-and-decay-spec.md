@@ -368,12 +368,35 @@ plus a web-literature pass before sequencing, rather than picking an order arbit
 2. **Reuses infrastructure already fully designed for kurtosis.** §5b verified `skewness_idx` sits
    in the identical bar-gated code path as kurtosis — direct reuse of `ActivityClockManager`, not a
    new design.
-3. **Direct web-literature confirmation, not just an analogy extended from kurtosis**: a real
-   empirical comparison (Jarque-Bera testing across bar types) found volume bars come *closest* to
-   normal-distribution skewness *and* kurtosis, time bars are the *worst*, dollar bars sit in
-   between — a direct result for skewness specifically, strengthening §5b's case for giving it the
-   same activity-clock treatment as kurtosis, not just borrowing kurtosis's own justification by
-   proximity.
+3. **Direct web-literature confirmation, not just an analogy extended from kurtosis — CITATION
+   TRACKED DOWN AND CORRECTED, 2026-08-27** (this bullet originally cited "a real empirical
+   comparison" with no author/source, against this project's own citation-rigor standard; run down
+   on explicit user instruction). Two identifiable sources found, and neither precisely confirms the
+   original "volume bars closest, dollar bars in between" ranking as stated — that specific ordering
+   is **not well-supported and should not be repeated**:
+   - Gerard Martínez's *Towards Data Science* practitioner series (Medium) — "Advanced candlesticks
+     for machine learning" (tick bars; volume/dollar bars) and "Information-driven bars for
+     financial machine learning: imbalance bars" — an empirical replication of AFML's bar
+     constructions, not an independent peer-reviewed paper. Finding: serial correlation is lower in
+     imbalance bars than in time bars (also true, to a lesser degree, for tick/volume bars) — but
+     **the Jarque-Bera test still rejects normality in BOTH imbalance bars and time bars** —
+     non-normality is "the rule regardless of bar type," just less severe off the time clock. This
+     directly supports the serial-correlation leg of `mean_rev_z`'s case (Section 5a's real
+     citation) more than a clean "achieves normality" claim for skewness specifically.
+   - An independent practitioner replication (Alpaca Markets' "Alternative Bars" series, also citing
+     AFML, four bar types: time/tick/volume/dollar, **imbalance bars not tested**) ranks **dollar
+     bars best** on Jarque-Bera stats, then tick, then volume, with time bars worst — a *different*
+     ranking than this bullet's original "volume closest" claim, and found no significant lag-1
+     autocorrelation difference across bar types at all (in tension with the Martínez series' own
+     serial-correlation finding above).
+   - **Honest conclusion**: the *general* direction (information-driven bars of any kind
+     out-perform time bars on both normality and serial correlation) is corroborated by two
+     independent practitioner sources building on AFML, not asserted from one uncited claim. The
+     *specific* "volume bars closest, dollar bars in between" ranking for skewness is not confirmed
+     by either source found and should be treated as unverified, not restated as settled. This
+     doesn't change `skewness_idx`'s own sequencing decision (already shipped, `7c51f33`, and
+     grounded independently by Kim & White 2004's formula critique plus §5b's cadence-starvation
+     finding) — it corrects the citation this bullet leaned on, which was weaker than stated.
 
 **A bigger question this surfaced, flagged but explicitly NOT decided here — belongs to `lbrnet`,
 not this spec.** Skewed Student-t emission distributions are already institutional standard in
@@ -652,6 +675,17 @@ accumulator instead of a ratio. No outstanding feasibility risk on this point.
   estimation, reducing regular-sampling bias — cited 2026-08-27 (§6) grounding `hurst_exponent`'s
   clock-conversion case; exact primary citation not yet pinned to a single named paper in this pass,
   flagged for follow-up rather than left uncited.
+- Martínez, G. *Towards Data Science* (Medium) practitioner series: "Advanced candlesticks for
+  machine learning (i): tick bars"; "(ii): volume and dollar bars"; "Information-driven bars for
+  financial machine learning: imbalance bars." Empirical replication of AFML's bar constructions
+  (not peer-reviewed) — tracked down 2026-08-27 to correct §5c's originally uncited Jarque-Bera
+  claim. Finding: serial correlation lower in imbalance bars than time bars; JB still rejects
+  normality in both.
+- Alpaca Markets, "Alternative Bars" series (learn.alpaca.markets) — independent AFML-based
+  practitioner replication, time/tick/volume/dollar bars (imbalance bars not tested). Ranks dollar
+  bars best on JB stats, time bars worst — tracked down 2026-08-27 alongside the Martínez series;
+  the two sources' exact bar-type rankings don't fully agree with each other or with §5c's original
+  uncited claim, see §5c's correction for the honest reconciliation.
 - Bollerslev, T., Tauchen, G., & Zhou, H. (2009). "Expected Stock Returns and Variance Risk
   Premia." *Review of Financial Studies*, 22(11), 4463-4492. (Cited §4 item 5 — real precedent for
   divergence-as-signal, but implied-vs-realized, not the specific claim made there.)

@@ -3,10 +3,15 @@
 Written from MindfulTrader, 2026-08-26, **corrected 2026-08-27 after a real factual error was found
 and fixed** — see the correction note at the top of §1 before reading anything else. The C++
 producer-side work from `docs/superpowers/plans/2026-08-26-activity-clock-dual-kurtosis.md` is
-implemented (code-complete, native-tested, full-build-verified) but **not yet committed** in either
-`MindfulTrader` or `schema`. The following work belongs in a separate `lbrnet`-rooted session and
-has not been executed here — do not start it from a `MindfulTrader` session; this doc exists so that
-session knows exactly what to do without re-deriving it.
+implemented, native-tested, full-build-verified, and **committed** (`MindfulTrader` `ff22e48`,
+`schema` `ea8058b`; neither pushed — no remote configured). The following work belongs in a separate
+`lbrnet`-rooted session and has not been executed here — do not start it from a `MindfulTrader`
+session; this doc exists so that session knows exactly what to do without re-deriving it.
+
+**§9 is new, 2026-08-27, and matters more than its position at the bottom suggests**: two more dims
+(`hurst_exponent`, `mean_rev_z`) are now literature-grounded for the same activity-clock treatment,
+and one of them (`hurst_exponent`) is this system's single worst HMM cross-state discriminator —
+read §9 if you care about the HMM's own soundness, not just schema mechanics.
 
 Cross-project tracking: `PRODUCTION_TRIAGE.md` row 1 (this thread) and row 14 (`ObservationData`
 schema evolution policy, which this work is now the concrete precedent for) — both point back to
@@ -152,6 +157,51 @@ the bound chosen for the old, slower-updating signal. This is a `MindfulTrader`-
 `lbrnet`'s to fix, but worth knowing before treating dim 10's post-`7c51f33` values as fully
 calibrated.
 
-Window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` (§5 of the companion 2026-08-25
-hardening spec) remains **not started** as of this writing — check `PRODUCTION_TRIAGE.md` row 1
-before assuming otherwise.
+Window-widening `recurrence_rate`/`fractal_dim` (§5 of the companion 2026-08-25 hardening spec)
+remains **not started** as of this writing — check `PRODUCTION_TRIAGE.md` row 1 before assuming
+otherwise. `mean_rev_z` is no longer part of that window-widening task — see §9 below.
+
+## 9. `hurst_exponent` and `mean_rev_z` are now literature-grounded for activity-clock treatment too
+— NOT yet implemented, but `lbrnet` should know this is coming, and why it matters for the HMM itself
+
+**Added 2026-08-27, on explicit user instruction** ("make the lbrnet side... aware of our direction
+as well") after a real literature pass — not yet implemented in C++, so nothing to consume yet, but
+the direction is now decided and `lbrnet` will eventually need to do for these two dims what §1-§3
+above describe for `fast_taleb_kurtosis`. Full detail and citations:
+`docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` §5a and
+`docs/superpowers/specs/2026-08-26-activity-clock-tail-risk-and-decay-spec.md` §6.
+
+**The literature**: Clark (1973, *Econometrica*) → Ané & Geman (2000, *Journal of Finance*) → López
+de Prado's AFML ch. 2 — the same lineage already grounding kurtosis and `skewness_idx` — extends
+directly to two more dims on their own separate merits, not by analogy:
+- **`mean_rev_z`** is built on lag-1 return autocorrelation. Microstructure literature (non-
+  synchronous trading, bid-ask bounce) independently establishes calendar-time sampling as *a source
+  of spurious serial correlation* — the exact statistic `mean_rev_z` measures.
+- **`hurst_exponent`**: direct literature support that trading time (cumulative trades executed) is
+  the more natural timescale for long-memory/Hurst estimation, reducing bias from regular
+  calendar-time sampling.
+
+**Why this should matter to whoever is training the HMM, not just to MindfulTrader's schema**:
+`hurst_exponent` is **this system's single worst cross-state discriminator** — exactly `0.0000`,
+the worst of all 16 original dims (`lbrnet/docs/superpowers/specs/2026-08-14-observation-vector-
+full-institutional-coverage-spec.md` row 6 also found it carries the worst pre-shrinkage
+scale-collapse artifact of any dim, 24.85% `|z|>=6`). Two independent problems may both be
+contributing to that failure — a data-quality artifact already documented, and now, plausibly, a
+clock-choice artifact that was never previously considered. **This is not certain** — the literature
+establishes that clock choice is *a* real effect for this class of estimator, not that it explains
+`hurst_exponent`'s specific failure on this system's specific data. An eventual activity-clock twin
+for `hurst_exponent`, once built and shipped, is a genuine opportunity to test that empirically
+(same discipline as kurtosis's own open question 13 — compare real HMM discrimination/gate outcomes
+with vs. without the twin, don't assume the literature alone settles it) — flag this explicitly if
+`lbrnet` is ever asked to help decide whether K=4's fat-tail-state problem (row 1's own sign-off
+blocker) has any connection to this.
+
+**Not yet actionable — nothing for `lbrnet` to do right now**: no C++ implementation exists for
+either dim's twin yet (design/literature-grounding only, no plan written, no code touched). Both
+would need the same treatment `fast_taleb_kurtosis` got: a `MindfulTrader`-rooted implementation
+plan, live gate-consumer protection (`mean_rev_z` has one, `Scoring.cpp:305`; `hurst_exponent`'s
+own consumers, `StudyHelperFunctions.cpp:623`/`TripleScreen3.cpp`, need the same check before
+deciding additive-twin vs. replacement), a schema entry (per row 14's now-demonstrated direct-
+struct-field policy), and only then a `lbrnet`-side consumption handoff exactly like this one.
+Recorded here now so it isn't independently rediscovered later without this context, per the user's
+own explicit instruction — not because there's an immediate `lbrnet`-side action item.
