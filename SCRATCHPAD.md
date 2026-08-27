@@ -87,9 +87,12 @@ build-verified, but fully uncommitted.** Re-verified directly against the code, 
 `SCStudies.cpp`, `EventDataCollectorStudy.cpp`, and `BackTesterStudy.cpp` all wire it. All 15 tasks'
 target files carry the real gate integrations. Both native test suites pass (`test_imbalance_bar_
 engine.cpp` 10/10, `test_kurtosis_gate_logic.cpp` 16/16) and a full `./build_dll.sh --no-clean`
-succeeds cleanly. **But: nothing is committed in either `MindfulTrader` or `../schema`**, the plan
-file's own 96 checkboxes are unticked (left that way deliberately — ticking them would misrepresent
-each task's still-undone "Commit" step).
+succeeds cleanly. **COMMITTED 2026-08-27**: `MindfulTrader` `ff22e48`, `schema` `ea8058b` (neither
+pushed — no remote configured on either repo by default). The plan file's own 96 checkboxes remain
+unticked by design (see the plan's own status banner). `CLAUDE.md`'s pointer edit did not make it
+into the `MindfulTrader` commit — blocked by the Documentation Sync Contract pre-commit hook
+(README-AI.md/.github/copilot-instructions.md/GEMINI.md not updated in lockstep), left uncommitted
+rather than bypassing the hook; harmless.
 
 **Unrelated tangent, resolved same day**: user reported a suspected overnight crash "while making
 fast_taleb_kurtosis changes to lbrnet." Checked directly — no trace of `fast_taleb_kurtosis` in
