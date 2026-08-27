@@ -1,6 +1,332 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-16 (evening) — Predator infrastructure + Turtle Soup Option A IMPLEMENTED
+Last updated: 2026-08-27 — Thread C's post-implementation gap is now RESOLVED (see its own update
+below); the plan is code-complete and build-verified but fully uncommitted. Read `PRODUCTION_TRIAGE.md`
+row 1 (synced same day) for the terse cross-project version.
+
+## Thread C: Activity-clock tail-risk signal for the Student-t HMM (row 1, MindfulTrader-rooted) — DESIGN + PLAN DONE, handed to Claude Sonnet 5 for execution
+
+**READ THIS FIRST if you are Claude Sonnet 5 picking this up**: the plan is written, critically
+reviewed, and corrected multiple times — it is ready to execute starting at Task 1, via
+`superpowers:executing-plans`. Don't re-derive the design; the spec and plan below already contain
+every correction found. This repo is direct-to-master, no worktrees (standing convention) — skip
+`using-git-worktrees` if that skill's default process asks for one.
+
+- **Plan (execute this)**: `docs/superpowers/plans/2026-08-26-activity-clock-dual-kurtosis.md` — 15
+  tasks, each with real code, real file:line citations, and a self-review section at the bottom.
+- **Spec (background/rationale, read if a task's "why" is unclear)**: `docs/superpowers/specs/
+  2026-08-26-activity-clock-tail-risk-and-decay-spec.md` — EVOLVING, dense, every section changed
+  at least once on 2026-08-26.
+
+**One-paragraph origin, for context**: pivoted off the same-week Atratus/Black-Swan research,
+applied back to this system's own live HMM. Founding discovery: "Taleb kurtosis" already exists,
+already gates trades five separate ways in C++, but was never in the HMM's own observation vector
+at all. Design: a new `ImbalanceBarEngine` (pure, DOD-shaped) + thin `ActivityClockManager` glue
+singleton build AFML-style imbalance bars from real `sc.AskVolume`/`sc.BidVolume` deltas, feeding
+kurtosis into the vector on two clocks (existing time-bar + new activity-clock twin), plus an
+early-trigger, non-authoritative additive input to the five existing kurtosis-consuming gates.
+
+**Real corrections made during plan review, before any code was written — know these before
+starting, so you don't rediscover them the hard way**:
+1. `RingBuffer<T,Capacity>` has no `copy_last_n` — "last N" is implemented via `size()`/`operator[]`.
+2. This codebase's real native-test convention is bare `g++ -std=c++17 -I include test_X.cpp -o
+   /tmp/X_test && /tmp/X_test` with a hand-rolled `check(name, bool)` helper — **no GoogleTest, no
+   CMake**, verified against `test_tail_risk_engine.cpp`/`test_feature_scaler.cpp`.
+3. `RiskManager`/`Scoring`/`PositionManager`/`TradeDecisionEngine` all `#include "sierrachart.h"`
+   directly with no vendored SDK for native compilation — they have never had native test coverage
+   in this codebase's history, for that reason. The plan's answer: extract the actual gate-decision
+   logic into one pure header (`include/KurtosisGateLogic.h`, Task 9 — seven functions, one file,
+   natively tested) so the meaningful logic *is* tested, while the thin call-site edits (Tasks 8,
+   10-14) are verified via `./build_dll.sh` + a manual checklist, matching how this codebase already
+   verifies these exact classes.
+4. `RobustMoments::MoorsKurtosis` takes `std::array<float,100>` **by value**, no namespace, no
+   `(pointer, count)` overload — construct the fixed-size array explicitly.
+5. A real redundancy was caught and removed: the original design named a standalone "new fast
+   hard-gate" *and* an "early-trigger integration" as if separate — for the hard-halt case they'd be
+   redundant (the standalone gate would never be called), so it was dropped before it could become
+   dead code the moment it shipped.
+6. The crisis-hysteresis enter/exit asymmetry (fast signal can trigger entry early, must never
+   confirm exit/recovery) is enforced **at the type level** — `ShouldExitKurtosisCrisis` has no
+   parameter for the fast value at all, not just a comment saying not to pass it.
+7. The "divergence between the two clocks is itself informative" claim (an earlier draft's framing)
+   was checked against the actual literature (Bollerslev-Tauchen-Zhou 2009, Zhang-Mykland-
+   Aït-Sahalia 2005) and found **not directly supported** — downgraded to `plausible-engineering-
+   choice` in the spec (§4 item 5). Don't restate it as settled.
+8. Whether the *existing* five gates' calibrated thresholds should eventually be replaced by
+   freshly-recalibrated activity-clock-based ones is an explicit **empirical backtesting question**
+   (spec open question 13) — not decided by which option avoids recalibration effort. That reasoning
+   was tried once, caught, and retracted during design — don't reintroduce it.
+
+**Explicitly out of scope for this plan** (sequenced separately, don't fold in): the long-memory
+family's activity-clock twins, `PredictionAgeUs`/`HmmStateAgeUs` decay reframing, the
+`skewness_idx`/`correction_action`/`fisher_info`/`burstiness_index` follow-ups (own sequencing,
+`skewness_idx` first — see spec §5c), and the skewed-Student-t-emission question (flagged,
+explicitly `lbrnet`-rooted, not MindfulTrader's to decide).
+
+**Not yet done**: literally anything in the plan's 15 tasks — this session did design, review, and
+correction only, zero code touched. `writing-plans` and this review pass are both complete;
+`superpowers:executing-plans` is the next skill to invoke, starting at Task 1.
+
+**Post-implementation update (2026-08-26, after Claude Sonnet 5 executed the plan)**: a real,
+confirmed gap was found and is still open — `ActivityClockManager::Update(sc)` is wired into
+`SCStudies.cpp` (live) only; `EventDataCollectorStudy.cpp` (training-data collection) and
+`BackTesterStudy.cpp` (backtest replay) are separate ACSIL entry points that never call it, so
+`fastTalebKurtosis` is permanently stuck at the sentinel `1.23f` in both of those paths — training
+data will never see a real reading, and backtesting can't exercise the gate integration at all. Not
+yet decided whether to fix directly or hand back to Claude Sonnet 5 — pick this up before treating
+Thread C as shipped.
+
+**New, TOP PRIORITY item spawned by this thread, now its own row: PRODUCTION_TRIAGE.md row 14**
+(`ObservationData` schema evolution policy). See the corrected account below — an earlier version
+of this note claimed `fast_taleb_kurtosis` was routed onto the `Event` wire root, which turned out
+to be wrong.
+
+**2026-08-27 update — the post-implementation gap above is RESOLVED; plan is code-complete and
+build-verified, but fully uncommitted.** Re-verified directly against the code, not the doc trail:
+`ActivityClockManager::Instance().Init/Update(sc)` is now called from all three ACSIL entry points —
+`SCStudies.cpp`, `EventDataCollectorStudy.cpp`, and `BackTesterStudy.cpp` all wire it. All 15 tasks'
+target files carry the real gate integrations. Both native test suites pass (`test_imbalance_bar_
+engine.cpp` 10/10, `test_kurtosis_gate_logic.cpp` 16/16) and a full `./build_dll.sh --no-clean`
+succeeds cleanly. **But: nothing is committed in either `MindfulTrader` or `../schema`**, the plan
+file's own 96 checkboxes are unticked (left that way deliberately — ticking them would misrepresent
+each task's still-undone "Commit" step).
+
+**Unrelated tangent, resolved same day**: user reported a suspected overnight crash "while making
+fast_taleb_kurtosis changes to lbrnet." Checked directly — no trace of `fast_taleb_kurtosis` in
+`lbrnet`'s *hand-written* Python code (training scripts, `HMM_KEEP_DIMS`, `live_agent.py`), and no
+syntax errors in any modified `lbrnet` file. (**Correction below**: `lbrnet`'s *generated* schema
+binding does already have it — a mechanical regen byproduct, not evidence of hand-written work
+having started, so this finding still stands.) `lbrnet` does carry a large amount of uncommitted/
+untracked state, but it traces to the already-documented, already-recovered 2026-08-25 crash in
+`lbrnet/scratchpad.md` (about `lempel_ziv`/K=4 retrain work, unrelated to this thread) plus ordinary
+accumulated in-progress work. **User's explicit decision: leave `lbrnet`'s uncommitted state alone
+for a separate `lbrnet`-rooted session to sort out — don't investigate or touch it from
+`MindfulTrader`.**
+
+**CORRECTION, 2026-08-27 — a factual error in this thread's own prior notes, found while scoping
+the handoff to the sibling instance.** Every note above and in `PRODUCTION_TRIAGE.md` claiming
+`fast_taleb_kurtosis` was routed onto the `Event` wire root via `HMM_OBSERVATION_EXTENSIONS`, with
+migration into `ObservationData` left as future work, was **wrong**. Verified directly against
+`mts_schema.fbs` and all 3 repos' generated bindings: `fast_taleb_kurtosis` is already the **17th
+field directly inside `struct ObservationData`** (16D→17D, 64→68 bytes) — this deviates from the
+activity-clock plan's own Task 6 (which specified the `Event`-root design) but is exactly what row
+14's struct-stays-and-gets-edited-in-place decision describes. `HMM_OBSERVATION_EXTENSIONS` was
+never touched (`nh_nl_daily`/`daily_bias` only) and has nothing to do with this field.
+`self_test_schema_contract.py`'s `OBSERVATION_FIELDS` assertion isn't violated — it's auto-derived
+from the struct's real fields, so it already reflects 17. All 3 repos' generated bindings for the
+17-field struct exist (`MindfulTrader`'s `mts_schema_generated.h`/`mts_schema_contract_generated.h`,
+`schema`'s `regenerate_schema.sh` template, `lbrnet`'s `generated/MTS/Schema/ObservationData.py`/
+`.pyi`), all uncommitted. What's genuinely still missing is `lbrnet`'s *hand-written* consumer code
+(`HMM_KEEP_DIMS`, training scripts, `live_agent.py`) actually selecting/using dim 17 — separate from
+the mechanical generated-binding regen. `mts_schema.fbs`'s stale "16D Fixed" comment has been fixed
+to 17D. Full corrected detail: `PRODUCTION_TRIAGE.md`'s top-of-doc callout, row 1, row 9, row 14
+(both `§1`/`§1.1`), and `schema/PENDING_SCHEMA_CHANGES.md`'s PSC-03 — all corrected same day.
+
+**Row 14 (`ObservationData` schema evolution policy) DECIDED, 2026-08-27** — `ObservationData` stays
+a `struct` (no struct-to-table conversion); its field set is instead **incrementally edited in
+place** to match whatever the C++ side computes, a coordinated breaking edit across all 3 repos'
+generated bindings each time, acceptable pre-production. `HMM_OBSERVATION_EXTENSIONS` is not being
+formalized as the permanent mechanism — direct struct edits are, and `fast_taleb_kurtosis` is
+already the demonstrated example, not a pending future one. Still open, a spec must settle: whether
+`HMM_OBSERVATION_EXTENSIONS` is retired now that direct struct edits are sanctioned, or kept for
+some other purpose, and formalizing this pattern as standing policy for future dims. See
+`PRODUCTION_TRIAGE.md`'s top-of-doc callout and row 14 for the full statement.
+
+**Next MindfulTrader-owned step after this thread's commit cleanup, per spec §5c**:
+`skewness_idx`'s activity-clock twin (same move as kurtosis — `BowleySkewness` over
+`ActivityClockManager`'s imbalance-bar buffer). **Given the corrected precedent above, this should
+most likely land as a new field directly inside `ObservationData` too (an 18th field), not on
+`Event` — confirm against row 14's eventual policy spec before assuming either way.** Formula
+question already closed, infrastructure already built. A second, independent thread —
+window-widening `recurrence_rate`/`fractal_dim`/`mean_rev_z` per `docs/superpowers/specs/
+2026-08-25-observation-vector-institutional-hardening-spec.md` §5 — needs an autocorrelation-time
+derivation before its proposed ~150/~600-bar targets are finalized. **Both handed to a sibling
+Claude Sonnet 5 instance, 2026-08-27** — not being executed from this session.
+
+## Thread A: Pattern-detection hardening (row 13) — Phase 0 DONE, design DONE, 5 open questions block a plan
+
+Start here: `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md`
+§4.0/§4.1 (root cause), then `docs/superpowers/specs/2026-08-25-pattern-literature-grounding-and-
+subsumption-research.md` (literature + 36-pair audit), then `docs/superpowers/specs/2026-08-25-
+pattern-recording-exhaustive-collection-selective-live-design.md` (the actual design, read this
+one first if short on time — it references the other two).
+
+**The original "sticky field" hypothesis from this morning is WRONG — refuted with code evidence.**
+`raschke_tactical_trigger` IS reset every bar (`TripleScreen3.cpp:710` calls
+`DetectRaschkeTacticalTrigger()` unconditionally, which explicitly returns `NONE` on no-match). The
+real bug: a **detector-authority conflict** — up to 5 call sites write the same field per tick with
+no consolidation, whichever runs last and passes its own gate wins by accident of source-line
+order. Turtle Soup's 280x mismatch is fully root-caused (3 independently-diverging filter stacks,
+not one bug). ITR Breakout's zero count is root-caused (architecturally starved by an unrelated
+check running first in the same priority cascade, not dead code).
+
+**Literature research found Momentum Pinball and ITR Breakout are literally one Raschke strategy
+split across two days** (day-1 Pinball reading gates a day-2 ITR-breakout entry), not two
+independent patterns — neither current implementation does this composite at all. Stochastic Pop's
+real 3-ingredient definition needs an indicator (ADX) this codebase deleted in the DOD/SoA
+migration; RSI Failure Swing needs a real Wilder swing-point state machine the data already
+supports but the code doesn't use.
+
+**Full 36-pair subsumption audit done** (design doc §6, or the research doc's own copy) — 5
+code-certain findings (3 disjoint pattern pairs by numeric construction, 1 sequential-dependency:
+ITR Fade requires a same-day prior ITR Breakout).
+
+**Confirmed this session, changes the whole live-side framing**: `PositionManagerPatterns.cpp`
+never reads `raschke_tactical_trigger` live — it keys off `prediction.actionId` (the Transformer's
+own already-decided output). There is no live "pick the best fired pattern" mechanism to build;
+that's the Transformer's learned job. The real live fix is narrower: the Transformer's `FeatureSpec`
+(`lbrnet`-side, `schema_contract.py:174`) needs to stop reading the corrupted single scalar and read
+the 9 canonical per-pattern fields instead.
+
+**Also found**: `TradeExecutionServer::CalculateOrderPrices()` (`TradeExecutionServer.cpp:824-907`)
+is a separate, confirmed-dead stub (zero call sites, hardcoded trigger value, drifted constants vs.
+the real formula) — its own independent removal candidate.
+
+**5 open questions block writing an implementation plan** (design doc §7) — sequencing (wire the 4
+new fields now vs. after their logic is corrected), PSC-02 (quality float or not, per-pattern not
+uniform), the Hurst-as-ADX-proxy validation (needs an actual backtest, ADX and Hurst measure
+genuinely different things), the `raschke_tactical_trigger` removal audit (+ the confirmed-dead
+`TradeExecutionServer` stub), empirical (not just logical) subsumption confirmation, and `lbrnet`
+coordination for the FeatureSpec fix (probably bundle with the next full retrain, not a one-off).
+User said: "deal with each separately when the time comes" — no rush, pick one at a time.
+
+## Thread B: Observation-vector / vol_convexity (row 1) — 4 decisions made, none implemented
+
+Start here: `lbrnet/docs/superpowers/specs/2026-08-25-vol-convexity-removal-spec.md` (§3/§4 have
+today's updates; read the Status-line "Update, continued session" block first).
+
+**Confirmed by reading the code directly**: `CalculateVolConvexity()` (MindfulTrader,
+`StudyHelperFunctions.cpp:3322`) uses ONLY realized ES futures OHLC (10-40 bars) — the literature
+construct it's named after needs option-implied vol surfaces or thousands of aggregated
+observations, which this system's data feed (confirmed futures-only, no options/IV pipeline
+anywhere in the repo) cannot provide. This is a data-source defect, separate from (though
+compounding) the HMM's own weak-cross-state-discrimination finding.
+
+**Four decisions made today, none implemented yet**:
+1. Drop `vol_convexity` from backtest barrier-width modulation (`lbrnet/backtest/
+   backtest_runner.py:319-339`, `_apply_context_barrier_modulation()`) — a consumer the original
+   spec had left untouched.
+2. **Retire the Taleb-diagnostic/P2.3 crash-oversampling mechanism entirely** (`compute_taleb_gate_
+   metrics()`, `_legacy_taleb_metrics()`, `_apply_crash_oversampling()`) rather than reworking onto
+   a raw array — this was the spec's own "Section 4 fork," now decided on evidence: a proven
+   sign-convention bug in `combined_signal = max(robust_z(vol_convexity), robust_z(tail_index))`
+   (signed z-score + `np.maximum()` structurally can't let a negative `tail_index` crash-signal
+   win), 96.55% empirical dominance by `vol_convexity` on the real 56.9M-row dataset, and an already
+   -documented real sign-off regression (`2026-08-22-hmm-crash-oversampling-axis-realignment-spec.md`).
+3. **Rejected**: substituting DOF for `tail_index` in `PositionManager.cpp`'s live sizing
+   (`paretoTailAlpha`). `RiskManager.cpp:1711-1728`'s "TAIL COHERENCE DIVERGENCE" check deliberately
+   depends on Hill-alpha and DOF being independent, cross-validating signals — substituting one for
+   the other deletes that check rather than simplifying it.
+4. **Found, not decided**: `build_directional_alpha.py:608-628`'s crash-oversampling threshold
+   lookup is a THIRD, separate `vol_convexity` consumer, genuinely unexamined — flagged open in the
+   spec, pick this up next if continuing this thread.
+
+**Original window-widening/dead-code content from this morning's MindfulTrader spec
+(`2026-08-25-observation-vector-institutional-hardening-spec.md`) is unchanged by today's
+work** — still applicable, still not started: `recurrence_rate`/`fractal_dim` (30-40 bars @ 60min,
+propose ~150) and `mean_rev_z` (10-40 bars @ 15min, propose ~600) window-widen candidates pending a
+real autocorrelation-time derivation; `hurst_exponent`/`fisher_info` explicitly NOT a window case
+(likely data-quality artifacts instead); `skewness_idx`/`micro_asymmetry` dead-code candidates once
+lbrnet's spec lands.
+
+## Standing note for tomorrow (or any session)
+
+Corrected today, recorded in memory: **this system has no production deployment yet** — don't gate
+proposed changes to "live-looking" risk-consumer code behind mandatory ablation studies as if real
+capital were at stake. Still name real technical risks when found (several were, today, and held up)
+— just don't let "this touches RiskManager" alone be a reason to slow down.
+
+## 2026-08-24 (later same day) — Two new live classifiers designed (soft gate classifier + meta-labeler) — spec written, queued
+
+Grew out of the same production-triage session as the entry below. Full design:
+`docs/superpowers/specs/2026-08-24-two-classifier-cpp-deployment-spec.md` (this repo) +
+`lbrnet/docs/superpowers/specs/2026-08-24-two-classifier-risk-sizing-architecture-spec.md`
+(Python-side training design, sibling repo). One-line summary of the confirmed architecture:
+
+`Hard gate -> soft/gate classifier (danger veto, deliberately independent of HMM) -> Transformer
+(side) + Predator Fusion (pattern) -> meta-labeler (size, genuine AFML meta-labeling, consumes
+HMM-derived scalars + existing sizing multipliers + gate classifier's score + pattern output) ->
+execution`. Both new classifiers train in Python, deploy to C++ for tick-reactivity, same
+`PredictionAgeUs()`-style decay treatment as the entry below (extended to `HmmStateAgeUs()` too,
+which already has the continuous age-getter, unlike the Transformer side).
+
+**Real, not-yet-closed risk this creates**: now 5 Python-trained/C++-deployed components need
+golden-fixture parity tests (HMM, Transformer, Predator Fusion Option B, + these 2 new ones), all
+resting on the still-open `PRODUCTION_TRIAGE.md` row 5/7 gap (no C++/Python-twin agreement test
+exists at all yet) — that gap's priority just went up, not down. Also: an explicit
+"which upstream change requires which downstream retrain" dependency map doesn't exist yet across
+HMM/Transformer/Predator-Fusion/gate-classifier/meta-labeler and should exist before this ships.
+
+**Next action when this resumes**: read both specs in full, in particular the still-open items —
+soft classifier's exact feature list + label definition (not yet decided), meta-labeler's
+sample-size check against actual Predator Fusion pattern-firing frequency (not yet run), and the
+suggested explicit data-flow diagram (not yet drawn) — before writing any implementation code.
+
+## 2026-08-24 — Predator Fusion does not yet consume the Transformer signal at all — spec written, queued for next Predator Fusion session
+
+Found and confirmed during a cross-project production-triage session (`/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md`,
+the parent-level doc coordinating `lbrnet`/`MindfulTrader`/`MTS`/`schema`). The user's mental
+model was that Predator Fusion should act on the Transformer's last signal with staleness decay
+applied (Python predicts on indicator-delta/16D-observation change, not every tick; C++ runs
+every tick). **Verified by reading the actual code, not assumed**: this integration doesn't
+exist yet. `TurtleSoupFusion.h`'s live entry-fusion functions
+(`EvaluateTurtleSoupOptionA`/`OptionB`) take no Transformer-signal input at all — pure
+price-geometry pattern detectors. The freshness plumbing exists (`InferenceManager::
+IsPredictionFresh()`, mirroring the already-working `IsHmmStateStale()` pattern) but is a binary
+check, never called by Predator Fusion, and there's no continuous age getter (`PredictionAgeUs()`)
+to decay against in the first place.
+
+**Not a regression** — Predator Fusion Option A was reasonably built first as a self-contained,
+independently-testable price-geometry detector. The Transformer-signal fusion (with decay) is
+genuinely new, not-yet-started work.
+
+**Full spec written and ready to pick up**:
+`docs/superpowers/specs/2026-08-24-predator-fusion-transformer-signal-decay-spec.md`. Covers:
+add `PredictionAgeUs()` (mirrors `HmmStateAgeUs()` exactly, mechanical); design a continuous
+decay function applied to `modelConfidence` (user's explicit preference over a hard freshness
+gate); wire the decayed signal into the entry-fusion functions (currently no parameter for it
+at all). **The decay function's time constant is explicitly NOT decided** — it needs empirical
+derivation from this system's own inter-prediction-arrival-interval distribution (pull from
+historical logs when this is picked up), not a borrowed literature value (Grinold-Kahn-style
+alpha-decay half-lives are months-scale, the wrong order of magnitude for this problem) and not
+an invented round number. See the spec's Section 3 for the full open-questions list.
+
+**Next action when this project resumes**: read the spec, pull the real inter-prediction-interval
+data first, then implement in the order given (age getter → decay function → fusion wiring).
+
+## 2026-08-23 — `InformationEngine::GetLempelZivComplexity()` confirmed ceiling-saturated on
+## real current data; blocking a Student-t HMM feature-selection decision in the lbrnet project
+
+A parallel `lbrnet` session (16D HMM observation-vector dimensionality investigation) directly
+measured `lempel_ziv`'s value distribution against the CURRENT, live `.context.parquet` data
+(2,000,000-row random sample from the full 56,963,578-row dataset): **55.80% of all samples sit
+at exactly one ceiling value**, only **11 distinct values** total across the whole sample. Median
+equals the max. This independently confirms (with fresh, current data, not just re-citing the
+prior finding) a limitation this repo's own literature-grounding pass already flagged but never
+acted on: `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md:44` — median-split
+(2-symbol) binarization over a short `WINDOW_SIZE_LZ=64` window is known in the LZ-complexity
+literature to bias toward looking "maximally complex" for most real sequences, because a 2-symbol
+alphabet over 64 samples gives the LZ76 parse very little room to distinguish genuinely different
+return dynamics. The LZ76 parsing algorithm itself (Kaspar & Schuster 1987) is implemented
+correctly — this is a quantization/resolution limitation upstream of it, not a parsing bug.
+
+**Why this blocks lbrnet right now**: lbrnet's Student-t HMM feature-selection work
+(`knowledge/global/training/hmm_feature_selection.md` in that repo) needs to decide whether
+`lempel_ziv` stays in or is dropped from the model's 16D input vector. A real regression test
+tied to actual historical alignment behavior showed `lempel_ziv`'s STATE-level (cross-state mean)
+signal is still load-bearing for `HMMStateEnum.GAUSSIAN_FRAGILE` detection, even though its raw
+OBSERVATION-level tail-relevance measured at ~0. That tension traces directly back to this
+window/quantization limitation: the metric still carries some real signal at the aggregate level,
+but is degenerate for the majority of individual observations, which is exactly what a coarse
+2-symbol short-window LZ estimate would produce.
+
+**Not fixing this from the lbrnet side** — this is C++ producer logic
+(`include/InformationEngine.h` `GetLempelZivComplexity()`), out of lbrnet's scope per its own
+Python/C++ project boundary. The already-scoped fix in this repo's own prior grounding pass is
+**multi-symbol (tertile+) quantization**, not a window-length change — recorded here as the
+concrete next step whenever this repo picks this up, not yet started.
+
+---
 
 ## 2026-08-16 (evening) — Predator infrastructure + Turtle Soup Option A implemented and committed
 ## (was SPEC-only as of the previous entry below). Read this FIRST.

@@ -2,6 +2,7 @@
 #include "Scoring.h"
 #include "TradeExecutionServer.h"
 #include "SystemOrchestrator.h"
+#include "KurtosisGateLogic.h"
 
 // RiskManager-specific persistent Int IDs
 namespace {
@@ -881,10 +882,12 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | shannon_entropy=" + std::to_string(ctx.shannonFlowEntropy) +
             " threshold=" + std::to_string(m_execParams.shannonEntropyHaltFrac * kShannonMaxEntropyBits));
     }
-    if (ctx.talebKurtosis > m_execParams.talebKurtosisHaltThreshold) {
+    if (ShouldHaltOnKurtosis(ctx.talebKurtosis, m_execParams.talebKurtosisHaltThreshold,
+                             ctx.fastTalebKurtosis, m_execParams.fastTalebKurtosisHaltThreshold)) {
         return Result<void>::Failure(
             "HARD_GATE: Taleb kurtosis critical"
             " | taleb_kurtosis=" + std::to_string(ctx.talebKurtosis) +
+            " fast_taleb_kurtosis=" + std::to_string(ctx.fastTalebKurtosis) +
             " threshold=" + std::to_string(m_execParams.talebKurtosisHaltThreshold));
     }
     if (ctx.spreadStress > 0.85f) {
@@ -912,9 +915,12 @@ void RiskManager::RefreshKurtosisEmergencyState([[maybe_unused]] SCStudyInterfac
     const bool wasActive = m_kurtosisEmergencyActive.load(std::memory_order_relaxed);
     bool nowActive = wasActive;
 
-    if (!wasActive && kurtosis > m_execParams.talebKurtosisCrisisEnter) {
+    if (!wasActive && ShouldEnterKurtosisCrisis(
+            kurtosis, m_execParams.talebKurtosisCrisisEnter,
+            localCtx.fastTalebKurtosis, m_execParams.fastTalebKurtosisCrisisEnter)) {
         nowActive = true;
-    } else if (wasActive && kurtosis < m_execParams.talebKurtosisCrisisExit) {
+    } else if (wasActive && ShouldExitKurtosisCrisis(
+                   kurtosis, m_execParams.talebKurtosisCrisisExit)) {
         nowActive = false;
     }
 
@@ -1397,6 +1403,7 @@ Result<void> RiskManager::ValidateOrder(
         rpIn.spreadStress       = lrc.spreadStress;
         rpIn.shannonFlowEntropy = lrc.shannonFlowEntropy;
         rpIn.talebKurtosis      = lrc.talebKurtosis;
+        rpIn.fastTalebKurtosis  = lrc.fastTalebKurtosis;
         rpIn.paretoTailAlpha    = lrc.paretoTailAlpha;
         auto* hmmShadow = InferenceManager::Instance().HmmState();
         rpIn.mahalanobis        = hmmShadow ? hmmShadow->Mahalanobis() : 0.0f;
@@ -2511,7 +2518,9 @@ bool RiskManager::IsTradeAllowed(SCStudyInterfaceRef sc, const TradeValidationPa
     const auto& regimeCtx = ContextManager::Instance().GetLocalRiskContext();
     if (regimeCtx.isValid) {
         // 1. TALEB (Fragility): Flash Crash Block
-        if (regimeCtx.talebKurtosis > m_execParams.talebKurtosisHaltThreshold) {
+        if (ShouldHaltOnKurtosis(regimeCtx.talebKurtosis, m_execParams.talebKurtosisHaltThreshold,
+                     regimeCtx.fastTalebKurtosis,
+                     m_execParams.fastTalebKurtosisHaltThreshold)) {
             result.allowed = false;
             result.reason = "MARKET FRAGILITY CRITICAL (Taleb Crash Risk)";
             return false;

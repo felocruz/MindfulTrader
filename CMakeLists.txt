@@ -78,6 +78,7 @@ set(SOURCE_FILES
     src/RiskManager.cpp
     src/Scoring.cpp
     src/StructureEngine.cpp
+    src/ActivityClockManager.cpp
     src/SCStudies.cpp
     src/StudyHelperFunctions.cpp
     src/SystemOrchestrator.cpp

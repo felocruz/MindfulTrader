@@ -1,5 +1,6 @@
 #include "MindfulTrader_Precompiled.h"
 #include "generated/backtest_schema_generated.h"
+#include "ActivityClockManager.h"
 
 #include <algorithm>
 #include <chrono>
@@ -619,6 +620,7 @@ SCSFExport scsf_BackTester(SCStudyInterfaceRef sc)
 
             // Reset ContextManager physics/structure state at replay epoch boundary.
             ContextManager::Instance().Reset();
+            ActivityClockManager::Instance().Init(sc);
 
             // Initialize RiskManager contract invariants (session balance, ATR baseline).
             // Required for Phase 3 correctness; harmless in Phase 2.
@@ -878,6 +880,14 @@ void RunTradingPhase(SCStudyInterfaceRef sc, int phase)
                 ContextManager::Instance().UpdateMarketPhysics(std::log(curr / prev));
             }
         }
+
+        // Feed ActivityClockManager's imbalance-bar engine, before either of the two
+        // CheckAndTriggerHMM call sites below (the early-return branch at line ~897 and the
+        // main-flow branch further down) so ContextManager::BuildObservationVector() never reads
+        // a stale/empty engine. This file was previously missing this call entirely, leaving
+        // fastTalebKurtosis permanently at its sentinel value throughout backtest replay (found
+        // post-implementation, 2026-08-26).
+        ActivityClockManager::Instance().Update(sc);
 
         // Set TimeOfDay before UpdateBarContext so all session-based gates read current state.
         {

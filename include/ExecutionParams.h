@@ -63,6 +63,7 @@ struct ExecutionParams {
     // multiplier cap (fraction of normal size), not a kurtosis-scale value
     // -- unaffected by the Moors-kurtosis swap, left as-is.
     float  talebKurtosisCrisisEnter   = 1.5650f;
+    float  fastTalebKurtosisCrisisEnter = 1.5650f;
     float  talebKurtosisCrisisExit    = 1.3809f;
     float  talebKurtosisCrisisCeiling = 0.35f;
 
@@ -72,6 +73,7 @@ struct ExecutionParams {
     // historical distribution -- see tools/analyze_kurtosis_threshold_
     // migration.py, run 2026-08-13 (Task 7).
     float  talebKurtosisHaltThreshold = 2.0064f;  // kurtosis above this = flash-crash block
+    float  fastTalebKurtosisHaltThreshold = 2.0064f;
     // ENTROPY SCALE NOTE (2026-08-13, final-review Finding 7): GetShannonEntropy()
     // now subtracts a Miller-Madow bias term, shifting entropy DOWN ~4% at the
     // steady-state window (N=50), up to ~20% during warmup (N=10). This fraction
@@ -196,6 +198,8 @@ struct ExecutionParams {
             constexpr float kKurtosisMoorsClampCeiling = 5.0f;  // == CalculateRealizedKurtosis's KURT_CLAMP_HI
 
             talebKurtosisCrisisEnter   = j.value("taleb_kurtosis_crisis_enter",   talebKurtosisCrisisEnter);
+            fastTalebKurtosisCrisisEnter = j.value(
+                "fast_taleb_kurtosis_crisis_enter", fastTalebKurtosisCrisisEnter);
             talebKurtosisCrisisExit    = j.value("taleb_kurtosis_crisis_exit",    talebKurtosisCrisisExit);
             // NOTE: talebKurtosisCrisisCeiling is a risk-MULTIPLIER cap (a size
             // fraction), not a kurtosis-scale value, so it is not guarded here.
@@ -203,6 +207,8 @@ struct ExecutionParams {
 
             // Hard-gate regime critical cutoffs
             talebKurtosisHaltThreshold = j.value("taleb_kurtosis_halt_threshold", talebKurtosisHaltThreshold);
+            fastTalebKurtosisHaltThreshold = j.value(
+                "fast_taleb_kurtosis_halt_threshold", fastTalebKurtosisHaltThreshold);
             shannonEntropyHaltFrac     = j.value("shannon_entropy_halt_frac",     shannonEntropyHaltFrac);
 
             auto requireMoorsScale = [&](const char* key, float value) {
@@ -217,8 +223,10 @@ struct ExecutionParams {
                 }
             };
             requireMoorsScale("taleb_kurtosis_crisis_enter",   talebKurtosisCrisisEnter);
+            requireMoorsScale("fast_taleb_kurtosis_crisis_enter", fastTalebKurtosisCrisisEnter);
             requireMoorsScale("taleb_kurtosis_crisis_exit",    talebKurtosisCrisisExit);
             requireMoorsScale("taleb_kurtosis_halt_threshold", talebKurtosisHaltThreshold);
+            requireMoorsScale("fast_taleb_kurtosis_halt_threshold", fastTalebKurtosisHaltThreshold);
 
             // Hysteresis ordering (TRADE_EXECUTION_SYSTEM.md §13.3, "mandatory
             // for threshold-based degraders: separate enter and clear

@@ -5,6 +5,7 @@
 #include "execution/ExecutionGate.h"
 #include "messaging/EliteFlatBufferHelper.h"
 #include "transport/TransportStream.h"
+#include "KurtosisGateLogic.h"
 
 //
 // PositionManager Implementation
@@ -2315,7 +2316,8 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         const auto* hmmChase = InferenceManager::Instance().HmmState();
         const float chaseDof = hmmChase ? hmmChase->Dof() : 30.0f;
         const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 1.23f;
-        if (chaseDof <= 4.0f || chaseKurtosis > 1.8530f) {
+        const float fastChaseKurtosis = lrcChase.isValid ? lrcChase.fastTalebKurtosis : 1.23f;
+        if (ShouldCapChase(chaseDof, 4.0f, chaseKurtosis, fastChaseKurtosis, 1.8530f)) {
             order.MaximumChaseAsPrice = 0.0;  // Pure limit — no chase in crash regime
         }
     }
@@ -2353,9 +2355,11 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         const auto* hmmStop = InferenceManager::Instance().HmmState();
         const float dof = hmmStop ? hmmStop->Dof() : 30.0f;
         const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 1.23f;
+        const float fastKurtosis = lrc.isValid ? lrc.fastTalebKurtosis : 1.23f;
 
-        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 1.8530f) ||
-                                 (lrc.isValid && lrc.amihudPercentile > 0.90f);
+        const bool crashRegime = IsCrashRegime(
+            dof, 4.0f, kurtosis, fastKurtosis, 1.8530f,
+            lrc.isValid ? lrc.amihudPercentile : 0.0f, 0.90f);
 
         if (crashRegime) {
             // Tier 1: guaranteed exit — market stop fires immediately at trigger price
@@ -2766,7 +2770,8 @@ void PositionManager::ProcessManualTradeCommand(
         const auto* hmmChase = InferenceManager::Instance().HmmState();
         const float chaseDof = hmmChase ? hmmChase->Dof() : 30.0f;
         const float chaseKurtosis = lrcChase.isValid ? lrcChase.talebKurtosis : 1.23f;
-        if (chaseDof <= 4.0f || chaseKurtosis > 1.8530f) {
+        const float fastChaseKurtosis = lrcChase.isValid ? lrcChase.fastTalebKurtosis : 1.23f;
+        if (ShouldCapChase(chaseDof, 4.0f, chaseKurtosis, fastChaseKurtosis, 1.8530f)) {
             order.MaximumChaseAsPrice = 0.0;  // Pure limit — no chase in crash regime
         }
     }
@@ -2787,9 +2792,11 @@ void PositionManager::ProcessManualTradeCommand(
         const auto* hmmStop = InferenceManager::Instance().HmmState();
         const float dof = hmmStop ? hmmStop->Dof() : 30.0f;
         const float kurtosis = lrc.isValid ? lrc.talebKurtosis : 1.23f;
+        const float fastKurtosis = lrc.isValid ? lrc.fastTalebKurtosis : 1.23f;
 
-        const bool crashRegime = (dof <= 4.0f) || (kurtosis > 1.8530f) ||
-                                 (lrc.isValid && lrc.amihudPercentile > 0.90f);
+        const bool crashRegime = IsCrashRegime(
+            dof, 4.0f, kurtosis, fastKurtosis, 1.8530f,
+            lrc.isValid ? lrc.amihudPercentile : 0.0f, 0.90f);
 
         if (crashRegime) {
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_WITH_BID_ASK_TRIGGERING;

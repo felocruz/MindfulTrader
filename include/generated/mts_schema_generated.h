@@ -2204,6 +2204,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   float skewness_idx_;
   float amihud_illiquidity_;
   float liq_fragility_;
+  float fast_taleb_kurtosis_;
   float recurrence_rate_;
   float fractal_dim_;
   float mean_rev_z_;
@@ -2223,11 +2224,12 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         skewness_idx_(0),
         amihud_illiquidity_(0),
         liq_fragility_(0),
+        fast_taleb_kurtosis_(0),
         recurrence_rate_(0),
         fractal_dim_(0),
         mean_rev_z_(0) {
   }
-  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
+  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _fast_taleb_kurtosis, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
       : log_variance_ratio_(::flatbuffers::EndianScalar(_log_variance_ratio)),
         burstiness_index_(::flatbuffers::EndianScalar(_burstiness_index)),
         relative_range_(::flatbuffers::EndianScalar(_relative_range)),
@@ -2241,6 +2243,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         skewness_idx_(::flatbuffers::EndianScalar(_skewness_idx)),
         amihud_illiquidity_(::flatbuffers::EndianScalar(_amihud_illiquidity)),
         liq_fragility_(::flatbuffers::EndianScalar(_liq_fragility)),
+        fast_taleb_kurtosis_(::flatbuffers::EndianScalar(_fast_taleb_kurtosis)),
         recurrence_rate_(::flatbuffers::EndianScalar(_recurrence_rate)),
         fractal_dim_(::flatbuffers::EndianScalar(_fractal_dim)),
         mean_rev_z_(::flatbuffers::EndianScalar(_mean_rev_z)) {
@@ -2323,6 +2326,12 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   void mutate_liq_fragility(float _liq_fragility) {
     ::flatbuffers::WriteScalar(&liq_fragility_, _liq_fragility);
   }
+  float fast_taleb_kurtosis() const {
+    return ::flatbuffers::EndianScalar(fast_taleb_kurtosis_);
+  }
+  void mutate_fast_taleb_kurtosis(float _fast_taleb_kurtosis) {
+    ::flatbuffers::WriteScalar(&fast_taleb_kurtosis_, _fast_taleb_kurtosis);
+  }
   float recurrence_rate() const {
     return ::flatbuffers::EndianScalar(recurrence_rate_);
   }
@@ -2342,7 +2351,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
     ::flatbuffers::WriteScalar(&mean_rev_z_, _mean_rev_z);
   }
 };
-FLATBUFFERS_STRUCT_END(ObservationData, 64);
+FLATBUFFERS_STRUCT_END(ObservationData, 68);
 
 FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS {
  private:

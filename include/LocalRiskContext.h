@@ -18,6 +18,7 @@ struct LocalRiskContext {
 
     // Taleb (Tail Risk) — from NormalizedAnchors + TailRiskEngine
     float talebKurtosis = 0.0f;        // Moors (1988) octile kurtosis (1.233 = N(0,1) neutral, clamped [0,5])
+    float fastTalebKurtosis = 0.0f;     // Moors kurtosis over activity-clock imbalance-bar returns
     float talebSkewness = 0.0f;        // Bowley (1920) quartile skewness (0 = symmetric, bounded [-1,+1])
     float elderChandelierATR = 0.0f;   // Elder's Chandelier: (price - stop) / ATR distance
     float paretoTailAlpha = 4.0f;      // Pareto tail index via Hill estimator (4.0 = safe default)

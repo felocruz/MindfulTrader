@@ -1,4 +1,5 @@
 #include "Scoring.h"
+#include "KurtosisGateLogic.h"
 #include <algorithm>
 #include <numeric>
 
@@ -220,7 +221,8 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     // closed-form variance-ratio approximation steepness_new ≈ steepness_old
     // * sqrt(Var(old)/Var(new)) = 0.5 * sqrt(7.4066^2/0.3739^2) ≈ 9.91 --
     // within 2% of the empirically-derived value, corroborating it.
-    if (ctx.talebKurtosis > 1.3248f) {
+    if (ShouldApplyFragilityPenalty(ctx.talebKurtosis, 1.3248f,
+                                    ctx.fastTalebKurtosis, 1.3248f)) {
         const double fragilityPenalty = 1.0 / (1.0 + std::exp(9.7409 * (static_cast<double>(ctx.talebKurtosis) - 1.6414)));
         multiplier *= fragilityPenalty;
     }

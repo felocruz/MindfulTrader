@@ -2,6 +2,7 @@
 #include "AIConnectionMonitor.h"
 #include "transport/AIHeartbeatMonitor.h"
 #include "SystemOrchestrator.h"
+#include "ActivityClockManager.h"
 
 SCDLLName("Mindful Trader - Version 2.0 Devel")
 
@@ -155,6 +156,7 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
 
         // Elite v3.0: Reset ContextManager (StructureEngine, etc.)
         ContextManager::Instance().Reset();
+        ActivityClockManager::Instance().Init(sc);
         sc.SetPersistentInt(STRUCT_BAR_INDEX_ID, -1);
 
         // HMMClient lifecycle is owned by SystemOrchestrator to avoid split init/shutdown ownership.
@@ -408,6 +410,7 @@ SCSFExport scsf_MindfulTrader(SCStudyInterfaceRef sc)
 
         // Risk management continuous monitoring (CRITICAL - runs every bar)
         RiskManager::Instance().Update(sc);
+        ActivityClockManager::Instance().Update(sc);
 
         // === CONTEXT MANAGER: Update Structure (Elite v3.0) ===
         // Must be called BEFORE CheckAndTriggerHMM to ensure structure metrics are current

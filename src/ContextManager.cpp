@@ -5,8 +5,11 @@
 #include "Logger.h"
 #include "IndicatorManager.h"
 #include "PositionManager.h"
+#include "ActivityClockManager.h"
+#include "RobustMoments.h"
 #include <cmath>
 #include <algorithm>
+#include <array>
 #include <chrono>
 
 namespace {
@@ -37,6 +40,10 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBo
    -2.5f,   // OBS_SKEWNESS
     0.0f,   // OBS_AMIHUD_ILLIQUIDITY
     0.0f,   // OBS_LIQ_FRAGILITY
+    0.5f,   // OBS_FAST_TALEB_KURTOSIS — mirrors OBS_TAIL_INDEX's floor (same quadrant, same
+            // Moors-family octile statistic); NOT empirically calibrated on real activity-clock
+            // data yet (no historical imbalance-bar returns exist to percentile-match against —
+            // see plan open question 3). Placeholder, revisit once backfill data exists.
     0.0f,   // OBS_RECURRENCE_RATE
     1.0f,   // OBS_FRACTAL_DIM
     0.0f    // OBS_MEAN_REV_Z
@@ -56,6 +63,8 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBo
     2.5f,    // OBS_SKEWNESS
     100.0f,  // OBS_AMIHUD_ILLIQUIDITY
     1.0f,    // OBS_LIQ_FRAGILITY
+    8.0f,    // OBS_FAST_TALEB_KURTOSIS — mirrors OBS_TAIL_INDEX's ceiling (placeholder, see
+             // matching kObsLowerBounds comment)
     1.0f,    // OBS_RECURRENCE_RATE
     2.0f,    // OBS_FRACTAL_DIM
     5.0f     // OBS_MEAN_REV_Z
@@ -75,6 +84,7 @@ inline bool IsEnergyObservationDim(size_t dim) {
         case ContextManager::OBS_VOL_CONVEXITY:
         case ContextManager::OBS_TAIL_INDEX:
         case ContextManager::OBS_LIQ_FRAGILITY:
+        case ContextManager::OBS_FAST_TALEB_KURTOSIS:
             return true;
         default:
             return false;
@@ -481,10 +491,10 @@ uint64_t ContextManager::GetTs2StructuralLastWriteUs() const {
     return m_ts2StructuralLastWriteUs.load(std::memory_order_relaxed);
 }
 
-// Utility: Build 16D observation vector (Elite v3.1: Institutional Physics)
+// Utility: Build observation vector (Elite v3.1: Institutional Physics)
 // Single source of truth for observation vector construction
 // Used by both AddToTrainingEventFB() and CheckAndTriggerHMM()
-// Returns strictly 16D vector for HMM Physics Core
+// Returns strictly OBSERVATION_VECTOR_SIZE-D vector for HMM Physics Core
 std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::BuildObservationVector() {
     std::array<float, OBSERVATION_VECTOR_SIZE> obs = {};
 
@@ -551,6 +561,19 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     m_localRiskContext.shannonFlowEntropy = m_latestInstitutionalMetrics.shannonFlowEntropy;
     m_localRiskContext.shannonEfficiency = m_latestInstitutionalMetrics.shannonEfficiency;
     m_localRiskContext.talebKurtosis = m_latestInstitutionalMetrics.talebKurtosis;
+    {
+        float rawReturns[ImbalanceBarEngine::kImbalanceBarBufferCapacity];
+        const std::size_t count = ActivityClockManager::Instance().Engine().GetImbalanceBarReturns(
+            100, rawReturns);
+        if (count >= 100) {
+            std::array<float, 100> returnsArray;
+            std::copy(rawReturns, rawReturns + 100, returnsArray.begin());
+            m_localRiskContext.fastTalebKurtosis = MoorsKurtosis(returnsArray);
+        } else {
+            m_localRiskContext.fastTalebKurtosis = 1.23f;
+        }
+        obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
+    }
     m_localRiskContext.talebSkewness = m_latestInstitutionalMetrics.talebSkewness;
     m_localRiskContext.elderChandelierATR = m_latestInstitutionalMetrics.elderChandelierATR;
     m_localRiskContext.paretoTailAlpha = m_cachedHillAlpha.load(std::memory_order_relaxed);
@@ -1302,7 +1325,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
             "dim0_logz=" + std::to_string(currentObs[OBS_LOG_VARIANCE_RATIO]) +
             " dim9_logz=" + std::to_string(currentObs[OBS_TAIL_INDEX]) +
             " dim12_logz=" + std::to_string(currentObs[OBS_LIQ_FRAGILITY]) +
-            " dim13_softlogz=" + std::to_string(currentObs[OBS_RECURRENCE_RATE]) +
+            " dim14_softlogz=" + std::to_string(currentObs[OBS_RECURRENCE_RATE]) +
             " after " + std::to_string(m_featureScaler.sampleCount) + " samples"
         );
     }

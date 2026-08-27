@@ -332,6 +332,7 @@ public:
     static constexpr size_t OBS_SKEWNESS = MTS::Schema::Contract::kObsSkewnessIdx;
     static constexpr size_t OBS_AMIHUD_ILLIQUIDITY = MTS::Schema::Contract::kObsAmihudIlliquidity;
     static constexpr size_t OBS_LIQ_FRAGILITY = MTS::Schema::Contract::kObsLiqFragility;
+    static constexpr size_t OBS_FAST_TALEB_KURTOSIS = MTS::Schema::Contract::kObsFastTalebKurtosis;
 
     // Quadrant IV: Structure (Topological Stability)
     static constexpr size_t OBS_RECURRENCE_RATE = MTS::Schema::Contract::kObsRecurrenceRate;

@@ -8,6 +8,7 @@
 #include "nlohmann/json.hpp"
 #include "Logger.h"
 #include "RejectionLedger.h"  // Reuse timestamp helpers + ContextSnapshot
+#include "KurtosisGateLogic.h"
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Trade Decision Engine (TDE) — Shadow-Mode Observation Layer
@@ -209,6 +210,7 @@ struct RiskPriceInputs {
     float  spreadStress       = 0.0f;
     float  shannonFlowEntropy = 0.0f;
     float  talebKurtosis      = 0.0f;
+    float  fastTalebKurtosis   = 0.0f;
     float  paretoTailAlpha    = 4.0f;
     float  mahalanobis        = 0.0f;
     float  hmmTransitionRisk  = 0.0f;
@@ -296,17 +298,17 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
         // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
         // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-
         // institutional-elevation/task-7-report.md).
-        const double kurtosisPenalty = std::clamp(
-            (static_cast<double>(in.talebKurtosis) - 1.6414) / (2.0064 - 1.6414), 0.0, 1.0);
         // Robust Mahalanobis (16D observation vector, median/MAD estimator).
         // E[d] ≈ √p = √16 = 4.0 for typical observations.
         // Consistent with MahalanobisSizingCap() which also anchors at 4.0;
         // wire_mahal > 6.0 danger threshold sits at midpoint (penalty ≈ 0.5).
-        const double mahalPenalty = std::clamp(
-            (static_cast<double>(in.mahalanobis) - 4.0) / 4.0, 0.0, 1.0);
-
-        const double worstTail = std::max({hillPenalty, kurtosisPenalty, mahalPenalty});
-        r.tailRiskPremium = 1.0 + worstTail;
+        r.tailRiskPremium = ComputeTailRiskPremium(
+            hillPenalty,
+            static_cast<double>(in.talebKurtosis),
+            static_cast<double>(in.fastTalebKurtosis),
+            1.6414, 2.0064,
+            static_cast<double>(in.mahalanobis),
+            4.0, 8.0);
     }
 
     // 5. Drawdown surcharge: deeper drawdown → costlier risk

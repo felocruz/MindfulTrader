@@ -13,7 +13,7 @@ namespace MTS {
 namespace Schema {
 namespace Contract {
 
-inline constexpr std::size_t kObservationDim = 16;
+inline constexpr std::size_t kObservationDim = 17;
 inline constexpr std::size_t kAsymmetryDim = 8;
 
 using ObservationArray = std::array<float, kObservationDim>;
@@ -32,9 +32,10 @@ inline constexpr std::size_t kObsTailIndex = 9;
 inline constexpr std::size_t kObsSkewnessIdx = 10;
 inline constexpr std::size_t kObsAmihudIlliquidity = 11;
 inline constexpr std::size_t kObsLiqFragility = 12;
-inline constexpr std::size_t kObsRecurrenceRate = 13;
-inline constexpr std::size_t kObsFractalDim = 14;
-inline constexpr std::size_t kObsMeanRevZ = 15;
+inline constexpr std::size_t kObsFastTalebKurtosis = 13;
+inline constexpr std::size_t kObsRecurrenceRate = 14;
+inline constexpr std::size_t kObsFractalDim = 15;
+inline constexpr std::size_t kObsMeanRevZ = 16;
 
 inline constexpr std::size_t kAsymShannonEntropy = 0;
 inline constexpr std::size_t kAsymShannonEfficiency = 1;
@@ -59,6 +60,7 @@ inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames
     "skewness_idx",
     "amihud_illiquidity",
     "liq_fragility",
+    "fast_taleb_kurtosis",
     "recurrence_rate",
     "fractal_dim",
     "mean_rev_z",
@@ -157,6 +159,7 @@ inline MTS::Schema::ObservationData MakeObservationData(
         values[kObsSkewnessIdx],
         values[kObsAmihudIlliquidity],
         values[kObsLiqFragility],
+        values[kObsFastTalebKurtosis],
         values[kObsRecurrenceRate],
         values[kObsFractalDim],
         values[kObsMeanRevZ]);
@@ -178,6 +181,7 @@ inline ObservationArray ToObservationArray(
         observation.skewness_idx(),
         observation.amihud_illiquidity(),
         observation.liq_fragility(),
+        observation.fast_taleb_kurtosis(),
         observation.recurrence_rate(),
         observation.fractal_dim(),
         observation.mean_rev_z(),
@@ -216,7 +220,7 @@ static_assert(std::is_standard_layout<MTS::Schema::ObservationData>::value,
 static_assert(std::is_standard_layout<MTS::Schema::AsymmetryContext>::value,
               "AsymmetryContext must remain a standard-layout FlatBuffers struct");
 static_assert(sizeof(MTS::Schema::ObservationData) == (kObservationDim * sizeof(float)),
-              "ObservationData schema drift: expected 16 float fields");
+              "ObservationData schema drift: expected 17 float fields");
 static_assert(sizeof(MTS::Schema::AsymmetryContext) == (kAsymmetryDim * sizeof(float)),
               "AsymmetryContext schema drift: expected 8 float fields");
 

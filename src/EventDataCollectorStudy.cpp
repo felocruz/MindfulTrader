@@ -2,6 +2,7 @@
 #include "LBRFileManager.h"
 #include "TradeSignalManager.h" // ELITE: Access to model confidence
 #include "Logger.h"
+#include "ActivityClockManager.h"
 
 // Persistent IDs
 namespace {
@@ -486,6 +487,13 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
 
             // 2. Update Raw Indicators
             IndicatorManager::Instance().UpdateBarContext(sc);
+
+            // 2b. Feed ActivityClockManager's imbalance-bar engine (mirrors SCStudies.cpp:413).
+            //     Must run before CheckAndTriggerHMM (step 4) so ContextManager::BuildObservationVector()
+            //     reads a freshly-fed engine, not a stale/empty one -- this file was previously missing
+            //     this call entirely, leaving fastTalebKurtosis permanently at its sentinel value in
+            //     all training data collected here (found post-implementation, 2026-08-26).
+            ActivityClockManager::Instance().Update(sc);
 
             // 3. Feed Market Physics engines (Hill, Shannon, LZ) on every
             //    tick-level price change.  Identical pattern to SCStudies.
