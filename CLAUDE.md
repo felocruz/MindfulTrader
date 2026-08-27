@@ -2,6 +2,57 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## North Star — read this before anything else, every session
+
+`/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
+this system is production-ready — `lbrnet`, `MindfulTrader`, `MTS`, and `schema` are all bound to
+it, not just this repo. Read it before `SCRATCHPAD.md`. Check readiness programmatically, don't
+eyeball the table: `bash /home/rcruz/devel/VSCode/.claude/scripts/check_north_star.sh` (exit 0 =
+ready, 1 = not, prints exactly which rows block it).
+
+`MindfulTrader` currently owns or co-owns rows 3, 5, 6, 7, 10, 11, 12, 13, 14 of that document's
+critical path (12 and 13 added 2026-08-25; 14 added 2026-08-26, TOP PRIORITY per its own top-of-doc
+callout — verify this list is still current before trusting it, row additions don't always get
+mirrored here promptly). Any session that changes one of those rows' status must update
+`PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS` block in the same edit (Triage
+Protocol rule 7) — a status change that isn't reflected there didn't really happen, for planning
+purposes across the other three repos.
+
+**Row 1 / activity-clock observation-vector thread, current state as of 2026-08-27 — read
+`PRODUCTION_TRIAGE.md` row 1 for the full account, this is the condensed pointer**:
+- **Shipped and committed**: `fast_taleb_kurtosis` (`ff22e48`/`ea8058b`) as `ObservationData`'s 17th
+  field directly (16D→17D — NOT via `Event`/`HMM_OBSERVATION_EXTENSIONS`, despite the original
+  plan's Task 6 saying otherwise; this is now row 14's real-world precedent for "keep the struct,
+  edit fields in place"). `skewness_idx` replaced in place (`7c51f33`) to source from the same
+  activity-clock buffer — no schema change, but a real values/semantics discontinuity for any
+  `.context`/`.alpha` data spanning that commit. A real `FeatureScaler.h` calibration-array
+  indexing bug (found independently in the same commit) is fixed.
+- **Literature-grounded, decided, NOT yet implemented**: `mean_rev_z` and `hurst_exponent` also
+  move to activity-clock treatment — Clark (1973)/Ané & Geman (2000)/AFML ch. 2, extended on their
+  own direct merits (autocorrelation and long-memory estimation specifically), not by analogy.
+  `hurst_exponent` is this system's single worst HMM cross-state discriminator — this may bear on
+  row 1's own K=4/fat-tail sign-off question. `recurrence_rate`/`fractal_dim` (Sevcik/RQA) are
+  explicitly NOT included — literature search found no precedent either way. Full citations:
+  `docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` §5a,
+  `docs/superpowers/specs/2026-08-26-activity-clock-tail-risk-and-decay-spec.md` §6/§9.
+- **`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`** (the living
+  literature-grounding reference for every Shannon/Mandelbrot/Taleb/Pareto parameter in this repo)
+  has been kept in sync with all of the above — read it, not just the newer specs, for the
+  consolidated per-dim view.
+- **A staleness audit found 4 `lbrnet`-side dimensionality documents now stale or internally
+  inconsistent** relative to the above (one predates this thread — a `lempel_ziv` drop decision
+  that was reverted but never corrected in its own doc). Not fixed from here, per repo-scope
+  convention — handed to `lbrnet`'s own session: `docs/superpowers/specs/2026-08-26-activity-clock-
+  lbrnet-handoff.md` §10.
+- **Handed to a sibling Claude Sonnet 5 instance, 2026-08-27, not executed from this session**:
+  window-widening `recurrence_rate`/`fractal_dim` only (`2026-08-25-observation-vector-
+  institutional-hardening-spec.md` §5 — `mean_rev_z` moved out per the literature-grounding bullet
+  above; proposed ~150-bar target explicitly not finalized, needs an autocorrelation-time
+  derivation first).
+- `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md` (row 13,
+  unrelated thread) — Phase 0 diagnosis done, still blocked on 5 open questions (§7), untouched
+  since 2026-08-25.
+
 ## Project Overview
 
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) for a Sierra Chart algorithmic trading system. It implements the **Elder-Raschke Confluence System** — Elder's Triple Screen three-timeframe hierarchy with Raschke entry patterns on Screen 3, conditioned by a regime-aware layer (Student-t HMM, Hurst/DFA, Shannon entropy, Taleb kurtosis) — publishing FlatBuffer events over ZMQ to downstream Python consumers (`lbrnet` for ML training, `MTS` for GUI).
@@ -124,6 +175,11 @@ Regenerate via the script above; never call `flatc` directly.
 
 ## Code Safety Rules
 
+- **Standing rule, set 2026-08-26 in `PRODUCTION_TRIAGE.md`'s top banner (read it there for the
+  full statement): this system is not in production. Once you've verified there's truly no live/
+  test usage, the default is deletion, not preservation — remove dead code, legacy paths, and
+  backward-compatibility shims on sight. This flips the moment `READY_FOR_PRODUCTION` there reads
+  YES.**
 - Before removing any symbol, search the full repo for usages in `.h`, `.cpp`, and PCH files
 - Fix root causes; do not remove symbols to silence compile errors
 - If unsure whether code is used cross-project, preserve it and document concern

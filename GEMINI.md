@@ -5,6 +5,34 @@ It is a mirror of CLAUDE.md — update both in the same change.
 
 ---
 
+## North Star — read this before anything else, every session
+
+`/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
+this system is production-ready — `lbrnet`, `MindfulTrader`, `MTS`, and `schema` are all bound to
+it, not just this repo. Read it before `SCRATCHPAD.md`. Check readiness programmatically, don't
+eyeball the table: `bash /home/rcruz/devel/VSCode/.claude/scripts/check_north_star.sh` (exit 0 =
+ready, 1 = not, prints exactly which rows block it).
+
+`MindfulTrader` currently owns or co-owns rows 3, 5, 6, 7, 10, 11, 12, 13, 14 of that document's
+critical path — verify this list is still current before trusting it. Any session that changes one
+of those rows' status must update `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS`
+block in the same edit (Triage Protocol rule 7).
+
+**Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-27 — full account in
+`PRODUCTION_TRIAGE.md` row 1, this mirrors `CLAUDE.md`'s own pointer**: `fast_taleb_kurtosis`
+shipped as `ObservationData`'s 17th field directly (`ff22e48`/`ea8058b`); `skewness_idx` replaced
+in place to the same activity-clock source (`7c51f33`), plus a real `FeatureScaler.h` calibration
+bug found and fixed in the same commit. `mean_rev_z`/`hurst_exponent` are now literature-grounded
+(Clark 1973/Ané & Geman 2000/AFML ch. 2) for the same activity-clock treatment, decided but not yet
+implemented — `hurst_exponent` is this system's single worst HMM cross-state discriminator, so this
+may bear on row 1's own K=4 sign-off question. `recurrence_rate`/`fractal_dim` are explicitly NOT
+included — no literature precedent found either way. A staleness audit found 4 `lbrnet`-side
+dimensionality documents now stale relative to the above, handed to `lbrnet`'s own session rather
+than fixed here (`docs/superpowers/specs/2026-08-26-activity-clock-lbrnet-handoff.md` §10).
+Window-widening `recurrence_rate`/`fractal_dim` is handed to a sibling Claude Sonnet 5 instance,
+not executed from this session. See `docs/superpowers/specs/2026-08-12-gang-literature-grounding-
+spec.md` for the consolidated per-dim literature view.
+
 ## Project Overview
 
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) for a Sierra Chart algorithmic trading system. It implements the **Elder-Raschke Confluence System** — Elder's Triple Screen three-timeframe hierarchy with Raschke entry patterns on Screen 3, conditioned by a regime-aware layer (Student-t HMM, Hurst/DFA, Shannon entropy, Taleb kurtosis) — publishing FlatBuffer events over ZMQ to downstream Python consumers (`lbrnet` for ML training, `MTS` for GUI).
