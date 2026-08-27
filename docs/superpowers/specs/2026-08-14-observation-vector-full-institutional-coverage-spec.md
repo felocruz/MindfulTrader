@@ -1,5 +1,13 @@
 # Spec: Full-Coverage Institutional Audit of the 16D Observation Vector
 
+**Pointer, 2026-08-27**: this is a dated historical audit (the "16/16 dims resolved" snapshot as of
+2026-08-14), not living documentation. Since then: `skewness_idx`'s data source changed (`7c51f33`,
+2026-08-27 — TS3 time bars → `ActivityClockManager`'s activity clock, formula unchanged), and the
+vector grew to 17 fields (`fast_taleb_kurtosis` added directly to `ObservationData`, never covered
+by this audit). Any dim-13-and-above index arithmetic here predates that insertion. See
+`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s 2026-08-27 changelog entry
+for the corrected, living account.
+
 ## Purpose
 
 `docs/superpowers/specs/2026-08-14-featurescaler-winsorization-and-dim3-shrinkage.md` (D1-D7) proved a

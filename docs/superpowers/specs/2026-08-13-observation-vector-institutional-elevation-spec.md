@@ -1,5 +1,14 @@
 # Spec: Institutional Elevation of the 16D Observation Vector & FeatureScaler
 
+**Pointer, 2026-08-27**: this spec is a dated historical record of the 2026-08-13 state, not living
+documentation — it's now stale on two counts and not corrected in place here (see the Gang doc for
+the corrected, living version): (1) `skewness_idx`'s data source changed `7c51f33` (2026-08-27) from
+the TS3 time bars this spec shipped to `ActivityClockManager`'s activity clock, formula unchanged;
+(2) the vector itself is no longer 16D — a 17th field (`fast_taleb_kurtosis`) was added directly to
+`ObservationData`, never audited by this spec (didn't exist yet). See
+`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s 2026-08-27 changelog entry
+for the corrected account of both.
+
 Date: 2026-08-13
 Owner: C++ execution layer (MindfulTrader)
 Scope: `FeatureScaler.h`, `InformationEngine.h`, `StudyHelperFunctions.cpp`, `TailRiskEngine.h`,

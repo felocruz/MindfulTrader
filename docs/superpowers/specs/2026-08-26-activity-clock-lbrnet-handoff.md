@@ -13,6 +13,14 @@ session; this doc exists so that session knows exactly what to do without re-der
 and one of them (`hurst_exponent`) is this system's single worst HMM cross-state discriminator —
 read §9 if you care about the HMM's own soundness, not just schema mechanics.
 
+**§10 is also new, 2026-08-27 — a staleness audit of `lbrnet`'s own existing dimensionality-work
+docs against everything above, run by a research agent at the user's explicit request ("identify
+existing 16D vector related specs that are now incompatible... or plain inconsistent/incorrect").
+Read it before touching ANY of the four documents it names** — two of them make claims that are now
+factually contradicted by the schema-side changes above, one contains a pre-existing internal
+inconsistency unrelated to this thread, and the production model itself is confirmed still running
+on the pre-change contract.
+
 Cross-project tracking: `PRODUCTION_TRIAGE.md` row 1 (this thread) and row 14 (`ObservationData`
 schema evolution policy, which this work is now the concrete precedent for) — both point back to
 this file. Update both if anything here changes materially.
@@ -205,3 +213,79 @@ deciding additive-twin vs. replacement), a schema entry (per row 14's now-demons
 struct-field policy), and only then a `lbrnet`-side consumption handoff exactly like this one.
 Recorded here now so it isn't independently rediscovered later without this context, per the user's
 own explicit instruction — not because there's an immediate `lbrnet`-side action item.
+
+## 10. `lbrnet`'s own existing dimensionality-work docs — staleness audit, 2026-08-27
+
+**Added on explicit user instruction** ("identify existing 16D vector related specs that are now
+incompatible... or plain inconsistent/incorrect... we need to deal with them appropriately"), via a
+research agent that read each document below in full, not just grepped for keywords. **Not fixed
+from this `MindfulTrader`-rooted session** — per this project's own repo-scope convention, editing
+`lbrnet`'s docs belongs to an `lbrnet`-rooted session; this section hands the findings over instead
+of reaching into that repo.
+
+**Ground truth confirmed first**: `models/ModelManifest.json` shows the currently-authoritative
+production model is `K=4, feature_dim=16`, trained 2026-08-25 — i.e. **production has not seen any
+of the changes above**. `hmm_utils.py`'s `HMM_KEEP_DIMS`/`HMM_MODEL_INPUT_FIELDS` are schema-name-
+derived (`tuple(range(HMM_OBSERVATION_DIM))`, sourced from the schema contract's auto-derived
+`OBSERVATION_FIELDS`), so they will mechanically become 17D the moment they're re-run against the
+regenerated bindings — no code change needed, but also not yet re-validated against the live
+17-field bindings. This "just works mechanically" design is good news for the schema-mechanics side
+of the handoff, but doesn't substitute for the semantic re-evaluation the four items below need.
+
+1. **`docs/superpowers/specs/2026-08-25-vol-convexity-removal-spec.md`** (the 16D→12D drop spec,
+   **not yet implemented**) — its recommendation to drop `skewness_idx` from HMM training input
+   rests on discrimination evidence measured against the *old* TS3 time-bar signal. That evidence no
+   longer describes what the field currently computes (`7c51f33`'s activity-clock replacement).
+   **Before this spec is acted on**: re-measure `skewness_idx`'s discrimination against the new
+   signal — the old near-zero-discrimination finding may or may not still hold, and this spec's
+   drop recommendation for this one field specifically should not be trusted as-is until it does.
+   The spec is silent on `fast_taleb_kurtosis` entirely (didn't exist when it was written) — whoever
+   revives it should decide whether the 17th dim belongs in the same evaluation pass.
+
+2. **`docs/superpowers/specs/2026-08-23-16d-to-optimal-xd-vector-master-protocol-spec.md`** — an
+   entire parallel dimensionality-reduction investigation, apparently unrelated in origin to the
+   activity-clock thread. Two distinct problems, only the second caused by our work:
+   - **Pre-existing, unrelated to anything here**: this spec's own text records "Sign-off decision
+     (2026-08-23, approved): drop `lempel_ziv` entirely (16D→15D)" — per `OPEN_FINDINGS_REGISTER.md`
+     OF-03, that decision was **reverted** after a regression test proved it broke `GAUSSIAN_FRAGILE`
+     detectability; the actual final call was "keep all 16 dims, de-weight `lempel_ziv`" (bullet
+     weight 1.4× → map weight 1.0×). The master-protocol document itself was never corrected to say
+     so — flagging this because it was found during this audit, not because it's this thread's fault.
+   - **Caused by our work**: every phase's "16D" baseline arithmetic (Phase 2 simulation, Phase 3
+     K=5 sign-off table, Phase 4 tail-dependence audit, Phase 7's own instruction to "update
+     `STUDENT_T_HMM_RUNBOOK.md`'s 16D contract") is now built on a count that no longer matches the
+     producer. This needs a real pass, not a global find-replace of "16" — some phases may already be
+     concluded (see item 5 below) and only need an annotation, not new numbers.
+
+3. **`docs/hmm/STUDENT_T_HMM_RUNBOOK.md`'s "16D Observation Vector Contract"** (around lines
+   447-478) states "Dimension count is strict: 16D only... Training rejects vectors that are not
+   exactly 16D" and lists `skewness_idx` with no mention of `fast_taleb_kurtosis`. **Currently still
+   operationally true** (production is on the old 16-field contract per `ModelManifest.json`), which
+   is exactly why this is a *ticking* inconsistency rather than an active bug — the moment training
+   is re-run against the regenerated 17-field bindings, `HMM_KEEP_DIMS` becomes 17D automatically
+   (per the ground-truth note above) and this runbook section becomes silently wrong. This is the
+   update the master protocol's own Phase 7 already earmarks — surface it there, don't invent a new
+   task for it.
+
+4. **`docs/superpowers/specs/2026-08-23-hmm-dimensionality-investigation-spec.md`** and its
+   companion plan — completed analysis (Stages 1-4 / Tasks 1-4, per the master protocol and OF-03),
+   concluding K=4 dominates and reporting real ARI/stability numbers (e.g. 13D best at 0.797, full
+   16D "noticeably less reliable") for various dim-subsets computed against the 16-field vector.
+   These numbers were computed against the **old** `skewness_idx` semantics — any reuse of them for
+   a fresh decision should carry that caveat; they are not necessarily wrong, just measured against
+   a signal that no longer exists in production going forward.
+
+5. **Current status, for whoever picks this up**: per `OPEN_FINDINGS_REGISTER.md` OF-03, the
+   master-protocol investigation is **concluded, not paused** — final decision "keep all 16 dims,
+   de-weight `lempel_ziv`," with only low-priority optional phases (5/6) left unstarted. This means
+   items 2-4 above are mostly a **documentation-correction task** (the investigation already
+   happened and reached a real conclusion; the docs just don't reflect what changed since), not a
+   request to re-run the whole master protocol from scratch. Item 1 is different — it's an
+   **unimplemented** spec whose core evidence needs re-measuring before implementation, not just a
+   stale-docs fix.
+
+**Not independently verified by the research agent** (flagged so it isn't silently trusted): the
+schema-contract import needed `flatbuffers`, unavailable in the sandbox used, so the 17-field
+finding was confirmed via static reading of the generated `ObservationData.py` accessor code
+directly rather than a live Python import. High confidence, but worth a real import-and-check before
+treating it as beyond doubt.
