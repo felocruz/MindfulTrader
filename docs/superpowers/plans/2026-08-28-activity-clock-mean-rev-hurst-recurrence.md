@@ -1,10 +1,13 @@
 # Activity-Clock Treatment for `mean_rev_z`, `hurst_exponent`, `recurrence_rate` — Implementation Plan
 
-> **STATUS: DESIGN COMPLETE. Task 1 (`recurrence_rate` replacement) IMPLEMENTED and verified
-> 2026-08-28** (full `./build_dll.sh --no-clean` succeeds; `test_recurrence_rate_engine` extended +
-> passing; `test_rqa_epsilon`/`test_feature_scaler`/`test_sevcik_fractal_dimension` regression-pass).
-> Tasks 2-8 (`mean_rev_z`/`hurst_exponent` additive twins) NOT yet implemented. **Real design detail
-> found during implementation, not anticipated by the original plan text**: `ContextManager::
+> **STATUS: DESIGN COMPLETE. Task 1 (`recurrence_rate` replacement) and Task 2 (pure DFA/Hurst
+> extraction, parity-only refactor) IMPLEMENTED and verified 2026-08-28** (full `./build_dll.sh
+> --no-clean` succeeds; `test_dfa_hurst_exponent`/`test_recurrence_rate_engine` (extended)/
+> `test_rqa_epsilon`/`test_feature_scaler`/`test_sevcik_fractal_dimension` all pass). Tasks 3-8
+> (`fast_hurst_exponent`/`fast_mean_rev_z` additive twins, schema changes) NOT yet implemented.
+>
+> **Real design detail found during Task 1's implementation, not anticipated by the original plan
+> text**: `ContextManager::
 > AreTs2StructuralDimsReady()` reads `m_observationData.recurrence_rate()` directly (not the local
 > `obs[]` scratch array) as part of a live HMM-trigger readiness gate — since `TripleScreen2.cpp` no
 > longer mutates that field, the new activity-clock block must also call
@@ -89,9 +92,9 @@
 - Modify: `src/StudyHelperFunctions.cpp`'s `CalculateHurstExponent(sc, length, minScale)` to: (a) build the `logReturns` array from `sc.BaseData[SC_LAST]` exactly as it does today, (b) call `DfaHurstExponent(logReturns.data(), length, minScale)`, (c) apply the existing `fallback_hurst()`/persistent-carry-forward wrapper around the `NaN` result — same refactor shape as `CalculateFractalDimension`'s delegation to `SevcikFractalDimension.h` this session.
 - Test: `tests/cpp/test_dfa_hurst_exponent.cpp` — brute-force-equivalence test against a reimplementation of the *original* `CalculateHurstExponent` body (same technique as `test_sevcik_fractal_dimension.cpp`: a `bars[k]`-relative reference function, a chronological-array pure-function call, assert they match within `1e-4`) at `length ∈ {50, 100, 200}`, `minScale=8`. This is a refactor-parity test, not new behavior — it must prove zero change to the existing TS1/TS2 Hurst values before Task 3 adds anything new.
 
-- [ ] Write the brute-force-equivalence test (fails until extraction exists)
-- [ ] Extract `DfaHurstExponent.h`, refactor `CalculateHurstExponent` to delegate
-- [ ] Confirm the extracted test passes; confirm `./build_dll.sh --no-clean` still succeeds with byte-identical TS1/TS2 Hurst output (no behavior change yet)
+- [x] Write the brute-force-equivalence test (fails until extraction exists)
+- [x] Extract `DfaHurstExponent.h`, refactor `CalculateHurstExponent` to delegate
+- [x] Confirm the extracted test passes; confirm `./build_dll.sh --no-clean` still succeeds with byte-identical TS1/TS2 Hurst output (no behavior change yet)
 - [ ] Commit (parity-only commit, no new fields yet — keeps this refactor separately revertable from Task 3's actual new behavior)
 
 ---

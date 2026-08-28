@@ -9,6 +9,7 @@
 #include "CarryForwardCalculators.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
+#include "DfaHurstExponent.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2478,6 +2479,9 @@ float ComputeHurstFromReturns(const float* returns, int length) {
 //   <0.5 = Anti-Persistent (Mean Reverting / Pink Noise)
 // ----------------------------------------------------------------------------
 float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
+    // DFA math lives in DfaHurstExponent.h (natively tested there against a
+    // brute-force reference); this wrapper owns only the ACSIL price pull and
+    // the persistent-state carry-forward/cold-start policy.
     auto fallback_hurst = [&sc]() -> float {
         const int hasLast = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::HURST_HAS_LAST_VALID);
         if (hasLast == 1) {
@@ -2486,136 +2490,26 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
         return 0.5f;
     };
 
-    // Institutional guardrails: clamp pathological input, preserve deterministic runtime.
-    constexpr int kMaxDfaWindow = 512;
-    length = std::clamp(length, 16, kMaxDfaWindow);
+    length = std::clamp(length, 16, kDfaMaxWindow);
     minScale = std::clamp(minScale, 4, 64);
 
     if (length < minScale * 4 || sc.Index < length) {
         return fallback_hurst();
     }
 
-    // Fixed-capacity stack buffers (zero heap allocations in hot path).
-    std::array<double, kMaxDfaWindow> logReturns{};
-    std::array<double, kMaxDfaWindow> profile{};
-    std::array<double, kMaxDfaWindow> logScales{};
-    std::array<double, kMaxDfaWindow> logFluctuations{};
-
+    std::array<float, kDfaMaxWindow> logReturns{};  // fixed-capacity: no heap alloc on the ACSIL path
     const int dataStartIndex = sc.Index - length + 1;
     SCFloatArrayRef priceData = sc.BaseData[SC_LAST];
-
-    double sumReturns = 0.0;
     for (int i = 0; i < length; ++i) {
         const int idx = dataStartIndex + i;
         const float currentPrice = priceData[idx];
         const float prevPrice = priceData[idx - 1];
-
-        double logRet = 0.0;
-        if (currentPrice > 0.0f && prevPrice > 0.0f) {
-            logRet = std::log(static_cast<double>(currentPrice) / static_cast<double>(prevPrice));
-        }
-
-        logReturns[static_cast<size_t>(i)] = logRet;
-        sumReturns += logRet;
+        logReturns[static_cast<size_t>(i)] = (currentPrice > 0.0f && prevPrice > 0.0f)
+            ? std::log(currentPrice / prevPrice) : 0.0f;
     }
 
-    const double meanReturn = sumReturns / static_cast<double>(length);
-
-    double cumulative = 0.0;
-    for (int i = 0; i < length; ++i) {
-        cumulative += (logReturns[static_cast<size_t>(i)] - meanReturn);
-        profile[static_cast<size_t>(i)] = cumulative;
-    }
-
-    const int maxScale = length / 4;
-    if (maxScale <= minScale) {
-        return fallback_hurst();
-    }
-
-    const int step = (maxScale - minScale > 50) ? 2 : 1;
-    int validScaleCount = 0;
-
-    for (int s = minScale; s <= maxScale; s += step) {
-        const int numSegments = length / s;
-        if (numSegments < 1) {
-            continue;
-        }
-
-        double totalVariance = 0.0;
-        int usedSegments = 0;
-
-        for (int v = 0; v < numSegments; ++v) {
-            const int startIndex = v * s;
-            const double n = static_cast<double>(s);
-            const double sumX = n * (n - 1.0) * 0.5;
-            const double sumX2 = n * (n - 1.0) * (2.0 * n - 1.0) / 6.0;
-            const double denom = n * sumX2 - sumX * sumX;
-            if (std::fabs(denom) < 1e-12) {
-                continue;
-            }
-
-            double sumY = 0.0;
-            double sumXY = 0.0;
-            for (int k = 0; k < s; ++k) {
-                const double y = profile[static_cast<size_t>(startIndex + k)];
-                sumY += y;
-                sumXY += static_cast<double>(k) * y;
-            }
-
-            const double slope = (n * sumXY - sumX * sumY) / denom;
-            const double intercept = (sumY - slope * sumX) / n;
-
-            double ssr = 0.0;
-            for (int k = 0; k < s; ++k) {
-                const double trend = slope * static_cast<double>(k) + intercept;
-                const double diff = profile[static_cast<size_t>(startIndex + k)] - trend;
-                ssr += diff * diff;
-            }
-
-            totalVariance += (ssr / n);
-            ++usedSegments;
-        }
-
-        if (usedSegments == 0) {
-            continue;
-        }
-
-        const double f_s = std::sqrt(totalVariance / static_cast<double>(usedSegments));
-        if (f_s > 1e-12 && validScaleCount < kMaxDfaWindow) {
-            logScales[static_cast<size_t>(validScaleCount)] = std::log(static_cast<double>(s));
-            logFluctuations[static_cast<size_t>(validScaleCount)] = std::log(f_s);
-            ++validScaleCount;
-        }
-    }
-
-    if (validScaleCount < 2) {
-        return fallback_hurst();
-    }
-
-    const double n = static_cast<double>(validScaleCount);
-    double sumX = 0.0;
-    double sumY = 0.0;
-    double sumXY = 0.0;
-    double sumX2 = 0.0;
-
-    for (int i = 0; i < validScaleCount; ++i) {
-        const double x = logScales[static_cast<size_t>(i)];
-        const double y = logFluctuations[static_cast<size_t>(i)];
-        sumX += x;
-        sumY += y;
-        sumXY += x * y;
-        sumX2 += x * x;
-    }
-
-    const double regressionDenom = n * sumX2 - sumX * sumX;
-    if (std::fabs(regressionDenom) < 1e-12) {
-        return fallback_hurst();
-    }
-
-    float hurst = static_cast<float>((n * sumXY - sumX * sumY) / regressionDenom);
-    hurst = std::clamp(hurst, 0.0f, 1.5f);
-
-    if (!std::isfinite(hurst)) {
+    const float hurst = DfaHurstExponent(logReturns.data(), length, minScale);
+    if (std::isnan(hurst)) {
         return fallback_hurst();
     }
 
