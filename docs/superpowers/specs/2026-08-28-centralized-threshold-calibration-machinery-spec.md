@@ -90,11 +90,12 @@ logic. Each already encodes real, specific domain knowledge (Shannon/Taleb/Paret
 quality-gate vector search, burst-augmentation robustness, etc.) — this is a consolidation of
 *orchestration and distribution*, not a re-derivation of *methodology*.
 
-**Sketch, for discussion, not a locked design**:
-1. A single **threshold registry manifest** (one JSON, or a small fixed set) that every calibration
-   script writes an entry into on completion — `{threshold_name, value, source_script, model_version/
-   hash, dataset_window, generated_at_utc, consumer(s)}` — rather than each script owning an
-   independent, ad hoc output file naming convention.
+**Sketch — item 1 DECIDED 2026-08-28, items 2-4 still for discussion**:
+1. **A single unified threshold registry manifest** (one JSON) that every calibration script writes
+   an entry into on completion — `{threshold_name, value, source_script, model_version/hash,
+   dataset_window, generated_at_utc, consumer(s)}` — replacing each script's independent, ad hoc
+   output file naming convention. Chosen over per-family files precisely because per-family files
+   would only partially fix "one place to look" (still N shapes to track, just orchestrated).
 2. A **staleness-check step**, mechanical rather than judgment-based, comparing each registry
    entry's `model_version`/`dataset_window` against the currently-deployed model/dataset — this is
    the eval case's own required behavior, automated instead of re-derived per session.
@@ -176,11 +177,15 @@ work lands, every file above is either (a) confirmed still-needed and given a re
 just left alone by default), or (b) deleted. "We built the new system and left the old junk sitting
 next to it" is an explicit failure condition for this spec, not an acceptable partial completion.
 
-## 4. Open questions, not resolved here
+## 4. Open questions
 
-1. **One registry file, or a small versioned set?** A single manifest is simpler to reason about;
-   per-family files (mirroring today's `HMMEmpiricalGateThresholds.json`/`decision_thresholds.json`/
-   `context_calibration.json` split) may be less disruptive to migrate incrementally. Not decided.
+1. **DECIDED, 2026-08-28: a single unified manifest**, not a small versioned set of per-family
+   files. Every calibration script writes its entry into one registry rather than continuing today's
+   pattern of each script owning its own independently-shaped output file — this is the direct fix
+   for "one place to look," which a per-family-files-plus-orchestration alternative would only
+   partially deliver (still N shapes to know about, just with a wrapper on top). Implementation
+   (schema fields, migration order for the 11 existing scripts) is still `lbrnet`-rooted work, not
+   done here — this closes the *shape* question, not the build.
 2. **Where does the registry live** — `lbrnet` (where all 11 producing scripts already are) is the
    natural owner, but the registry's *consumer* is `MindfulTrader`'s C++ runtime via
    `/mnt/c/Trading/config`. Cross-repo ownership needs the same explicit-handoff discipline this
