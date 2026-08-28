@@ -465,6 +465,20 @@ soft classifier's exact feature list + label definition (not yet decided), meta-
 sample-size check against actual Predator Fusion pattern-firing frequency (not yet run), and the
 suggested explicit data-flow diagram (not yet drawn) — before writing any implementation code.
 
+**Concrete candidate for the still-open feature list, added 2026-08-28**: `RiskGateContext.
+fractal_dim` (`../schema/mts_schema.fbs:442`) — user asked directly whether the *fast* (short-window,
+`lrc.fractalDim`, the same value `PositionManager.cpp`'s gate reads) `fractal_dim` variant could feed
+the soft classifier. Yes, and it's already mechanically available: `RiskGateContext` is a wholly
+separate wire table from `ObservationData` (the HMM's input), populated from raw `LocalRiskContext`
+at `ContextManager::EmitTrainingContext()`, already logged in `.context`/`.alpha` — no new C++/schema
+work needed. Satisfies "deliberately different from the HMM" on two grounds: structural (separate
+table) and empirical (`correlation(fractal_dim@30, fractal_dim@400) = 0.0115`, measured during the
+gate-threshold migration work above). One real dependency: this is only clean once row 1's
+`fractal_dim`/`recurrence_rate` split actually ships — before that, the two are still the same 30-bar
+computation. `RiskGateContext` also exposes `hurst_exponent`/`mean_rev_z`/`taleb_kurtosis`/
+`taleb_skewness` raw values, same consideration not yet evaluated for those. Full detail:
+`PRODUCTION_TRIAGE.md` row 11.
+
 ## 2026-08-24 — Predator Fusion does not yet consume the Transformer signal at all — spec written, queued for next Predator Fusion session
 
 Found and confirmed during a cross-project production-triage session (`/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md`,

@@ -209,13 +209,27 @@ on the *current* 30-bar window with or without any of this spec's work. **Naive 
 makes this worse, not better, if applied blindly**: `(fractal_dim@30 <= 1.6).mean()` is already
 `100%`, so quantile-mapping onto the 400-bar distribution maps to `np.percentile(new, 100.0)` —
 literally the sample maximum (`1.4393` measured) — a threshold that would *also* never fire, just
-under a new number. Confirmed by actually running the migration script, not assumed. **This needs
-its own real fix, not a mechanical recalibration**: derive `1.6f`'s replacement from what "rough
-enough to force passive execution" should actually mean against the *real* observed `fractal_dim@30`
-distribution (e.g. a meaningful percentile of genuine roughness, not a re-mapped ceiling), the same
-domain-grounded exercise Task 7 did for kurtosis/skewness's own gates, not a blind statistical
-transform of an already-broken number. **Not yet done** — flagged here so it is fixed deliberately,
-not silently carried forward as "recalibrated" when it would still be non-functional.
+under a new number. Confirmed by actually running the migration script, not assumed.
+
+**SUPERSEDED, 2026-08-28 — no hand-derived replacement threshold needed, decided by the user.**
+The original plan here was to derive `1.6f`'s replacement from a real percentile of the observed
+`fractal_dim@30` distribution (the same domain-grounded exercise Task 7 did for kurtosis/skewness's
+gates). That plan is now superseded, not merely deferred: `fractal_dim@30` (the exact `lrc.
+fractalDim` value this gate reads, already wire-transmitted via `RiskGateContext.fractal_dim`,
+`../schema/mts_schema.fbs:442`, zero new C++/schema work needed) is proposed as a raw feature input
+to the soft/gate danger classifier (`PRODUCTION_TRIAGE.md` row 11 — see that row's 2026-08-28
+addendum). A **learned** classifier finding the real relationship between raw `fractal_dim@30` and
+danger (possibly nonlinear, possibly interacting with other features) is a stronger fix than hand-
+picking a single linear cutoff a second time — especially given the first hand-picked cutoff (`1.6f`)
+turned out to be wrong. **What this means concretely for `PositionManager.cpp`'s GAP 11 hard gate
+specifically**: no new threshold-derivation work is needed as an interim fix. The gate is *already*
+non-functional in production (fires zero times) — leaving it inert costs nothing further while the
+soft classifier is built, the same "don't retire/replace the old mechanism before its replacement is
+proven" discipline this project already applies to Predator Fusion's own C++ retirement (row 10) —
+except here the "old mechanism" is already provably not doing anything, so there's no live behavior
+at risk either way. Once the soft classifier is live and validated, GAP 11's hard-coded branch
+becomes a genuine simplification/retirement candidate, not before. **Not yet done, and no longer
+this spec's own action item** — tracked from here via row 11, not this row.
 
 ## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z`, `hurst_exponent`, and `recurrence_rate`
 move to activity-clock windowing, not time-bar widening — `fractal_dim` does NOT, still ungrounded
@@ -409,8 +423,12 @@ transfers to it without checking.
   above**: `PositionManager.cpp`'s `fractalDim>1.6f` branch has fired **zero times** in 2.5 years of
   real MES data — broken on the *current* 30-bar window, unrelated to whether it's widened or split.
   Naive percentile-mapping of this threshold is a real trap (maps to the new distribution's sample
-  maximum, `1.4393` — also non-functional) — needs a domain-grounded re-derivation from the real
-  observed distribution, not a mechanical transform. Not yet fixed.
+  maximum, `1.4393` — also non-functional). **SUPERSEDED, 2026-08-28**: no hand-derived replacement
+  threshold is being pursued — `fractal_dim@30` is instead proposed as a raw feature into the soft/
+  gate danger classifier (`PRODUCTION_TRIAGE.md` row 11), where a learned model finds the real
+  relationship instead of a second hand-picked cutoff. The gate stays inert (already non-functional,
+  so no live behavior is at risk) until the classifier is live and validated, then becomes a
+  retirement/simplification candidate — same discipline as row 10's Predator Fusion retirement.
 - `fractal_dim`'s window derivation is now done (Section 5b, `400` bars, measured not guessed) --
   the ~150-bar figure this bullet used to warn against is superseded, not still a live risk.
   Residual risk now is implementation-stage only: `fractal_dim`'s missing native test coverage, and
