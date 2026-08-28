@@ -1,16 +1,19 @@
 # Session Scratchpad — Where We Left Off
 
 Last updated: 2026-08-27 — `skewness_idx`'s activity-clock replacement + a real `FeatureScaler.h`
-17-dim indexing bug fix both landed and committed (`7c51f33`). **Window-widening
-(`recurrence_rate`/`fractal_dim` ONLY — `mean_rev_z` moved out, see below) is handed to a sibling
-Claude Sonnet 5 instance — see Thread C's tail, "READ THIS FIRST" block, for the full handoff.**
-A later literature pass the same day (Clark 1973/Ané & Geman 2000/AFML ch. 2) found direct grounding
-to move `mean_rev_z` AND `hurst_exponent` to activity-clock treatment instead of time-bar widening —
-decided, NOT yet implemented, no plan written yet. Full detail: `2026-08-25-observation-vector-
-institutional-hardening-spec.md` §5a. A staleness audit also found 4 `lbrnet`-side dimensionality
-docs now stale relative to all of this — handed to `lbrnet`'s own session, not fixed here
-(`2026-08-26-activity-clock-lbrnet-handoff.md` §10). Read `PRODUCTION_TRIAGE.md` row 1 (synced same
-day) for the terse cross-project version.
+17-dim indexing bug fix both landed and committed (`7c51f33`). **Pure time-bar window-widening is
+now `fractal_dim` ALONE, derived to 400 bars** (`2026-08-25-observation-vector-institutional-
+hardening-spec.md` §5b) — handed to a sibling Claude Sonnet 5 instance, see Thread C's tail for the
+full handoff. **`mean_rev_z`, `hurst_exponent`, AND (as of a second literature pass, same day)
+`recurrence_rate`** all move to activity-clock treatment instead — decided, NOT yet implemented, no
+plan written yet. `recurrence_rate`'s case is real cross-domain grounding (RQA on event-indexed
+RR-interval sequences, HRV literature), found only after a direct "ground this in the literature"
+instruction prompted a second, more targeted pass — `recurrence_rate`/`fractal_dim` were wrongly
+treated as a symmetric pair before that. Full detail: `2026-08-25-observation-vector-institutional-
+hardening-spec.md` §5a (corrected twice same day). A staleness audit also found 4 `lbrnet`-side
+dimensionality docs now stale relative to all of this — handed to `lbrnet`'s own session, not fixed
+here (`2026-08-26-activity-clock-lbrnet-handoff.md` §10). Read `PRODUCTION_TRIAGE.md` row 1 (synced
+same day) for the terse cross-project version.
 
 ## Thread C: Activity-clock tail-risk signal for the Student-t HMM (row 1, MindfulTrader-rooted) — DESIGN + PLAN DONE, handed to Claude Sonnet 5 for execution
 
@@ -192,6 +195,31 @@ value's autocorrelation looks like — but the *target* for `mean_rev_z` is no l
 window," it's an activity-clock twin (kurtosis's additive dual-clock pattern, not `skewness_idx`'s
 replacement pattern — confirmed `mean_rev_z` has a live gate consumer, `Scoring.cpp:305`). This is a
 design decision, not yet an implementation plan — `writing-plans` hasn't been invoked for it.
+
+**URGENT SCOPE CHANGE, 2026-08-27, SAME DAY — READ THIS BEFORE PROCEEDING IF YOU ARE MID-
+IMPLEMENTATION ON `recurrence_rate`'s 400-bar WINDOW.** A direct user instruction ("ground your
+answer on the literature") triggered a second, more targeted literature search — it found real
+cross-domain grounding to move `recurrence_rate` (RQA) to `ActivityClockManager`-based treatment,
+the same as `mean_rev_z`/`hurst_exponent`, **not** the pure time-bar widening it was grouped with
+below. Precedent: heart-rate-variability research routinely applies RQA directly to beat-to-beat
+RR-interval sequences (event-indexed, not fixed-time) — a large, established literature, same
+evidentiary standard this project's own Gang doc already accepts (Sevcik's formula choice is
+grounded in an EEG paper, not a finance one). **`fractal_dim` is NOT included** — a second, targeted
+search for the adjacent case (fractal/path-length methods under event-indexed sampling) still found
+nothing; `recurrence_rate` and `fractal_dim` are not symmetric, treating them as a pair was this
+thread's own earlier error.
+
+**Concretely, if you were about to implement or already implemented the 400-bar target for
+`recurrence_rate`**: stop — that work is now superseded. The 400-bar derivation (`§5b` of
+`2026-08-25-observation-vector-institutional-hardening-spec.md`, now corrected) still stands, but
+scoped to **`fractal_dim` alone**. `recurrence_rate`'s window constant needs decoupling from
+`fractal_dim`'s (they share one today, `slow_window_n` in `TripleScreen2.cpp`) rather than both
+being bumped to 400. `recurrence_rate` has **zero live gate consumers** (checked directly —
+`ContextManager.cpp`'s only reference is a finite/in-`[0,1]`-range freshness check, not a calibrated
+threshold) — so it's a `skewness_idx`-style **replacement** candidate, not an additive twin like
+`mean_rev_z`/`hurst_exponent`. No implementation plan exists for this yet, same as the other two —
+this is a decided direction, not yet an executable task. Full detail: `2026-08-25-observation-
+vector-institutional-hardening-spec.md` §5a (corrected), §5b (corrected scope).
 
 **HANDED TO A SIBLING CLAUDE SONNET 5 INSTANCE, 2026-08-27 — READ THIS FIRST if you are that
 instance picking this up.** This is now the sole remaining item from the original two-task
