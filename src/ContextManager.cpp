@@ -586,7 +586,11 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     m_localRiskContext.amihudIlliquidity = obs[OBS_AMIHUD_ILLIQUIDITY];
     m_localRiskContext.spreadStress = obs[OBS_LIQ_FRAGILITY];
     m_localRiskContext.hurstExponent = obs[OBS_HURST_EXPONENT];
-    m_localRiskContext.fractalDim = obs[OBS_FRACTAL_DIM];
+    // NOT obs[OBS_FRACTAL_DIM]: that dim is now the HMM-bound 400-bar window (spec
+    // 2026-08-25-observation-vector-institutional-hardening-spec.md Section 5b); the gate
+    // this feeds (PositionManager.cpp) stays on the original short window via a value TS2
+    // pushes directly through SetFractalDimShort(), keeping the two windows decoupled.
+    m_localRiskContext.fractalDim = m_fractalDimShortRaw;
     m_localRiskContext.meanRevZ = obs[OBS_MEAN_REV_Z];
     m_localRiskContext.raschkeBurst = m_latestInstitutionalMetrics.raschkeBurst;
     m_localRiskContext.fisherInfo = obs[OBS_FISHER_INFO];

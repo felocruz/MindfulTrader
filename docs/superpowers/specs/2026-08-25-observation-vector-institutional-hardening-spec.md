@@ -172,6 +172,47 @@ kMaxClosedBars`/`RQAEpsilonSelector.h`'s `kRQASelectorMaxN` bump for 400 is now 
 is a literature-grounded direction, not yet a locked implementation decision) -- don't bump that
 capacity constant until that's actually decided.
 
+**Concrete coupling point that must be broken, verified by reading the actual code 2026-08-28 --
+this is the one line that silently defeats the whole two-window decision if missed**:
+`ContextManager.cpp:589` currently reads `m_localRiskContext.fractalDim = obs[OBS_FRACTAL_DIM];` --
+i.e. `LocalRiskContext.fractalDim` (what `PositionManager.cpp` GAP 11's gate reads) is copied
+straight from the same `ObservationData` slot the HMM vector uses. Today that's a no-op distinction
+because both sides compute from the same `slow_window_n`-windowed call
+(`TripleScreen2.cpp:290`, `float fractalDim = CalculateFractalDimension(sc, slow_window_n);`) --
+one value, written to both places. Once `TripleScreen2.cpp` widens the HMM-bound computation to
+400 bars, `obs[OBS_FRACTAL_DIM]` becomes the 400-bar value, and this line would carry that straight
+into `LocalRiskContext.fractalDim` too -- silently re-coupling the two windows the split was
+designed to separate, with no compiler error and no test failure to catch it (the gate already
+never fires, so a regression here would be invisible in current test coverage). **Implementation
+requirement, not optional**: `TripleScreen2.cpp` must compute a second, independent short-window
+`fractalDim` value (its own local, at the current/unwidened window) and thread *that* into
+`m_localRiskContext.fractalDim` -- `ContextManager.cpp:589` must stop sourcing it from
+`obs[OBS_FRACTAL_DIM]` once that slot is 400-bar. This is the actual mechanism of "decoupled from
+the HMM's" stated throughout this section and Section 9 -- naming it here so it isn't the one
+line rediscovered mid-implementation instead of planned for up front.
+
+**IMPLEMENTED, 2026-08-28**: done exactly as specified above, verified by full build + native
+tests, not just read-through. `include/SevcikFractalDimension.h` (pure, header-only Sevcik math,
+already existed from the threshold-migration tooling) is now the single source of truth --
+`StudyHelperFunctions.cpp`'s `CalculateFractalDimension` was refactored to delegate to it instead
+of carrying its own duplicate inline copy, eliminating the drift risk between the two. Its
+signature gained a `persistentVarIndex` parameter (default preserves the original single-call
+behavior) because the split design calls it *twice per tick* with two different `lookback_n`
+values, and the degenerate-window carry-forward state is genuinely per-call, not shared --
+`FRACTAL_DIM_SHORT_LAST_VALID_VALUE` (new persistent var, index 42) was added alongside the
+existing `FRACTAL_DIM_LAST_VALID_VALUE` so the two calls can't corrupt each other's fallback
+state. `TripleScreen2.cpp` now computes `fractalDim` at the new 400-bar window (feeds
+`obs->mutate_fractal_dim`, unchanged `recurrenceRate`/`slow_window_n` wiring otherwise) and a
+separate `fractalDimShort` at the original `slow_window_n`, pushed directly into `ContextManager`
+via a new `SetFractalDimShort()` setter (same "push directly" precedent as `SetRegimeDuration()`).
+`ContextManager.cpp:589` now reads `m_localRiskContext.fractalDim = m_fractalDimShortRaw;` instead
+of `obs[OBS_FRACTAL_DIM]` -- the coupling this note warned about is broken. New native test
+`tests/cpp/test_sevcik_fractal_dimension.cpp` verifies the pure extraction against a brute-force
+reference replicating the original's exact asymmetric windowing at n=30/40/150/400 (all pass).
+Full `./build_dll.sh --no-clean` succeeds; `test_recurrence_rate_engine`, `test_rqa_epsilon`,
+`test_feature_scaler` all regression-pass. No `PositionManager.cpp` change (confirmed unneeded
+above -- its gate is dead code and stays inert, tracked via `PRODUCTION_TRIAGE.md` row 11/15).
+
 **Cross-reference, 2026-08-27, so this 400-bar derivation doesn't read as contradicting existing
 Gang-doc history**: `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s Sevcik
 fractal-dimension row and RQA-epsilon row are both marked `validated` (2026-08-13) — that verdict

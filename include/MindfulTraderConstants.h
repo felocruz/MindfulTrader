@@ -105,6 +105,12 @@ namespace PersistentVar_AdaptiveCalculators {
                                                    // LAST_OBS_UPDATE_INDEX / LAST_AMIHUD_SAMPLE_INDEX.
     const int RQA_ENGINE_STATE_PTR = 40;          // Pointer to RecurrenceRateEngine (incremental RQA, O(n)/tick)
     const int RQA_LAST_WINDOW_BAR_INDEX = 41;     // Bar index (sc.Index) the engine's closed-bar window was last rebuilt for
+    const int FRACTAL_DIM_SHORT_LAST_VALID_VALUE = 42; // Independent carry-forward slot for CalculateFractalDimension's
+                                                        // short-window (LocalRiskContext-bound) call -- must be distinct
+                                                        // from FRACTAL_DIM_LAST_VALID_VALUE (dim 42's HMM/400-bar call)
+                                                        // now that the same function is called twice per tick with two
+                                                        // different lookback_n values; sharing one slot would corrupt
+                                                        // each call's degenerate-window carry-forward with the other's.
 }
 
 // TripleScreen3 Study: Turtle Soup Pattern Detection

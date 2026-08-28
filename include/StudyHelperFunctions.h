@@ -2,6 +2,7 @@
 
 #include "sierrachart.h"
 #include "Indicator.h"
+#include "MindfulTraderConstants.h"
 
 // This function determines the impulse color based on two sets of data.
 // It is intended to be used by the Impulse studies.
@@ -300,9 +301,16 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n);
 /// Lookback: ~20-100 bars (Wave)
 float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n);
 
-/// Fractal Dimension: Box-counting or similar dimensionality
+/// Fractal Dimension: Sevcik (1998) path-length estimator (pure math in
+/// SevcikFractalDimension.h). `persistentVarIndex` selects which persistent
+/// float slot holds this call's degenerate-window carry-forward state --
+/// callers that invoke this twice per tick with two different lookback_n
+/// values (e.g. an HMM-bound window and a separate risk-gate-bound window)
+/// MUST pass distinct indices or their carry-forward state will corrupt each
+/// other. Defaults to the original single-call slot for back-compat.
 /// Lookback: ~20-100 bars (Wave)
-float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n); // Often D = 2 - H, but explicitly
+float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n,
+    int persistentVarIndex = PersistentVar_AdaptiveCalculators::FRACTAL_DIM_LAST_VALID_VALUE);
 
 // ============================================================================
 // CANONICAL OBSERVATIONDATA ADDITIONS (Screen 3 - Ripple)

@@ -286,8 +286,24 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
     // 2. Lempel-Ziv Complexity — sourced from InformationEngine (event-driven).
     //    IE is the unconditional authority; no bar-based CalculateLempelZiv here.
 
-    // 3. Fractal Dimension (Roughness)
-    float fractalDim = CalculateFractalDimension(sc, slow_window_n);
+    // 3. Fractal Dimension (Roughness). Two decoupled windows (spec 2026-08-25-
+    //    observation-vector-institutional-hardening-spec.md Section 5b): the HMM-bound
+    //    reading widens to 400 bars (measured circular block length ~404.82, Politis-White
+    //    optimal-block-length selection on real MES data -- fractal_dim's prior 30-40 bar
+    //    window was far too short for a stable roughness estimate). PositionManager's gate
+    //    reads a SEPARATE short-window (unchanged) copy via SetFractalDimShort() so widening
+    //    the HMM input doesn't silently move the gate's threshold calibration underneath it
+    //    (fractal_dim@30 vs fractal_dim@400 measured correlation = 0.0115, i.e. these are
+    //    largely independent signals -- sharing one window would be wrong, not just stale).
+    //    Distinct persistent carry-forward slots (FRACTAL_DIM_LAST_VALID_VALUE vs
+    //    FRACTAL_DIM_SHORT_LAST_VALID_VALUE) prevent the two calls from corrupting each
+    //    other's degenerate-window fallback state.
+    constexpr int kFractalDimHmmWindow = 400;
+    float fractalDim = CalculateFractalDimension(sc, kFractalDimHmmWindow,
+        PersistentVar_AdaptiveCalculators::FRACTAL_DIM_LAST_VALID_VALUE);
+    float fractalDimShort = CalculateFractalDimension(sc, slow_window_n,
+        PersistentVar_AdaptiveCalculators::FRACTAL_DIM_SHORT_LAST_VALID_VALUE);
+    ContextManager::Instance().SetFractalDimShort(fractalDimShort);
 
     // 4. Recurrence Rate (Topological Stability, RQA)
     float recurrenceRate = CalculateRecurrenceRate(sc, slow_window_n);

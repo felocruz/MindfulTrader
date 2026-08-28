@@ -360,6 +360,14 @@ public:
     /// Update regime duration from MarketClimateIndicator
     void SetRegimeDuration(int bars) { m_localRiskContext.regimeDuration = bars; }
 
+    /// TS2 pushes a SEPARATE, short-window (~30-40 bar) fractal_dim reading here for
+    /// LocalRiskContext/PositionManager's gate, decoupled from OBS_FRACTAL_DIM's HMM-bound
+    /// window (widened to 400 bars, spec 2026-08-25-observation-vector-institutional-
+    /// hardening-spec.md Section 5b) -- BuildObservationVector() reads m_fractalDimShortRaw
+    /// instead of obs[OBS_FRACTAL_DIM] so the gate's window is not silently re-coupled to
+    /// the widened HMM window.
+    void SetFractalDimShort(float value) { m_fractalDimShortRaw = value; }
+
     /// Layer B: push one raw Amihud sample (once per closed 15-min bar) into its
     /// session pool (RTH vs overnight) and refresh the cached percentile stored on
     /// m_localRiskContext.amihudPercentile. isRTH routes the sample; the thin
@@ -409,6 +417,10 @@ private:
 
     // Elite v3.2: Unified local risk context (public via GetLocalRiskContext())
     LocalRiskContext m_localRiskContext;
+
+    // Short-window (~30-40 bar) fractal_dim, set directly by TripleScreen2.cpp, decoupled
+    // from OBS_FRACTAL_DIM's HMM-bound 400-bar window -- see SetFractalDimShort().
+    float m_fractalDimShortRaw = 1.5f;  // Brownian-guess default, matches cold-start convention
 
     // Predator Decision Contract's unified macro context (public via GetPredatorContext()).
     // Assembled lazily from m_localRiskContext + HMM state on each accessor call.

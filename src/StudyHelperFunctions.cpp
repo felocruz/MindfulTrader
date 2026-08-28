@@ -10,6 +10,7 @@
 #include "RQAEpsilonSelector.h"
 #include "RecurrenceRateEngine.h"
 #include "RobustMoments.h"
+#include "SevcikFractalDimension.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -3206,65 +3207,41 @@ float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n) {
     return burstiness;
 }
 
-float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n) {
-    // Sevcik Fractal Dimension Approximation
-    // D = 1 + ln(L) / ln(2*N)
-    // L = Sum of euclidean distances between normalized points
+float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int persistentVarIndex) {
+    // Sevcik (1998) fractal-dimension estimator: D = 1 + ln(L) / ln(2*N), L =
+    // sum of normalized Euclidean segment lengths. Pure math lives in
+    // SevcikFractalDimension.h (natively tested there against a brute-force
+    // reference); this wrapper owns only the ACSIL data pull and the
+    // persistent-state carry-forward/cold-start policy, which is genuinely
+    // per-call state (see persistentVarIndex doc on the declaration).
 
     if (sc.Index < lookback_n) return 1.5f; // Brownian guess -- true cold-start, no prior value exists yet
 
-    float minP = FLT_MAX, maxP = -FLT_MAX;
-    for(int i=0; i<lookback_n; i++) {
-        float p = sc.BaseData[SC_LAST][sc.Index - i];
-        if(p < minP) minP = p;
-        if(p > maxP) maxP = p;
+    // SevcikFractalDimension expects prices[0..lookback_n] chronological,
+    // prices[0] = sc.Index-lookback_n .. prices[lookback_n] = sc.Index (live bar).
+    std::vector<float> prices(static_cast<std::size_t>(lookback_n) + 1);
+    for (int i = 0; i <= lookback_n; ++i) {
+        prices[static_cast<std::size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - lookback_n + i];
     }
 
-    float& lastValidFractalDim = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::FRACTAL_DIM_LAST_VALID_VALUE);
+    float& lastValidFractalDim = sc.GetPersistentFloat(persistentVarIndex);
 
-    // Degenerate (flat price window) carries the last valid value forward
-    // instead of a fabricated "1.0 = flat line" reading -- checked before the
-    // path-length scan below, so the expensive computation is still skipped on
-    // the degenerate path exactly as before -- same sentinel-collapse fix
-    // already applied to dims 1/2/3/7/8/10/11/12/13. Guarded against the
-    // uninitialized 0.0f default (no prior valid value yet): fractal_dim's
-    // contract is [1.0, 2.0], and an out-of-contract 0.0f trips the hard
-    // structuralInRange gate downstream, stalling the HMM inference path --
-    // fall back to the same cold-start "Brownian guess" this function already
-    // returns elsewhere instead.
-    if (maxP <= minP) {
+    const float dim = SevcikFractalDimension(prices.data(), lookback_n);
+
+    // Degenerate (flat price window or zero-length path) carries the last
+    // valid value forward instead of a fabricated reading -- same
+    // sentinel-collapse fix already applied to dims 1/2/3/7/8/10/11/12/13.
+    // Guarded against the uninitialized 0.0f default (no prior valid value
+    // yet): fractal_dim's contract is [1.0, 2.0], and an out-of-contract 0.0f
+    // trips the hard structuralInRange gate downstream, stalling the HMM
+    // inference path -- fall back to the same cold-start "Brownian guess"
+    // this function returns elsewhere instead.
+    if (std::isnan(dim)) {
         return (lastValidFractalDim >= 1.0f) ? lastValidFractalDim : 1.5f;
     }
 
-    const int segments = lookback_n - 1;
-    if (segments <= 0) return 1.5f; // Unreachable in practice (lookback_n always >=30) -- defensive, true cold-start shape
-
-    double length = 0.0;
-    double priceRange = maxP - minP;
-
-    for(int i=1; i<lookback_n; i++) {
-        int idx = sc.Index - lookback_n + i; // Moving forward from start of window
-        float p1 = sc.BaseData[SC_LAST][idx-1];
-        float p2 = sc.BaseData[SC_LAST][idx];
-
-        // Normalized coordinates (Time on X [0..1], Price on Y [0..1])
-        // Use segment count (N-1), not point count (N), to avoid discretization bias.
-        double dy = (p2 - p1) / priceRange;
-        double dx = 1.0 / static_cast<double>(segments);
-
-        length += std::sqrt(dx*dx + dy*dy);
-    }
-
-    // Degenerate (zero-length path -- should be unreachable once maxP>minP is
-    // established above; kept as a defensive carry-forward, not a fresh sentinel).
-    if (length <= 0.0) {
-        return lastValidFractalDim;
-    }
-    const float dim = static_cast<float>(
-        1.0 + std::log(length) / std::log(2.0 * static_cast<double>(segments)));
-    const float fractalDim = std::clamp(dim, 1.0f, 2.0f);
-    lastValidFractalDim = fractalDim;
-    return fractalDim;
+    lastValidFractalDim = dim;
+    return dim;
 }
 
 float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
