@@ -324,10 +324,9 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n);
 /// Lookback: ~5-20 bars (Ripple)
 float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n);
 
-/// Recurrence Rate (Index 14): Box-Counting Recurrence (Topological Stability)
-/// Function: RQA Recurrence Rate (RR) - % of phase space points within epsilon
-/// Lookback: ~20-100 bars (Wave/Ripple)
-float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n);
+// CalculateRecurrenceRate removed 2026-08-28: recurrence_rate moved to an activity-clock
+// computation (ContextManager.cpp, imbalance-bar returns). See
+// docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md Task 1.
 
 /// ============================================================================
 /// DETERMINISTIC RESET: Called on sc.IsFullRecalculation to clear buffer state

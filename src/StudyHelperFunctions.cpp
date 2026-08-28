@@ -7,8 +7,6 @@
 #include "DailyBiasEngine.h"
 #include "RingBuffer.h"
 #include "CarryForwardCalculators.h"
-#include "RQAEpsilonSelector.h"
-#include "RecurrenceRateEngine.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 
@@ -265,18 +263,6 @@ static AdaptiveCalculatorsState* GetAdaptiveCalculatorsState(SCStudyInterfaceRef
     return state;
 }
 
-static RecurrenceRateEngine* GetRecurrenceRateEngine(SCStudyInterfaceRef sc) {
-    auto* engine = static_cast<RecurrenceRateEngine*>(
-        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
-
-    if (!engine) {
-        engine = new RecurrenceRateEngine();
-        sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR, engine);
-    }
-
-    return engine;
-}
-
 static void CleanupAdaptiveWindowState(SCStudyInterfaceRef sc);
 static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc);
 
@@ -287,14 +273,6 @@ void CleanupAdaptiveCalculators(SCStudyInterfaceRef sc) {
     if (state) {
         delete state;
         sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::STATE_PTR, nullptr);
-    }
-
-    auto* rqaEngine = static_cast<RecurrenceRateEngine*>(
-        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
-
-    if (rqaEngine) {
-        delete rqaEngine;
-        sc.SetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR, nullptr);
     }
 
     CleanupAdaptiveWindowState(sc);
@@ -640,26 +618,6 @@ static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc) {
     }
 
     sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::LAST_OBS_UPDATE_INDEX, -1);
-
-    // RQA epsilon recalibration state must reset alongside the rest of this
-    // function's adaptive state -- otherwise a chart reload/symbol change
-    // rewinds sc.Index while these persistent vars keep their prior session's
-    // values, freezing epsilon (calibrated to a different instrument's price
-    // scale) for ~200 bars into the new session instead of recalibrating
-    // immediately (2026-08-13 final-review fix-wave re-review finding).
-    sc.SetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON, 0.0f);
-    sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_CALIBRATION_BAR_INDEX, -1);
-
-    // Same reasoning as the epsilon reset above: the engine's cached closed-bar
-    // window must not survive a chart reload/symbol change into the new
-    // session, and RQA_LAST_WINDOW_BAR_INDEX must be forced stale so the next
-    // call rebuilds rather than trusting a window built from the old session.
-    auto* rqaEngine = static_cast<RecurrenceRateEngine*>(
-        sc.GetPersistentPointer(PersistentVar_AdaptiveCalculators::RQA_ENGINE_STATE_PTR));
-    if (rqaEngine) {
-        rqaEngine->Reset();
-    }
-    sc.SetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_WINDOW_BAR_INDEX, -1);
 }
 
 // Pattern Detection Constants
@@ -3374,105 +3332,8 @@ float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
     return std::clamp(cv, 0.0f, 5.0f);
 }
 
-
-float CalculateRecurrenceRate(SCStudyInterfaceRef sc, int lookback_n) {
-    // kMaxLookback matches the [10,40] adaptive observation window contract
-    // (CalculateAdaptiveObservationWindow's own std::clamp(..., 10, 40), then
-    // TripleScreen2's std::max(30, ...)) -- defensive upper bound so the
-    // fixed-capacity scratch buffer below can never be written out of range.
-    // Same pattern as CalculateVolConvexity/CalculateMeanReversionZ above.
-    constexpr int kMaxLookback = 40;
-    lookback_n = std::clamp(lookback_n, 2, kMaxLookback);
-    if (sc.Index < lookback_n) return 0.0f;
-
-    // RQA (Recurrence Quantification Analysis) Recurrence Rate
-    // RR = (1 / N^2) * Sum(Theta(epsilon - dist(i,j)))
-    // Where Theta is Heaviside step fun.
-
-    float minP = FLT_MAX, maxP = -FLT_MAX;
-    for(int i=0; i<lookback_n; i++) {
-        float p = sc.BaseData[SC_LAST][sc.Index - i];
-        if (p < minP) minP = p;
-        if (p > maxP) maxP = p;
-    }
-
-    float range = maxP - minP;
-    float& lastValidRecurrenceRate = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RECURRENCE_RATE_LAST_VALID_VALUE);
-    // Degenerate (flat price window) carries the last valid value forward
-    // instead of a fabricated "1.0 = 100% recurrence" reading -- checked before
-    // the O(n^2) distance-matrix loop below, so the expensive computation is
-    // still skipped on the degenerate path exactly as before -- same
-    // sentinel-collapse fix already applied to dims 1/2/3/7/8/11/12.
-    if (range <= 0.00001f) {
-        return lastValidRecurrenceRate;
-    }
-
-    // Epsilon: Schinkel, Dimigen & Marwan (2008) fixed-recurrence-rate method,
-    // recalibrated periodically (not every call) so recurrence_rate itself
-    // stays an informative, varying HMM feature instead of collapsing to a
-    // near-constant by construction. See SelectEpsilonForTargetRecurrenceRate
-    // (RQAEpsilonSelector.h) and Task 3's design-correction note.
-    constexpr int RQA_EPSILON_RECALIBRATION_BARS = 200;  // engineering choice, not literature-
-                                                            // prescribed -- matches this codebase's
-                                                            // existing periodic-recalibration cadence
-                                                            // convention (FeatureScaler::RECALIBRATION_INTERVAL).
-    // Target is the FULL-MATRIX recurrence rate (LOI included), matching what
-    // this function actually measures below. Schinkel, Dimigen & Marwan (2008)
-    // cite a 0.01-0.05 practitioner band; the band's midpoint (0.03) is
-    // UNREACHABLE at this study's window sizes because the LOI alone
-    // contributes 1/n, i.e. 0.0333 at the n=30 floor TripleScreen2 enforces
-    // (std::max(30, adaptiveWindow)). The feasible sub-band at n=30 is
-    // [0.0333, 0.05], so 0.05 -- the top of Schinkel's cited range -- is the
-    // only value with real headroom across the production n in [30,40]:
-    // it selects M=8 off-diagonal pairs at n=30 and M=20 at n=40, rather than
-    // the 0-3 pairs a lower target would leave (fixed 2026-08-13; previously
-    // 0.03 was applied directly to the off-diagonal ranking, so achieved RR
-    // came out at 0.03 + 1/n ~= 0.06, roughly 2x the intended target and
-    // outside the cited band).
-    constexpr double RQA_TARGET_RECURRENCE_RATE = 0.05;
-    float& calibratedEpsilon = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RQA_CALIBRATED_EPSILON);
-    int& lastCalibrationBarIndex = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_CALIBRATION_BAR_INDEX);
-
-    // Gate on BAR advancement, not call count. AutoLoop=1 means this function
-    // runs on every incoming tick, so the previous call counter recalibrated
-    // roughly every 200 ticks (seconds) rather than every 200 bars -- which
-    // both defeated the "hold epsilon fixed so recurrence_rate stays an
-    // informative, varying feature" design intent and dragged the selector's
-    // O(n^2 log n) work onto the per-tick path (fixed 2026-08-13).
-    if (calibratedEpsilon <= 0.0f || lastCalibrationBarIndex <= 0 ||
-        (sc.Index - lastCalibrationBarIndex) >= RQA_EPSILON_RECALIBRATION_BARS) {
-        std::array<float, kMaxLookback> windowPrices{};  // fixed-capacity: no heap alloc on the ACSIL path
-        for (int i = 0; i < lookback_n; ++i) {
-            windowPrices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - i];
-        }
-        calibratedEpsilon = static_cast<float>(
-            SelectEpsilonForTargetRecurrenceRate(windowPrices.data(), lookback_n, RQA_TARGET_RECURRENCE_RATE));
-        lastCalibrationBarIndex = sc.Index;
-    }
-
-    // Incremental engine (RecurrenceRateEngine.h): the closed-bar (i=1..n-1)
-    // pairwise recurrence count is O(n^2) but only needs recomputing when the
-    // window's composition actually changes -- a new bar closing (sc.Index
-    // advanced) or lookback_n itself changing (adaptive window resize) --
-    // NOT every tick, since only the live point (i=0, the still-forming
-    // current bar) moves between ticks within the same bar. Reduces this
-    // function's per-tick cost from O(n^2) to O(n).
-    RecurrenceRateEngine* engine = GetRecurrenceRateEngine(sc);
-    int& lastWindowBarIndex = sc.GetPersistentInt(PersistentVar_AdaptiveCalculators::RQA_LAST_WINDOW_BAR_INDEX);
-    const int closedCount = lookback_n - 1;
-    if (lastWindowBarIndex != sc.Index || engine->GetClosedCount() != closedCount) {
-        std::array<float, kMaxLookback> closedPrices{};
-        for (int i = 0; i < closedCount; ++i) {
-            closedPrices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][sc.Index - 1 - i];
-        }
-        engine->RebuildClosedBarWindow(closedPrices.data(), closedCount, calibratedEpsilon);
-        lastWindowBarIndex = sc.Index;
-    }
-
-    const float currentPrice = sc.BaseData[SC_LAST][sc.Index];
-    const float recurrenceRate = engine->ComputeRate(currentPrice, calibratedEpsilon);
-    lastValidRecurrenceRate = recurrenceRate;
-    return recurrenceRate;
-}
+// CalculateRecurrenceRate (time-bar RQA) removed 2026-08-28: recurrence_rate moved to an
+// activity-clock computation (ContextManager::BuildObservationVector(), imbalance-bar returns)
+// -- see docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md Task 1.
 
 // 4282

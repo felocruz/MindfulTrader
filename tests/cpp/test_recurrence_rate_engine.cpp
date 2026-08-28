@@ -5,6 +5,7 @@
 //   g++ -std=c++17 -I include tests/cpp/test_recurrence_rate_engine.cpp -o /tmp/rre_test && /tmp/rre_test
 
 #include "RecurrenceRateEngine.h"
+#include "RQAEpsilonSelector.h"
 
 #include <cmath>
 #include <cstdint>
@@ -114,6 +115,34 @@ int main() {
         engine.RebuildClosedBarWindow(big.data(), static_cast<int>(big.size()), 0.5f);
         check("oversized window is clamped to kMaxClosedBars",
               engine.GetClosedCount() == RecurrenceRateEngine::kMaxClosedBars);
+    }
+    {
+        // Unit-agnostic reuse check (2026-08-28, recurrence_rate's activity-clock
+        // migration, docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-
+        // recurrence.md Task 1): the engine is fed imbalance-bar log-RETURNS
+        // (small, near-zero-mean values) instead of raw prices in production now --
+        // confirm it's genuinely unit-agnostic, not implicitly price-scaled, using
+        // the exact split this new caller uses: a 100-element array, epsilon
+        // selected over all 100, the first 99 as "closed," the 100th as "live."
+        std::vector<float> returns(100);
+        uint32_t seed = 7;
+        for (float& r : returns) {
+            seed = seed * 1664525u + 1013904223u;
+            const double u = static_cast<double>(seed >> 8) / 16777216.0;
+            r = static_cast<float>(0.002 * (2.0 * u - 1.0));  // ~return-scale magnitude, not price-scale
+        }
+        const double epsilon = SelectEpsilonForTargetRecurrenceRate(returns.data(), 100, 0.05);
+
+        RecurrenceRateEngine engine;
+        engine.RebuildClosedBarWindow(returns.data(), 99, static_cast<float>(epsilon));
+        const double actual = engine.ComputeRate(returns[99], static_cast<float>(epsilon));
+
+        std::vector<float> fullWindow(returns.begin(), returns.end());
+        const double expected = BruteForceRR(fullWindow, epsilon);
+        check("return-scale input: incremental matches brute-force n*n matrix",
+              std::fabs(expected - actual) < 1e-6);
+        check("return-scale input: achieved RR is finite and in [0,1]",
+              std::isfinite(actual) && actual >= 0.0 && actual <= 1.0);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

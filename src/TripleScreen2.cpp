@@ -305,16 +305,17 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
         PersistentVar_AdaptiveCalculators::FRACTAL_DIM_SHORT_LAST_VALID_VALUE);
     ContextManager::Instance().SetFractalDimShort(fractalDimShort);
 
-    // 4. Recurrence Rate (Topological Stability, RQA)
-    float recurrenceRate = CalculateRecurrenceRate(sc, slow_window_n);
+    // 4. Recurrence Rate: replaced 2026-08-28, no longer TS2-owned -- moved to
+    //    ContextManager::BuildObservationVector()'s activity-clock block
+    //    (imbalance-bar returns), same replacement as skewness_idx's own move
+    //    off TS3. See spec 2026-08-25-observation-vector-institutional-
+    //    hardening-spec.md Section 5a.
 
     // 5. Realized Variance Ratio (Volatility Expansion/Contraction)
     float realizedVarRatio = CalculateRealizedVarianceRatio(sc, observation_window_n);
 
-    const bool structuralFinite = std::isfinite(fractalDim) && std::isfinite(recurrenceRate);
-    const bool structuralInRange =
-        recurrenceRate >= 0.0f && recurrenceRate <= 1.0f &&
-        fractalDim >= 1.0f && fractalDim <= 2.0f;
+    const bool structuralFinite = std::isfinite(fractalDim);
+    const bool structuralInRange = fractalDim >= 1.0f && fractalDim <= 2.0f;
 
     // Update Central Observation Store
     // Physics metrics are injected directly into the ML context layer.
@@ -329,7 +330,6 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
 
         if (structuralFinite && structuralInRange) {
             obs->mutate_fractal_dim(fractalDim);
-            obs->mutate_recurrence_rate(recurrenceRate);
             ContextManager::Instance().MarkTs2StructuralDimsFresh(
                 sc.GetCurrentDateTime().ToUNIXTimeInMicroseconds());
             ++s_ts2StructuralCommitCount;
@@ -346,7 +346,6 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
                 Logger::getInstance().log(
                     "TS2 StructuralObs reject: invalid structural dims "
                     "(fractal=" + std::to_string(fractalDim) +
-                    ", recurrence=" + std::to_string(recurrenceRate) +
                     ", rejects=" + std::to_string(s_ts2StructuralRejectCount) + ")"
                 );
             }

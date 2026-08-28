@@ -1,10 +1,20 @@
 # Activity-Clock Treatment for `mean_rev_z`, `hurst_exponent`, `recurrence_rate` — Implementation Plan
 
-> **STATUS: DESIGN COMPLETE, NOT YET IMPLEMENTED (2026-08-28).** This plan scopes the concrete C++
-> design for the decision already made and literature-grounded in
-> `docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` §5a. No
-> code has been written for this plan yet. `fractal_dim`'s window-widening (the sibling item that
-> was NOT reframed to activity-clock) shipped separately, `72ab967` — not part of this plan.
+> **STATUS: DESIGN COMPLETE. Task 1 (`recurrence_rate` replacement) IMPLEMENTED and verified
+> 2026-08-28** (full `./build_dll.sh --no-clean` succeeds; `test_recurrence_rate_engine` extended +
+> passing; `test_rqa_epsilon`/`test_feature_scaler`/`test_sevcik_fractal_dimension` regression-pass).
+> Tasks 2-8 (`mean_rev_z`/`hurst_exponent` additive twins) NOT yet implemented. **Real design detail
+> found during implementation, not anticipated by the original plan text**: `ContextManager::
+> AreTs2StructuralDimsReady()` reads `m_observationData.recurrence_rate()` directly (not the local
+> `obs[]` scratch array) as part of a live HMM-trigger readiness gate — since `TripleScreen2.cpp` no
+> longer mutates that field, the new activity-clock block must also call
+> `m_observationData.mutate_recurrence_rate(...)` to keep that gate's read live, in addition to
+> setting `obs[OBS_RECURRENCE_RATE]` for the actual HMM feature vector. This is a deliberate
+> deviation from `skewness_idx`'s precedent (which left `m_observationData.skewness_idx()` stale,
+> harmless there since nothing reads it directly) — `recurrence_rate` has a real reader of the raw
+> wire field itself, not just the scaled feature vector. `AreTs2StructuralDimsReady()`'s own
+> finite/in-range logic was left unchanged (not renamed/refactored) since keeping the field fresh
+> was the lower-risk fix.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -59,11 +69,11 @@
 - Window: **100 imbalance-bar returns**, matching the fetch already shared by `fast_taleb_kurtosis`/`skewness_idx` in this exact code block — not because 100 is independently derived for RQA, but because reusing the one buffer fetch already happening here is the simpler, more consistent design, and 100 is comfortably inside `ImbalanceBarEngine`'s 500-capacity buffer with headroom for `RecurrenceRateEngine`'s `kMaxClosedBars = 256`.
 - Degenerate/cold-start: fewer than 100 completed imbalance bars available → return `0.0f` and skip the cache update (mirrors kurtosis/skewness's own `count >= 100` warmup gate in the same block, not a new convention).
 
-- [ ] Write the engine-reuse test (confirm `RecurrenceRateEngine` is unit-agnostic), confirm it fails to compile/pass only if a real assumption breaks
-- [ ] Wire the replacement into `ContextManager.cpp`'s existing 100-return block
-- [ ] Remove `TripleScreen2.cpp`'s `recurrenceRate` computation and mutation
-- [ ] Confirm zero remaining callers of `CalculateRecurrenceRate(sc, lookback_n)`, then delete it + its now-orphaned persistent vars
-- [ ] Full `./build_dll.sh --no-clean`; `test_recurrence_rate_engine`, `test_rqa_epsilon` regression pass
+- [x] Write the engine-reuse test (confirm `RecurrenceRateEngine` is unit-agnostic), confirm it fails to compile/pass only if a real assumption breaks
+- [x] Wire the replacement into `ContextManager.cpp`'s existing 100-return block
+- [x] Remove `TripleScreen2.cpp`'s `recurrenceRate` computation and mutation
+- [x] Confirm zero remaining callers of `CalculateRecurrenceRate(sc, lookback_n)`, then delete it + its now-orphaned persistent vars
+- [x] Full `./build_dll.sh --no-clean`; `test_recurrence_rate_engine`, `test_rqa_epsilon` regression pass
 - [ ] Commit
 
 ---

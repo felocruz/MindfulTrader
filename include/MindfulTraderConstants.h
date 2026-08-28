@@ -90,21 +90,15 @@ namespace PersistentVar_AdaptiveCalculators {
     const int AMIHUD_LAST_VALID_VALUE = 31;          // Last valid amihud_illiquidity for graceful degradation on a thin/illiquid window
     const int CORRECTION_ACTION_LAST_VALID_VALUE = 32; // Last valid correction_action for graceful degradation on a near-zero full-window variance rate
     const int SKEWNESS_LAST_VALID_VALUE = 33; // Last valid skewness_idx for graceful degradation on a near-zero 100-bar return variance
-    const int RECURRENCE_RATE_LAST_VALID_VALUE = 34; // Last valid recurrence_rate for graceful degradation on a flat price window
+    // 34 (RECURRENCE_RATE_LAST_VALID_VALUE) removed 2026-08-28 with CalculateRecurrenceRate --
+    // recurrence_rate moved to an activity-clock computation (ContextManager.cpp).
     const int FRACTAL_DIM_LAST_VALID_VALUE = 35; // Last valid fractal_dim for graceful degradation on a flat price window
     const int MEAN_REV_Z_LAST_VALID_VALUE = 36; // Last valid mean_rev_z for graceful degradation on a near-zero log-price std-dev
     const int CTX_REL_RANGE_LAST_VALID_VALUE = 37; // Last valid StatisticalContext.relRange for graceful degradation on a zero/unpopulated ATR (independent of dim 2's own carry-forward state)
-    const int RQA_CALIBRATED_EPSILON = 38;       // Held epsilon between recalibrations (persistent FLOAT)
-    const int RQA_LAST_CALIBRATION_BAR_INDEX = 39; // Bar index (sc.Index) of the last RQA epsilon recalibration
-                                                   // (persistent INT). Replaces the former
-                                                   // RQA_CALLS_SINCE_CALIBRATION call counter, which counted
-                                                   // ticks -- AutoLoop=1 invokes CalculateRecurrenceRate on
-                                                   // every tick, so a call counter recalibrated ~every 200
-                                                   // ticks instead of every 200 bars (fixed 2026-08-13).
-                                                   // Same bar-advancement-gate convention as
-                                                   // LAST_OBS_UPDATE_INDEX / LAST_AMIHUD_SAMPLE_INDEX.
-    const int RQA_ENGINE_STATE_PTR = 40;          // Pointer to RecurrenceRateEngine (incremental RQA, O(n)/tick)
-    const int RQA_LAST_WINDOW_BAR_INDEX = 41;     // Bar index (sc.Index) the engine's closed-bar window was last rebuilt for
+    // 38-41 (RQA_CALIBRATED_EPSILON, RQA_LAST_CALIBRATION_BAR_INDEX, RQA_ENGINE_STATE_PTR,
+    // RQA_LAST_WINDOW_BAR_INDEX) removed 2026-08-28 alongside CalculateRecurrenceRate/
+    // RecurrenceRateEngine's time-bar usage -- recurrence_rate moved to an activity-clock
+    // computation (ContextManager.cpp), which owns its own cache state, not sc's persistent vars.
     const int FRACTAL_DIM_SHORT_LAST_VALID_VALUE = 42; // Independent carry-forward slot for CalculateFractalDimension's
                                                         // short-window (LocalRiskContext-bound) call -- must be distinct
                                                         // from FRACTAL_DIM_LAST_VALID_VALUE (dim 42's HMM/400-bar call)
@@ -119,11 +113,11 @@ namespace PersistentVar_TurtleSoup {
     const int HIGHEST_INDEX = 1;        // Index of highest high in lookback period
     const int LOWEST_INDEX = 2;         // Index of lowest low in lookback period
     const int LAST_PROCESSED_BAR = 3;   // Last bar processed (for data collection)
-    
+
     // Float indices
     const int CURRENT_HIGHEST = 1;      // Value of highest high in lookback period
     const int CURRENT_LOWEST = 2;       // Value of lowest low in lookback period
-    
+
     // Note: Daily high/low cache moved to IndicatorManager (central cache)
 }
 
@@ -136,7 +130,7 @@ namespace PersistentVar_ElderBreakout {
     const int ITR_ESTABLISHED = 11;      // Flag: has ITR been established today?
     const int HAD_BREAKOUT_ABOVE = 12;   // Flag: breakout above ITR occurred
     const int HAD_BREAKDOWN_BELOW = 13;  // Flag: breakdown below ITR occurred
-    
+
     // Float indices (recommend starting at 10 to avoid collision)
     const int ITR_HIGH = 10;             // Intraday Trading Range high
     const int ITR_LOW = 11;              // Intraday Trading Range low
@@ -163,15 +157,15 @@ namespace PersistentVar_Risk {
     const int CONSECUTIVE_LOSSES = 501;
     const int TRADING_HALTED = 502;
     const int LAST_LOSS_TIMESTAMP = 503;  // Use GetPersistentInt64
-    
+
     // Order action rate limiting (prevent order spam)
     const int LAST_ORDER_ACTION_TIMESTAMP = 504;  // Use GetPersistentInt64
     const int ORDER_ACTION_COUNT_LAST_MINUTE = 505;
-    
+
     // Stop loss enforcement
     const int ORIGINAL_STOP_PRICE_ID = 506;  // Use GetPersistentInt64 (for price precision)
     const int STOP_VIOLATION_COUNT_ID = 507;
-    
+
     // Position size tracking
     const int LAST_POSITION_QTY_ID = 508;
 }

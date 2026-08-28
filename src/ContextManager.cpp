@@ -7,6 +7,8 @@
 #include "PositionManager.h"
 #include "ActivityClockManager.h"
 #include "RobustMoments.h"
+#include "RecurrenceRateEngine.h"
+#include "RQAEpsilonSelector.h"
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -574,9 +576,39 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // tick-native activity-clock buffer -- no existing gate consumed the
             // old value, unlike kurtosis, so no additive twin was needed.
             obs[OBS_SKEWNESS] = BowleySkewness(returnsArray);
+
+            // Dim 13 (recurrence_rate): replaced 2026-08-28, source moved from
+            // TS2's time-bar CalculateRecurrenceRate() to this same buffer
+            // (spec 2026-08-25-observation-vector-institutional-hardening-
+            // spec.md Section 5a) -- zero live gate consumers (confirmed),
+            // matching skewness_idx's replacement precedent, not kurtosis's
+            // additive one. The buffer only changes when a NEW imbalance bar
+            // closes, so the O(n^2) RQA matrix is rebuilt only then (cached
+            // otherwise), not every tick -- returnsArray[99] (most recent,
+            // chronological order) plays the role of the "live" point against
+            // the other 99 (closed), mirroring RecurrenceRateEngine's existing
+            // time-bar split even though this buffer has no true live/closed
+            // distinction of its own.
+            static std::size_t s_lastRecurrenceBarCount = 0;
+            static float s_cachedRecurrenceRate = 0.0f;
+            static RecurrenceRateEngine s_recurrenceEngine;
+            const std::size_t completedBarCount = ActivityClockManager::Instance().Engine().GetCompletedBarCount();
+            if (completedBarCount != s_lastRecurrenceBarCount) {
+                const float epsilon = static_cast<float>(
+                    SelectEpsilonForTargetRecurrenceRate(returnsArray.data(), 100, 0.05));
+                s_recurrenceEngine.RebuildClosedBarWindow(returnsArray.data(), 99, epsilon);
+                s_cachedRecurrenceRate = s_recurrenceEngine.ComputeRate(returnsArray[99], epsilon);
+                s_lastRecurrenceBarCount = completedBarCount;
+            }
+            obs[OBS_RECURRENCE_RATE] = s_cachedRecurrenceRate;
+            // Keeps AreTs2StructuralDimsReady()'s direct m_observationData read live even
+            // though recurrence_rate is no longer TS2-owned -- TripleScreen2.cpp no longer
+            // mutates this field.
+            m_observationData.mutate_recurrence_rate(s_cachedRecurrenceRate);
         } else {
             m_localRiskContext.fastTalebKurtosis = 1.23f;
             obs[OBS_SKEWNESS] = 0.0f;  // Warmup: neutral (symmetric)
+            obs[OBS_RECURRENCE_RATE] = 0.0f;  // Warmup: neutral (matches contract's [0,1] floor)
         }
         obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
     }
