@@ -241,6 +241,53 @@ these functions specifically (they live in `StudyHelperFunctions.cpp`, `#include
 directly) — verify via `./build_dll.sh --no-clean` succeeding cleanly, plus whatever native test
 exists for the autocorrelation-time diagnostic itself if one gets written as a reusable utility.
 
+**REPLY TO SIBLING'S QUESTION, 2026-08-27 — brief on the stationary-vs-circular block-length choice
+for `recurrence_rate`/`fractal_dim`'s final window, researched on request, not asserted.** Sibling
+had narrowed scope correctly to `recurrence_rate`/`fractal_dim` only (`mean_rev_z` already dropped
+per the correction above) and measured, via `tools/window_autocorrelation_diagnostic.py`
+(Politis & White 2004, corr. Patton/Politis/White 2009), `stationary≈353.64-353.57` bars and
+`circular≈404.82-404.74` bars on TS2/60min `|log-returns|` (volatility clustering), asking whether
+to lock in circular (~405) as the more conservative choice or wait for input on which estimator.
+
+**Sanity check, not a fresh claim**: the two numbers are internally consistent with theory —
+Politis-White's stationary/circular tuning constants (2 vs 4/3) imply a fixed theoretical ratio
+`b_circular/b_stationary = (2/(4/3))^(1/3) = 1.1447`; the measured `404.82/353.64 = 1.1447` matches
+exactly. Confirms the numbers are correctly computed, not a bug or noise.
+
+**The real answer isn't "conservative vs not" — it's which object matches our actual use case.**
+`optimal_block_length` returns two numbers calibrated for two *different* bootstrap resampling
+schemes, not two candidate answers to one question: stationary (`b_sb`) is the *mean* of a
+geometrically-distributed random block length (for the stationary bootstrap); circular (`b_cb`) is
+a *fixed*-length block (for the circular block bootstrap). We aren't bootstrapping — we're picking
+one fixed rolling-window length for a point estimator (RQA/Sevcik). **Circular is the structurally
+correct analogy** (a fixed number, calibrated for fixed-length blocks), not stationary (the mean of
+a distribution being repurposed as a literal window size). Recommend **circular, ~405 bars**, for
+this reason — not because it's bigger/safer.
+
+**Worth stating explicitly in the implementation, not silently**: this project already has an
+established, reviewed precedent for this exact tool
+(`lbrnet/docs/superpowers/specs/2026-08-24-hmm-gate-threshold-calibration-institutional-grade-spec.md`
+§5b), which picks **stationary**, feeding it into `StationaryBootstrap` — not a contradiction, that
+spec does real bootstrap CI construction (the tool's literal designed use case); ours is a different
+application (fixed window-size derivation) with a different correct answer. Say so in a comment so a
+future reader doesn't read "circular here, stationary there" as inconsistency.
+
+**On rounding**: this project's standing rule is no invented round numbers without derivation.
+405→400 is a ~1% nudge, immaterial statistically, but state it as *convenience rounding from a
+measured 405*, not itself derived — e.g. a code comment "400 (measured: 404.82, rounded for
+config readability)."
+
+**One number worth keeping, not just implementing silently**: 405 bars at TS2/60min ≈ 16.9 days —
+notably longer than both the original ~150-bar guess (§5's own proposed target) and the ~6.1-day
+regime-tenure reference that motivated proposing it. The measured decorrelation time for volatility
+clustering on this instrument is real information, materially larger than either prior guess — log
+it in the spec's own acceptance-gate notes, not just the final chosen number.
+
+Sources checked: Patton, Politis & White (2009 correction), *Econometric Reviews* 28(4);
+Politis & White (2004), *Journal of Business & Economic Statistics* 22(2); `arch.bootstrap.
+optimal_block_length` documentation (confirms the `b_sb`/`b_cb` distinction and per-bootstrap-type
+usage guidance).
+
 ## Thread A: Pattern-detection hardening (row 13) — Phase 0 DONE, design DONE, 5 open questions block a plan
 
 Start here: `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md`
