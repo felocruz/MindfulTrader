@@ -180,6 +180,43 @@ different axis from *lookback-horizon length for regime relevance*, which is wha
 derives. Both Gang-doc rows now carry an explicit 2026-08-27 scope note saying so — read them, this
 400-bar figure doesn't undo either "validated" verdict, it answers a question neither one asked.
 
+### `fractal_dim`'s live gate consumer (`PositionManager.cpp` GAP 11) — two-window decision, plus a
+separately-broken threshold found while investigating it, 2026-08-27/28
+
+**The additive-vs-replace question this spec's own Section 9 flagged for `fractal_dim`'s gate is now
+answered, and it changed based on real measurement, not assumption.** `tools/fractal_dim_threshold_
+migration.cpp`/`.py` (built to percentile-match the live gate's `1.6f`/`1.3f` thresholds against the
+new 400-bar distribution, same methodology as Task 7's kurtosis/skewness migration) produced a
+paired `(fractal_dim@30, fractal_dim@400)` sample over 19,327 real MES TS2/60min bars and found
+**`correlation(fractal_dim@30, fractal_dim@400) = 0.0115`** — essentially zero, not "positive but
+attenuated" as the tool's own docstring expected. **This is real evidence the two windows measure
+largely independent information, not the same signal at different noise levels**: `PositionManager.
+cpp`'s GAP 11 gate asks "is the market rough *right now*, for this order's immediate routing" (a
+short-horizon execution question); the 400-bar window was derived from a *6.1-day HMM regime-tenure*
+reference (a structural persistence question). Given that, **decision: split, not shared** —
+`PositionManager.cpp`'s gate stays on a short window (its own, decoupled from the HMM's), the HMM
+vector gets the 400-bar value. This reverses an earlier position in this same investigation (split
+was initially rejected for lacking a complementary-information rationale, the same reasoning trap
+already named and retracted once for kurtosis's own design) — the near-zero correlation is the real,
+measured rationale that was missing before, not "avoid recalibration effort."
+
+**Separately, and found only because the migration tool was built**: `PositionManager.cpp:2144`'s
+`lrc.fractalDim > 1.6f` branch (`fractalForcePassive`, "rough market → passive only") **has fired
+zero times across all 19,327 paired 30-bar readings** — the observed maximum is well below `1.6`
+(mean 1.29, p90 1.37). This is a live, currently-shipped risk-gate branch that has been effectively
+dead code in production, independent of the window-widening question entirely — it would be broken
+on the *current* 30-bar window with or without any of this spec's work. **Naive percentile-mapping
+makes this worse, not better, if applied blindly**: `(fractal_dim@30 <= 1.6).mean()` is already
+`100%`, so quantile-mapping onto the 400-bar distribution maps to `np.percentile(new, 100.0)` —
+literally the sample maximum (`1.4393` measured) — a threshold that would *also* never fire, just
+under a new number. Confirmed by actually running the migration script, not assumed. **This needs
+its own real fix, not a mechanical recalibration**: derive `1.6f`'s replacement from what "rough
+enough to force passive execution" should actually mean against the *real* observed `fractal_dim@30`
+distribution (e.g. a meaningful percentile of genuine roughness, not a re-mapped ceiling), the same
+domain-grounded exercise Task 7 did for kurtosis/skewness's own gates, not a blind statistical
+transform of an already-broken number. **Not yet done** — flagged here so it is fixed deliberately,
+not silently carried forward as "recalibrated" when it would still be non-functional.
+
 ## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z`, `hurst_exponent`, and `recurrence_rate`
 move to activity-clock windowing, not time-bar widening — `fractal_dim` does NOT, still ungrounded
 
@@ -361,12 +398,19 @@ transfers to it without checking.
 
 ## 9. Residual risk
 
-- Widening `fractal_dim`'s window changes its live, currently-transmitted values for every
-  consumer, not just the HMM training path -- confirm no other live C++ consumer (routing, sizing,
-  display subgraphs) depends on the *current* short-window behavior before widening, the same class
-  of check Section 3 already applies to the dead-code candidates. `PositionManager.cpp`'s
-  `fractalDim>1.6f`/`<1.3f` gate specifically is calibrated on the current 30-40 bar distribution and
-  will need re-validation against the widened 400-bar one.
+- **CORRECTED, 2026-08-27/28**: widening `fractal_dim`'s window to 400 bars does NOT change
+  `PositionManager.cpp`'s live gate's behavior — decided (Section 5b's new subsection): the gate
+  stays on its own short window, decoupled from the HMM's 400-bar value, because a real measurement
+  (correlation ≈ 0.0115) showed the two windows capture largely independent information, not the
+  same signal at different smoothing levels. The residual risk this bullet originally warned about
+  (re-validating the gate against the widened distribution) is now moot — there's no shared
+  distribution to re-validate against, by design.
+- **A separate, independently-discovered risk, found while building the migration tooling for the
+  above**: `PositionManager.cpp`'s `fractalDim>1.6f` branch has fired **zero times** in 2.5 years of
+  real MES data — broken on the *current* 30-bar window, unrelated to whether it's widened or split.
+  Naive percentile-mapping of this threshold is a real trap (maps to the new distribution's sample
+  maximum, `1.4393` — also non-functional) — needs a domain-grounded re-derivation from the real
+  observed distribution, not a mechanical transform. Not yet fixed.
 - `fractal_dim`'s window derivation is now done (Section 5b, `400` bars, measured not guessed) --
   the ~150-bar figure this bullet used to warn against is superseded, not still a live risk.
   Residual risk now is implementation-stage only: `fractal_dim`'s missing native test coverage, and
