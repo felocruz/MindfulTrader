@@ -92,14 +92,75 @@ number**:
   a deliberate design choice per the source (no comment justifying it), just an implementation
   shortcut. Give `rho` its own explicit, likely-longer lookback.
 
-**These are proposed targets for discussion, not finalized magic numbers** -- matching this
+**These were proposed targets for discussion, not finalized magic numbers** -- matching this
 project's own standing rule against inventing round numbers without derivation (`CLAUDE.md`'s
-"ungrounded utility constants" pattern). The ~150/~600 figures are sized to match the regime-tenure
-reference at the same order of magnitude; a rigorous derivation (e.g. an autocorrelation-time
-diagnostic on the raw signal itself, the same technique this project already used for the HMM's own
-calibration holdout sizing, `docs/superpowers/specs/2026-08-24-hmm-gate-threshold-calibration-
-institutional-grade-spec.md`) should confirm or adjust them before implementation, not skip
-straight from "current window is too short" to "here is the exact new number."
+"ungrounded utility constants" pattern). The ~150/~600 figures were sized only to match the
+regime-tenure reference at the same order of magnitude, pending a rigorous derivation. **For
+`recurrence_rate`/`fractal_dim`, that derivation is now done -- see Section 5b immediately below,
+which supersedes the ~150-bar figure with a measured 400. For `mean_rev_z`, the ~600-bar figure is
+moot -- see Section 5a, which moves it to activity-clock treatment instead of a wider time-bar
+window.**
+
+## 5b. `recurrence_rate`/`fractal_dim` final window, derived 2026-08-27 -- **400 bars, not ~150**
+
+`mean_rev_z` moved out of this window-widening path entirely (Section 5a, activity-clock treatment
+instead) -- this section covers `recurrence_rate`/`fractal_dim` only, the two dims Section 5a
+explicitly leaves on the pure time-bar-widening path.
+
+**Method**: Politis & White (2004) / Patton, Politis & White (2009) automatic optimal block-length
+selection (`arch.bootstrap.optimal_block_length`) -- the same tool this project already depends on
+(`arch>=8.0`) for the HMM gate-threshold calibration's own `--window-rows` derivation
+(`docs/superpowers/specs/2026-08-24-hmm-gate-threshold-calibration-institutional-grade-spec.md`
+Section 5b), applied here to a different series for a different (but related) purpose. Run against
+real MES data (`lbrnet/data/raw/mes_wave_60m.parquet`, TS2/60min, 2023-06-04..2026-08-18, 19,727
+bars) via `tools/window_autocorrelation_diagnostic.py`, on `|log-returns|` (volatility clustering,
+Cont 2001) -- raw log-returns themselves decorrelate in ~3 bars (consistent with weak-form market
+efficiency) and are not the relevant proxy for regime/structural persistence; `|returns|` is.
+
+**Measured**: `stationary ≈ 353.6` bars, `circular ≈ 404.8` bars. Internally consistent with
+Politis-White's own tuning-constant ratio (`b_circular/b_stationary = (2/(4/3))^(1/3) = 1.1447`;
+measured `404.82/353.64 = 1.1447` exactly) -- confirms the numbers are correctly computed, not
+noise. Contract-roll-affected bars (~12 across the series, real but unadjusted-splice price jumps)
+were checked and found to change nothing (353.57/404.74 with them excluded) -- negligible at this
+cadence, confirmed rather than assumed.
+
+**Which estimator, and why**: `optimal_block_length` returns two numbers calibrated for two
+*different* bootstrap resampling schemes, not two candidate answers to one question -- stationary
+(`b_sb`) is the *mean* of a geometrically-distributed random block length (for the stationary
+bootstrap); circular (`b_cb`) is a *fixed*-length block (for the circular block bootstrap). This
+spec isn't bootstrapping -- it's picking one fixed rolling-window length for a point estimator
+(RQA/Sevcik). **Circular is the structurally correct analogy** (a fixed number, calibrated for
+fixed-length blocks), not stationary (the mean of a distribution repurposed as a literal window
+size). This is not a contradiction with the HMM calibration spec's own choice of `stationary` --
+that spec feeds the result directly into `StationaryBootstrap` (its literal designed use case);
+this is a different application with a different correct answer from the same tool.
+
+**Final target: 400 bars** (rounded from the measured circular value 404.82 -- a ~1% convenience
+rounding for config readability, not itself a derivation; the derived value is 404.82).
+
+**The real finding, worth keeping independent of the final number**: 400 bars at TS2/60min is
+**~16.7 days** -- longer than both the original ~150-bar guess (Section 5) and the ~6.1-day
+regime-tenure reference that motivated proposing it. The measured decorrelation time for volatility
+clustering on this instrument is real information, materially larger than either prior guess.
+
+Sources: Patton, Politis & White (2009 correction), *Econometric Reviews* 28(4); Politis & White
+(2004), *Journal of Business & Economic Statistics* 22(2); `arch.bootstrap.optimal_block_length`
+documentation (confirms the `b_sb`/`b_cb` distinction and per-bootstrap-type usage guidance).
+
+**Not yet done**: implementing this 400-bar target in `CalculateRecurrenceRate`/
+`CalculateFractalDimension` (`StudyHelperFunctions.cpp`), `RecurrenceRateEngine::kMaxClosedBars`/
+`RQAEpsilonSelector.h`'s `kRQASelectorMaxN` (currently 256, sized for the old ~150 target -- must be
+bumped again for 400), and `TripleScreen2.cpp`'s adaptive-window clamp. Native test coverage for
+`fractal_dim` (no pure-header extraction exists yet, unlike `recurrence_rate`'s
+`RecurrenceRateEngine.h`) still needs writing per Section 8's acceptance gate.
+
+**Cross-reference, 2026-08-27, so this 400-bar derivation doesn't read as contradicting existing
+Gang-doc history**: `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s Sevcik
+fractal-dimension row and RQA-epsilon row are both marked `validated` (2026-08-13) — that verdict
+covers *formula choice* (Sevcik vs. Higuchi/Katz) and *epsilon-selection methodology* only, a
+different axis from *lookback-horizon length for regime relevance*, which is what this section
+derives. Both Gang-doc rows now carry an explicit 2026-08-27 scope note saying so — read them, this
+400-bar figure doesn't undo either "validated" verdict, it answers a question neither one asked.
 
 ## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z` and `hurst_exponent` move to
 activity-clock windowing, not time-bar widening
@@ -245,9 +306,11 @@ transfers to it without checking.
   transmitted values for every consumer, not just the HMM training path -- confirm no other live
   C++ consumer (routing, sizing, display subgraphs) depends on the *current* short-window behavior
   before widening, the same class of check Section 3 already applies to the dead-code candidates.
-- This spec's own proposed window sizes (Section 5) are order-of-magnitude estimates pending a real
-  derivation -- do not treat `recurrence_rate`/`fractal_dim`'s ~150-bar target as final without that
-  follow-up.
+- `recurrence_rate`/`fractal_dim`'s window derivation is now done (Section 5b, `400` bars, measured
+  not guessed) -- the ~150-bar figure this bullet used to warn against is superseded, not still a
+  live risk. Residual risk now is implementation-stage only: the two `RQAEpsilonSelector.h`/
+  `RecurrenceRateEngine::kMaxClosedBars` capacity constants and `fractal_dim`'s missing native test
+  coverage, both named in Section 5b's own "Not yet done" list.
 - Section 5a's `mean_rev_z`/`hurst_exponent` activity-clock reframe both have live gate consumers
   calibrated on their current (time-bar) values (`Scoring.cpp:305`; `StudyHelperFunctions.cpp:623`/
   `TripleScreen3.cpp` regime thresholds) -- an eventual implementation plan must protect those
