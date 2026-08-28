@@ -6,16 +6,19 @@ evidence chain). **Not yet implemented.** Grounded in a literature search (Stude
 regime-switching literature) plus a direct window/timeframe audit of every candidate feature's
 actual C++ computation, run against the real source in this repo, not assumed from the Python side.
 
-**MAJOR REVISION, 2026-08-27 — Section 5's "widen the time-bar window" framing was incomplete for
-2 of its 3 dims, corrected via a real literature-grounding pass (Clark 1973 → Ané & Geman 2000 →
-AFML ch. 2), not assumption.** `mean_rev_z` and `hurst_exponent` move to **activity-clock windowing**
-(the same `ActivityClockManager` mechanism already shipped for kurtosis/`skewness_idx`), not just a
-longer time-bar window — see the new Section 5a below, which supersedes part of Section 5 and all of
-Section 6 for these two dims specifically. `recurrence_rate`/`fractal_dim` remain pure window-widening
-candidates (Section 5 unchanged) — literature search found **no** direct precedent either way for RQA
-or Sevcik fractal dimension under information-driven bars; that's silence, not a ruling, and this
-spec does not extend the AFML/Clark argument to them by unsupported analogy. Read Section 5a before
-touching `mean_rev_z`'s or `hurst_exponent`'s C++ computation under the old Section 5/6 framing.
+**MAJOR REVISION, 2026-08-27, TWO PASSES SAME DAY — Section 5's "widen the time-bar window" framing
+was incomplete for 3 of its 4 candidate dims, corrected via real literature-grounding passes (Clark
+1973 → Ané & Geman 2000 → AFML ch. 2 for the first pass; RQA-on-event-indexed-sequences precedent
+for the second), not assumption.** `mean_rev_z`, `hurst_exponent`, and (second pass) `recurrence_rate`
+all move to **activity-clock treatment** (the same `ActivityClockManager` mechanism already shipped
+for kurtosis/`skewness_idx`) instead of a longer time-bar window — see Section 5a below, which
+supersedes part of Section 5 and all of Section 6 for these three dims. **`fractal_dim` alone stays
+on the pure time-bar-widening path** (Section 5, now derived to 400 bars in Section 5b) — a second,
+targeted literature search specifically for the adjacent case (fractal-dimension/path-length methods
+under event-indexed sampling, not just finance-specific tests) still found no precedent, confirming
+rather than reversing the original silence. `recurrence_rate` and `fractal_dim` are NOT symmetric —
+treating them as a pair was this spec's own earlier error. Read Section 5a in full before touching
+any of these four dims' C++ computation under the old Section 5/6 framing.
 
 ## 1. Purpose
 
@@ -101,11 +104,23 @@ which supersedes the ~150-bar figure with a measured 400. For `mean_rev_z`, the 
 moot -- see Section 5a, which moves it to activity-clock treatment instead of a wider time-bar
 window.**
 
-## 5b. `recurrence_rate`/`fractal_dim` final window, derived 2026-08-27 -- **400 bars, not ~150**
+## 5b. `fractal_dim` final window, derived 2026-08-27 -- **400 bars, not ~150** (`recurrence_rate`
+SUPERSEDED here by Section 5a's second pass -- read that note before treating this section's
+`recurrence_rate` measurements as still applying to it)
 
-`mean_rev_z` moved out of this window-widening path entirely (Section 5a, activity-clock treatment
-instead) -- this section covers `recurrence_rate`/`fractal_dim` only, the two dims Section 5a
-explicitly leaves on the pure time-bar-widening path.
+**Correction, second literature pass, same day**: this section was originally written for
+`recurrence_rate`/`fractal_dim` together (they share one window constant today,
+`slow_window_n` in `TripleScreen2.cpp`). Section 5a's second pass since found real cross-domain
+literature grounding for `recurrence_rate` to move to activity-clock treatment (like `mean_rev_z`),
+the same way `mean_rev_z` was superseded out of this section in the first pass. **This section's
+400-bar measurement and final target now apply to `fractal_dim` only.** The underlying measurement
+itself (TS2/60min `|log-returns|` volatility-clustering decorrelation time) is unaffected and
+remains valid for whichever dim(s) end up on the time-bar path -- only the *scope* of dims it
+applies to changed. **New engineering consequence, not yet implemented**: `recurrence_rate` and
+`fractal_dim` currently share one window constant in the C++ source -- if `recurrence_rate` moves to
+activity-clock and `fractal_dim` doesn't, they need decoupling into two independently-parameterized
+windows, the same class of fix Section 5's original text already required for `mean_rev_z`'s inner
+`rho` vs. its outer z-score.
 
 **Method**: Politis & White (2004) / Patton, Politis & White (2009) automatic optimal block-length
 selection (`arch.bootstrap.optimal_block_length`) -- the same tool this project already depends on
@@ -129,7 +144,7 @@ cadence, confirmed rather than assumed.
 (`b_sb`) is the *mean* of a geometrically-distributed random block length (for the stationary
 bootstrap); circular (`b_cb`) is a *fixed*-length block (for the circular block bootstrap). This
 spec isn't bootstrapping -- it's picking one fixed rolling-window length for a point estimator
-(RQA/Sevcik). **Circular is the structurally correct analogy** (a fixed number, calibrated for
+(Sevcik, now that `recurrence_rate` is superseded out above). **Circular is the structurally correct analogy** (a fixed number, calibrated for
 fixed-length blocks), not stationary (the mean of a distribution repurposed as a literal window
 size). This is not a contradiction with the HMM calibration spec's own choice of `stationary` --
 that spec feeds the result directly into `StationaryBootstrap` (its literal designed use case);
@@ -147,12 +162,15 @@ Sources: Patton, Politis & White (2009 correction), *Econometric Reviews* 28(4);
 (2004), *Journal of Business & Economic Statistics* 22(2); `arch.bootstrap.optimal_block_length`
 documentation (confirms the `b_sb`/`b_cb` distinction and per-bootstrap-type usage guidance).
 
-**Not yet done**: implementing this 400-bar target in `CalculateRecurrenceRate`/
-`CalculateFractalDimension` (`StudyHelperFunctions.cpp`), `RecurrenceRateEngine::kMaxClosedBars`/
-`RQAEpsilonSelector.h`'s `kRQASelectorMaxN` (currently 256, sized for the old ~150 target -- must be
-bumped again for 400), and `TripleScreen2.cpp`'s adaptive-window clamp. Native test coverage for
+**Not yet done**: implementing this 400-bar target in `CalculateFractalDimension`
+(`StudyHelperFunctions.cpp`) and `TripleScreen2.cpp`'s adaptive-window clamp, decoupled from
+`recurrence_rate`'s own window per the engineering consequence noted above. Native test coverage for
 `fractal_dim` (no pure-header extraction exists yet, unlike `recurrence_rate`'s
-`RecurrenceRateEngine.h`) still needs writing per Section 8's acceptance gate.
+`RecurrenceRateEngine.h`) still needs writing per Section 8's acceptance gate. **`RecurrenceRateEngine::
+kMaxClosedBars`/`RQAEpsilonSelector.h`'s `kRQASelectorMaxN` bump for 400 is now moot** unless
+`recurrence_rate` ends up staying on the time-bar path after all (Section 5a's activity-clock move
+is a literature-grounded direction, not yet a locked implementation decision) -- don't bump that
+capacity constant until that's actually decided.
 
 **Cross-reference, 2026-08-27, so this 400-bar derivation doesn't read as contradicting existing
 Gang-doc history**: `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s Sevcik
@@ -162,8 +180,15 @@ different axis from *lookback-horizon length for regime relevance*, which is wha
 derives. Both Gang-doc rows now carry an explicit 2026-08-27 scope note saying so — read them, this
 400-bar figure doesn't undo either "validated" verdict, it answers a question neither one asked.
 
-## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z` and `hurst_exponent` move to
-activity-clock windowing, not time-bar widening
+## 5a. Literature-grounded reframe, 2026-08-27: `mean_rev_z`, `hurst_exponent`, and `recurrence_rate`
+move to activity-clock windowing, not time-bar widening — `fractal_dim` does NOT, still ungrounded
+
+**Updated same day, second pass**: this section originally treated `recurrence_rate` and
+`fractal_dim` identically ("no direct precedent either way"). A user question ("ground your answer
+on the literature") prompted a deeper, more targeted search specifically for the adjacent case
+(fractal/RQA methods under event-indexed, non-uniform-time sampling, not just finance-specific
+tests) — it found real grounding for `recurrence_rate` and confirmed the silence for `fractal_dim`.
+They are NOT symmetric; treating them as a pair was the earlier error, corrected below.
 
 **Origin of this section**: prompted by a user question during the Section 5 window-widening
 handoff ("is there institutional literature that lets us decide which dims can genuinely move to
@@ -199,6 +224,37 @@ non-normality leg (moments). The other two legs are directly relevant to two dim
   is inherently about self-similarity across time lags -- that reasoning was never checked against
   the actual literature before being stated, and the literature says the opposite. Corrected here,
   not silently dropped.
+- **`recurrence_rate` (RQA) -- added in the second pass, 2026-08-27, real cross-domain precedent,
+  not finance-specific.** Heart-rate-variability research routinely applies RQA directly to
+  beat-to-beat RR-interval sequences -- a large, well-established literature (RQA-detected
+  ventilatory thresholds; symbolic RQA on RR intervals for atrial-fibrillation detection). RR
+  intervals are indexed by *beat number*, not fixed clock time -- each value is the duration between
+  consecutive heartbeats, and RQA's phase-space embedding operates on that sequence directly, no
+  resampling to a uniform time grid. That is structurally the same move as computing RQA over a
+  sequence of imbalance-bar values indexed by bar count instead of time-bar count: the recurrence-
+  plot/embedding machinery is about the *order and value* of a sequence, not the real-time spacing
+  between its elements. **This is the same evidentiary standard this project's own Gang doc already
+  accepts** -- Sevcik's own formula choice is grounded in Esteller et al. (2001), an EEG comparison
+  study, not a finance paper; cross-domain biomedical grounding is not a lower standard here, it's
+  the established one.
+
+**`fractal_dim` (Sevcik) -- explicitly separated out, still NOT reframed, second pass confirms the
+silence rather than reversing it.** The nearest adjacent literature (multifractal/DFA analysis of
+inter-spike-interval sequences in neuroscience) analyzes the *intervals themselves* as the signal
+(closer to this spec's own "bar-formation rate" speculative idea than to `fractal_dim`'s actual
+job), not a price-like signal *sampled at* event times, which is what `fractal_dim` would need.
+Sevcik's formula is, by construction, order-based rather than clock-based (a fixed `dx` per step
+regardless of what real interval that step spans) -- the same underlying argument for portability
+plausibly applies -- but that is this spec's own inference from reading the formula, not a
+literature finding, and is explicitly labeled as such rather than blurred with `recurrence_rate`'s
+real citation above. Sevcik is also independently documented as sensitive to the sampling-rate/
+time-period of its input (different multipliers result if "the amplitude range and/or time periods
+of signals to be compared are not identical") -- meaning even if moved, its resulting values would
+need their own `FeatureScaler` recalibration from scratch, not a drop-in continuation. `fractal_dim`
+remains a pure window-widening candidate per Section 5b (400 bars, derived), on TS2 time bars,
+pending either (a) a future literature finding that actually covers Sevcik/path-length fractal
+dimension under event-indexed sampling, or (b) an explicit, flagged engineering decision to extend
+the pattern by unsupported analogy anyway -- not silently.
 
 **What this means concretely, and what it does NOT mean**:
 - `mean_rev_z`'s outer z-score AND inner `rho` autocorrelation should be recomputed over
@@ -212,13 +268,16 @@ non-normality leg (moments). The other two legs are directly relevant to two dim
   yet -- its own live consumers (`StudyHelperFunctions.cpp:623`, `TripleScreen3.cpp` regime
   thresholds) are calibrated on the existing TS1/240-min value and should be checked the same way
   before deciding additive-vs-replace.
-- **`recurrence_rate` and `fractal_dim` are explicitly NOT reframed by this section.** The literature
-  search found no direct precedent -- for or against -- testing RQA or Sevcik fractal dimension
-  under information-driven vs. time-bar sampling. Extending the Clark/AFML argument to them would be
-  an unsupported analogy, not a literature-grounded decision like the two above. They remain pure
-  window-widening candidates per Section 5, on TS2 time bars, pending either (a) a future literature
-  finding that actually covers RQA/fractal-dimension estimators under alternative clocks, or (b) an
-  explicit, flagged engineering decision to extend the pattern by analogy anyway -- not silently.
+- **`recurrence_rate` -- checked directly, has ZERO live gate consumers** (grepped
+  `RiskManager.cpp`/`Scoring.cpp`/`PositionManager.cpp`/`TradeDecisionEngine.h`, no hits;
+  `ContextManager.cpp:452-460`'s `AreTs2StructuralDimsReady()` only checks the value is finite and
+  within its natural `[0,1]` contract range, a data-quality/freshness gate that stays valid
+  regardless of source, not a calibrated decision threshold that a source change would disturb) --
+  so `recurrence_rate` should follow `skewness_idx`'s **replacement** pattern, not kurtosis's
+  additive one. Nothing calibrated to protect.
+- **`fractal_dim` remains explicitly NOT reframed** (separate box above) -- do not extend this
+  section's treatment to it by assuming symmetry with `recurrence_rate` just because they share a
+  window/screen today.
 - **Real stakes beyond this spec's own scope, named explicitly by the user**: `hurst_exponent` is
   independently known to be the HMM's single worst cross-state discriminator (exactly `0.0000`,
   Section 6 below) and to carry the worst scale-collapse data-quality artifact of any of the 16
@@ -260,13 +319,14 @@ transfers to it without checking.
 - Not removing `skewness_idx`/`micro_asymmetry`'s C++ computation in this spec (Section 3) --
   timing is MindfulTrader's own call, tracked but not executed here.
 - Not touching `vol_convexity`/`tail_index` C++ computation at all (Section 2).
-- Not deriving the exact widened window sizes with full rigor (Section 5) -- proposed targets only,
-  pending an autocorrelation-time diagnostic. Applies only to `recurrence_rate`/`fractal_dim` now --
-  `mean_rev_z` moved to Section 5a's activity-clock design instead of a time-bar target number.
-- Not designing `mean_rev_z`/`hurst_exponent`'s activity-clock twins in implementation detail
-  (Section 5a) -- the literature grounding and additive-vs-replace framing are decided; the concrete
-  C++ design (field/state shape, gate integration) is a future implementation plan's job, same as
-  kurtosis went through its own plan before code was written.
+- Not deriving the exact widened window size with full rigor for its own sake (Section 5) -- now
+  done for `fractal_dim` specifically (Section 5b, 400 bars, measured). `recurrence_rate` and
+  `mean_rev_z` both moved to Section 5a's activity-clock design instead of a time-bar target number.
+- Not designing `mean_rev_z`/`hurst_exponent`/`recurrence_rate`'s activity-clock twins (`recurrence_rate`
+  is a replacement, not a twin, per Section 5a) in implementation detail -- the literature grounding
+  and additive-vs-replace framing are decided; the concrete C++ design (field/state shape, gate
+  integration) is a future implementation plan's job, same as kurtosis went through its own plan
+  before code was written.
 - Not fixing `fisher_info`'s scale-collapse/discrimination question or researching whether Clark/AFML
   literature applies to it (Section 6) -- flagged as the right next step, not attempted here.
 - Not touching `mts_schema.fbs` -- see companion `schema/` spec. (`mean_rev_z`/`hurst_exponent`'s
@@ -275,15 +335,14 @@ transfers to it without checking.
 
 ## 8. Acceptance gates
 
-- Widened-window changes for `recurrence_rate`/`fractal_dim` are backed by an explicit
-  autocorrelation-time or equivalent derivation for the final window size, not the Section 5
-  proposed-target numbers taken as final without that check.
-- `mean_rev_z`'s `rho` autocorrelation, when its activity-clock twin is implemented (Section 5a),
-  gets its own, separately-justified imbalance-bar lookback, not its outer z-score's window by
-  default -- same principle Section 5 established for the time-bar version, carried forward rather
-  than dropped when the clock changed.
-- Existing MindfulTrader unit test coverage for `recurrence_rate`/`fractal_dim`
-  (`test_indicator_computations.cpp` or equivalent) updated to reflect new window bounds, and a
+- `fractal_dim`'s widened window is backed by an explicit autocorrelation-time derivation (Section
+  5b, 400 bars, measured) -- done, not the Section 5 proposed-target number taken as final.
+- `mean_rev_z`'s `rho` autocorrelation and `recurrence_rate` itself, when their activity-clock
+  treatments are implemented (Section 5a), get their own, separately-justified imbalance-bar
+  lookback/design, not a carried-over time-bar window by default -- same principle Section 5
+  established for the time-bar version, carried forward rather than dropped when the clock changed.
+- Existing MindfulTrader unit test coverage for `fractal_dim`
+  (`test_indicator_computations.cpp` or equivalent) updated to reflect the new window bound, and a
   regression test confirms the widened computation still respects the "historical-bars-only, never
   reads the live forming bar" contract these adaptive-window functions document for themselves --
   **flagged for direct verification before relying on it**: a 2026-08-27 code read of
@@ -291,26 +350,33 @@ transfers to it without checking.
   `sc.BaseData[SC_LAST][sc.Index]` (the live, still-forming bar) as their current-point term, which
   appears to be in tension with this stated contract -- resolve which is actually true (the contract
   wording, or the current-point behavior) before writing a regression test that assumes either.
-- `hurst_exponent` and `mean_rev_z` are NOT implemented by this spec (Section 5a is a design/
-  literature-grounding decision, not an implementation) -- confirmed via diff review, not just
-  stated intent, same discipline as this section already applied to the old Section 6.
+- `hurst_exponent`, `mean_rev_z`, and `recurrence_rate` are NOT implemented by this spec (Section 5a
+  is a design/literature-grounding decision, not an implementation) -- confirmed via diff review,
+  not just stated intent, same discipline as this section already applied to the old Section 6.
 - `fisher_info` is NOT touched by this spec's own implementation -- confirmed via diff review.
 - Cross-referenced from `lbrnet`'s companion spec and `schema/PENDING_SCHEMA_CHANGES.md` (if either
   needs an entry -- Section 2 concludes neither does for this spec's own scope; a future
-  `mean_rev_z`/`hurst_exponent` activity-clock plan will need its own schema entry, tracked there,
-  not retrofitted into this spec).
+  `mean_rev_z`/`hurst_exponent`/`recurrence_rate` activity-clock plan will need its own schema entry
+  if any of them go additive, tracked there, not retrofitted into this spec).
 
 ## 9. Residual risk
 
-- Widening `recurrence_rate`/`fractal_dim`'s windows changes their live, currently-
-  transmitted values for every consumer, not just the HMM training path -- confirm no other live
-  C++ consumer (routing, sizing, display subgraphs) depends on the *current* short-window behavior
-  before widening, the same class of check Section 3 already applies to the dead-code candidates.
-- `recurrence_rate`/`fractal_dim`'s window derivation is now done (Section 5b, `400` bars, measured
-  not guessed) -- the ~150-bar figure this bullet used to warn against is superseded, not still a
-  live risk. Residual risk now is implementation-stage only: the two `RQAEpsilonSelector.h`/
-  `RecurrenceRateEngine::kMaxClosedBars` capacity constants and `fractal_dim`'s missing native test
-  coverage, both named in Section 5b's own "Not yet done" list.
+- Widening `fractal_dim`'s window changes its live, currently-transmitted values for every
+  consumer, not just the HMM training path -- confirm no other live C++ consumer (routing, sizing,
+  display subgraphs) depends on the *current* short-window behavior before widening, the same class
+  of check Section 3 already applies to the dead-code candidates. `PositionManager.cpp`'s
+  `fractalDim>1.6f`/`<1.3f` gate specifically is calibrated on the current 30-40 bar distribution and
+  will need re-validation against the widened 400-bar one.
+- `fractal_dim`'s window derivation is now done (Section 5b, `400` bars, measured not guessed) --
+  the ~150-bar figure this bullet used to warn against is superseded, not still a live risk.
+  Residual risk now is implementation-stage only: `fractal_dim`'s missing native test coverage, and
+  decoupling its window constant from `recurrence_rate`'s now that they may diverge (both named in
+  Section 5b's own "Not yet done" list).
+- `recurrence_rate` moving to activity-clock is a *second-pass* finding (real cross-domain grounding,
+  RQA on event-indexed RR-interval sequences) -- unlike `mean_rev_z`/`hurst_exponent`, it has ZERO
+  live gate consumers to protect (checked directly, Section 5a), so it's a `skewness_idx`-style
+  **replacement** candidate, not an additive twin -- don't default to the additive pattern just
+  because `mean_rev_z`/`hurst_exponent` used it.
 - Section 5a's `mean_rev_z`/`hurst_exponent` activity-clock reframe both have live gate consumers
   calibrated on their current (time-bar) values (`Scoring.cpp:305`; `StudyHelperFunctions.cpp:623`/
   `TripleScreen3.cpp` regime thresholds) -- an eventual implementation plan must protect those
