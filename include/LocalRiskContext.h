@@ -28,6 +28,7 @@ struct LocalRiskContext {
     float amihudPercentile = 0.5f;     // Layer B: session-aware rolling percentile [0,1] of amihudIlliquidity — the actual gate input (p90 normal / p75 fat-tail)
     float spreadStress = 0.0f;         // spread-stress fragility
     float hurstExponent = 0.5f;        // persistence (>0.5 trending, <0.5 mean-reverting)
+    float fastHurstExponent = 0.5f;    // DFA Hurst over activity-clock (imbalance-bar) returns
     float fractalDim = 1.5f;           // roughness 1.0-2.0
     float meanRevZ = 0.0f;             // distance from mean in sigma
 

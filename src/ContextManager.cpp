@@ -9,6 +9,7 @@
 #include "RobustMoments.h"
 #include "RecurrenceRateEngine.h"
 #include "RQAEpsilonSelector.h"
+#include "DfaHurstExponent.h"
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -38,6 +39,9 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBo
     0.0f,   // OBS_HURST_EXPONENT
    -1.0f,   // OBS_MICRO_ASYMMETRY
    -6.0f,   // OBS_FISHER_INFO
+    0.0f,   // OBS_FAST_HURST_EXPONENT — mirrors OBS_HURST_EXPONENT's floor (same [0.0,1.5] contract,
+            // DfaHurstExponent.h's own clamp); NOT empirically calibrated on real activity-clock
+            // data yet, same placeholder posture as OBS_FAST_TALEB_KURTOSIS.
     0.5f,   // OBS_TAIL_INDEX
    -2.5f,   // OBS_SKEWNESS — BowleySkewness over ActivityClockManager's imbalance-bar returns
             // since 2026-08-27 (was TS3 time-bar cadence); same formula/bounds, faster clock
@@ -62,6 +66,8 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBo
     1.5f,    // OBS_HURST_EXPONENT
     1.0f,    // OBS_MICRO_ASYMMETRY
     6.0f,    // OBS_FISHER_INFO
+    1.5f,    // OBS_FAST_HURST_EXPONENT — mirrors OBS_HURST_EXPONENT's ceiling (placeholder, see
+             // matching kObsLowerBounds comment)
     8.0f,    // OBS_TAIL_INDEX
     2.5f,    // OBS_SKEWNESS
     100.0f,  // OBS_AMIHUD_ILLIQUIDITY
@@ -577,6 +583,16 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // old value, unlike kurtosis, so no additive twin was needed.
             obs[OBS_SKEWNESS] = BowleySkewness(returnsArray);
 
+            // Dim 9 (fast_hurst_exponent): additive twin, 2026-08-28 -- hurst_exponent
+            // has a real live gate (Scoring.cpp:266), so this follows kurtosis's additive
+            // pattern, not recurrence_rate's replacement one. length=100/minScale=8 mirrors
+            // CalculateHurstExponent(sc)'s own existing "standard intraday" convenience
+            // overload (StudyHelperFunctions.cpp), not borrowed from kurtosis by analogy.
+            static float s_lastValidFastHurst = 0.5f;
+            const float fastHurstRaw = DfaHurstExponent(returnsArray.data(), 100, 8);
+            m_localRiskContext.fastHurstExponent = std::isfinite(fastHurstRaw) ? fastHurstRaw : s_lastValidFastHurst;
+            if (std::isfinite(fastHurstRaw)) { s_lastValidFastHurst = m_localRiskContext.fastHurstExponent; }
+
             // Dim 13 (recurrence_rate): replaced 2026-08-28, source moved from
             // TS2's time-bar CalculateRecurrenceRate() to this same buffer
             // (spec 2026-08-25-observation-vector-institutional-hardening-
@@ -609,8 +625,10 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             m_localRiskContext.fastTalebKurtosis = 1.23f;
             obs[OBS_SKEWNESS] = 0.0f;  // Warmup: neutral (symmetric)
             obs[OBS_RECURRENCE_RATE] = 0.0f;  // Warmup: neutral (matches contract's [0,1] floor)
+            m_localRiskContext.fastHurstExponent = 0.5f;  // Warmup: neutral (random-walk default)
         }
         obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
+        obs[OBS_FAST_HURST_EXPONENT] = m_localRiskContext.fastHurstExponent;
     }
     m_localRiskContext.talebSkewness = m_latestInstitutionalMetrics.talebSkewness;
     m_localRiskContext.elderChandelierATR = m_latestInstitutionalMetrics.elderChandelierATR;

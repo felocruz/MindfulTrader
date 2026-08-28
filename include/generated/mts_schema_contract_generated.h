@@ -13,7 +13,7 @@ namespace MTS {
 namespace Schema {
 namespace Contract {
 
-inline constexpr std::size_t kObservationDim = 17;
+inline constexpr std::size_t kObservationDim = 18;
 inline constexpr std::size_t kAsymmetryDim = 8;
 
 using ObservationArray = std::array<float, kObservationDim>;
@@ -28,14 +28,15 @@ inline constexpr std::size_t kObsLempelZiv = 5;
 inline constexpr std::size_t kObsHurstExponent = 6;
 inline constexpr std::size_t kObsMicroAsymmetry = 7;
 inline constexpr std::size_t kObsFisherInfo = 8;
-inline constexpr std::size_t kObsTailIndex = 9;
-inline constexpr std::size_t kObsSkewnessIdx = 10;
-inline constexpr std::size_t kObsAmihudIlliquidity = 11;
-inline constexpr std::size_t kObsLiqFragility = 12;
-inline constexpr std::size_t kObsFastTalebKurtosis = 13;
-inline constexpr std::size_t kObsRecurrenceRate = 14;
-inline constexpr std::size_t kObsFractalDim = 15;
-inline constexpr std::size_t kObsMeanRevZ = 16;
+inline constexpr std::size_t kObsFastHurstExponent = 9;
+inline constexpr std::size_t kObsTailIndex = 10;
+inline constexpr std::size_t kObsSkewnessIdx = 11;
+inline constexpr std::size_t kObsAmihudIlliquidity = 12;
+inline constexpr std::size_t kObsLiqFragility = 13;
+inline constexpr std::size_t kObsFastTalebKurtosis = 14;
+inline constexpr std::size_t kObsRecurrenceRate = 15;
+inline constexpr std::size_t kObsFractalDim = 16;
+inline constexpr std::size_t kObsMeanRevZ = 17;
 
 inline constexpr std::size_t kAsymShannonEntropy = 0;
 inline constexpr std::size_t kAsymShannonEfficiency = 1;
@@ -56,6 +57,7 @@ inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames
     "hurst_exponent",
     "micro_asymmetry",
     "fisher_info",
+    "fast_hurst_exponent",
     "tail_index",
     "skewness_idx",
     "amihud_illiquidity",
@@ -155,6 +157,7 @@ inline MTS::Schema::ObservationData MakeObservationData(
         values[kObsHurstExponent],
         values[kObsMicroAsymmetry],
         values[kObsFisherInfo],
+        values[kObsFastHurstExponent],
         values[kObsTailIndex],
         values[kObsSkewnessIdx],
         values[kObsAmihudIlliquidity],
@@ -177,6 +180,7 @@ inline ObservationArray ToObservationArray(
         observation.hurst_exponent(),
         observation.micro_asymmetry(),
         observation.fisher_info(),
+        observation.fast_hurst_exponent(),
         observation.tail_index(),
         observation.skewness_idx(),
         observation.amihud_illiquidity(),

@@ -289,3 +289,79 @@ schema-contract import needed `flatbuffers`, unavailable in the sandbox used, so
 finding was confirmed via static reading of the generated `ObservationData.py` accessor code
 directly rather than a live Python import. High confidence, but worth a real import-and-check before
 treating it as beyond doubt.
+
+## 11. `recurrence_rate` replaced and `fast_hurst_exponent` shipped as the 18th field, 2026-08-28
+— supersedes §9's "not yet actionable" framing for `hurst_exponent` specifically
+
+`docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md` (this repo) executed
+§9's literature-grounded direction for two of its three dims (`mean_rev_z` remains unimplemented,
+still genuinely "nothing to do yet" per §9 above):
+
+- **`recurrence_rate` (Task 1, commit `7f395d0`)**: REPLACED in place, same pattern as `skewness_idx`
+  (§8) — its time-bar `CalculateRecurrenceRate()` (TS2, 30-40 bars) is gone, deleted, zero remaining
+  callers. Source is now `ContextManager::BuildObservationVector()`'s activity-clock block (imbalance-
+  bar returns), recomputed only when a new imbalance bar closes. **No new schema field** — dim
+  position/count for `recurrence_rate` is unchanged, only its *meaning* (clock) changed, same
+  values/semantics discontinuity precedent as `skewness_idx`'s own replacement for any `.context`/
+  `.alpha` data spanning this commit.
+- **`fast_hurst_exponent` (Tasks 2-3, commit pending as of this note)**: ADDITIVE twin, same pattern
+  as `fast_taleb_kurtosis` (§1) — `hurst_exponent` has a real live gate (`Scoring.cpp:266`), so the
+  slow twin's calibration is untouched. **New field, `ObservationData`'s 18th** (inserted after
+  `fisher_info`, before `tail_index` — NOT appended at the end, so every dim from `tail_index`
+  onward shifted by one struct position, same "mid-struct insertion" consequence §1 already
+  documented for `fast_taleb_kurtosis`, now happening a second time). Schema entry: `schema/
+  PENDING_SCHEMA_CHANGES.md` PSC-04 (DECIDED, NOT IMPLEMENTED as of schema regen — update to
+  IMPLEMENTED once `lbrnet` actually consumes it, same gap PSC-03 flagged and left open).
+
+**Concrete new index map, superseding every dim-index reference in §1-§10 above from `tail_index`
+onward** (verify against `include/generated/mts_schema_contract_generated.h` at whatever commit
+you're reading, not this doc, if the two ever disagree):
+
+| Old (17D) | New (18D) | Field |
+|---|---|---|
+| 8 | 8 | `fisher_info` (unchanged) |
+| — | **9** | **`fast_hurst_exponent` (new)** |
+| 9 | 10 | `tail_index` |
+| 10 | 11 | `skewness_idx` |
+| 11 | 12 | `amihud_illiquidity` |
+| 12 | 13 | `liq_fragility` |
+| 13 | 14 | `fast_taleb_kurtosis` |
+| 14 | 15 | `recurrence_rate` |
+| 15 | 16 | `fractal_dim` |
+| 16 | 17 | `mean_rev_z` |
+
+**Real bug found and fixed during this work, directly relevant to whoever eventually builds row 15's
+centralized threshold-calibration registry**: `config/execution_params.json`'s
+`featurescaler_winsorization.dims` array (`MindfulTrader`-owned, hand-maintained per
+`docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md`) had never been updated for
+`fast_taleb_kurtosis`'s own 17D extension — its `index`/`name` pairs still reflected the pre-kurtosis
+16D layout (`index: 9` still labeled `tail_index` instead of whatever the live 17-field struct
+actually held at that position, and no entry existed for `fast_taleb_kurtosis` at all). Corrected in
+the same pass as this section (see the file's own `_updated` note) to match the current 18-entry
+`FeatureScaler.h` arrays exactly. **`lbrnet` does not currently write to this file at all** — grepped,
+zero references in this repo as of 2026-08-28; the only automation is `MindfulTrader`'s own
+`scripts/promote_config_to_live.py` (git-tracked `config/` → `/mnt/c/Trading/config/`, one-directional).
+If row 15's centralized registry work ever builds `lbrnet`-side tooling that writes into this file's
+`dims` array, it must read the *current* dim ordering from `FeatureScaler.h`/the schema contract at
+build time — not assume the 16D/17D layout this exact bug just demonstrated goes stale silently
+otherwise.
+
+**Second, more serious bug found in the same pass, 2026-08-28**: `include/FeatureScaler.h`'s
+`DIM_RECURRENCE_INDEX`/`DIM_FRACTAL_INDEX` constants (which dispatch `recurrence_rate`/`fractal_dim`
+to static-scaling instead of the generic adaptive path) were still hardcoded to **13/14 — the
+pre-`fast_taleb_kurtosis` 16D positions** — never updated when kurtosis shipped at 17D (which should
+have moved them to 14/15) or now at 18D (15/16). **Real production consequence, not just a stale
+comment**: since `fast_taleb_kurtosis` shipped, static scaling was silently applied to the *wrong*
+dims — whatever sat at raw indices 13/14 (originally `fast_taleb_kurtosis`/`recurrence_rate` in the
+17D layout) got `RECURRENCE_STATIC_CENTER`/`FRACTAL_STATIC_CENTER` treatment instead of their own
+correct path, while the *real* `recurrence_rate`/`fractal_dim` fell through to the generic adaptive
+MAD-based path instead of the intended static one. Caught by `tests/cpp/test_feature_scaler.cpp`'s
+`static_recurrence_dim_exact_value`/`static_fractal_dim_exact_value` failing once this session's new
+dim insertion made the drift large enough to fail an exact-value check that a smaller 1-index drift
+apparently didn't (or wasn't run/noticed) at 17D. Fixed to 15/16 (current 18D positions), both native
+tests and a full `./build_dll.sh --no-clean` verified green. **`lbrnet` implication**: if any
+`lbrnet`-side analysis has ever compared `.context`/`.alpha` feature-vector statistics for
+`recurrence_rate`/`fractal_dim` against C++'s `FeatureScaler`-scaled output since the kurtosis ship
+date, that comparison was against a silently mis-scaled signal for those two dims specifically — flag
+this if such an analysis exists or is planned.
+

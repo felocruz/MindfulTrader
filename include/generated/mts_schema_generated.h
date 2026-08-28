@@ -2200,6 +2200,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   float hurst_exponent_;
   float micro_asymmetry_;
   float fisher_info_;
+  float fast_hurst_exponent_;
   float tail_index_;
   float skewness_idx_;
   float amihud_illiquidity_;
@@ -2220,6 +2221,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         hurst_exponent_(0),
         micro_asymmetry_(0),
         fisher_info_(0),
+        fast_hurst_exponent_(0),
         tail_index_(0),
         skewness_idx_(0),
         amihud_illiquidity_(0),
@@ -2229,7 +2231,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         fractal_dim_(0),
         mean_rev_z_(0) {
   }
-  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _fast_taleb_kurtosis, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
+  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _fast_hurst_exponent, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _fast_taleb_kurtosis, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
       : log_variance_ratio_(::flatbuffers::EndianScalar(_log_variance_ratio)),
         burstiness_index_(::flatbuffers::EndianScalar(_burstiness_index)),
         relative_range_(::flatbuffers::EndianScalar(_relative_range)),
@@ -2239,6 +2241,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         hurst_exponent_(::flatbuffers::EndianScalar(_hurst_exponent)),
         micro_asymmetry_(::flatbuffers::EndianScalar(_micro_asymmetry)),
         fisher_info_(::flatbuffers::EndianScalar(_fisher_info)),
+        fast_hurst_exponent_(::flatbuffers::EndianScalar(_fast_hurst_exponent)),
         tail_index_(::flatbuffers::EndianScalar(_tail_index)),
         skewness_idx_(::flatbuffers::EndianScalar(_skewness_idx)),
         amihud_illiquidity_(::flatbuffers::EndianScalar(_amihud_illiquidity)),
@@ -2302,6 +2305,12 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   void mutate_fisher_info(float _fisher_info) {
     ::flatbuffers::WriteScalar(&fisher_info_, _fisher_info);
   }
+  float fast_hurst_exponent() const {
+    return ::flatbuffers::EndianScalar(fast_hurst_exponent_);
+  }
+  void mutate_fast_hurst_exponent(float _fast_hurst_exponent) {
+    ::flatbuffers::WriteScalar(&fast_hurst_exponent_, _fast_hurst_exponent);
+  }
   float tail_index() const {
     return ::flatbuffers::EndianScalar(tail_index_);
   }
@@ -2351,7 +2360,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
     ::flatbuffers::WriteScalar(&mean_rev_z_, _mean_rev_z);
   }
 };
-FLATBUFFERS_STRUCT_END(ObservationData, 68);
+FLATBUFFERS_STRUCT_END(ObservationData, 72);
 
 FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS {
  private:

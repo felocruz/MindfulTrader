@@ -326,6 +326,7 @@ public:
     static constexpr size_t OBS_HURST_EXPONENT = MTS::Schema::Contract::kObsHurstExponent;
     static constexpr size_t OBS_MICRO_ASYMMETRY = MTS::Schema::Contract::kObsMicroAsymmetry;
     static constexpr size_t OBS_FISHER_INFO = MTS::Schema::Contract::kObsFisherInfo;
+    static constexpr size_t OBS_FAST_HURST_EXPONENT = MTS::Schema::Contract::kObsFastHurstExponent;
 
     // Quadrant III: Tail Risk (Fragility)
     static constexpr size_t OBS_TAIL_INDEX = MTS::Schema::Contract::kObsTailIndex;

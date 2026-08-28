@@ -1,6 +1,22 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-28 — `fractal_dim`'s window-widening to 400 bars SHIPPED AND COMMITTED
+Last updated: 2026-08-28 — `fast_hurst_exponent` SHIPPED as `ObservationData`'s 18th field
+(additive twin, `hurst_exponent`'s live gate `Scoring.cpp:266` protected, unchanged). Schema:
+inserted after `fisher_info` (dim 9), shifting `tail_index`..`mean_rev_z` each +1 -- see
+`docs/superpowers/specs/2026-08-26-activity-clock-lbrnet-handoff.md` §11 for the full index map.
+**Two real, previously-undetected bugs found and fixed in the same pass, both predating this
+session** (found via `test_feature_scaler.cpp` failing after the new dim insertion, not by design):
+(1) `config/execution_params.json`'s `featurescaler_winsorization.dims` array had never been
+updated for `fast_taleb_kurtosis`'s own 17D extension; (2) far more serious,
+`FeatureScaler.h`'s `DIM_RECURRENCE_INDEX`/`DIM_FRACTAL_INDEX` dispatch constants were STILL 13/14
+(pre-kurtosis 16D positions) since kurtosis shipped -- production had been silently applying static
+scaling to the wrong dims for `recurrence_rate`/`fractal_dim` the entire time. Both fixed, all
+native tests + full `./build_dll.sh --no-clean` verified green. This is Task 3 of
+`docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md` (`mean_rev_z`'s own
+twin, Tasks 5-8, remains unimplemented); Task 1 (`recurrence_rate` activity-clock replacement,
+`7f395d0`) and Task 2 (pure DFA/Hurst extraction, `65f6bbb`) shipped earlier the same day.
+
+Prior state, 2026-08-28 — `fractal_dim`'s window-widening to 400 bars SHIPPED AND COMMITTED
 (`72ab967`): production `CalculateFractalDimension` now delegates to the pure
 `include/SevcikFractalDimension.h` extraction, `TripleScreen2.cpp` computes the HMM-bound (400-bar)
 and `PositionManager.cpp`-gate-bound (short-window, unchanged) values independently, and the

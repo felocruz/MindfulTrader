@@ -86,7 +86,7 @@ int main() {
         check("constant_input_adaptive_dim_stays_zero_forever", lastDim0 == 0.0f);
     }
 
-    // Static-scaled dims (5=LZ, 13=RECURRENCE, 14=FRACTAL) depend ONLY on the
+    // Static-scaled dims (5=LZ, 15=RECURRENCE, 16=FRACTAL) depend ONLY on the
     // current raw input, not on history -- any call after the first (which is
     // always all-zero) gives the exact analytic value immediately.
     {
@@ -99,13 +99,16 @@ int main() {
         // 0.6 is unreachable for the post-Task-3 RQA statistic, whose real
         // 60-min MES range is ~0.033-0.15, so 0.09 is an upper-tail-but-real
         // probe. z = (0.09-0.0467)/0.0099 = 4.373738 (float32).
-        obs[13] = 0.09f;   // RECURRENCE_STATIC_CENTER=0.0467, SCALE=0.0099 -> z=4.3737...
-        obs[14] = 1.5f;    // FRACTAL_STATIC_CENTER=1.289, SCALE=0.101 -> z=2.0891...
+        // Indices 15/16 (not 13/14): shifted twice since these constants were
+        // derived -- fast_taleb_kurtosis (17D) then fast_hurst_exponent (18D)
+        // both inserted before recurrence_rate/fractal_dim's position.
+        obs[15] = 0.09f;   // RECURRENCE_STATIC_CENTER=0.0467, SCALE=0.0099 -> z=4.3737...
+        obs[16] = 1.5f;    // FRACTAL_STATIC_CENTER=1.289, SCALE=0.101 -> z=2.0891...
         const auto result = fs.UpdateAndNormalize(obs);
         // Independently computed via Python: math.copysign(math.log1p(abs(z)), z)
         check("static_lz_dim_exact_value", approx(result[5], 1.0986122886681096f));
-        check("static_recurrence_dim_exact_value", approx(result[13], 1.6815237207713019f));
-        check("static_fractal_dim_exact_value", approx(result[14], 1.127882670968223f));
+        check("static_recurrence_dim_exact_value", approx(result[15], 1.6815237207713019f));
+        check("static_fractal_dim_exact_value", approx(result[16], 1.127882670968223f));
     }
 
     // Varying adaptive SOFTLOGZ dim on the GENERIC (non-shrinkage) path --
@@ -349,7 +352,11 @@ int main() {
     }
 
     // --- TestShrinkageGeneralization: dim9/dim0/dim7 no longer blow up on
-    // real data, same pattern D2/D4 proved for dim3 ---
+    // real data, same pattern D2/D4 proved for dim3 --- (fixture/constant
+    // names keep their historical "dim9" identifier; tail_index's REAL array
+    // index is now 10, shifted once by fast_hurst_exponent's 2026-08-28
+    // insertion -- see the file-level index-map note near the config test
+    // below before touching any other literal index in this file)
     // 2026-08-14: tracing dim9/dim0/dim7's real-data max|z| events (SAME
     // methodology D4 used for dim3) found the identical scale-collapse
     // signature -- a modest raw deviation landing on a local MAD that had
@@ -370,11 +377,11 @@ int main() {
         double maxAbsZ = 0.0;
         for (size_t i = 0; i < DIM9_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[9] = DIM9_FIXTURE_RAW[i];
+            obs[10] = DIM9_FIXTURE_RAW[i];
             fs.UpdateAndNormalize(obs);
-            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[9])));
+            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[10])));
         }
-        std::printf("  [info] dim9 real-data max|z| after shrinkage: %.2f (pre-fix: 1963.12)\n", maxAbsZ);
+        std::printf("  [info] dim9(tail_index, array index 10) real-data max|z| after shrinkage: %.2f (pre-fix: 1963.12)\n", maxAbsZ);
         check("dim9: shrinkage bounds real-data max|z| (was 1963, scale-collapse artifact)",
               maxAbsZ < 150.0);
         // dim9 (tail_index) is Weibull/bounded (xi=-0.3259, theoretical wall
@@ -388,8 +395,8 @@ int main() {
         // result[i], not to lastRawZ), so no behavioral check on lastRawZ can
         // distinguish the two either. The only check that actually catches
         // this class of bug is asserting the derived value directly.
-        check("dim9: DIM_WINSOR_SIGMA_OVERRIDE[9] is its own derived Weibull-wall bound (10.0), not dim0's (262.0)",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f);
+        check("dim9: DIM_WINSOR_SIGMA_OVERRIDE[10] is its own derived Weibull-wall bound (10.0), not dim0's (262.0)",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[10] == 10.0f);
     }
     {
         FeatureScaler fs;
@@ -501,21 +508,24 @@ int main() {
     // without a lastRawZ-style diagnostic. Real bar-close replica (confirmed
     // bar-gated/historical-only, no live-bar undersampling risk), 15-min
     // bars aggregated from the full multi-year tick history.
+    // (fixture/constant names keep their historical "dim12" identifier;
+    // liq_fragility's REAL array index is now 13, shifted once by
+    // fast_hurst_exponent's 2026-08-28 insertion.)
     {
         FeatureScaler fs;
         size_t hits6 = 0, hitsRail = 0;
         for (size_t i = 0; i < DIM12_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[12] = DIM12_FIXTURE_RAW[i];
+            obs[13] = DIM12_FIXTURE_RAW[i];
             const auto result = fs.UpdateAndNormalize(obs);
-            const float absZ = std::fabs(result[12]);
+            const float absZ = std::fabs(result[13]);
             if (absZ >= 6.0f) ++hits6;
-            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12]) ++hitsRail;
+            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[13]) ++hitsRail;
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM12_FIXTURE_N);
         const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM12_FIXTURE_N);
-        std::printf("  [info] dim12 real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
-                    rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12], rateRail * 100.0);
+        std::printf("  [info] dim12(liq_fragility, array index 13) real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
+                    rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[13], rateRail * 100.0);
         check("dim12: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < 0.05 && rateRail < rate6 / 2.0);
     }
@@ -552,7 +562,8 @@ int main() {
     // FeatureScaler::LoadConfig() overrides compiled defaults from a config
     // file. Placed at the end of main() -- after every pre-existing check --
     // since it mutates the shared static arrays these earlier checks assert
-    // compiled-default values against (e.g. DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f).
+    // compiled-default values against (e.g. DIM_WINSOR_SIGMA_OVERRIDE[10] == 10.0f,
+    // tail_index's slot as of the 2026-08-28 fast_hurst_exponent insertion).
     {
         const std::string path = "/tmp/test_featurescaler_config.json";
         {
@@ -561,7 +572,7 @@ int main() {
   "featurescaler_winsorization": {
     "state_winsor_sigma": 7.5,
     "dims": [
-      {"index": 9, "dim_winsor_sigma_override": 99.0, "logz_winsor_sigma_override": 0.0, "shrinkage_scale_min": 0.0438}
+      {"index": 10, "dim_winsor_sigma_override": 99.0, "logz_winsor_sigma_override": 0.0, "shrinkage_scale_min": 0.0438}
     ]
   }
 })";
@@ -571,7 +582,7 @@ int main() {
               FeatureScaler::configLoadStatus == FeatureScaler::ConfigLoadStatus::LOADED_FROM_FILE);
         check("config_overrides_state_winsor_sigma", FeatureScaler::STATE_WINSOR_SIGMA == 7.5f);
         check("config_overrides_dim9_winsor_override",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 99.0f);
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[10] == 99.0f);
         check("config_leaves_untouched_dims_at_compiled_default",
               FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 262.0f);
         std::remove(path.c_str());

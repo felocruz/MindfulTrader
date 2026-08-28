@@ -63,7 +63,7 @@
   "featurescaler_winsorization": {
     "_owner": "manual/MindfulTrader",
     "_generated_by": "manual/MindfulTrader (docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md Unit C; values carried forward verbatim from include/FeatureScaler.h compiled defaults, zero behavior change on first load)",
-    "_updated": "2026-08-15",
+    "_updated": "2026-08-28 -- CORRECTED: this file had gone stale relative to the 17D (fast_taleb_kurtosis, 7c51f33/ff22e48) and 18D (fast_hurst_exponent, 2026-08-28) schema extensions -- indices 9+ were still the pre-fast_taleb_kurtosis 16D numbering (index 9 mapped to tail_index instead of fast_hurst_exponent, and fast_taleb_kurtosis had no entry at all). Renumbered to match include/FeatureScaler.h's current 18-entry arrays exactly; new dims (9, 14) get compiled-default placeholder values (all zero), not calibrated ones.",
     "state_winsor_sigma": 6,
     "dims": [
       {
@@ -140,6 +140,14 @@
       },
       {
         "index": 9,
+        "name": "fast_hurst_exponent",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "NEW 2026-08-28, additive activity-clock twin of hurst_exponent -- not yet empirically calibrated, compiled-default placeholder"
+      },
+      {
+        "index": 10,
         "name": "tail_index",
         "dim_winsor_sigma_override": 10,
         "logz_winsor_sigma_override": 0,
@@ -147,7 +155,7 @@
         "note": "GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall; shrinkage: confirmed collapse signature, z=1963 traced"
       },
       {
-        "index": 10,
+        "index": 11,
         "name": "skewness_idx",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
@@ -155,7 +163,7 @@
         "note": "audited, negligible clip rate, no action needed; shrinkage disabled per ruthless-simplicity (D8 precedent)"
       },
       {
-        "index": 11,
+        "index": 12,
         "name": "amihud_illiquidity",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
@@ -163,7 +171,7 @@
         "note": "audited, 0.000% production clip rate, no action needed; has its own dedicated AMIHUD_ABSOLUTE_FLOOR fix instead of shrinkage"
       },
       {
-        "index": 12,
+        "index": 13,
         "name": "liq_fragility",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 12,
@@ -171,7 +179,15 @@
         "note": "LOGZ dim, GPD-derived, clean trace, real margin above the theoretical wall; shrinkage disabled -- resolved-healthy, no evidence of need"
       },
       {
-        "index": 13,
+        "index": 14,
+        "name": "fast_taleb_kurtosis",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "activity-clock twin of the Moors kurtosis gate (ff22e48/7c51f33) -- not yet empirically calibrated, compiled-default placeholder. This entry was MISSING entirely before the 2026-08-28 fix."
+      },
+      {
+        "index": 15,
         "name": "recurrence_rate",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
@@ -179,7 +195,7 @@
         "note": "static scaler, not applicable"
       },
       {
-        "index": 14,
+        "index": 16,
         "name": "fractal_dim",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
@@ -187,7 +203,7 @@
         "note": "static scaler, not applicable"
       },
       {
-        "index": 15,
+        "index": 17,
         "name": "mean_rev_z",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
