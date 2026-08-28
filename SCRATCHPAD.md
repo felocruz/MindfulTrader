@@ -8,7 +8,12 @@ and `PositionManager.cpp`-gate-bound (short-window, unchanged) values independen
 maintained `m_fractalDimShortRaw`, not the widened `obs[OBS_FRACTAL_DIM]`). Verified via new native
 test (`test_sevcik_fractal_dimension.cpp`, all pass), full `./build_dll.sh --no-clean`, and
 regression passes on `test_recurrence_rate_engine`/`test_rqa_epsilon`/`test_feature_scaler`. This
-closes out row 1's last pure time-bar-widening item. Prior state (2026-08-27): `skewness_idx`'s
+closes out row 1's last pure time-bar-widening item. **Plan written 2026-08-28 for the remaining
+activity-clock work**: `docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md`
+scopes `mean_rev_z`/`hurst_exponent` as additive twins (`fast_mean_rev_z`/`fast_hurst_exponent`,
+new schema fields 18/19, mirroring `fast_taleb_kurtosis`'s shipped pattern) and `recurrence_rate`
+as an in-place replacement (mirroring `skewness_idx`'s shipped pattern, no schema change) — design
+complete, NOT yet implemented. Prior state (2026-08-27): `skewness_idx`'s
 activity-clock replacement + a real `FeatureScaler.h`
 17-dim indexing bug fix both landed and committed (`7c51f33`). **`mean_rev_z`, `hurst_exponent`, AND
 `recurrence_rate`** all move to activity-clock treatment instead — decided, NOT yet implemented, no
