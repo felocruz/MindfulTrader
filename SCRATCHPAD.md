@@ -316,6 +316,30 @@ Politis & White (2004), *Journal of Business & Economic Statistics* 22(2); `arch
 optimal_block_length` documentation (confirms the `b_sb`/`b_cb` distinction and per-bootstrap-type
 usage guidance).
 
+**CLOSING UPDATE ON `fractal_dim`'s GATE, 2026-08-27/28 — the sibling built the migration tooling
+(`tools/fractal_dim_threshold_migration.{cpp,py}`, `include/SevcikFractalDimension.h`,
+`tests/cpp/test_sevcik_fractal_dimension.cpp`) and ran the real analysis.** Two findings, both now
+written up in `2026-08-25-observation-vector-institutional-hardening-spec.md` §5b's new subsection:
+1. **`correlation(fractal_dim@30, fractal_dim@400) = 0.0115`** — essentially zero. Decision:
+   **split**, not recalibrate — `PositionManager.cpp`'s gate keeps its own short window, decoupled
+   from the HMM's 400-bar value. This reverses the earlier rejection of the split option (it was
+   rejected for lacking a complementary-information rationale) — the near-zero correlation is real,
+   measured evidence of exactly that rationale, not "avoid recalibration effort" in disguise.
+2. **`PositionManager.cpp:2144`'s `fractalDim>1.6f` branch has fired zero times across 19,327 real
+   30-bar readings** (observed max ≪ 1.6) — broken on the *current* window, unrelated to any of the
+   window-widening work. Naive percentile-mapping (what Task 7's methodology would mechanically
+   produce) maps to the new distribution's sample maximum (`1.4393`) — a second non-functional
+   threshold, not a fix. Confirmed by actually running the tool, not assumed. **Needs a
+   domain-grounded re-derivation from the real distribution — not yet done.**
+
+**This dead-gate finding is also what prompted `PRODUCTION_TRIAGE.md` row 15** (centralized
+threshold-calibration machinery, `docs/superpowers/specs/2026-08-28-centralized-threshold-
+calibration-machinery-spec.md`) — a broader survey found this is a known, recurring pattern across
+`lbrnet`'s 11+ independently-evolved calibration scripts, not a one-off. Spec only, from this
+session — implementation stays `lbrnet`-rooted, per explicit user confirmation. Registry shape
+decided: single unified manifest. §3.5 of that spec is a **required, enumerated cleanup list** for
+every dated/stale threshold artifact the survey found (~28 files) — not optional.
+
 ## Thread A: Pattern-detection hardening (row 13) — Phase 0 DONE, design DONE, 5 open questions block a plan
 
 Start here: `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md`
