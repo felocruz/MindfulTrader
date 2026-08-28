@@ -8,11 +8,12 @@
 - **North Star (readiness/status)**: `/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` — check via
   `bash /home/rcruz/devel/VSCode/.claude/scripts/check_north_star.sh`. Row 1's current status
   (activity-clock observation-vector work): `fast_taleb_kurtosis`/`skewness_idx` shipped, committed
-  `ff22e48`/`ea8058b`/`7c51f33`; `mean_rev_z`/`hurst_exponent` literature-grounded for the same
-  treatment but not yet implemented; see `../CLAUDE.md`'s own North Star section for the full
+  `ff22e48`/`ea8058b`/`7c51f33`; `fractal_dim`'s window widened to 400 bars, shipped `72ab967`;
+  `mean_rev_z`/`hurst_exponent`/`recurrence_rate` literature-grounded for activity-clock treatment
+  but not yet implemented; see `../CLAUDE.md`'s own North Star section for the full
   pointer.
 
-**Last Updated**: 2026-08-27
+**Last Updated**: 2026-08-28
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).

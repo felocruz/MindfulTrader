@@ -44,11 +44,19 @@ purposes across the other three repos.
   that was reverted but never corrected in its own doc). Not fixed from here, per repo-scope
   convention — handed to `lbrnet`'s own session: `docs/superpowers/specs/2026-08-26-activity-clock-
   lbrnet-handoff.md` §10.
-- **Handed to a sibling Claude Sonnet 5 instance, 2026-08-27, not executed from this session**:
-  window-widening `recurrence_rate`/`fractal_dim` only (`2026-08-25-observation-vector-
-  institutional-hardening-spec.md` §5 — `mean_rev_z` moved out per the literature-grounding bullet
-  above; proposed ~150-bar target explicitly not finalized, needs an autocorrelation-time
-  derivation first).
+- **`fractal_dim` window-widening SHIPPED AND COMMITTED, 2026-08-28 (`72ab967`)**, by the sibling
+  Claude Sonnet 5 instance this was handed to on 2026-08-27: widened to 400 bars (measured Politis-
+  White circular block length ≈404.82 on real MES data, superseding the original ~150-bar proposal),
+  decoupled from `recurrence_rate` (which later also moved to activity-clock treatment, see below —
+  so it kept its original short window unchanged) and from `PositionManager.cpp`'s gate (which now
+  reads an independently-maintained short-window copy via a new `ContextManager::
+  SetFractalDimShort()`, fixing the `ContextManager.cpp:589` coupling point the spec flagged as
+  critical). `include/SevcikFractalDimension.h` extracted as the pure single source of truth,
+  production delegates to it; native test coverage added. `recurrence_rate` (RQA) was subsequently
+  found to have its own real cross-domain literature grounding (RQA on event-indexed RR-interval
+  sequences, HRV literature) and moved to activity-clock treatment alongside `mean_rev_z`/
+  `hurst_exponent` — decided, NOT yet implemented, no plan written yet (this reverses the "explicitly
+  NOT included" verdict two bullets above, which predates that second literature pass).
 - `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md` (row 13,
   unrelated thread) — Phase 0 diagnosis done, still blocked on 5 open questions (§7), untouched
   since 2026-08-25.

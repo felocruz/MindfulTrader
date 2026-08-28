@@ -1,10 +1,16 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-27 — `skewness_idx`'s activity-clock replacement + a real `FeatureScaler.h`
-17-dim indexing bug fix both landed and committed (`7c51f33`). **Pure time-bar window-widening is
-now `fractal_dim` ALONE, derived to 400 bars** (`2026-08-25-observation-vector-institutional-
-hardening-spec.md` §5b) — handed to a sibling Claude Sonnet 5 instance, see Thread C's tail for the
-full handoff. **`mean_rev_z`, `hurst_exponent`, AND (as of a second literature pass, same day)
+Last updated: 2026-08-28 — `fractal_dim`'s window-widening to 400 bars SHIPPED AND COMMITTED
+(`72ab967`): production `CalculateFractalDimension` now delegates to the pure
+`include/SevcikFractalDimension.h` extraction, `TripleScreen2.cpp` computes the HMM-bound (400-bar)
+and `PositionManager.cpp`-gate-bound (short-window, unchanged) values independently, and the
+`ContextManager.cpp:589` coupling point flagged by the spec was fixed (gate now reads a separately-
+maintained `m_fractalDimShortRaw`, not the widened `obs[OBS_FRACTAL_DIM]`). Verified via new native
+test (`test_sevcik_fractal_dimension.cpp`, all pass), full `./build_dll.sh --no-clean`, and
+regression passes on `test_recurrence_rate_engine`/`test_rqa_epsilon`/`test_feature_scaler`. This
+closes out row 1's last pure time-bar-widening item. Prior state (2026-08-27): `skewness_idx`'s
+activity-clock replacement + a real `FeatureScaler.h`
+17-dim indexing bug fix both landed and committed (`7c51f33`). **`mean_rev_z`, `hurst_exponent`, AND
 `recurrence_rate`** all move to activity-clock treatment instead — decided, NOT yet implemented, no
 plan written yet. `recurrence_rate`'s case is real cross-domain grounding (RQA on event-indexed
 RR-interval sequences, HRV literature), found only after a direct "ground this in the literature"
@@ -329,8 +335,16 @@ written up in `2026-08-25-observation-vector-institutional-hardening-spec.md` §
    30-bar readings** (observed max ≪ 1.6) — broken on the *current* window, unrelated to any of the
    window-widening work. Naive percentile-mapping (what Task 7's methodology would mechanically
    produce) maps to the new distribution's sample maximum (`1.4393`) — a second non-functional
-   threshold, not a fix. Confirmed by actually running the tool, not assumed. **Needs a
-   domain-grounded re-derivation from the real distribution — not yet done.**
+   threshold, not a fix. Confirmed by actually running the tool, not assumed. **SUPERSEDED,
+   2026-08-28 (corrected here 2026-08-28 — this passage was left saying "needs re-derivation" after
+   the spec itself was already updated to the resolution below; caught during final handoff
+   consistency pass, don't trust this file over the spec on this point going forward): no
+   hand-derived replacement threshold is being pursued.** `fractal_dim@30` (already wire-transmitted
+   raw via `RiskGateContext.fractal_dim`, zero new schema work) is proposed instead as a raw feature
+   into the soft/gate danger classifier (row 11) — a learned model finding the real relationship
+   beats hand-picking a second linear cutoff, especially given the first one was wrong. GAP 11's gate
+   stays inert (already non-functional, so nothing live is at risk) until that classifier ships, then
+   becomes a retirement candidate. Full writeup: hardening spec §5b's two-window subsection + §9.
 
 **This dead-gate finding is also what prompted `PRODUCTION_TRIAGE.md` row 15** (centralized
 threshold-calibration machinery, `docs/superpowers/specs/2026-08-28-centralized-threshold-
@@ -473,9 +487,9 @@ separate wire table from `ObservationData` (the HMM's input), populated from raw
 at `ContextManager::EmitTrainingContext()`, already logged in `.context`/`.alpha` — no new C++/schema
 work needed. Satisfies "deliberately different from the HMM" on two grounds: structural (separate
 table) and empirical (`correlation(fractal_dim@30, fractal_dim@400) = 0.0115`, measured during the
-gate-threshold migration work above). One real dependency: this is only clean once row 1's
-`fractal_dim`/`recurrence_rate` split actually ships — before that, the two are still the same 30-bar
-computation. `RiskGateContext` also exposes `hurst_exponent`/`mean_rev_z`/`taleb_kurtosis`/
+gate-threshold migration work above). **Dependency resolved, 2026-08-28 (`72ab967`)**: row 1's
+`fractal_dim`/`recurrence_rate` split has shipped — the two are no longer the same computation.
+`RiskGateContext` also exposes `hurst_exponent`/`mean_rev_z`/`taleb_kurtosis`/
 `taleb_skewness` raw values, same consideration not yet evaluated for those. Full detail:
 `PRODUCTION_TRIAGE.md` row 11.
 
