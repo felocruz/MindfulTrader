@@ -131,10 +131,14 @@ arrow::Status BuildArrowSchema(std::shared_ptr<arrow::Schema>* out) {
     for (std::size_t i = 0; i < MTS::Schema::Contract::kObservationDim; ++i) {
         fields.push_back(arrow::field(MTS::Schema::Contract::kObservationFieldNames[i], arrow::float32()));
     }
+    // kRiskGateFloatOutputColumnNames already resolves each name to either the
+    // plain field name or <name>_raw (only for the 5 that collide with an
+    // ObservationData column, §10.4) -- no additional prefix here. Blanket-
+    // prefixing on top of that would defeat the whole point of computing this
+    // array in the first place.
     for (std::size_t i = 0; i < MTS::Schema::Contract::kRiskGateFloatFieldCount; ++i) {
         fields.push_back(arrow::field(
-            std::string("risk_gate_") + MTS::Schema::Contract::kRiskGateFloatOutputColumnNames[i],
-            arrow::float32()));
+            MTS::Schema::Contract::kRiskGateFloatOutputColumnNames[i], arrow::float32()));
     }
     fields.push_back(arrow::field("risk_gate_regime_duration", arrow::int32()));
     fields.push_back(arrow::field("risk_gate_is_valid", arrow::boolean()));
