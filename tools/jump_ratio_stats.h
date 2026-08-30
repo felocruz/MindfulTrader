@@ -30,33 +30,28 @@ inline std::vector<double> ComputeJumpRatio(
 
     constexpr double kHalfPi = 1.5707963267948966;  // pi/2
 
-    auto compute_at = [&](std::size_t window_start) {
-        const std::size_t window_end = window_start + window;  // exclusive
+    // Computes RV/BV directly (O(window)) for the window starting at
+    // window_start -- used once, to seed the sliding accumulators below.
+    // Every subsequent window reuses these accumulators via O(1) incremental
+    // updates rather than recomputing from scratch.
+    auto compute_window = [&](std::size_t window_start) {
         double rv = 0.0;
-        for (std::size_t k = window_start; k < window_end; ++k) {
+        for (std::size_t k = window_start; k < window_start + window; ++k) {
             rv += log_returns[k] * log_returns[k];
         }
         double bv_sum = 0.0;
-        for (std::size_t k = window_start + 1; k < window_end; ++k) {
+        for (std::size_t k = window_start + 1; k < window_start + window; ++k) {
             bv_sum += std::fabs(log_returns[k - 1]) * std::fabs(log_returns[k]);
         }
-        const double bv = kHalfPi * bv_sum;
-        if (rv <= 0.0) {
-            return;  // leaves jump_ratio[window_end - 1] as NaN
-        }
-        jump_ratio[window_end - 1] = std::max(0.0, (rv - bv) / rv);
+        return std::make_pair(rv, bv_sum);
+    };
+    auto write_jump_ratio = [&](std::size_t window_end_idx, double rv, double bv_sum) {
+        if (rv <= 0.0) return;  // leaves jump_ratio[window_end_idx] as NaN
+        jump_ratio[window_end_idx] = std::max(0.0, (rv - kHalfPi * bv_sum) / rv);
     };
 
-    // First window computed directly (O(window)); every subsequent window
-    // slides by one element via incremental sum updates (O(1) per step).
-    compute_at(0);
-    double rv = 0.0, bv_sum = 0.0;
-    for (std::size_t k = 0; k < window; ++k) {
-        rv += log_returns[k] * log_returns[k];
-    }
-    for (std::size_t k = 1; k < window; ++k) {
-        bv_sum += std::fabs(log_returns[k - 1]) * std::fabs(log_returns[k]);
-    }
+    auto [rv, bv_sum] = compute_window(0);
+    write_jump_ratio(window - 1, rv, bv_sum);
     for (std::size_t window_start = 1; window_start + window <= n; ++window_start) {
         const std::size_t old_idx = window_start - 1;
         const std::size_t new_idx = window_start + window - 1;
@@ -65,10 +60,7 @@ inline std::vector<double> ComputeJumpRatio(
         // (old_idx, old_idx+1), add the pair that entered (new_idx-1, new_idx).
         bv_sum -= std::fabs(log_returns[old_idx]) * std::fabs(log_returns[old_idx + 1]);
         bv_sum += std::fabs(log_returns[new_idx - 1]) * std::fabs(log_returns[new_idx]);
-        const double bv = kHalfPi * bv_sum;
-        if (rv > 0.0) {
-            jump_ratio[new_idx] = std::max(0.0, (rv - bv) / rv);
-        }
+        write_jump_ratio(new_idx, rv, bv_sum);
     }
     return jump_ratio;
 }
