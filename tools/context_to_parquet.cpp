@@ -10,6 +10,7 @@
 //   tools/context_to_parquet.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -o tools/context_to_parquet
+#include "context_cache_key.h"
 #include "context_reader.h"
 #include "generated/mts_schema_contract_generated.h"
 
@@ -233,7 +234,7 @@ void PrintUsage(const char* argv0) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string input_path, output_path, mode = "unbounded";
+    std::string input_path, output_path, mode = "unbounded", meta_path_arg;
     std::size_t max_samples = 0;
     std::size_t resume_offset = 0;
     std::uint64_t resume_last_seq_id = 0;
@@ -253,6 +254,8 @@ int main(int argc, char** argv) {
         else if (arg == "--resume-last-seq-id") {
             resume_last_seq_id = std::stoull(next("--resume-last-seq-id"));
             has_resume_last_seq_id = true;
+        } else if (arg == "--meta-path") {
+            meta_path_arg = next("--meta-path");
         } else {
             std::fprintf(stderr, "unknown argument: %s\n", arg.c_str());
             PrintUsage(argv[0]);
@@ -270,6 +273,35 @@ int main(int argc, char** argv) {
     } catch (const std::runtime_error& e) {
         std::fprintf(stderr, "❌ %s\n", e.what());
         return 1;
+    }
+
+    // Freshness/rebuild decision (§10.6's "what do we do when a new .context file
+    // arrives" question) -- only engaged when --meta-path is supplied, so scripted/
+    // tested invocations that pass explicit --resume-offset/--resume-last-seq-id
+    // flags keep their existing behavior unchanged.
+    if (mode == "unbounded" && !meta_path_arg.empty()) {
+        const auto plan = DecideRebuildPlan(
+            input_path, output_path, meta_path_arg, MTS::Schema::Contract::kSchemaVersion);
+        if (plan == RebuildPlan::kFresh) {
+            std::printf("✅ %s is already fresh relative to %s -- nothing to do\n",
+                        output_path.c_str(), input_path.c_str());
+            CloseContextFile(handle);
+            return 0;
+        }
+        if (plan == RebuildPlan::kIncremental) {
+            auto prior = ReadCacheKey(meta_path_arg);
+            resume_offset = prior->resume_offset;
+            if (prior->has_last_seq_id) {
+                resume_last_seq_id = prior->last_seq_id;
+                has_resume_last_seq_id = true;
+            }
+            std::printf("Incremental rebuild: resuming from byte offset %zu\n", resume_offset);
+        } else {
+            std::printf("Full rebuild: %s\n",
+                        std::ifstream(meta_path_arg).good()
+                            ? "schema changed, file shrank, or same-size-different-content"
+                            : "no prior cache");
+        }
     }
 
     std::shared_ptr<arrow::Schema> schema;
@@ -344,10 +376,29 @@ int main(int argc, char** argv) {
     }
 
     auto close_status = writer->Close();
+    const std::size_t final_handle_size = handle.size;
     CloseContextFile(handle);
     if (!close_status.ok()) {
         std::fprintf(stderr, "❌ Parquet writer Close failed: %s\n", close_status.ToString().c_str());
         return 1;
+    }
+
+    if (!meta_path_arg.empty()) {
+        // handle.size (the whole file's byte length) is used as the persisted
+        // resume_offset for a completed unbounded pass -- the whole file was
+        // consumed. A future incremental call re-derives the true resume point
+        // from ReadAllRecordsResumable's own returned ResumePoint the same way
+        // the per-chunk loop above already tracks offset/last_seq; wiring the
+        // exact final chunk's ResumePoint into this call instead is a direct
+        // follow-on, not done here to keep this step's diff focused on the
+        // freshness-decision wiring itself.
+        const auto final_stat = StatFile(input_path);
+        ContextCacheKey key{
+            final_stat.size, final_stat.mtime, MTS::Schema::Contract::kSchemaVersion,
+            kContextParquetCacheFormatVersion, final_handle_size,
+            /*last_seq_id=*/0, /*has_last_seq_id=*/false,
+        };
+        WriteCacheKey(meta_path_arg, key);
     }
 
     std::printf(
