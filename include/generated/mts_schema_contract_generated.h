@@ -13,11 +13,7 @@ namespace MTS {
 namespace Schema {
 namespace Contract {
 
-inline constexpr std::size_t kObservationDim = 18;
-inline constexpr std::size_t kAsymmetryDim = 8;
-
-using ObservationArray = std::array<float, kObservationDim>;
-using AsymmetryArray = std::array<float, kAsymmetryDim>;
+inline constexpr std::size_t kObservationDim = 19;
 
 inline constexpr std::size_t kObsLogVarianceRatio = 0;
 inline constexpr std::size_t kObsBurstinessIndex = 1;
@@ -37,15 +33,7 @@ inline constexpr std::size_t kObsFastTalebKurtosis = 14;
 inline constexpr std::size_t kObsRecurrenceRate = 15;
 inline constexpr std::size_t kObsFractalDim = 16;
 inline constexpr std::size_t kObsMeanRevZ = 17;
-
-inline constexpr std::size_t kAsymShannonEntropy = 0;
-inline constexpr std::size_t kAsymShannonEfficiency = 1;
-inline constexpr std::size_t kAsymTalebKurtosis = 2;
-inline constexpr std::size_t kAsymTalebSkewness = 3;
-inline constexpr std::size_t kAsymTalebCliff = 4;
-inline constexpr std::size_t kAsymParetoRot = 5;
-inline constexpr std::size_t kAsymRaschkeBurst = 6;
-inline constexpr std::size_t kAsymSessionQualityScore = 7;
+inline constexpr std::size_t kObsFastMeanRevZ = 18;
 
 inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames = {
     "log_variance_ratio",
@@ -66,7 +54,22 @@ inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames
     "recurrence_rate",
     "fractal_dim",
     "mean_rev_z",
+    "fast_mean_rev_z",
 };
+inline constexpr std::uint16_t kSchemaVersion = 240;  // from mts_schema.fbs's WIRE_SCHEMA_VERSION marker, see brainstorm doc §10.2
+inline constexpr std::size_t kAsymmetryDim = 8;
+
+using ObservationArray = std::array<float, kObservationDim>;
+using AsymmetryArray = std::array<float, kAsymmetryDim>;
+
+inline constexpr std::size_t kAsymShannonEntropy = 0;
+inline constexpr std::size_t kAsymShannonEfficiency = 1;
+inline constexpr std::size_t kAsymTalebKurtosis = 2;
+inline constexpr std::size_t kAsymTalebSkewness = 3;
+inline constexpr std::size_t kAsymTalebCliff = 4;
+inline constexpr std::size_t kAsymParetoRot = 5;
+inline constexpr std::size_t kAsymRaschkeBurst = 6;
+inline constexpr std::size_t kAsymSessionQualityScore = 7;
 
 inline constexpr std::array<const char*, kAsymmetryDim> kAsymmetryFieldNames = {
     "shannon_entropy",
@@ -77,6 +80,67 @@ inline constexpr std::array<const char*, kAsymmetryDim> kAsymmetryFieldNames = {
     "pareto_rot",
     "raschke_burst",
     "session_quality_score",
+};
+
+inline constexpr std::size_t kRiskGateFieldCount = 17;
+inline constexpr std::size_t kRiskGateFloatFieldCount = 14;
+
+inline constexpr std::array<const char*, kRiskGateFieldCount> kRiskGateFieldNames = {
+    "shannon_flow_entropy",
+    "shannon_efficiency",
+    "taleb_kurtosis",
+    "taleb_skewness",
+    "elder_chandelier_atr",
+    "pareto_tail_alpha",
+    "amihud_illiquidity",
+    "spread_stress",
+    "hurst_exponent",
+    "fractal_dim",
+    "mean_rev_z",
+    "raschke_burst",
+    "fisher_info",
+    "regime_duration",
+    "is_valid",
+    "snapshot_timestamp_us",
+    "amihud_percentile",
+};
+
+inline constexpr std::array<const char*, kRiskGateFloatFieldCount> kRiskGateFloatFieldNames = {
+    "shannon_flow_entropy",
+    "shannon_efficiency",
+    "taleb_kurtosis",
+    "taleb_skewness",
+    "elder_chandelier_atr",
+    "pareto_tail_alpha",
+    "amihud_illiquidity",
+    "spread_stress",
+    "hurst_exponent",
+    "fractal_dim",
+    "mean_rev_z",
+    "raschke_burst",
+    "fisher_info",
+    "amihud_percentile",
+};
+
+// Output-column names for RiskGateContext's float fields -- suffixed with
+// _raw ONLY where the plain name collides with an ObservationData column
+// (raw/unscaled here vs. log-z/winsorized there), computed by set
+// intersection against kObservationFieldNames, not hardcoded (§10.4).
+inline constexpr std::array<const char*, kRiskGateFloatFieldCount> kRiskGateFloatOutputColumnNames = {
+    "shannon_flow_entropy",
+    "shannon_efficiency",
+    "taleb_kurtosis",
+    "taleb_skewness",
+    "elder_chandelier_atr",
+    "pareto_tail_alpha",
+    "amihud_illiquidity_raw",
+    "spread_stress",
+    "hurst_exponent_raw",
+    "fractal_dim_raw",
+    "mean_rev_z_raw",
+    "raschke_burst",
+    "fisher_info_raw",
+    "amihud_percentile",
 };
 
 inline constexpr std::uint16_t kConfigDefaultMaxIndicators = 50;
@@ -165,7 +229,8 @@ inline MTS::Schema::ObservationData MakeObservationData(
         values[kObsFastTalebKurtosis],
         values[kObsRecurrenceRate],
         values[kObsFractalDim],
-        values[kObsMeanRevZ]);
+        values[kObsMeanRevZ],
+        values[kObsFastMeanRevZ]);
 }
 
 inline ObservationArray ToObservationArray(
@@ -189,6 +254,7 @@ inline ObservationArray ToObservationArray(
         observation.recurrence_rate(),
         observation.fractal_dim(),
         observation.mean_rev_z(),
+        observation.fast_mean_rev_z(),
     };
 }
 
@@ -224,7 +290,7 @@ static_assert(std::is_standard_layout<MTS::Schema::ObservationData>::value,
 static_assert(std::is_standard_layout<MTS::Schema::AsymmetryContext>::value,
               "AsymmetryContext must remain a standard-layout FlatBuffers struct");
 static_assert(sizeof(MTS::Schema::ObservationData) == (kObservationDim * sizeof(float)),
-              "ObservationData schema drift: expected 17 float fields");
+              "ObservationData schema drift: expected 19 float fields");
 static_assert(sizeof(MTS::Schema::AsymmetryContext) == (kAsymmetryDim * sizeof(float)),
               "AsymmetryContext schema drift: expected 8 float fields");
 
