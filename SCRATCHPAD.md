@@ -1,5 +1,48 @@
 # Session Scratchpad — Where We Left Off
 
+**Two offline candidate-validation tools + real results — DONE and COMMITTED, 2026-08-30**
+(`MindfulTrader` `62ea7ee`..`a5fe024`, following the converter work below). Brainstorm doc §5.0/§5.1,
+§10.7/§10.8/§10.9.
+
+- **§5.0 drift/location (`tools/drift_location_eval.cpp`): TESTED AND REJECTED.** Real 38.5M-row MES
+  data, same-sign hit-rate test — hit_rate below 0.5 at every horizon (0.4854→0.4957), decaying
+  toward null. Rejected before any schema/C++ commitment. First C++ tool in this repo to read
+  Parquet directly; two real performance bugs found and fixed via actual measurement (unprojected
+  Arrow read, 5+min→7.5s; per-signal binary search, 100+s hang→O(n) two-pointer merge).
+- **§5.1 jump/bipower-variation ratio (`tools/jump_ratio_eval.cpp`): TESTED AND SURVIVES** — real,
+  substantial effect, opposite the naive hypothesis: high jump-dominated realized variance predicts
+  a CALMER, not more chaotic, near-term future (top-decile median\|forward return\| is
+  55.2%/55.1%/58.3%/62.6% of bottom-decile's at 30/60/120/240min, CI excluding zero every time). Not
+  yet promoted to a schema field.
+  - **Real performance emergency mid-session**: exact multinomial bootstrap resample is memory-
+    latency-bound at real ~3.85M-element decile-group scale (~95ns/gather) — a real run was killed
+    after 61 minutes still on horizon 2/4 (projected ~97min total). Fixed via a weighted/
+    exchangeable bootstrap (Praestgaard & Wellner 1993) above a 20,000-element threshold; two weight
+    distributions tried and rejected (Poisson(1) itself measured ~73ns/draw, nearly as slow as the
+    gather it replaced) before landing on Exponential(1) (Rubin 1981) — fast AND correctly scaled.
+    A first attempt at the "correctly scaled" part (Uniform[0,2]) was itself caught by review
+    producing CIs ~1.7-1.8x too narrow (wrong weight variance) before Exponential(1) replaced it.
+  - **Mean→median correction, caught by direct user challenge, not a code review**: the first
+    working version used `mean(\|forward_return\|)`, matching `dim_acceptance_eval.py`'s own
+    precedent — but this codebase's own, later, harder-won standard for fat-tailed data is
+    `FeatureScaler.h`'s median/MAD ("Taleb-consistent"), the same correction already made once
+    before (Bowley/Moors replacing moment-based skewness/kurtosis, 2026-08-13). New
+    `ComputeBootstrapMedianGapCI` (native-only, no Python counterpart) independently cross-validated
+    against exact bootstraps under Normal/Student-t/Cauchy tails during review.
+  - **New standing-methodology gap found, documented, NOT fixed**: both this tool and
+    `drift_location_eval` treat heavily-overlapping per-tick forward-return signals as i.i.d. when
+    bootstrap-resampling — understates every CI's width by an unquantified, plausibly large factor.
+    Doesn't change either verdict (both effects are far from a naively-calibrated boundary) but is
+    the **concrete next action** before any further candidate: a block bootstrap, reusing this
+    repo's own measured Politis-White block-length precedent (`fractal_dim`, ≈404.82, `72ab967`),
+    applied once, uniformly, not patched into one candidate's test. Full detail: brainstorm doc §10.9.
+- Housekeeping done same session: brainstorm doc §5.0/§5.1/§9/§10.7-10.9/§1.9/§8 all updated to match
+  (was showing jump-ratio as `CANDIDATE`/"not built", now stale-checked); `PRODUCTION_TRIAGE.md` row
+  1 updated (Triage Protocol rule 7) — `NORTH_STAR_STATUS` unchanged (row 1 stays `IN_PROGRESS`, this
+  is progress within the sub-thread, not a status transition).
+
+---
+
 **C++/Arrow `.context` converter — DONE and COMMITTED, 2026-08-30** (`MindfulTrader` `689465a`..
 `54d1702`, `schema` `477b750`/`c7788f8`). Brainstorm doc §10 → 13-task plan
 (`docs/superpowers/plans/2026-08-30-context-to-parquet-cpp-arrow-converter.md`), all done:
