@@ -42,6 +42,20 @@ int main() {
         check("CI bounds are finite and ordered (lo <= hi)",
               std::isfinite(result.ci_lo) && std::isfinite(result.ci_hi) && result.ci_lo <= result.ci_hi);
     }
+    {
+        // n_boot == 0: no resamples means no bootstrap distribution to read a
+        // percentile from -- must return NaN CI bounds, not index an empty
+        // gaps vector out of bounds (a real latent bug, found in review,
+        // fixed directly: gaps.size() - 1 on an empty vector wraps
+        // std::size_t to SIZE_MAX). The point estimate still has no
+        // randomness in it, so it must remain exact even with zero resamples.
+        std::vector<double> top = {3.0, -5.0, 4.0};
+        std::vector<double> bottom = {1.0, -1.0, 2.0};
+        auto result = ComputeBootstrapMeanGapCI(top, bottom, /*n_boot=*/0);
+        check("n_boot=0 point estimate is still exact", close(result.gap, 4.0 - (4.0 / 3.0), 1e-9));
+        check("n_boot=0 CI bounds are NaN, not garbage from an empty-vector index",
+              std::isnan(result.ci_lo) && std::isnan(result.ci_hi));
+    }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);
     return g_failures == 0 ? 0 : 1;

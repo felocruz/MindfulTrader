@@ -146,6 +146,14 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     };
     const double point_gap = mean_abs(top) - mean_abs(bottom);
 
+    if (n_boot == 0) {
+        // No resamples -> no bootstrap distribution to read a percentile from.
+        // Without this guard, gaps.size() - 1 wraps std::size_t to SIZE_MAX
+        // below and indexes far past an empty vector.
+        return {point_gap, std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN()};
+    }
+
     std::mt19937_64 rng(seed);
     std::uniform_int_distribution<std::size_t> top_dist(0, top.size() - 1);
     std::uniform_int_distribution<std::size_t> bottom_dist(0, bottom.size() - 1);
