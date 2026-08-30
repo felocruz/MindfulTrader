@@ -56,12 +56,7 @@ std::vector<int> ParseHorizons(const std::string& csv) {
 
 double Percentile(std::vector<double> values, double p) {
     std::sort(values.begin(), values.end());
-    const double idx = p / 100.0 * static_cast<double>(values.size() - 1);
-    const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
-    const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
-    if (lo_idx == hi_idx) return values[lo_idx];
-    const double frac = idx - static_cast<double>(lo_idx);
-    return values[lo_idx] * (1.0 - frac) + values[hi_idx] * frac;
+    return PercentileFromSorted(values, p);
 }
 
 }  // namespace
@@ -119,7 +114,11 @@ int main(int argc, char** argv) {
     const double lo_thresh = Percentile(signal_jr, 100.0 * top_decile);
 
     const auto horizons = ParseHorizons(horizons_csv);
-    std::printf("\n=== Predictive power (magnitude): does high jump_ratio predict larger |forward return|? ===\n");
+    std::printf("\n=== Predictive power (magnitude, median-based): does high jump_ratio predict larger |forward return|? ===\n");
+    std::printf("NOTE: bootstrap CIs below treat per-tick signals as i.i.d.; real forward-return\n"
+                 "signals overlap heavily (a 240min return spans thousands of adjacent ticks), so\n"
+                 "true CI width is understated by an unquantified factor -- see market_test_stats.h's\n"
+                 "ComputeBootstrapMedianGapCI comment for the known-limitation writeup.\n");
     std::ofstream json_out;
     if (!report_json_path.empty()) {
         json_out.open(report_json_path);
@@ -152,11 +151,14 @@ int main(int argc, char** argv) {
         // also validate marginal future candidates. At this tool's real
         // decile-group scale (~10% of 38.5M signals, several million elements
         // per group), the weighted-median-bootstrap path measures
-        // ~458ms/resample -- ~7.6min per horizon, ~30.5min for all 4 (real,
-        // measured, not estimated -- the two-pass weighted-median-crossing
-        // search costs more than ComputeBootstrapMeanGapCI's single
-        // accumulation pass, a genuine cost of the more robust statistic, not
-        // a bug). No Bonferroni correction across horizons here, unlike
+        // ~252ms/resample steady-state (re-benchmarked at the real shipped
+        // group sizes, n_top=3842588/n_bot=3836836, after review found an
+        // earlier ~458ms figure was inflated by amortizing the one-time sort
+        // over too few resamples) -- ~1.08x ComputeBootstrapMeanGapCI's
+        // ~233ms/resample at the same sizes, not the ~1.8x first claimed. At
+        // n_boot=1000 that's ~4.2min/horizon, ~17min for all 4 -- matches the
+        // real end-to-end run's own 15m36s wall time. No Bonferroni correction
+        // across horizons here, unlike
         // drift_location_eval.cpp's directional test: this magnitude test
         // mirrors dim_acceptance_eval.py's own predictive_power_magnitude(),
         // which likewise doesn't apply one.

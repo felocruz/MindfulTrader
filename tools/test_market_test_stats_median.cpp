@@ -17,6 +17,15 @@ bool close(double a, double b, double eps = 1e-9) { return std::fabs(a - b) < ep
 
 int main() {
     {
+        // Empty input must not read out of bounds (a real segfault, found in
+        // review: the even-length branch computed v[mid-1] with mid=0 -> read
+        // v[SIZE_MAX]). Unreachable in jump_ratio_eval.cpp's real callers
+        // (pre-filtered by a >=30-sample floor), but this is shared, reusable
+        // infrastructure.
+        check("MedianAbs({}) returns 0.0 instead of reading out of bounds",
+              close(MedianAbs(std::vector<double>{}), 0.0));
+    }
+    {
         // Point estimate (not the CI, which is stochastic) must exactly match
         // median(|top|) - median(|bottom|) -- no randomness at all. Verified
         // via a real mamba run -n mts python3 execution (np.median(np.abs(.))):

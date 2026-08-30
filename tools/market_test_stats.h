@@ -12,6 +12,28 @@
 #include <random>
 #include <vector>
 
+// Below this size, resample bootstraps exactly (multinomial, with
+// replacement); at or above it, switch to the O(n)-sequential weighted/
+// exchangeable-bootstrap path. Shared by ComputeBootstrapMeanGapCI and
+// ComputeBootstrapMedianGapCI -- previously two independent copies of this
+// constant that had to be kept in sync by hand.
+constexpr std::size_t kExactResampleThreshold = 20'000;
+
+// Percentile via linear interpolation over an ALREADY SORTED array (matches
+// numpy's default `interpolation='linear'`). Extracted here on its third
+// real use (ComputeBootstrapMeanGapCI, ComputeBootstrapMedianGapCI, and
+// tools/jump_ratio_eval.cpp's own Percentile(), which sorts its own copy of
+// an unsorted array first) -- this plan's own Task 1 established the
+// "extract on 2nd/3rd real use" convention; this dedup applies it to itself.
+inline double PercentileFromSorted(const std::vector<double>& sorted_values, double p) {
+    const double idx = p / 100.0 * static_cast<double>(sorted_values.size() - 1);
+    const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
+    const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
+    if (lo_idx == hi_idx) return sorted_values[lo_idx];
+    const double frac = idx - static_cast<double>(lo_idx);
+    return sorted_values[lo_idx] * (1.0 - frac) + sorted_values[hi_idx] * frac;
+}
+
 // Mirrors tools/dim_acceptance_eval.py's compute_forward_returns() semantics
 // exactly (lines 189-200: forward log-return from signal_price at signal_ts to
 // the first available price at or after signal_ts + horizon, rejected if that
@@ -234,7 +256,6 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     // ~73ns/draw, almost as expensive as the gather it replaced; Uniform[0,2]
     // measured ~35ns/draw but has the wrong variance (the bug above).
     // Exponential(1) measured ~28.5ns/draw -- both fast and correctly scaled.
-    constexpr std::size_t kExactResampleThreshold = 20'000;
     const std::size_t top_n = top_abs.size();
     const std::size_t bottom_n = bottom_abs.size();
     if (top_n < kExactResampleThreshold && bottom_n < kExactResampleThreshold) {
@@ -269,19 +290,10 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     }
 
     std::sort(gaps.begin(), gaps.end());
-    auto percentile = [&](double p) {
-        const double idx = p / 100.0 * static_cast<double>(gaps.size() - 1);
-        const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
-        const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
-        if (lo_idx == hi_idx) return gaps[lo_idx];
-        const double frac = idx - static_cast<double>(lo_idx);
-        return gaps[lo_idx] * (1.0 - frac) + gaps[hi_idx] * frac;
-    };
-
     BootstrapGapResult result;
     result.gap = point_gap;
-    result.ci_lo = percentile(2.5);
-    result.ci_hi = percentile(97.5);
+    result.ci_lo = PercentileFromSorted(gaps, 2.5);
+    result.ci_hi = PercentileFromSorted(gaps, 97.5);
     return result;
 }
 
@@ -290,6 +302,47 @@ struct MedianGapResult {
     double ci_lo;
     double ci_hi;
 };
+
+// Median of |values|. Returns 0.0 for an empty input (matches
+// ComputeBootstrapMeanGapCI's mean_abs, which returns NaN via 0/0 for the
+// same case -- both are unreachable in this codebase's current callers,
+// which all pre-filter with a >=30-sample floor, but this is shared,
+// reusable infrastructure and an empty vector must not read out of bounds).
+// A NaN element gives an unspecified result (std::nth_element's ordering
+// with NaN is unspecified by the standard) rather than a defined NaN
+// propagation -- safe for this codebase's current callers, which all
+// pre-filter with std::isfinite before calling, but not a general-purpose
+// guarantee.
+inline double MedianAbs(std::vector<double> v) {
+    if (v.empty()) return 0.0;
+    for (auto& x : v) x = std::fabs(x);
+    const std::size_t mid = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + mid, v.end());
+    double m = v[mid];
+    if (v.size() % 2 == 0) {
+        std::nth_element(v.begin(), v.begin() + mid - 1, v.begin() + mid);
+        m = (m + v[mid - 1]) / 2.0;
+    }
+    return m;
+}
+
+// PRECONDITION: weights.size() == sorted_abs.size() -- both of this
+// function's callers (ComputeBootstrapMedianGapCI's weighted-median path)
+// satisfy this by construction, but it is not checked here. A shorter
+// weights vector reads out of bounds; a longer one silently ignores the
+// extra weights (the loop bound is sorted_abs.size()).
+inline double WeightedMedianOfSortedAbs(
+    const std::vector<double>& sorted_abs, const std::vector<double>& weights) {
+    double total = 0.0;
+    for (double w : weights) total += w;
+    const double half = total / 2.0;
+    double cum = 0.0;
+    for (std::size_t i = 0; i < sorted_abs.size(); ++i) {
+        cum += weights[i];
+        if (cum >= half) return sorted_abs[i];
+    }
+    return sorted_abs.back();  // unreachable except fp rounding at the last element
+}
 
 // Robust magnitude/bootstrap-gap test using MEDIAN, not mean, as the central-
 // tendency statistic. This is this codebase's own established convention for
@@ -301,13 +354,14 @@ struct MedianGapResult {
 // detect -- a handful of extreme values can dominate them. This codebase
 // already replaced moment-based skewness/kurtosis with Bowley/Moors robust
 // quantile estimators for exactly this reason (see docs/superpowers/specs/
-// 2026-08-12-gang-literature-grounding-spec.md). mean(|x|) (the
-// ComputeBootstrapMeanGapCI function above, which this mirrors in structure)
-// is exactly the kind of statistic that critique warns against when
-// evaluating a candidate meant to capture jump/tail behavior; that function
-// is kept for other callers/parity with dim_acceptance_eval.py's own
-// bootstrap_mean_gap_ci(), which has no median counterpart in the Python
-// reference -- this is new, native-only infrastructure, not a straight port.
+// 2026-08-12-gang-literature-grounding-spec.md). mean(|x|) (ComputeBootstrapMeanGapCI
+// above, which this mirrors in structure) is exactly the kind of statistic
+// that critique warns against when evaluating a candidate meant to capture
+// jump/tail behavior; that function is kept solely for parity with
+// dim_acceptance_eval.py's own bootstrap_mean_gap_ci() (it has no other
+// caller as of this writing -- the Python reference has no median
+// counterpart to port, so this function is new, native-only infrastructure,
+// not a straight port).
 //
 // Point estimate: median(|top|) - median(|bottom|), no randomness. Below
 // kExactResampleThreshold: exact multinomial resample, one std::nth_element
@@ -327,31 +381,29 @@ struct MedianGapResult {
 // ComputeBootstrapMeanGapCI's one pass), never a random gather, and never a
 // per-resample re-sort/re-selection (the O(n) SELECTION cost a naive
 // per-resample nth_element would add on top of the weight generation).
-inline double MedianAbs(std::vector<double> v) {
-    for (auto& x : v) x = std::fabs(x);
-    const std::size_t mid = v.size() / 2;
-    std::nth_element(v.begin(), v.begin() + mid, v.end());
-    double m = v[mid];
-    if (v.size() % 2 == 0) {
-        std::nth_element(v.begin(), v.begin() + mid - 1, v.begin() + mid);
-        m = (m + v[mid - 1]) / 2.0;
-    }
-    return m;
-}
-
-inline double WeightedMedianOfSortedAbs(
-    const std::vector<double>& sorted_abs, const std::vector<double>& weights) {
-    double total = 0.0;
-    for (double w : weights) total += w;
-    const double half = total / 2.0;
-    double cum = 0.0;
-    for (std::size_t i = 0; i < sorted_abs.size(); ++i) {
-        cum += weights[i];
-        if (cum >= half) return sorted_abs[i];
-    }
-    return sorted_abs.back();  // unreachable except fp rounding at the last element
-}
-
+//
+// KNOWN LIMITATION, not yet addressed here: both this function and
+// ComputeBootstrapMeanGapCI resample individual elements as if they were
+// i.i.d., but jump_ratio_eval.cpp's real callers pass forward-return signals
+// with heavy autocorrelation/overlap (a 240-minute forward return computed
+// per-tick over a 38.5M-row series overlaps thousands of neighboring
+// signals) -- textbook i.i.d. bootstrap understates the true CI width under
+// this much overlap (by a large, unquantified-here factor). This codebase
+// already has a measured block-length precedent for exactly this kind of
+// dependent-data problem (Politis-White circular block length ~404.82 on
+// real MES data, see CLAUDE.md's fractal_dim window-widening entry) that a
+// proper block bootstrap here should reuse -- flagged as a real, not-yet-
+// implemented gap in the standing §10.7 methodology (shared by
+// drift_location_eval.cpp's already-accepted OUT verdict too, not unique to
+// this candidate), not something to patch ad hoc for one candidate's test.
+//
+// Default n_boot=1000, not ComputeBootstrapMeanGapCI's 2000 -- both are the
+// commonly-cited Efron & Tibshirani (1993) minimum replicate count for a
+// percentile bootstrap CI; the difference is deliberate, reflecting this
+// function's real measured cost (~1.08x the mean version's per-resample
+// cost at production scale, both dominated by Exponential(1) generation)
+// against a caller (jump_ratio_eval.cpp) explicitly choosing to run at the
+// cheaper floor rather than the more conservative 2000.
 inline MedianGapResult ComputeBootstrapMedianGapCI(
     const std::vector<double>& top, const std::vector<double>& bottom,
     std::size_t n_boot = 1000, std::uint64_t seed = 0) {
@@ -364,7 +416,6 @@ inline MedianGapResult ComputeBootstrapMedianGapCI(
 
     std::mt19937_64 rng(seed);
     std::vector<double> gaps(n_boot);
-    constexpr std::size_t kExactResampleThreshold = 20'000;
     const std::size_t top_n = top.size();
     const std::size_t bottom_n = bottom.size();
 
@@ -388,29 +439,29 @@ inline MedianGapResult ComputeBootstrapMedianGapCI(
         std::sort(top_sorted.begin(), top_sorted.end());
         std::sort(bottom_sorted.begin(), bottom_sorted.end());
 
+        // WeightedMedianOfSortedAbs's precondition (weights.size() ==
+        // sorted_abs.size()) holds here: w_top/w_bottom are sized to top_n/
+        // bottom_n, matching top_sorted/bottom_sorted exactly.
         std::exponential_distribution<double> w_dist(1.0);
         std::vector<double> w_top(top_n), w_bottom(bottom_n);
         for (std::size_t b = 0; b < n_boot; ++b) {
             for (std::size_t i = 0; i < top_n; ++i) w_top[i] = w_dist(rng);
             for (std::size_t i = 0; i < bottom_n; ++i) w_bottom[i] = w_dist(rng);
+            // Returns the lower crossing element, unlike MedianAbs/the exact
+            // path above (which averages the two middle elements for even
+            // n) -- an undocumented difference between the two branches, but
+            // immaterial in practice: at this path's n>=20,000 scale the gap
+            // between adjacent order statistics is orders of magnitude
+            // smaller than the bootstrap CI width itself.
             gaps[b] = WeightedMedianOfSortedAbs(top_sorted, w_top) -
                       WeightedMedianOfSortedAbs(bottom_sorted, w_bottom);
         }
     }
 
     std::sort(gaps.begin(), gaps.end());
-    auto percentile = [&](double p) {
-        const double idx = p / 100.0 * static_cast<double>(gaps.size() - 1);
-        const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
-        const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
-        if (lo_idx == hi_idx) return gaps[lo_idx];
-        const double frac = idx - static_cast<double>(lo_idx);
-        return gaps[lo_idx] * (1.0 - frac) + gaps[hi_idx] * frac;
-    };
-
     MedianGapResult result;
     result.gap = point_gap;
-    result.ci_lo = percentile(2.5);
-    result.ci_hi = percentile(97.5);
+    result.ci_lo = PercentileFromSorted(gaps, 2.5);
+    result.ci_hi = PercentileFromSorted(gaps, 97.5);
     return result;
 }
