@@ -1511,10 +1511,16 @@ arrow::Status BuildArrowSchema(std::shared_ptr<arrow::Schema>* out) {
     for (std::size_t i = 0; i < MTS::Schema::Contract::kObservationDim; ++i) {
         fields.push_back(arrow::field(MTS::Schema::Contract::kObservationFieldNames[i], arrow::float32()));
     }
+    // kRiskGateFloatOutputColumnNames already resolves each name to either the
+    // plain field name or <name>_raw (only for the 5 that collide with an
+    // ObservationData column, §10.4) -- no additional prefix here. Blanket-
+    // prefixing on top of that would defeat the whole point of computing this
+    // array in the first place. (Bug caught post-hoc, 2026-08-30, before lbrnet
+    // handoff: an earlier draft of this exact line did add "risk_gate_" on top,
+    // silently reproducing the old noisy-prefix-on-everything behavior.)
     for (std::size_t i = 0; i < MTS::Schema::Contract::kRiskGateFloatFieldCount; ++i) {
         fields.push_back(arrow::field(
-            std::string("risk_gate_") + MTS::Schema::Contract::kRiskGateFloatOutputColumnNames[i],
-            arrow::float32()));
+            MTS::Schema::Contract::kRiskGateFloatOutputColumnNames[i], arrow::float32()));
     }
     fields.push_back(arrow::field("risk_gate_regime_duration", arrow::int32()));
     fields.push_back(arrow::field("risk_gate_is_valid", arrow::boolean()));
@@ -1802,9 +1808,11 @@ import polars as pl
 df = pl.read_parquet('/tmp/e2e_test.parquet')
 assert df.shape[0] == 5, df.shape
 assert list(df['log_variance_ratio']) == [0.0, 1.0, 2.0, 3.0, 4.0]
-assert 'risk_gate_hurst_exponent_raw' in df.columns
+assert 'hurst_exponent_raw' in df.columns  # colliding field: _raw-suffixed, NO risk_gate_ prefix
 assert 'hurst_exponent' in df.columns  # ObservationData's own column, unprefixed
-assert 'risk_gate_context_available' in df.columns
+assert 'shannon_flow_entropy' in df.columns  # non-colliding field: plain name, no prefix at all
+assert 'risk_gate_shannon_flow_entropy' not in df.columns
+assert 'risk_gate_context_available' in df.columns  # scalar risk_gate_ fields keep their prefix (no collision to disambiguate)
 assert not any(df['risk_gate_context_available'])  # no RiskGateContext supplied in this fixture
 print('✅ Parquet output verified: shape, values, and _raw-suffixed column naming all correct')
 "
