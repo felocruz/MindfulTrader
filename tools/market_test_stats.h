@@ -136,6 +136,20 @@ struct BootstrapGapResult {
 // see this plan's Global Constraints) -- verified instead via the
 // deterministic zero-variance case, where the bootstrap distribution
 // collapses to a single point regardless of which PRNG algorithm is used.
+//
+// CALLER NOTE on the n_boot=2000 default at large n: this function is fast
+// for typical group sizes, but at multi-million-element scale (this repo's
+// real usage against full-file signal series -- see the in-body comments
+// below for the full incident), even the O(n) sequential path this switches
+// to above 20,000 elements measures ~255ms/resample. At the default
+// n_boot=2000, that's ~8.5 minutes for ONE call -- jump_ratio_eval.cpp calls
+// this once per horizon (4 calls per run), so an unmodified default would
+// cost ~34 minutes end to end. jump_ratio_eval.cpp explicitly overrides to
+// n_boot=200 for exactly this reason (see its call site's comment for the
+// arithmetic). Any future caller operating at similar scale (multi-million-
+// element decile/quantile groups from a full tick-series signal) should
+// benchmark and consider the same override -- don't rediscover this by
+// running the real file and waiting.
 inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     const std::vector<double>& top, const std::vector<double>& bottom,
     std::size_t n_boot = 2000, std::uint64_t seed = 0) {
