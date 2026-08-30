@@ -1,6 +1,446 @@
 # Session Scratchpad — Where We Left Off
 
-Last updated: 2026-08-28 — `fast_hurst_exponent` SHIPPED as `ObservationData`'s 18th field
+**C++/Arrow `.context` converter — DONE and COMMITTED, 2026-08-30** (`MindfulTrader` `689465a`..
+`54d1702`, `schema` `477b750`/`c7788f8`). Brainstorm doc §10 → 13-task plan
+(`docs/superpowers/plans/2026-08-30-context-to-parquet-cpp-arrow-converter.md`), all done:
+`tools/context_reader.h`/`context_to_parquet.cpp`/`context_validate.cpp`/`context_validate_stats.h`/
+`context_cache_key.h`, plus `schema/scripts/generate_contract_header.py` fixing
+`regenerate_schema.sh`'s hand-maintained-duplicate defect. 54 native tests pass, `./build_dll.sh
+--no-clean` green. `WIRE_SCHEMA_VERSION` bumped 230→240 (mts_schema.fbs), now hard-refused on
+mismatch by `context_reader.h::OpenContextFile()` — closes the exact silent-corruption risk this
+whole thread exists for. One real bug (blanket `risk_gate_` prefix silently defeating the new
+naming design) caught and fixed *after* the first e2e "success," by writing a stronger assertion.
+**`lbrnet` side NOT started** — full handoff at
+`docs/superpowers/specs/2026-08-30-context-converter-lbrnet-handoff.md` (CLI flag mapping, breaking
+column-rename table, freshness-cache JSON-schema incompatibility, `event_data.context` 16D-legacy
+migration still undecided). `lbrnet/scripts/validate_lbr_file.py`'s dead `check_context_file_quality()`
+deleted directly (zero callers, explicit instruction) — left uncommitted in that repo.
+
+---
+
+
+**OPERATIONAL NOTE, 2026-08-29 — the sibling (Copilot-backed) is out of tokens, unavailable for the
+next couple of days.** This session is continuing their in-progress `amihud_illiquidity`/
+`liq_fragility` recalibration directly rather than waiting — picking up exactly where they left off
+(their tool, their fix), not duplicating. If you're reading this as the sibling coming back online:
+check the entries below dated after this note before assuming your own last state is still current.
+
+**RECALIBRATION IN PROGRESS, 2026-08-29 — real, dramatic confirmation the follow-on was genuinely
+required, not precautionary.** Ran the sibling's `tools/amihud_liqfragility_recalibration.{cpp,py}`
+(`--live-bar-min-volume 10`, real 38.5M-tick MES history) against the REAL `FeatureScaler`:
+
+- **`amihud_illiquidity` (dim 12)**: current production bound (flat default, 6.0σ) — **rate-at-bound
+  = 8.5254%** (i.e. 1 in ~12 live readings clip). mean|z|=2.71, max|z|=19583.81(!), p99=35.6,
+  p99.9=111.1. For comparison, the OLD bar-gated computation's own audit found **0.000%** clip rate
+  at this same bound — the live-reactive signal is categorically more volatile, exactly as §1.11
+  predicted, now measured not assumed.
+- **`liq_fragility` (dim 13)**: current bound (LOGZ override, 12.0σ) — **rate-at-bound = 12.8465%**.
+  mean|z|=6.58, max|z|=481.10, p99=69.9, p99.9=207.1. Same story, worse magnitude.
+- **A third, independent bug found while starting this**: `FeatureScaler::DIM_AMIHUD_INDEX` was
+  stale at `11` (should be `12` — never updated when `fast_hurst_exponent`'s dim9 insertion shifted
+  every later index). Fixed directly (1-line change, already in the working tree).
+
+**WINSORIZATION RECALIBRATION DONE, BUILD-VERIFIED, 2026-08-29.** Tail samples dumped, GPD/EVT fit
+(Pickands-Balkema-de Haan, `scipy.stats.genpareto.fit`, u=p99, floc=0 — same methodology as every
+other dim's bound in this project, Gang doc D6/D7/Task 3/4):
+
+- **`amihud_illiquidity`**: u=35.63, n_tail=7709 (1.000% exceedance), ξ=+0.3752 (Fréchet/unbounded).
+  p=1/N return level (N=38,540,567 real ticks) = **6821.5**. `DIM_WINSOR_SIGMA_OVERRIDE[12]`: 0.0 →
+  6821.5.
+- **`liq_fragility`**: u=69.87, n_tail=7708 (1.000% exceedance), ξ=+0.1857 (Fréchet/unbounded).
+  p=1/N return level = **2472.5**. `LOGZ_WINSOR_SIGMA_OVERRIDE[13]`: 12.0 → 2472.5.
+- Both bounds updated in **`include/FeatureScaler.h`** (compiled defaults) **and
+  `config/execution_params.json`** (which overwrites the compiled defaults at load time — updating
+  only the `.h` would have shipped a fix that silently never takes effect). `./build_dll.sh
+  --no-clean` confirmed succeeding with both changes in place.
+- Shrinkage (`SHRINKAGE_SCALE_MIN[12]`/`[13]`) explicitly **NOT** re-audited — flagged stale in both
+  files' comments rather than silently left looking resolved. Real remaining follow-on, not done.
+
+**`kLiveBarMinVolume` empirical tuning — DONE, decisive result, 2026-08-29.** Tested 5/10/50 in one
+tick pass (instead of 3 separate 38.5M-tick reads):
+
+| guard | amihud max\|z\| | amihud mean\|z\| | amihud rate@6.0σ | liq_fragility rate@12.0σ |
+|---|---|---|---|---|
+| 5.0 | 19583.81 | 2.7629 | 8.5723% | 12.8439% |
+| 10.0 (current) | 19583.81 | 2.7107 | 8.5254% | 12.8465% |
+| 50.0 | **3270.57** | 2.5286 | 8.1556% | 12.8722% |
+
+**Guard=50 measurably tames the worst-case outlier (19583.81 → 3270.57, a 6x reduction in the single
+most extreme spike — exactly the near-empty-denominator failure mode this guard exists to prevent)
+while only costing ~7% of mean reactivity and a fraction of a point of clip rate.** `liq_fragility`
+shows no meaningful difference across any guard value. **Decision: kLiveBarMinVolume 10.0 → 50.0.**
+Real tradeoff worth naming honestly: a higher guard delays the live term contributing until later in
+each bar, costing some of the lead-time benefit live-reactivity exists for (§1.10) — but the mean|z|
+difference (2.71→2.53) suggests this cost is modest, not the dominant effect.
+
+**FINAL, DONE, BUILD-VERIFIED, 2026-08-29 — re-fit against guard=50's actual distribution complete.**
+`kLiveBarMinVolume` shipped at **50.0** in both `StudyHelperFunctions.cpp` call sites (Amihud's and
+LiqFragility's own constants). GPD fit against guard=50's real data:
+
+- **`amihud_illiquidity`**: u=32.68, n_tail=7709 (1.000%), ξ=+0.2920 (Fréchet). p=1/N return level =
+  **2706.0** (meaningfully smaller than guard=10's 6821.5 — guard=50 genuinely tamed the tail, this
+  wasn't a wasted re-fit).
+- **`liq_fragility`**: u=70.02, n_tail=7709 (1.000%), ξ=+0.1881 (Fréchet). p=1/N return level =
+  **2524.5** (barely changed from guard=10's 2472.5, consistent with liq_fragility being
+  guard-insensitive).
+- Both final bounds updated in `include/FeatureScaler.h` and `config/execution_params.json`.
+  `./build_dll.sh --no-clean` succeeds with the complete, internally-consistent change set (new
+  guard + matching bounds).
+
+**This closes both required follow-ons from §1.11 in full.** Only remaining open item for these two
+dims: the shrinkage re-audit (`SHRINKAGE_SCALE_MIN[12]`/`[13]`, disabled, flagged stale in both
+files' comments, not re-derived) — a separate question from winsorization, tracked, not silently
+closed.
+
+---
+
+**SHRINKAGE RE-AUDIT DONE, BOTH DIMS, BUILD-VERIFIED, 2026-08-30 — this closes row 13/14's last
+open item, both rows now `IN` in §9 (terminal).**
+
+- Extended `tools/amihud_liqfragility_recalibration.cpp`'s `ZStats` to track local MAD alongside
+  `|z|` (correlation, top-1%-extreme-event MAD ratio, MAD percentiles) — real evidence, not
+  eyeballing.
+- **`amihud_illiquidity` (dim 12)**: correlation(localMAD,|z|) = -0.0340 — weak, not a collapse
+  signature. Already has its own dedicated `AMIHUD_ABSOLUTE_FLOOR` mechanism doing this job.
+  `SHRINKAGE_SCALE_MIN[12]` stays `0.0f` — audited clean, not skipped.
+- **`liq_fragility` (dim 13)**: correlation(localMAD,|z|) = -0.2058 — real, decisive collapse
+  signature (top-1%-extreme |z| events at 19.6% of median local scale; the single worst |z| event's
+  own local scale lands almost exactly at the series' own p0.1). Enabled `SHRINKAGE_SCALE_MIN[13] =
+  0.0035` (observed local-scale p1).
+- **Verification bug caught and fixed before accepting the result.** The first attempt to confirm
+  the fix worked came back byte-identical to the pre-fix run — correctly treated as suspicious
+  rather than accepted. Root cause: the tool's `liqFragZ` manually recomputed the plain
+  (non-shrinkage) z formula at the call site, silently bypassing `ComputeShrinkageZ()` entirely, so
+  it never actually exercised `SHRINKAGE_SCALE_MIN[13]` either way. Fixed by exposing the real
+  shrinkage-blended `zLog` unconditionally via `lastRawZ[13]` in `FeatureScaler.h`'s LOGZ branch
+  (mirroring the SOFTLOGZ path's existing `lastRawZ[i] = z` precedent) and updating the tool to read
+  that instead of recomputing.
+- **Rerunning with the real value showed the fix genuinely works**: max|z| 503.22 → 20.59,
+  correlation -0.2058 → +0.0016 (collapse signature actually gone, not masked). `amihud`'s output
+  was byte-identical across both runs, as expected (shrinkage stays disabled there, and my fix only
+  touched the LOGZ branch) — a useful consistency check that the fix didn't have side effects.
+- **This also caught the `liq_fragility` winsorization bound (2524.5, derived 2026-08-29) as itself
+  computed from the broken, non-shrinkage-corrected z-distribution — ~120x oversized.** Re-derived
+  GPD fit against the corrected distribution: u=p99=8.297, n_tail=7709, ξ=-0.1452 (Weibull/bounded —
+  the tail is fundamentally tamer once shrinkage genuinely fires, not a Fréchet artifact of inflated
+  data), p=1/N return level = **21.2565 → 21.26**. `LOGZ_WINSOR_SIGMA_OVERRIDE[13]` updated:
+  2524.5 → 21.26, in both `include/FeatureScaler.h` and `config/execution_params.json`.
+- `./build_dll.sh --no-clean` succeeds with the complete change set (shrinkage floor + corrected
+  winsor bound + diagnostic exposure). No other dims touched.
+- Updated `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §6.1
+  and §9 rows 13/14 (both now `IN`), and §8's non-terminal count (18/25 → 16/25, 9 terminal rows).
+
+---
+
+**ACK, 2026-08-29 — saw your doc updates.** `amihud_gate_percentile_spec.md`'s expanded backward-
+compat section (the 32.1%-absent `risk_gate_context` structural gap, `EventDataCollectorStudy.cpp`'s
+`LogSynchronizedEvent()` not passing a `RiskGateContextT`) and the Gang-doc changelog entry (Finding
+10 mirror, `lempel_ziv` tail-irrelevance addendum) are noted — neither changes my current priority
+queue below, but the `risk_gate_context` absence gap is a real, unclaimed follow-up worth someone
+picking up explicitly rather than letting it sit as a mentioned-but-orphaned finding.
+
+---
+
+**PRIORITY #2 DONE (code side), 2026-08-29 — `amihud_illiquidity`/`liq_fragility` are now
+live-reactive.** Per §1.11 of `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-
+brainstorm.md`: both dims were computed once per bar inside `UpdateObservationVectorSubgraphs`'s
+gate, reading the last CLOSED bar's range/volume — turning the vector's #2 and #4 discriminators
+(causally leading illiquidity-spiral indicators) into lagging ones. Fixed:
+
+- `CalculateAmihudIlliquidity`/`CalculateLiquidityFragility` (`src/StudyHelperFunctions.cpp`) pulled
+  OUT of `UpdateObservationVectorSubgraphs`'s once-per-bar gate, now called directly every tick from
+  `TripleScreen3.cpp` (same pattern already used for `mean_rev_z`/`vol_convexity`/`micro_asymmetry`).
+- Both now read the CURRENT still-forming bar (`sc.Index`) instead of the last closed one
+  (`sc.Index - 1`), guarded on a minimum volume-so-far threshold (`kLiveBarMinVolume = 10.0`,
+  **UNCALIBRATED placeholder** — see required follow-on below) below which each falls back to
+  carry-forward (Amihud: skips the live term, keeps the closed-bar window only; LiqFragility:
+  returns `prev_fragility` unchanged) rather than manufacturing a near-empty-denominator artifact.
+- `UpdateObservationVectorSubgraphs`'s signature lost 3 now-unused params (`Subgraph_AmihudIlliquidity`,
+  `Subgraph_LiqFragility`, `Subgraph_VolumeSMA` — the last was only there to feed LiqFragility).
+  Single call site (`TripleScreen3.cpp`) updated to match.
+- `./build_dll.sh --no-clean` — **builds clean, 284s**. `test_carry_forward_calculators` (the native
+  test covering `cfc::ComputeAmihudIlliquidity`, unchanged by this edit) still all-pass, confirming
+  the pure aggregation logic wasn't disturbed — only the caller-side windowing/gating changed.
+
+**REQUIRED FOLLOW-ON, NOT YET DONE, please pick up — this is not optional per §1.11's own text**:
+rebuild `FeatureScaler.h`'s winsorization/shrinkage bounds for dims 11 (`amihud_illiquidity`) and 13
+(`liq_fragility`, current index — see the 19-dim map further down this file) against a genuine
+tick-level replica of the NEW live-reactive computation, the same way `log_variance_ratio`'s replica
+was rebuilt once already. The bounds currently in `FeatureScaler.h`/`config/execution_params.json`
+were calibrated against the OLD bar-gated distribution and are now measuring a different, more
+volatile signal (intra-bar reactivity changes the value's variance/tail behavior, especially right
+after the `kLiveBarMinVolume` guard releases each bar). Do not defer this citing recalibration
+effort — see `feedback_recalibration_effort_not_a_design_reason` memory. The `kLiveBarMinVolume =
+10.0` guard constant itself is also an unvalidated placeholder and should be tuned as part of the
+same tick-level study (there's currently no evidence 10 contracts is the right cutover point vs.,
+say, 5 or 50 — pick this empirically, not by continuing to guess).
+
+---
+
+**BUILD UNBLOCKED, 2026-08-29 — priority #1 from the HANDOFF below is done.** Root cause was NOT the
+`.fbs` (already correct, 19 fields) — it was `schema/regenerate_schema.sh`'s embedded heredoc for
+`mts_schema_contract_generated.h`: `ObservationData`'s field list there is a **hand-maintained copy**
+of the schema, hardcoded to `kObservationDim = 17` and missing `fast_hurst_exponent`/`fast_mean_rev_z`
+entirely (the "regenerated" file's log output claiming success was misleading — it regenerated from
+a stale hardcoded template, not from the `.fbs`). Fixed by hand-editing that heredoc to match the
+live 19-field order (`kObsFastHurstExponent = 9`, `kObsFastMeanRevZ = 18`, shifting 10-17
+accordingly), re-ran `regenerate_schema.sh`, then `./build_dll.sh --no-clean` — **builds clean,
+323s, `bin/MindfulTrader.dll` produced.**
+
+**REQUIRED FOLLOW-ON, not yet done, please pick up**: this is the SECOND time this exact template
+has drifted from the real schema (first time undetected for weeks per the fast_taleb_kurtosis
+history in this file below). A hand-maintained duplicate field list that silently diverges from the
+`.fbs` it's supposed to mirror is a structural defect in the generator itself, not just a one-off
+fix. Please write a spec (`docs/superpowers/specs/`) for making `schema/regenerate_schema.sh` derive
+`ObservationData`'s `kObs*` constants / field-name array / `MakeObservationData`/`ToObservationArray`
+directly from `mts_schema.fbs` at generation time (e.g. parse the struct's field list out of the
+schema, or drive the heredoc from flatc's own reflection output) instead of maintaining a second,
+independently-hand-edited copy inside the shell script. Scope this as MindfulTrader-side work since
+it blocks this repo's build specifically — lbrnet/schema cross-repo implications can wait, per
+current instruction to stay focused on MindfulTrader until it's done.
+
+
+---
+
+**HANDOFF, 2026-08-29 — implementation of the observation-vector brainstorm's Phase 1 work goes to
+you from here.** Primary reference: `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-
+vector-brainstorm.md` — read §0 (goal/scope), §6 (converging recommendation + the two-phase
+validation plan, §6.0), and §9 (the 25-row per-dim decision ledger) before starting; §5.0-§5.5 have
+the per-candidate technical detail. This doc is explicitly NOT yet ground truth (§8) — 18 of 25 §9
+rows are non-terminal, that's the actual scope of what's left.
+
+**Priority 1 (build blocker) is RESOLVED as of this update** — `./build_dll.sh --no-clean` succeeds
+cleanly, confirmed just now. The schema-contract regen gap flagged below got fixed elsewhere in this
+working tree (very recent `schema/regenerate_schema.sh` + generated-header timestamps, seconds
+apart) — not by this note's author. The `burstiness_index`→`raschkeBurst` redirect is now
+build-verified too (§9 row 2). Start at priority 2 below.
+
+**Priority order, per §6 (highest first):**
+1. **Unblock the build**: `./build_dll.sh --no-clean` currently fails — see the next entry below,
+   still unresolved as of this handoff. Nothing else here can be build-verified until this is fixed.
+2. **`amihud_illiquidity`/`liq_fragility` live-reactivity** (§1.11, §9 rows 13/14) — decided, not
+   implemented. Make both read the live/still-forming bar (currently bar-gated, TS3), guarded on a
+   minimum volume-so-far threshold for Amihud's near-empty-denominator risk (carry-forward-last-
+   valid-value pattern, same as `RELATIVE_RANGE_LAST_VALID_VALUE`/`FRACTAL_DIM_LAST_VALID_VALUE`).
+   Required follow-on, not optional: rebuild both dims' `FeatureScaler.h` winsorization bounds from
+   a genuine tick-level replica (same rebuild `log_variance_ratio` already needed once) — don't ship
+   the wiring change and skip this citing recalibration cost, see `feedback_recalibration_effort_
+   not_a_design_reason` memory if that reasoning starts to creep in.
+3. **§5.0 drift/location prototype** (§9 row 20, top-priority new candidate) — the largest identified
+   axis gap. Reusable-computation check already done (2026-08-29, this session): ADX was formally
+   retired March 2026 and wouldn't have been the right tool anyway (measures trend strength, not
+   signed return level) — build the volatility-normalized return z-score construct described in §5.0
+   fresh. Prototype offline (Python, real MES data) before any C++, same cross-state-ratio /
+   redundancy methodology as `tools/dim_acceptance_eval.py` (§6.1) — but see that tool's own
+   caveats (bar-gated comparison columns, Phase 2 timing) before trusting any result out of it.
+4. **§5.1 jump/bipower-variation ratio prototype** (§9 row 21) — cheap, same log-return series
+   `TailRiskEngine` already ingests, Python-only first pass.
+5. **§5.4 Hurst×volatility-level cross-term** (§9 row 22) — zero new data, pure feature-engineering,
+   tests whether "fat-tail state" and "Trending-High-Vol crisis" (§1.4/§1.7) are the same phenomenon.
+
+**Explicitly NOT priority right now** (§6): `fast_mean_rev_z` wiring (paused, empirically null),
+`recurrence_rate` (done, genuinely orthogonal to this document's goal), Hawkes/Recovery-construct
+(deferred to post-workstation window).
+
+**BUILD BLOCKED, 2026-08-29 — flagging for whoever picks up `fast_mean_rev_z`'s schema work next,
+not fixed here.** `./build_dll.sh --no-clean` currently fails: `mts_schema_contract_generated.h`
+expects 18 `ObservationData` constructor args, `mts_schema_generated.h` (matching the live 19-field
+`mts_schema.fbs`, `fast_mean_rev_z` appended) expects 19 — the contract header wasn't regenerated
+
+**BUILD BLOCKED, 2026-08-29 — flagging for whoever picks up `fast_mean_rev_z`'s schema work next,
+not fixed here.** `./build_dll.sh --no-clean` currently fails: `mts_schema_contract_generated.h`
+expects 18 `ObservationData` constructor args, `mts_schema_generated.h` (matching the live 19-field
+`mts_schema.fbs`, `fast_mean_rev_z` appended) expects 19 — the contract header wasn't regenerated
+together with the schema change. `ContextManager.h:329` also references `kObsFastHurstExponent`,
+missing from the stale contract header. This is **pre-existing, uncommitted, in-progress state**
+(all of `ContextManager.h`/`.cpp`, `LocalRiskContext.h`, `mts_schema_contract_generated.h` were
+already dirty before this note) — not caused by the unrelated `burstiness_index`→`raschkeBurst`
+redirect landing in the same working tree (see below). Per `CLAUDE.md`: fix is `regenerate_schema.sh`,
+never hand-edit generated headers or call `flatc` directly — held off running it unilaterally since
+this is someone else's in-progress schema work, not confirmed safe to regenerate over. Whoever
+resumes this: run `regenerate_schema.sh`, then `./build_dll.sh --no-clean` to confirm both this and
+the burstiness redirect below compile clean together.
+
+**`burstiness_index` redirected to `raschkeBurst`, 2026-08-29 (Gang doc Finding 10) — wiring done,
+build NOT YET VERIFIED due to the blocker above.** `TripleScreen2.cpp` no longer computes its own
+bar-cadence True-Range half-window proxy; it now reads `ContextManager::GetRaschkeBurst()` (new
+getter, `include/ContextManager.h`) — the real, already-computed event-arrival-timestamp
+CV-burstiness, refreshed every tick via `CheckAndTriggerHMM`, previously wired only to
+`LocalRiskContext`/`RiskGateContext`, never the HMM's own observation vector. Dead code removed:
+`CalculateBurstiness(sc, lookback_n)` (`StudyHelperFunctions.cpp`/`.h`), zero remaining callers
+confirmed by grep before deletion. **REQUIRED FOLLOW-ON, not yet done**: `FeatureScaler.h`'s dim1
+(`burstiness_index`) winsorization/shrinkage bounds were calibrated against the old proxy's
+distribution (a dedicated 22,510-line tick-level fixture, `tests/cpp/fixtures_dim1_raw.h`, exists
+for the *old* signal) — needs the same tick-level-replica recalibration `log_variance_ratio` already
+went through once, against `raschkeBurst`'s real distribution instead. Full detail: `docs/
+superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §9 row 2, §5.5.
+
+**EMPIRICAL RESULT, 2026-08-28 (third pass — ran the test the REVISED section below specified).
+Verdict: NULL RESULT. Neither variant showed predictive power. Task 5 stays paused; do not wire
+`fast_mean_rev_z` into production on this evidence, and do not treat this as license to replace
+`mean_rev_z` either — both are empirically silent, not distinguished.**
+
+**What was run** (`tools/mean_rev_z_variant_comparison.{cpp,py}`, real MES data — 38,547,467
+1-second bars + 75,599 15-min bars, `lbrnet/data/raw/mes_continuous_ticks.parquet` /
+`mes_ripple_15m.parquet`): built both variants (`time_bar` = faithful port of the live
+`CalculateMeanReversionSpeed`, `bars=15min`; `activity_clock` = real `ActivityClockMeanRevZ` header,
+imbalance bars) on the same data, fed each through `Scoring.cpp:305`'s exact gate condition
+(`score > 2.0f`), then measured forward-return sign-hit-rate at 30/60/120/240-min horizons for every
+resulting signal. Imbalance threshold calibrated to 900 first (bar-formation rate: 68,706 activity
+bars vs 75,599 15-min bars — comparable order of magnitude; the first attempt at threshold=15 was
+invalid, producing 8.78M bars, a 147x-mismatched sampling rate, and was discarded).
+
+**Result — both variants indistinguishable from a coin flip, at every horizon tested:**
+
+| Horizon | Variant | n | hit_rate | 95% CI (Wilson) | p (vs null=0.5) |
+|---|---|---|---|---|---|
+| 30min | time_bar | 7598 | 0.4932 | [0.4819, 0.5044] | 0.233 |
+| 30min | activity_clock | 8698 | 0.5054 | [0.4949, 0.5159] | 0.314 |
+| 60min | time_bar | 7581 | 0.5019 | [0.4907, 0.5132] | 0.739 |
+| 60min | activity_clock | 8669 | 0.5076 | [0.4970, 0.5181] | 0.159 |
+| 120min | time_bar | 7539 | 0.5127 | [0.5014, 0.5239] | 0.028 |
+| 120min | activity_clock | 8552 | 0.5065 | [0.4960, 0.5171] | 0.226 |
+| 240min | time_bar | 7478 | 0.5055 | [0.4942, 0.5168] | 0.343 |
+| 240min | activity_clock | 8316 | 0.4897 | [0.4789, 0.5004] | 0.059 |
+
+7 of 8 cells fail to reject the null outright. The one nominal hit (`time_bar`@120min, p=0.028) does
+not survive Bonferroni correction for the 8 tests run (needs p<0.00625) — it's exactly the false-
+positive rate you'd expect from noise across 8 comparisons, not evidence. Every CI is tight (±1.1-1.2
+points) and contains 0.50, so this isn't underpowered/inconclusive — at n≈7500-8700 per cell it had
+the power to detect a ~2-3 point edge and found none, for either variant.
+
+**Scope of this null, stated precisely** (do not over-generalize it): this only tests "`mean_rev_z`
+(or `fast_mean_rev_z`) crossing 2.0 in isolation predicts forward-return sign" at these 4 horizons,
+at this sampling calibration. It does NOT test either variant combined with `Scoring.cpp`'s other
+pattern conditions, and does NOT test HMM per-state discrimination power (the acceptance criterion
+the REVISED section below actually proposed as the real bar, alongside this forward-return test) —
+that remains untested and is the natural next step if this thread continues.
+
+**Decision given this evidence**: neither of the two branches the REVISED section below anticipated
+("one dominates cleanly → replace" / "both show real incremental power → keep both additive")
+occurred. There is no empirical basis from this test to ship `fast_mean_rev_z` additively (it showed
+no discriminative edge over what's already live), and no basis to replace `mean_rev_z` with it
+either (the activity-clock variant didn't outperform, it was equally silent). Recommend: leave Task
+5's wiring paused (schema field + header + `LocalRiskContext`/`ContextManager.h` constants stay as
+already committed/uncommitted, but do NOT wire the computation into `ContextManager.cpp`'s
+activity-clock block or add the 19th entry to `FeatureScaler.h`'s calibration arrays on this
+evidence). If the HMM-discrimination test is run later and also comes back null, the honest
+conclusion extends further: the live `mean_rev_z > 2.0f` gate itself (`Scoring.cpp:305`) may not be
+carrying real edge, which is a materially bigger finding than this task scoped — flag, don't fix
+here.
+
+---
+
+**REVISED, 2026-08-28 (second pass — first pass below was too soft, corrected after direct user
+pushback: "stop patching, be institutional"). Verdict: PAUSE Task 5's wiring. Do not ship the
+additive twin as a default. Run the horse-race measurement below first, decide from evidence.**
+
+**Why the first pass was wrong, not just under-argued**: it concluded "additive twin, ship it" and
+defended that with "protects the live gate, zero risk, reversible" — that's a risk-aversion
+rationalization standing in for a modeling decision, the same shape of error already caught twice
+this session (the unresearched Hurst claim; the initially-rejected fractal_dim split, reversed only
+once real correlation data existed). Reversibility is not evidence of correctness.
+
+**The real distinction that matters, on reflection**: kurtosis and `mean_rev_z` are NOT the same
+shape of question. Calendar-time and trading-time kurtosis are plausibly two different, both-real
+economic questions (tail-fatness at different aggregation levels can genuinely diverge). `mean_rev_z`
+is not that kind of statistic — it's an estimate of a single **dynamical parameter** (OU-style
+reversion speed/elasticity) of the price process itself. Under the same subordination theory this
+whole program is built on (Clark 1973), that process genuinely evolves in trading time — meaning
+the calendar-time estimate isn't "a different valid view," it's a **biased estimate of the same
+underlying quantity**. Literature check (Lo & MacKinlay 1990, *J. Econometrics* 45(1-2):181-211;
+Roll 1984, *J. Finance*) confirms the specific contamination story is real but small in its own
+founding paper (≈0.07 of total autocorrelation) and mechanically about cross-asset portfolio
+staleness / tick-level bid-ask bounce, neither of which cleanly describes a single, deeply liquid
+futures contract at 15-min bars (microstructure-noise literature: bias is well known to fade past
+~5-min aggregation). That weakens "contaminated, replace it" as a literature claim — but it does
+NOT flip the conclusion to "therefore additive." It means: **we don't have a literature-only answer
+either way** for whether the two variants are redundant (same signal, one biased) or complementary
+(genuinely different information) — and the HMM has already had 4 dimensions killed this quarter
+(`vol_convexity`, `tail_index`, `skewness_idx`, `micro_asymmetry`) for exactly the failure mode of
+carrying no incremental discriminative power. Adding a highly-correlated second copy of the same
+dynamical parameter is the textbook way to manufacture a fifth. Do not do that reflexively.
+
+**Required before Task 5 continues wiring anything into `LocalRiskContext`/`FeatureScaler`/schema**:
+run the same empirical-first discipline already used for `fractal_dim` (`tools/
+fractal_dim_threshold_migration.{cpp,py}`), extended one step further than that tool went:
+1. Compute both `mean_rev_z` (15-min) and `fast_mean_rev_z` (imbalance-bar) on the same real MES
+   history. Correlation alone is a first signal (as it was for `fractal_dim`), not the deciding one.
+2. **The test that actually decides it**: feed each variant through `Scoring.cpp:305`'s exact gate
+   condition (`> 2.0f`, or its own percentile-matched equivalent for the new distribution) and
+   measure forward-return/hit-rate on real `isMeanReversionPattern` trades for each variant,
+   independently. This is the identical acceptance criterion already used to kill the four dead HMM
+   dims — apply it here instead of exempting this decision from it.
+3. Decide from the result, not from precedent: one variant dominates cleanly → **replace**, with a
+   properly re-derived threshold (percentile-matching methodology, not a carried-over `2.0f`), and
+   delete the loser — don't leave a known-inferior parallel field sitting in the vector.
+   Both show real incremental power (e.g. via the HMM's own per-state discrimination metric,
+   measured, not assumed) → keep both, additive, and say so because the data showed it.
+
+**On whether both get fed to the HMM**: independent of the above — both would become separate
+`ObservationData` wire fields either way if additive wins (18th/19th; already schema-appended,
+uncommitted). Whether the HMM's *training* actually selects either as a model input is a separate
+`lbrnet`-side decision (`HMM_KEEP_DIMS`), not yet made — same already-flagged gap `fast_taleb_
+kurtosis`/`fast_hurst_exponent` currently sit in (wire field + generated binding exist, `lbrnet`'s
+hand-written consumer code doesn't select them yet). Don't let that gap repeat a third time
+unflagged.
+
+---
+
+**FIRST PASS, 2026-08-28 (superseded above, kept for the reasoning trail — this is the version the
+user correctly rejected as "patching," not an institutional answer):** ADDITIVE TWIN, ship Task 5 as
+planned, with "protects the live gate, zero risk, reversible" as the stated justification. Literature
+grounding (Lo & MacKinlay 1990, Roll 1984, microstructure-noise/aggregation literature) was accurate
+but used to justify a default rather than to actually decide — see REVISED section above for why
+that's insufficient and what's required instead.
+
+---
+
+**ORIGINAL QUESTION FOR SIBLING, 2026-08-28 — resolved above, kept for the reasoning trail.** User
+asked directly: why does `fast_mean_rev_z` need to be a SEPARATE additive
+field at all, instead of just replacing `mean_rev_z`'s own computation in place with the
+activity-clock version (same name, same slot) -- mirroring `recurrence_rate`/`skewness_idx`'s
+already-shipped REPLACEMENT pattern, not `fast_taleb_kurtosis`/`fast_hurst_exponent`'s ADDITIVE one.
+
+**Current plan's stated reasoning for additive** (`docs/superpowers/plans/2026-08-28-activity-
+clock-mean-rev-hurst-recurrence.md` §0): `mean_rev_z` has a real, calibrated live gate
+(`Scoring.cpp:305`, `isMeanReversionPattern && ctx.meanRevZ > 2.0f`), so — by direct analogy to
+kurtosis's own justification (protect calibrated gates, add rather than silently move their input
+distribution underneath them) — it was scoped additive, same as `fast_hurst_exponent`
+(`Scoring.cpp:266`) just shipped.
+
+**The real tension the user's question surfaces, worth the sibling's honest second opinion, not a
+rubber-stamp of the above**: kurtosis's two clocks are plausibly BOTH informative (time-bar and
+activity-clock both capture real, if different, market physics) -- symmetric case for additive.
+`mean_rev_z`'s own literature motivation (spec `2026-08-25-observation-vector-institutional-
+hardening-spec.md` §5a: microstructure literature -- non-synchronous trading, bid-ask bounce --
+establishes that calendar-time sampling is itself *a source of spurious serial correlation*, the
+exact quantity `rho` measures) is NOT symmetric in the same way -- it's an argument that the
+TIME-BAR `mean_rev_z`'s `rho` term may be measuring a sampling ARTIFACT, not just "a different but
+equally valid clock." If that's right, keeping the old (plausibly-biased) `mean_rev_z` live and
+gated on forever, merely ADDING a corrected twin alongside it, arguably preserves a known-flawed
+signal in production rather than fixing it -- closer in spirit to `skewness_idx`'s own precedent
+(BowleySkewness was a straight-up better computation, not a second, complementary clock) than to
+kurtosis's. Counter-consideration: unlike `skewness_idx`, `mean_rev_z` DOES have a live gate
+(`2.0f` threshold) calibrated against the OLD distribution -- replacing in place without
+re-validating that threshold against the new signal's real distribution risks silently breaking a
+working gate, which is exactly the failure additive-twin design exists to avoid. This is a genuine
+fork, not a settled question by analogy alone -- please give a real opinion, not just "kurtosis did
+X so do X here too."
+
+**Implementation state, low-cost to reverse either way**: `fast_mean_rev_z` has already been added
+to `../schema/mts_schema.fbs` (appended after `mean_rev_z`, pure append, no reindexing) and
+regenerated (`mts_schema_generated.h`/hand-fixed `mts_schema_contract_generated.h`), and
+`schema/PENDING_SCHEMA_CHANGES.md`'s PSC-04 updated to cover it — all uncommitted in both repos.
+`include/ActivityClockMeanReversion.h` (Task 4's pure extraction) is also done and natively tested,
+independent of this question (needed either way — as the twin's computation if additive, or as
+`mean_rev_z`'s new sole computation if replaced). **NOT yet done**: `LocalRiskContext`/
+`ContextManager`/`FeatureScaler` wiring for `fast_mean_rev_z` specifically (Task 5's remaining
+steps) — paused here pending this question, since going additive vs. replace changes which of
+those get touched (a new field+twin member vs. swapping `mean_rev_z`'s own source and revalidating
+`Scoring.cpp:305`'s `2.0f` threshold against the new distribution).
+
+Prior state, 2026-08-28 — `fast_hurst_exponent` SHIPPED as `ObservationData`'s 18th field
 (additive twin, `hurst_exponent`'s live gate `Scoring.cpp:266` protected, unchanged). Schema:
 inserted after `fisher_info` (dim 9), shifting `tail_index`..`mean_rev_z` each +1 -- see
 `docs/superpowers/specs/2026-08-26-activity-clock-lbrnet-handoff.md` §11 for the full index map.
