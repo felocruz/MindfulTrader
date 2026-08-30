@@ -1,6 +1,7 @@
 #include "MindfulTrader_Precompiled.h"
 #include "LBRFileManager.h"
 #include "Logger.h"
+#include "generated/mts_schema_contract_generated.h"
 #include <iostream>
 #include <cstring>
 #include <limits>
@@ -329,7 +330,7 @@ void LBRFileManager::WriteFileMetadata(std::ofstream& stream, const std::string&
     MTS::Training::FileMetadataBuilder metadata_builder(fbb);
     metadata_builder.add_symbol(symbol_offset);
     metadata_builder.add_timeframe(timeframe_offset);
-    metadata_builder.add_schema_version(230);  // v2.3.0
+    metadata_builder.add_schema_version(MTS::Schema::Contract::kSchemaVersion);
     auto metadata_offset = metadata_builder.Finish();
 
     fbb.Finish(metadata_offset);
