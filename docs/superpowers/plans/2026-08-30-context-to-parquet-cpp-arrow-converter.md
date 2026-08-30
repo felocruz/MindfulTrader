@@ -1381,7 +1381,13 @@ git commit -m "feat: incremental resume mode, torn-record safe"
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
 //   tools/context_to_parquet.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
+//   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
 //   -o tools/context_to_parquet
+// RPATH added 2026-08-30 (retrofit, docs/superpowers/plans/2026-08-30-drift-
+// location-offline-prototype.md Task 4): confirmed necessary via a genuinely
+// clean shell (env -i) test -- without it, the built binary fails with
+// "error while loading shared libraries: libparquet.so.2200" outside a shell
+// that already has the mts env's LD_LIBRARY_PATH exported.
 #include "context_reader.h"
 #include "generated/mts_schema_contract_generated.h"
 
@@ -1752,6 +1758,7 @@ mamba run -n mts g++ -O2 -std=c++17 -Iinclude \
   $(mamba run -n mts pkg-config --cflags arrow parquet) \
   tools/context_to_parquet.cpp \
   $(mamba run -n mts pkg-config --libs arrow parquet) \
+  -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
   -o tools/context_to_parquet
 ```
 Expected: compiles cleanly. Fix any real compile errors surfaced here before proceeding — this is the first time this file is actually compiled against the real Arrow 22.0.0 headers.
@@ -2769,7 +2776,7 @@ After the writer's `Close()` succeeds (end of `main()`, right before `return 0;`
 
 - [ ] **Step 6: Build and verify**
 
-Run: `mamba run -n mts g++ -O2 -std=c++17 -Iinclude $(mamba run -n mts pkg-config --cflags arrow parquet) tools/context_to_parquet.cpp $(mamba run -n mts pkg-config --libs arrow parquet) -o tools/context_to_parquet`
+Run: `mamba run -n mts g++ -O2 -std=c++17 -Iinclude $(mamba run -n mts pkg-config --cflags arrow parquet) tools/context_to_parquet.cpp $(mamba run -n mts pkg-config --libs arrow parquet) -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib -o tools/context_to_parquet`
 Expected: compiles cleanly.
 
 Run the freshness path end-to-end against Task 9's synthetic fixture:

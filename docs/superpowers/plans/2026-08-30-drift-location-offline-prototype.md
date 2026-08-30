@@ -258,24 +258,39 @@ Expected: FAIL — `ComputeForwardReturns`/`ComputeWilsonCI`/`Sign`/`ComputeHitR
 Add to `tools/drift_location_stats.h`:
 
 ```cpp
-// Mirrors tools/dim_acceptance_eval.py's compute_forward_returns() exactly
-// (lines 189-200): forward log-return from signal_price at signal_ts to the
-// first available price at or after signal_ts + horizon, rejected if that
-// target is beyond the series or the actual gap exceeds 3x the horizon
-// (guards against overnight/weekend gaps swamping the horizon).
+// Mirrors tools/dim_acceptance_eval.py's compute_forward_returns() semantics
+// exactly (lines 189-200: forward log-return from signal_price at signal_ts to
+// the first available price at or after signal_ts + horizon, rejected if that
+// target is beyond the series or the actual gap exceeds 3x the horizon), but
+// as an O(n) two-pointer merge instead of Python's O(n log n) np.searchsorted.
+// REQUIRES both signal_ts and timestamps to be sorted ascending (true here:
+// signal_ts is a filtered subsequence of timestamps, verified sorted via a
+// real Polars is_sorted() check against the actual production Parquet file).
+// This isn't a micro-optimization -- an earlier binary-search-per-signal
+// version was measured taking 100+ seconds (timed out) on the real 38.5M-row
+// series across 4 horizons: each independent std::lower_bound probe jumps
+// unpredictably through a ~308MB array that doesn't fit in cache, thrashing
+// it on every level of the search. A single forward-only pointer never
+// revisits memory, so this stays cache-friendly at this tool's real scale.
 inline std::vector<double> ComputeForwardReturns(
     const std::vector<std::int64_t>& signal_ts, const std::vector<double>& signal_price,
     const std::vector<std::int64_t>& timestamps, const std::vector<double>& prices,
     int horizon_minutes) {
     const std::int64_t horizon_us = static_cast<std::int64_t>(horizon_minutes) * 60 * 1'000'000LL;
     std::vector<double> fwd(signal_ts.size(), std::numeric_limits<double>::quiet_NaN());
+    const std::size_t m = timestamps.size();
+    std::size_t idx = 0;
     for (std::size_t i = 0; i < signal_ts.size(); ++i) {
         const std::int64_t target_ts = signal_ts[i] + horizon_us;
-        auto it = std::lower_bound(timestamps.begin(), timestamps.end(), target_ts);
-        if (it == timestamps.end()) {
-            continue;
+        // idx only ever advances across the whole loop: target_ts is
+        // non-decreasing in i (signal_ts is sorted, horizon_us is constant),
+        // so the first timestamps[idx] >= target_ts is also non-decreasing.
+        while (idx < m && timestamps[idx] < target_ts) {
+            ++idx;
         }
-        const std::size_t idx = static_cast<std::size_t>(it - timestamps.begin());
+        if (idx >= m) {
+            break;  // every later target_ts is >= this one -- none can match either.
+        }
         if ((timestamps[idx] - signal_ts[i]) > horizon_us * 3) {
             continue;
         }
@@ -551,15 +566,10 @@ git commit -m "feat: add Arrow Parquet reader (first direct Parquet read in this
 
 namespace {
 
-std::string JsonEscape(const std::string& s) {
-    std::string out;
-    for (char c : s) {
-        if (c == '"' || c == '\\') out.push_back('\\');
-        out.push_back(c);
-    }
-    return out;
-}
-
+// No JsonEscape() here (unlike context_to_parquet.cpp/context_validate.cpp) --
+// this tool's JSON report is purely numeric, no string fields to escape.
+// A pre-fix draft defined one anyway and never called it; removed as dead
+// code once the -Wunused-function warning caught it during real compilation.
 void PrintUsage(const char* argv0) {
     std::fprintf(stderr,
         "usage: %s --ticks-parquet PATH [--window N] [--horizons 30,60,120,240] "
