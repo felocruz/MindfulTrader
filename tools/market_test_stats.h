@@ -177,28 +177,49 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     // actual run against the production file was still on horizon 2/4 after
     // 61 minutes before being killed.
     //
-    // Below kExactResampleThreshold, keep the exact resample (matches
-    // dim_acceptance_eval.py's literal bootstrap; this is also what the
-    // existing native tests exercise, at n=3 and n=50, so their behavior is
-    // provably unchanged). At or above it, switch to a weighted/"exchangeable"
+    // Below kExactResampleThreshold, this stays the exact multinomial
+    // resample (matches dim_acceptance_eval.py's literal bootstrap). Note:
+    // the RNG-to-index mapping here (raw rng() % n against precomputed abs
+    // arrays) is NOT byte-identical to the pre-rewrite version (which used
+    // std::uniform_int_distribution against the signed arrays) -- an earlier
+    // version of this comment incorrectly claimed the code was unchanged.
+    // What's actually unchanged, and what was verified, is that both
+    // pre-existing native test suites (test_market_test_stats_magnitude.cpp,
+    // test_drift_location_stats.cpp) still pass with identical assertions --
+    // point-estimate exactness, CI ordering, and the zero-variance collapse,
+    // none of which pin an exact stochastic value. Plain modulo bias against
+    // mt19937_64 at n<20,000 is statistically negligible.
+    //
+    // At or above the threshold, switch to a weighted/"exchangeable"
     // bootstrap (general theory: Praestgaard & Wellner 1993, "Exchangeably
-    // Weighted Bootstraps of the General Empirical Process" -- covers any
-    // i.i.d., mean-1, finite-variance weight distribution as an
-    // asymptotically valid substitute for exact multinomial resampling, and
-    // is asymptotically equivalent to it as n grows, exactly this tool's real
-    // regime): assign each element an i.i.d. Uniform[0,2] weight (mean 1,
-    // variance 1/3) and take the weighted mean sum(w_i*|x_i|)/sum(w_i).
-    // Dividing by the realized sum(w_i) rather than n keeps a constant array
-    // collapsing to that exact constant regardless of the weight draw (a
-    // weighted average of a constant is always that constant), so this
-    // doesn't reintroduce a zero-variance edge case. This is O(n)
-    // *sequential* per resample: a memory-bandwidth-bound streaming pass
-    // instead of a memory-latency-bound random gather. (A Poisson(1)-weight
-    // variant of this same general family -- Chamandy, Muralidharan, Najmi &
-    // Naidu 2012, "Estimating Uncertainty for Massive Data Streams" -- was
-    // tried first and rejected: std::poisson_distribution measured at
-    // ~73ns/draw on this platform, almost as expensive as the ~95ns/draw
-    // gather it was meant to replace. Uniform[0,2] measured at ~35ns/draw.)
+    // Weighted Bootstraps of the General Empirical Process"): assign each
+    // element an i.i.d. weight and take the weighted mean
+    // sum(w_i*|x_i|)/sum(w_i). Critically, the weight distribution's
+    // VARIANCE must match the multinomial resample's implied per-element
+    // variance (=1, e.g. Poisson(1) or Exponential(1)) for the result to be
+    // correctly scaled -- an earlier version of this code used Uniform[0,2]
+    // weights (variance 1/3) purely because they were cheap to generate,
+    // without checking this, and a review caught that it produces a CI
+    // systematically ~1.7-1.8x too narrow (confirmed via delta-method
+    // derivation and an empirical side-by-side rerun against identical
+    // synthetic data: exact-bootstrap CI width 0.010902 vs. Uniform[0,2]
+    // 0.005944 vs. Exponential(1) 0.010121 -- matching the exact bootstrap).
+    // Exponential(1) (Rubin 1981's Bayesian-bootstrap weight) has variance 1
+    // and is used here. Dividing by the realized sum(w_i) rather than n keeps
+    // a constant array collapsing to that exact constant regardless of the
+    // weight draw (a weighted average of a constant is always that
+    // constant), so this doesn't reintroduce a zero-variance edge case. This
+    // is O(n) *sequential* per resample: a memory-bandwidth-bound streaming
+    // pass instead of a memory-latency-bound random gather -- the actual
+    // fix for the original performance emergency (a ~3.85M-element decile
+    // group measured at ~95ns/gather, ~728.8ms/resample, ~97 minutes for a
+    // real 4-horizon run). Two faster-but-wrong-variance alternatives were
+    // tried and rejected before this: Poisson(1) (Chamandy, Muralidharan,
+    // Najmi & Naidu 2012, "Estimating Uncertainty for Massive Data Streams")
+    // has the correct variance but std::poisson_distribution measured
+    // ~73ns/draw, almost as expensive as the gather it replaced; Uniform[0,2]
+    // measured ~35ns/draw but has the wrong variance (the bug above).
+    // Exponential(1) measured ~28.5ns/draw -- both fast and correctly scaled.
     constexpr std::size_t kExactResampleThreshold = 20'000;
     const std::size_t top_n = top_abs.size();
     const std::size_t bottom_n = bottom_abs.size();
@@ -215,7 +236,7 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
             gaps[b] = (top_sum / static_cast<double>(top_n)) - (bottom_sum / static_cast<double>(bottom_n));
         }
     } else {
-        std::uniform_real_distribution<double> w_dist(0.0, 2.0);
+        std::exponential_distribution<double> w_dist(1.0);
         for (std::size_t b = 0; b < n_boot; ++b) {
             double top_wsum = 0.0, top_wtotal = 0.0;
             for (std::size_t i = 0; i < top_n; ++i) {
