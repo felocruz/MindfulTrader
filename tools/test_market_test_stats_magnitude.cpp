@@ -4,6 +4,7 @@
 #include "market_test_stats.h"
 #include <cmath>
 #include <cstdio>
+#include <random>
 
 namespace {
 int g_failures = 0;
@@ -55,6 +56,48 @@ int main() {
         check("n_boot=0 point estimate is still exact", close(result.gap, 4.0 - (4.0 / 3.0), 1e-9));
         check("n_boot=0 CI bounds are NaN, not garbage from an empty-vector index",
               std::isnan(result.ci_lo) && std::isnan(result.ci_hi));
+    }
+    {
+        // Regression coverage for the >=20,000-element weighted-bootstrap
+        // path (Praestgaard & Wellner 1993 exchangeable bootstrap) -- until
+        // now this path was exercised ONLY by an expensive real 38.5M-row
+        // production run, meaning a future weight-distribution regression
+        // (like the Uniform[0,2] variance-1/3 bug this exact path once had)
+        // would only be caught by another such run, or not at all. Analytic
+        // reference: for X ~ N(0,1), Var(|X|) = 1 - 2/pi (verified via a
+        // real mamba run -n mts python3 execution: 0.3633802276324186), so
+        // for top/bottom i.i.d. |N(0,1)| samples of size n each, the 95% CI
+        // half-width for mean(|top|)-mean(|bottom|) is
+        // 1.96*sqrt(2*(1-2/pi)/n) -- verified at n=25,000: 0.021135460...
+        // This is exactly the check that would have caught the Uniform[0,2]
+        // regression: that variant measured ~1.7-1.8x narrower than this
+        // theory value on the same kind of data.
+        std::mt19937_64 gen(123);
+        std::normal_distribution<double> nd(0.0, 1.0);
+        const std::size_t n = 25000;  // above kExactResampleThreshold=20,000
+        std::vector<double> top(n), bottom(n);
+        for (auto& x : top) x = nd(gen);
+        for (auto& x : bottom) x = nd(gen);
+        auto result = ComputeBootstrapMeanGapCI(top, bottom, 2000, 0);
+        constexpr double kPi = 3.14159265358979323846;
+        const double theory_width = 1.96 * 2.0 * std::sqrt(2.0 * (1.0 - 2.0 / kPi) / static_cast<double>(n));
+        const double actual_width = result.ci_hi - result.ci_lo;
+        const double ratio = actual_width / theory_width;
+        check("weighted-bootstrap-path (n=25000) CI width matches analytic theory within 15%",
+              ratio > 0.85 && ratio < 1.15);
+        check("weighted-bootstrap-path point estimate is near zero (both groups drawn from the same distribution)",
+              std::fabs(result.gap) < 0.05);
+    }
+    {
+        // Weighted-path zero-variance collapse (constant arrays, n above the
+        // threshold) -- confirms dividing by the realized sum(w_i) rather
+        // than n still collapses exactly for a constant array on this path,
+        // not just on the small-n exact-resample path already covered above.
+        std::vector<double> top(25000, 10.0);
+        std::vector<double> bottom(25000, 1.0);
+        auto result = ComputeBootstrapMeanGapCI(top, bottom, 500, 0);
+        check("weighted-path (n=25000) zero-variance collapses exactly",
+              close(result.gap, 9.0) && close(result.ci_lo, 9.0) && close(result.ci_hi, 9.0));
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);
