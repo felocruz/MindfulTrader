@@ -588,7 +588,7 @@ void WriteTestFile(const std::string& path, std::uint16_t schema_version) {
     flatbuffers::FlatBufferBuilder fbb(256);
     auto symbol = fbb.CreateString("TEST");
     auto timeframe = fbb.CreateString("CONTEXT_v2.5_MO_SS");
-    auto meta = MTS::Schema::CreateFileMetadata(fbb, symbol, timeframe, schema_version, 0);
+    auto meta = MTS::Training::CreateFileMetadata(fbb, symbol, timeframe, schema_version, 0);
     fbb.Finish(meta);
 
     std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -709,7 +709,7 @@ inline ContextFileHandle OpenContextFile(const std::string& path) {
         throw std::runtime_error("OpenContextFile: truncated or missing FileMetadata: " + path);
     }
 
-    const auto* meta = flatbuffers::GetRoot<MTS::Schema::FileMetadata>(handle.base + meta_offset);
+    const auto* meta = flatbuffers::GetRoot<MTS::Training::FileMetadata>(handle.base + meta_offset);
     handle.schema_version = meta->schema_version();
     if (handle.schema_version != MTS::Schema::Contract::kSchemaVersion) {
         ::munmap(mapped, handle.size);
@@ -786,8 +786,7 @@ Add to `tools/test_context_reader.cpp`, before the final `std::printf`:
             fbb, /*timestamp_us=*/999, /*sequence_id=*/7, &obs, &ctx, /*daily_bias_enum=*/0, rgc_offset);
         fbb.Finish(mo);
 
-        const auto* root = flatbuffers::GetRoot<MTS::Schema::MarketObservation>(fbb.GetBufferPointer());
-        auto parsed = ReadMarketObservation(reinterpret_cast<const std::uint8_t*>(root));
+        auto parsed = ReadMarketObservation(fbb.GetBufferPointer());
         check("timestamp_us round-trips", parsed.timestamp_us == 999);
         check("sequence_id round-trips", parsed.sequence_id == 7);
         check("observation pointer is non-null", parsed.observation != nullptr);
@@ -807,8 +806,7 @@ Add to `tools/test_context_reader.cpp`, before the final `std::printf`:
         MTS::Schema::AsymmetryContext ctx(0, 0, 0, 0, 0, 0, 0, 0);
         auto mo = MTS::Schema::CreateMarketObservation(fbb, 1, 1, &obs, &ctx, 0, 0);
         fbb.Finish(mo);
-        const auto* root = flatbuffers::GetRoot<MTS::Schema::MarketObservation>(fbb.GetBufferPointer());
-        auto parsed = ReadMarketObservation(reinterpret_cast<const std::uint8_t*>(root));
+        auto parsed = ReadMarketObservation(fbb.GetBufferPointer());
         check("missing risk_gate_context yields a null pointer, not a crash",
               parsed.risk_gate_context == nullptr);
     }
@@ -886,7 +884,7 @@ void WriteSyntheticContextFile(const std::string& path, int n_pairs) {
     flatbuffers::FlatBufferBuilder meta_fbb(256);
     auto symbol = meta_fbb.CreateString("TEST");
     auto timeframe = meta_fbb.CreateString("CONTEXT_v2.5_MO_SS");
-    auto meta = MTS::Schema::CreateFileMetadata(
+    auto meta = MTS::Training::CreateFileMetadata(
         meta_fbb, symbol, timeframe, MTS::Schema::Contract::kSchemaVersion, 0);
     meta_fbb.Finish(meta);
     std::uint32_t meta_size = static_cast<std::uint32_t>(meta_fbb.GetSize());
@@ -1220,7 +1218,7 @@ inline ReadCounters ReadBoundedTail(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `mamba run -n mts g++ -std=c++17 -Iinclude tools/test_context_reader.cpp -o /tmp/context_reader_test && /tmp/context_reader_test`
-Expected: `ALL PASS` (18 checks)
+Expected: `ALL PASS` (20 checks)
 
 - [ ] **Step 5: Commit**
 
@@ -1246,36 +1244,45 @@ Add before the final `std::printf`:
 
 ```cpp
     {
+        // 6 pairs written, pair index 1 deliberately mismatched -> 5 aligned pairs
+        // with sequence ids 0, 2, 3, 4, 5 (matches WriteSyntheticContextFile's own
+        // documented mismatch-at-index-1 behavior, same fixture Task 6/7 already use).
         WriteSyntheticContextFile("/tmp/ctx_reader_test_resume.context", 6);
         auto handle = OpenContextFile("/tmp/ctx_reader_test_resume.context");
 
-        // First pass: read only the first 2 pairs' worth, capture the resume point.
-        CollectedPairs first_pass;
-        auto [counters1, resume1] = ReadAllRecordsResumable(
-            handle, handle.record_stream_offset, 0, false, CollectPair, &first_pass);
-        (void)counters1;
-        check("first full pass collects all 3 aligned pairs (no resume splitting here)",
-              first_pass.log_variance_ratios.size() == 3);
+        CollectedPairs full_pass;
+        auto [full_counters, full_resume] = ReadAllRecordsResumable(
+            handle, handle.record_stream_offset, 0, false, CollectPair, &full_pass);
+        (void)full_counters;
+        check("full resumable pass from the true start collects all 5 aligned pairs",
+              full_pass.log_variance_ratios.size() == 5);
+        check("resume_offset after a full pass equals file size", full_resume.resume_offset == handle.size);
+        check("last_seq_id after a full pass is the final aligned pair's sequence_id (5)",
+              full_resume.has_last_seq_id && full_resume.last_seq_id == 5);
 
-        // Simulate resuming from partway through: manually resume from offset 0
-        // (start of stream) with a poisoned last_seq_id to confirm the resume
-        // point returned by a full pass equals the file's true end.
-        check("resume_offset after a full pass equals file size", resume1.resume_offset == handle.size);
-        check("last_seq_id after a full pass is the final aligned pair's sequence_id",
-              resume1.has_last_seq_id && resume1.last_seq_id == 3);
+        // Manually walk forward exactly 6 raw records (pairs 0, 1, 2) to compute a
+        // genuine mid-stream resume offset -- the same way context_to_parquet.cpp's
+        // own per-chunk loop derives its next call's start_offset from a PREVIOUS
+        // call's returned ResumePoint, rather than assuming any particular value.
+        std::size_t mid_offset = handle.record_stream_offset;
+        for (int i = 0; i < 6; ++i) {
+            std::uint32_t sz = 0;
+            std::memcpy(&sz, handle.base + mid_offset, sizeof(sz));
+            mid_offset += 4 + sz;
+        }
 
-        // Now resume from a point mid-stream (right after pair index 0's SS record)
-        // and confirm no duplication: re-reading from record_stream_offset with a
-        // resume_offset that only covers the first pair yields just the remaining ones.
         CollectedPairs resumed;
-        auto [counters2, resume2] = ReadAllRecordsResumable(
-            handle, handle.record_stream_offset, 0, true, CollectPair, &resumed);
-        (void)counters2;
-        (void)resume2;
-        check("resuming with a poisoned last_seq_id (0, already seen) still re-collects "
-              "everything from record_stream_offset (this call re-reads from the true start, "
-              "proving resume honors the given start_offset exactly, not an assumption)",
-              resumed.log_variance_ratios.size() == 3);
+        auto [resumed_counters, resumed_resume] = ReadAllRecordsResumable(
+            handle, mid_offset, /*start_last_seq_id=*/2, /*has_start_last_seq_id=*/true,
+            CollectPair, &resumed);
+        (void)resumed_resume;
+        check("resuming mid-stream after 3 raw pairs collects exactly the remaining 3 aligned pairs",
+              resumed.log_variance_ratios.size() == 3 &&
+              resumed.log_variance_ratios[0] == 3.0f &&
+              resumed.log_variance_ratios[1] == 4.0f &&
+              resumed.log_variance_ratios[2] == 5.0f);
+        check("no false sequence_regressions when resuming with the real last-seen seq_id (2)",
+              resumed_counters.sequence_regressions == 0);
         CloseContextFile(handle);
     }
 ```
@@ -1340,7 +1347,7 @@ inline std::pair<ReadCounters, ResumePoint> ReadAllRecordsResumable(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `mamba run -n mts g++ -std=c++17 -Iinclude tools/test_context_reader.cpp -o /tmp/context_reader_test && /tmp/context_reader_test`
-Expected: `ALL PASS` (22 checks)
+Expected: `ALL PASS` (25 checks)
 
 - [ ] **Step 5: Commit**
 
@@ -1758,7 +1765,7 @@ int main() {
     flatbuffers::FlatBufferBuilder meta_fbb(256);
     auto symbol = meta_fbb.CreateString("E2E");
     auto timeframe = meta_fbb.CreateString("CONTEXT_v2.5_MO_SS");
-    auto meta = MTS::Schema::CreateFileMetadata(meta_fbb, symbol, timeframe, MTS::Schema::Contract::kSchemaVersion, 0);
+    auto meta = MTS::Training::CreateFileMetadata(meta_fbb, symbol, timeframe, MTS::Schema::Contract::kSchemaVersion, 0);
     meta_fbb.Finish(meta);
     std::uint32_t meta_size = meta_fbb.GetSize();
     out.write(reinterpret_cast<const char*>(&meta_size), sizeof(meta_size));
