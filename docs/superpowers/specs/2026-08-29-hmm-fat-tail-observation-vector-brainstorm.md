@@ -10,12 +10,17 @@ a real implementation plan (own dated file) and mark this one CLOSED. **Not yet 
 §8 for the current gap list.**
 
 **Freshness: verified against live repo state as of 2026-08-30 (later same day), HEAD `4969259`
-(still current, no new commits) plus committed work on top: `MindfulTrader` `689465a`..`3e59f90`,
-`schema` `477b750`/`c7788f8`. `./build_dll.sh --no-clean` confirmed succeeding end-to-end.** §10 (the
-C++/Arrow `.context` converter, all 13 tasks) and §10.7 (`drift_location_eval`, the model-independent
-candidate-validation tool) are now both **implemented, natively tested, and committed** — no longer
-design-only. §5.0/§9 row 20 (drift/location) is now a **tested, rejected** result, not an open
-candidate. Uncommitted, edited-this-session: `SCRATCHPAD.md`, `ContextManager.h`/`.cpp`,
+plus committed work on top through `MindfulTrader` `0f27eee`, `schema` `477b750`/`c7788f8`.
+`./build_dll.sh --no-clean` confirmed succeeding end-to-end.** §10 (the C++/Arrow `.context`
+converter, all 13 tasks), §10.7 (`drift_location_eval`), and the new §10.8 (`jump_ratio_eval`) are
+all **implemented, natively tested, and committed** — no longer design-only. §5.0/§9 row 20
+(drift/location) is a **tested, rejected** result; §5.1/§9 row 21 (jump/bipower-variation ratio) is
+now a **tested, SURVIVES** result (real, substantial effect — see §5.1 and §10.8), not yet promoted
+to a schema field (§6.2's governance still applies before that happens). A real methodology gap was
+found and documented, not yet fixed, during §5.1's review: both `drift_location_eval` and
+`jump_ratio_eval`'s bootstrap/hit-rate tests treat heavily-overlapping forward-return signals as
+i.i.d., understating CI/significance — see §10.8's own writeup and §10.9 (new) for the retroactive
+note on §10.7. Uncommitted, edited-this-session: `SCRATCHPAD.md`, `ContextManager.h`/`.cpp`,
 `TripleScreen2.cpp`/`3.cpp`, `StudyHelperFunctions.cpp`/`.h`, `include/FeatureScaler.h`,
 `config/execution_params.json`, and various untracked pre-existing spec files unrelated to this
 thread. Re-check this stamp (or update it) before trusting any claim below that depends on current
@@ -214,7 +219,7 @@ with 3+ dims is a redundancy question worth checking pairwise, not just against 
 | **Asymmetry** (skewness) | Classical (3rd moment) | `skewness_idx` | **Contingently redundant** — a skewed-Student-t emission (Hansen 1994; Fernández & Steel 1998) would add a native per-state shape parameter for asymmetry, the same relationship ν_k already has to kurtosis (§4). Not redundant under the current symmetric-t emission; flag, don't act, unless/until that emission change happens. |
 | **Tail weight** (kurtosis) | Classical (4th moment) | `fast_taleb_kurtosis` | Same contingent-redundancy structure as above, but against ν_k specifically, already the subject of §4's headline finding. |
 | **Persistence** (trend vs. mean-reversion, serial correlation) | Dynamics | `hurst_exponent`/`fast_hurst_exponent`, `mean_rev_z`/`fast_mean_rev_z`, `recurrence_rate` | Axis is legitimate (it's §1.4's trend axis) — every current representative individually measured weak-to-null (§3). **The axis isn't the problem; the estimators are** — don't conclude "persistence doesn't matter here" from this, the null results are estimator-specific (confirmed for `mean_rev_z` via the actual horse-race test, not yet checked for the other two). |
-| **Jump/discontinuity share** (fraction of realized variance from jumps vs. continuous diffusion) | Dynamics | None | Gap — §5.1's candidate (Barndorff-Nielsen & Shephard bipower-variation ratio). |
+| **Jump/discontinuity share** (fraction of realized variance from jumps vs. continuous diffusion) | Dynamics | None (validated candidate, not yet wired) | **Gap closeable — §5.1's candidate (Barndorff-Nielsen & Shephard bipower-variation ratio) tested and SURVIVES, 2026-08-30** (§9 row 21, §10.8); real, substantial effect. Not yet promoted to an actual field. |
 | **Temporal clustering/contagion** (self-exciting extremes) | Dynamics | `burstiness_index` (informal) | Partial — formal version deferred to post-workstation (§5.2, Hawkes intensity). |
 | **Liquidity/fragility** | Dynamics/microstructure | `amihud_illiquidity`, `liq_fragility` | Well covered, both strong discriminators (§3) — same pairwise-redundancy question as the volatility trio, not yet done specifically between these two. |
 | **Complexity/predictability** (pattern compressibility) | Dynamics/microstructure | `lempel_ziv` | Covered — genuinely distinct from persistence (nonlinear/algorithmic compressibility vs. linear serial correlation), not a duplicate axis despite surface similarity. |
@@ -476,7 +481,23 @@ hit-rate against **real forward market returns** — is model-independent by con
 this document's standing methodology for any candidate that doesn't strictly require HMM state
 labels (see §10.7).
 
-### 5.1 Jump / bipower-variation ratio — the more directly load-bearing candidate
+### 5.1 Jump / bipower-variation ratio — TESTED AND SURVIVES, 2026-08-30 (was: the more directly load-bearing candidate)
+
+**Verdict: real, substantial predictive power for future |return| magnitude — survives at every
+horizon tested, with the opposite sign from the naive hypothesis.** Full methodology and result in
+§9 row 21 and §10.8; summary here for anyone reading this section in isolation.
+`tools/jump_ratio_eval.cpp` (a new, model-independent C++/Arrow tool, §10.8) computed
+`jump_ratio = max(0, (RV-BV)/RV)` over real 38.5M-row MES tick data and tested whether the top
+decile of jump_ratio values predicts a different `median(|forward return|)` than the bottom decile
+(a magnitude test, not the directional hit-rate test §5.0 used — `jump_ratio` is non-negative by
+construction, so there's no sign to test against a forward return's sign). Result, at all 4
+horizons (30/60/120/240 min), CI excludes zero (survives) and the **top decile's median is smaller**
+than the bottom decile's (55.2%/55.1%/58.3%/62.6% of it) — **the opposite of the naive
+"more jump content now → more chaos ahead" hypothesis.** A high-jump-share window (variance
+concentrated in a few large moves) predicts a *calmer*, not more volatile, near-term future;
+low-jump-share windows (steady, grinding diffusion) predict the larger subsequent moves. This reads
+more like a vol-compression/mean-reversion-in-volatility signal than the tail-risk-warning signal
+the candidate was originally framed as testing for.
 
 **Barndorff-Nielsen & Shephard (2004, 2006)**: realized variance (RV) includes both continuous
 diffusion and discrete jumps; bipower variation (BV) is a jump-*robust* estimator of the continuous
@@ -487,10 +508,39 @@ different from a regime that's just generically volatile, and nothing currently 
 isolates that (`relative_range`/`correction_action`/`log_variance_ratio` all measure volatility
 *level*, none isolate the jump *component*).
 
-**Why this is the recommended first prototype**: cheap. Both RV and BV come from the same
-log-return series `TailRiskEngine` already ingests — no new data source, no new ACSIL feasibility
-question, no C++ needed for a first pass. Prototype offline in Python against real MES data with
-the same cross-state-ratio methodology already used for the 16D→12D audit, **before** any C++ work.
+**Methodology correction, 2026-08-30, found by direct user challenge**: the first working version of
+this test used `mean(|forward_return|)` as the magnitude statistic, ported verbatim from
+`tools/dim_acceptance_eval.py`'s own precedent — the same class of mistake this codebase already
+corrected once before (moment-based skewness/kurtosis → Bowley/Moors robust quantile estimators,
+2026-08-13, per Kim & White 2004). This codebase's own established convention for fat-tailed data is
+`FeatureScaler.h`'s `RobustLocation()`: median and MAD × 1.4826 ("Taleb-consistent"), not the mean.
+Corrected to `median(|forward_return|)` — new, native-only bootstrap infrastructure
+(`ComputeBootstrapMedianGapCI`, §10.8), independently cross-validated against exact bootstraps under
+Normal/Student-t/Cauchy tails during review. The result above is the corrected, median-based one; it
+confirms (same sign, similar decisive significance) the direction found by the earlier, since-
+superseded mean-based run.
+
+**Known limitation, not yet fixed (found during review, documented not patched ad hoc — see §10.8/
+§10.9)**: the bootstrap resamples individual per-tick signals as if independent, but real forward-
+return signals overlap heavily (a 240-minute forward return spans thousands of adjacent per-tick
+observations) — textbook i.i.d. bootstrap understates true CI width under this much overlap, by an
+unquantified but likely large factor. Doesn't change this candidate's verdict (the effect is hundreds
+of standard errors from a naively-calibrated zero, so even a much wider correctly-calibrated CI would
+still exclude it) — but this is a standing §10.7/§10.8 methodology gap shared by §5.0's own already-
+accepted OUT verdict too, not unique to this candidate, and should be fixed once, applied uniformly,
+before it's trusted for a more marginal future candidate.
+
+**Why this was a cheap first prototype**: both RV and BV come from the same log-return series
+`TailRiskEngine`/`ActivityClockManager` already ingest — no new data source, no new ACSIL
+feasibility question. Prototyped and validated entirely offline in native C++/Arrow against real
+MES data using §10.7's model-independent methodology (never cross-state-ratio against `hmm_model.pkl`
+— its training-data invalidities remain unresolved, §5.0's own correction), before any schema/C++
+production commitment.
+
+**Not yet promoted.** This result makes jump_ratio a strong candidate for actual schema addition
+(§6.2's governance: needs a new `ObservationData` wire field, same as row 20 would have) and HMM
+retraining — but that promotion decision, the schema-change sequence, and the block-bootstrap
+methodology fix above are separate, not-yet-started pieces of work, not implied by this section.
 
 ### 5.2 Self-exciting jump clustering (Hawkes intensity) — the more powerful, more expensive candidate
 
@@ -693,11 +743,18 @@ candidate**:
 - ~~§5.0 drift/location (return z-score)~~ **TESTED AND REJECTED, 2026-08-30** (§5.0, §9 row 20) —
   offline model-independent test against real MES data found hit_rate below 0.5 at every horizon,
   decaying toward null as horizon lengthens; rejected before any schema/C++ commitment.
-- **§5.1 jump/bipower-variation ratio — now the top prototype candidate.** Existing data, model-
-  independent forward-market-return test (§10.7's methodology, not cross-state-ratio — see §5.0's own
-  correction for why), no C++ needed for a first pass.
-- §5.4's Hurst × volatility-level cross-term — zero new data, pure feature-engineering, cheap to
-  test alongside §5.1.
+- ~~§5.1 jump/bipower-variation ratio~~ **TESTED AND SURVIVES, 2026-08-30** (§5.1, §9 row 21, §10.8) —
+  real, substantial effect, opposite the naive hypothesis (high jump-share predicts a calmer, not
+  more chaotic, near-term future). Not yet promoted to a schema field.
+- **Next up, before any further candidate work (2026-08-30 decision): the i.i.d.-bootstrap-on-
+  overlapping-signals methodology gap (§10.9)**, found during §5.1's review — both §10.7's and
+  §10.8's tests understate CI width by treating heavily-overlapping per-tick forward-return signals
+  as independent. Doesn't change either existing verdict, but running a third candidate through the
+  same under-calibrated apparatus means accumulating results on a known-flawed instrument; this
+  codebase already has the raw ingredient (a measured Politis-White block length, ≈404.82, from the
+  `fractal_dim` work) a real fix should reuse. Fix once, applied uniformly, before §5.4.
+- §5.4's Hurst × volatility-level cross-term — zero new data, pure feature-engineering; next
+  candidate in queue once the methodology gap above is resolved.
 
 **Defer to post-workstation window:**
 - §5.2 Hawkes self-exciting jump intensity.
@@ -760,16 +817,20 @@ in priority order:
 2. **Still open. UPDATED, 2026-08-30 — row 20 (drift/location) reached `OUT` this session** (tested
    offline against real MES data, rejected — §5.0, §9 row 20), joining rows 13/14
    (`amihud_illiquidity`/`liq_fragility`, reached `IN` earlier the same day). Recounted row-by-row
-   against §0's literal status tokens (`IN`/`OUT`/`OUT-HMM` = terminal, everything else not): now
+   against §0's literal status tokens (`IN`/`OUT`/`OUT-HMM` = terminal, everything else not): still
    **15 of 25 non-terminal (10 terminal: `relative_range`, `vol_convexity`, `lempel_ziv`,
    `micro_asymmetry`, `tail_index`, `recurrence_rate`, `fractal_dim`, `amihud_illiquidity`,
-   `liq_fragility`, drift/location).** Real prototyping, wiring, and measurement work closes the
-   remaining 15, not more documentation.
+   `liq_fragility`, drift/location).** Row 21 (jump/bipower-variation ratio) also gained real evidence
+   this session (tested, SURVIVES — §5.1, §9 row 21) but is not counted as newly terminal: it moved
+   `CANDIDATE` → `CANDIDATE-VALIDATED`, still non-terminal per §0 until actually promoted to a schema
+   field. Real prototyping, wiring, and measurement work closes the remaining 15, not more
+   documentation.
 3. **RESOLVED, 2026-08-29** — ~~No single current field manifest.~~ §9 is exactly this, kept current
    alongside the decision ledger rather than as a separate table.
-4. **Still open, narrowed.** §5.0 is now resolved (rejected, §9 row 20); §5.1/§5.4 haven't been
-   prototyped yet, so there is still no decided "the vector will be exactly these N fields"
-   statement — same underlying gap as item 2, different framing.
+4. **Still open, narrowed further.** §5.0 is resolved (rejected, §9 row 20); §5.1 is now resolved
+   (survives, §9 row 21) but not yet promoted; §5.4 hasn't been prototyped yet. Still no decided "the
+   vector will be exactly these N fields" statement — same underlying gap as item 2, different
+   framing.
 5. **RESOLVED, 2026-08-29** — ~~Decisions scattered, not centralized.~~ §9's ledger is the single
    scannable per-dim status table now.
 
@@ -788,7 +849,9 @@ identified) · **IN-CONTINGENT** (stays now, flagged future redundancy risk) · 
 (stays, a decided implementation change not yet done) · **IN-UNMEASURED** (shipped, never tested
 against anything) · **OUT-HMM** (dropped from HMM model-input selection only; C++ computation and
 non-HMM consumers unaffected) · **PAUSED** (groundwork exists, explicitly do not proceed without
-new evidence) · **CANDIDATE** (proposed, not yet in the vector) · **CANDIDATE-DEFERRED** (proposed,
+new evidence) · **CANDIDATE** (proposed, not yet in the vector) · **CANDIDATE-VALIDATED** (offline
+model-independent test survives — real evidence for promotion — but not yet an actual schema field;
+non-terminal per §0's promotion criterion until it is) · **CANDIDATE-DEFERRED** (proposed,
 explicitly pushed to a later window).
 
 | # | Dim | Status | Clock | Why (one line) | Last verified |
@@ -813,7 +876,7 @@ explicitly pushed to a later window).
 | 18 | `mean_rev_z` | IN-WEAK, **empirically null** | Live (TS3) | OU-elasticity; confirmed null predictive power in isolation via the actual horse-race test (`mean_rev_z_variant_comparison.py`) — estimator-specific null, axis itself not indicted | 2026-08-28 (test) / 2026-08-29 (doc) |
 | 19 | `fast_mean_rev_z` | PAUSED | Activity-clock, wiring paused | Struct field exists (pre-pause groundwork); `ContextManager.cpp` computation never wired. Horse-race test showed both variants empirically null — do not resume without new evidence | 2026-08-29 (fresh grep, zero `ContextManager` hits) |
 | 20 | Drift/location (return z-score) | **OUT, tested and rejected 2026-08-30** | N/A — offline prototype only, never wired | Largest identified axis gap (§1.9), but the offline prototype (`tools/drift_location_eval.cpp`, real 38.5M-row MES data, same-sign continuation hypothesis) found hit_rate **below** 0.5 at every horizon (0.4854@30min → 0.4957@240min, decaying toward null as horizon lengthens — the opposite shape a momentum candidate should show). Statistically significant only because n is in the tens of millions; effect size is economically tiny (1-1.5pp). Rejected before any schema/C++ commitment — exactly the outcome the offline-first discipline exists to catch cheaply | 2026-08-30 (tested) |
-| 21 | Jump/bipower-variation ratio | CANDIDATE | N/A — not built | Isolates jump-share of realized variance, an axis nothing currently covers (§5.1); cheap, same data `TailRiskEngine` already ingests | 2026-08-29 |
+| 21 | Jump/bipower-variation ratio | **CANDIDATE-VALIDATED, tested and SURVIVES 2026-08-30** | N/A — offline prototype only, not yet wired | Isolates jump-share of realized variance, an axis nothing currently covers (§5.1). Offline model-independent magnitude test (`tools/jump_ratio_eval.cpp`, real 38.5M-row MES data, median/MAD-based per this codebase's own fat-tail convention) found the top decile's median\|forward return\| is 55.2%/55.1%/58.3%/62.6% of the bottom decile's at 30/60/120/240min, CI excluding zero at every horizon — real, substantial, opposite-of-naive-hypothesis effect (high jump-share predicts a CALMER near-term future, not more chaos). Not yet promoted to a schema field (§6.2); a real i.i.d.-bootstrap-on-overlapping-signals methodology gap was found and documented, not yet fixed (§10.9) — doesn't change this verdict given the effect size, but should be resolved before trusting a more marginal future candidate on the same apparatus | 2026-08-30 (tested) |
 | 22 | Hurst × volatility-level cross-term | CANDIDATE | N/A — feature-engineering only, no new data | Tests whether "fat-tail" and "Trending-High-Vol crisis" (§1.4/§1.7) are the same latent phenomenon | 2026-08-29 |
 | 23 | Self-exciting jump clustering (Hawkes intensity) | CANDIDATE-DEFERRED | N/A — not built | Most lead-time-relevant candidate (§1.10) but real MLE estimation cost; deferred to post-workstation window | 2026-08-29 |
 | 24 | Realized semi-variance decomposition | CANDIDATE-DEFERRED | N/A — not built | Dynamic directional-tail-asymmetry measure (§5.3); logged, no priority assigned yet | 2026-08-29 |
@@ -991,3 +1054,61 @@ candidate that doesn't strictly require HMM state labels — same-sign (continua
 the model's own state decode while `hmm_model.pkl`'s training-data invalidities remain unresolved
 (§5.0's own correction). Use this same tool (parameterized differently) or this same pattern for
 §5.1's jump/bipower-variation ratio next.
+
+### 10.8 `tools/jump_ratio_eval.cpp` — §5.1 validation, and the mean→median correction (added 2026-08-30)
+
+Shares `market_data_io.h`/`market_test_stats.h` with §10.7's tool (extracted into those headers on
+this, their second real use — the "wait for the second use" heuristic this whole plan was built
+around). `jump_ratio` is non-negative by construction (`max(0, (RV-BV)/RV)`), so §10.7's same-sign
+hit-rate test doesn't apply (no sign to test against); the correct test, confirmed by reading
+`tools/dim_acceptance_eval.py`'s `predictive_power_magnitude()` directly rather than assumed, is a
+top/bottom-decile bootstrap-gap magnitude test on `|forward return|`.
+
+**A real performance emergency, found only by actually running it against the full 38.5M-row file
+(the third time this session a complexity bug was caught this way, not estimated in advance)**: the
+exact multinomial bootstrap resample is memory-latency-bound at real decile-group scale (~3.85M
+elements/group, ~95ns per random gather) — projected ~97 minutes for a real 4-horizon run; an actual
+run was killed after 61 minutes still on horizon 2/4. Fixed by switching to a weighted/"exchangeable"
+bootstrap (Praestgaard & Wellner 1993) above a 20,000-element threshold: i.i.d. weights assigned to
+each element, summed in one sequential pass instead of n random gathers. Two weight distributions
+were tried and rejected before landing on the right one — Poisson(1) (Chamandy et al. 2012) has the
+theoretically-correct variance but `std::poisson_distribution` itself measured ~73ns/draw, almost as
+expensive as the gather it replaced; Uniform[0,2] was fast (~35ns/draw) but has variance 1/3, not the
+~1 the theory requires, and was caught by review producing CIs ~1.7-1.8x too narrow before being
+replaced with Exponential(1) (Rubin 1981), which is both fast (~28.5ns/draw) and correctly scaled.
+
+**The mean→median correction (§5.1's own writeup has the full result)**: caught by direct user
+challenge, not by a code review — using `mean(|forward_return|)` as the magnitude statistic matched
+`dim_acceptance_eval.py`'s own precedent but repeated a mistake this codebase already fixed once
+before (Kim & White 2004; `FeatureScaler.h`'s median/MAD "Taleb-consistent" convention is the actual
+standing standard here). `ComputeBootstrapMedianGapCI` is new, native-only infrastructure (no Python
+counterpart to port) — a weighted-median analog of the mean version, sorting once per group then
+finding, per resample, the sorted position where cumulative Exponential(1) weight crosses half the
+total. Independently cross-validated against an exact multinomial median bootstrap under Normal,
+Student-t(2.5), and Cauchy data during review (ratios 1.02-1.05) — stronger verification than a
+normal-only check would have given.
+
+**Real, not yet fixed, methodology gap found during review**: both this tool and §10.7's treat
+per-tick forward-return signals as i.i.d. when resampling, but real forward returns overlap heavily
+(a 240-minute return spans thousands of adjacent ticks) — the true CI is wider than either tool
+currently reports, by an unquantified factor plausibly in the tens-of-x range at these overlap
+ratios. Neither candidate's verdict changes (§5.0's rejection and §5.1's survival are both far enough
+from the naively-calibrated boundary to survive even a much wider correctly-calibrated CI) — but this
+is flagged, not fixed, here: a proper fix (block bootstrap, reusing this codebase's own measured
+Politis-White block-length precedent from the `fractal_dim` work, ≈404.82 on real MES data) belongs
+applied uniformly across this standing methodology, not patched into one candidate's test ad hoc. See
+§10.9.
+
+### 10.9 Standing methodology gap: i.i.d. bootstrap on overlapping signals (found 2026-08-30, not yet fixed)
+
+Applies retroactively to §10.7 (`drift_location_eval`) as well as §10.8 (`jump_ratio_eval`) — both
+tools' hit-rate/bootstrap tests resample individual per-tick forward-return signals independently,
+but consecutive signals share most of their underlying tick data once the forward horizon (30-240
+minutes) is much larger than the per-tick sampling interval. This overstates effective sample size
+and understates every reported CI/p-value. Not yet quantified precisely for either tool, and not yet
+fixed for either — this codebase already has the raw ingredient (a measured Politis-White circular
+block-length, ≈404.82, from the `fractal_dim` window-widening work, `72ab967`) that a real fix should
+reuse rather than re-derive. Scoped as its own future initiative (block-bootstrap or equivalent
+de-overlapping applied to both existing tools and any future §10.7/§10.8-pattern candidate test), not
+folded into either candidate's own section, since fixing it for one candidate but not the other would
+leave the ledger's §9 verdicts on an inconsistent evidentiary footing.
