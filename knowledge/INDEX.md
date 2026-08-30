@@ -30,6 +30,7 @@
 | File | Intent |
 |---|---|
 | [indicator_manager_dod.md](global/cpp/indicator_manager_dod.md) | IndicatorManager's hybrid DOD/OOD architecture — packed SoA arrays are canonical for hot-path reads; IndicatorStore/BaseIndicator/Indicator<T> stays permanently as the write-side engine + NotPacked read path; the FM-01 "row exists ≠ write side wired" trap that already bit this codebase once |
+| [candidate_validation_methodology.md](global/cpp/candidate_validation_methodology.md) | How to validate a new HMM observation-vector candidate offline (model-independent, real forward-market-return tests) before any schema/C++ commitment — directional vs. magnitude test choice, median/MAD over mean for fat-tailed data, exchangeable-bootstrap performance at real scale, the weight-variance-must-equal-1 trap |
 
 ---
 
