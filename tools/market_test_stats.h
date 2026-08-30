@@ -284,3 +284,133 @@ inline BootstrapGapResult ComputeBootstrapMeanGapCI(
     result.ci_hi = percentile(97.5);
     return result;
 }
+
+struct MedianGapResult {
+    double gap;
+    double ci_lo;
+    double ci_hi;
+};
+
+// Robust magnitude/bootstrap-gap test using MEDIAN, not mean, as the central-
+// tendency statistic. This is this codebase's own established convention for
+// fat-tailed data, not an alternative choice: FeatureScaler.h's
+// RobustLocation() computes "median and MAD x 1.4826 (Taleb-consistent)" for
+// every observation-vector dimension, precisely because Kim & White (2004)
+// show that moment-based statistics (mean, variance, skewness, kurtosis) are
+// most unreliable exactly under the fat-tailed conditions they exist to
+// detect -- a handful of extreme values can dominate them. This codebase
+// already replaced moment-based skewness/kurtosis with Bowley/Moors robust
+// quantile estimators for exactly this reason (see docs/superpowers/specs/
+// 2026-08-12-gang-literature-grounding-spec.md). mean(|x|) (the
+// ComputeBootstrapMeanGapCI function above, which this mirrors in structure)
+// is exactly the kind of statistic that critique warns against when
+// evaluating a candidate meant to capture jump/tail behavior; that function
+// is kept for other callers/parity with dim_acceptance_eval.py's own
+// bootstrap_mean_gap_ci(), which has no median counterpart in the Python
+// reference -- this is new, native-only infrastructure, not a straight port.
+//
+// Point estimate: median(|top|) - median(|bottom|), no randomness. Below
+// kExactResampleThreshold: exact multinomial resample, one std::nth_element
+// selection per resample per group (mirrors FeatureScaler::RobustLocation's
+// own nth_element convention for small windows). At or above the threshold:
+// a weighted/exchangeable-bootstrap median (Praestgaard & Wellner 1993's
+// general theory covers M-estimators, including the median, not only the
+// mean). Sort |values| ONCE per group (O(n log n), amortized across all
+// n_boot resamples -- negligible next to the O(n_boot*n) work below); for
+// each resample, assign every SORTED position an i.i.d. Exponential(1)
+// weight (weights are exchangeable, so alignment to sorted order rather than
+// original index is valid) and do two linear passes over the fixed sorted
+// array: one to sum total weight, one to find the sorted position where
+// cumulative weight first reaches half of the total -- that position's value
+// is this resample's weighted median. O(n) sequential per resample (two
+// passes, same complexity class and same memory-bandwidth-bound profile as
+// ComputeBootstrapMeanGapCI's one pass), never a random gather, and never a
+// per-resample re-sort/re-selection (the O(n) SELECTION cost a naive
+// per-resample nth_element would add on top of the weight generation).
+inline double MedianAbs(std::vector<double> v) {
+    for (auto& x : v) x = std::fabs(x);
+    const std::size_t mid = v.size() / 2;
+    std::nth_element(v.begin(), v.begin() + mid, v.end());
+    double m = v[mid];
+    if (v.size() % 2 == 0) {
+        std::nth_element(v.begin(), v.begin() + mid - 1, v.begin() + mid);
+        m = (m + v[mid - 1]) / 2.0;
+    }
+    return m;
+}
+
+inline double WeightedMedianOfSortedAbs(
+    const std::vector<double>& sorted_abs, const std::vector<double>& weights) {
+    double total = 0.0;
+    for (double w : weights) total += w;
+    const double half = total / 2.0;
+    double cum = 0.0;
+    for (std::size_t i = 0; i < sorted_abs.size(); ++i) {
+        cum += weights[i];
+        if (cum >= half) return sorted_abs[i];
+    }
+    return sorted_abs.back();  // unreachable except fp rounding at the last element
+}
+
+inline MedianGapResult ComputeBootstrapMedianGapCI(
+    const std::vector<double>& top, const std::vector<double>& bottom,
+    std::size_t n_boot = 1000, std::uint64_t seed = 0) {
+    const double point_gap = MedianAbs(top) - MedianAbs(bottom);
+
+    if (n_boot == 0) {
+        return {point_gap, std::numeric_limits<double>::quiet_NaN(),
+                std::numeric_limits<double>::quiet_NaN()};
+    }
+
+    std::mt19937_64 rng(seed);
+    std::vector<double> gaps(n_boot);
+    constexpr std::size_t kExactResampleThreshold = 20'000;
+    const std::size_t top_n = top.size();
+    const std::size_t bottom_n = bottom.size();
+
+    if (top_n < kExactResampleThreshold && bottom_n < kExactResampleThreshold) {
+        std::vector<double> top_abs(top_n), bottom_abs(bottom_n);
+        for (std::size_t i = 0; i < top_n; ++i) top_abs[i] = std::fabs(top[i]);
+        for (std::size_t i = 0; i < bottom_n; ++i) bottom_abs[i] = std::fabs(bottom[i]);
+        std::vector<double> rs_top(top_n), rs_bottom(bottom_n);
+        for (std::size_t b = 0; b < n_boot; ++b) {
+            for (std::size_t i = 0; i < top_n; ++i) rs_top[i] = top_abs[rng() % top_n];
+            for (std::size_t i = 0; i < bottom_n; ++i) rs_bottom[i] = bottom_abs[rng() % bottom_n];
+            // rs_top/rs_bottom already hold |value| (gathered from top_abs/
+            // bottom_abs), so MedianAbs's internal fabs() is a no-op here --
+            // reused rather than duplicating the selection logic a third time.
+            gaps[b] = MedianAbs(rs_top) - MedianAbs(rs_bottom);
+        }
+    } else {
+        std::vector<double> top_sorted(top_n), bottom_sorted(bottom_n);
+        for (std::size_t i = 0; i < top_n; ++i) top_sorted[i] = std::fabs(top[i]);
+        for (std::size_t i = 0; i < bottom_n; ++i) bottom_sorted[i] = std::fabs(bottom[i]);
+        std::sort(top_sorted.begin(), top_sorted.end());
+        std::sort(bottom_sorted.begin(), bottom_sorted.end());
+
+        std::exponential_distribution<double> w_dist(1.0);
+        std::vector<double> w_top(top_n), w_bottom(bottom_n);
+        for (std::size_t b = 0; b < n_boot; ++b) {
+            for (std::size_t i = 0; i < top_n; ++i) w_top[i] = w_dist(rng);
+            for (std::size_t i = 0; i < bottom_n; ++i) w_bottom[i] = w_dist(rng);
+            gaps[b] = WeightedMedianOfSortedAbs(top_sorted, w_top) -
+                      WeightedMedianOfSortedAbs(bottom_sorted, w_bottom);
+        }
+    }
+
+    std::sort(gaps.begin(), gaps.end());
+    auto percentile = [&](double p) {
+        const double idx = p / 100.0 * static_cast<double>(gaps.size() - 1);
+        const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
+        const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
+        if (lo_idx == hi_idx) return gaps[lo_idx];
+        const double frac = idx - static_cast<double>(lo_idx);
+        return gaps[lo_idx] * (1.0 - frac) + gaps[hi_idx] * frac;
+    };
+
+    MedianGapResult result;
+    result.gap = point_gap;
+    result.ci_lo = percentile(2.5);
+    result.ci_hi = percentile(97.5);
+    return result;
+}

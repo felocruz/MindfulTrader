@@ -6,6 +6,16 @@
 // hit-rate -- jump_ratio is non-negative by construction, so there's no sign
 // to test a forward return's sign against.
 //
+// Uses ComputeBootstrapMedianGapCI (median, not mean, as the central-
+// tendency statistic) -- this codebase's own established convention for
+// fat-tailed data (FeatureScaler.h's RobustLocation(): "median and MAD x
+// 1.4826, Taleb-consistent", applied to every observation-vector dim; see
+// market_test_stats.h's ComputeBootstrapMedianGapCI for the full Kim & White
+// 2004 rationale). An earlier version of this tool used the mean-based
+// ComputeBootstrapMeanGapCI (matching dim_acceptance_eval.py's own
+// predictive_power_magnitude() precedent) -- caught in review as defaulting
+// to the weaker precedent instead of this repo's own harder-won standard.
+//
 // Build: mamba run -n mts g++ -O2 -std=c++17 \
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
 //   tools/jump_ratio_eval.cpp \
@@ -132,23 +142,45 @@ int main(int argc, char** argv) {
                         h, top_fwd.size(), bottom_fwd.size());
             continue;
         }
-        // n_boot=200, not market_test_stats.h's default of 2000: at this
-        // tool's real decile-group scale (~10% of 38.5M signals, so top_fwd/
-        // bottom_fwd are each several million elements), even the fast
-        // weighted-bootstrap path measures ~342ms/resample -- 2000 resamples
-        // would cost ~11.4min PER horizon (~46min for all 4), confirmed by a
-        // real benchmark, not an estimate. At n in the millions the
-        // per-resample statistic is already extremely tightly concentrated,
-        // so 200 replicates still gives a stable 2.5th/97.5th percentile
-        // read for this decide-if-the-CI-excludes-0 test.
-        const auto result = ComputeBootstrapMeanGapCI(top_fwd, bottom_fwd, /*n_boot=*/200);
+        // n_boot=1000: the commonly-cited minimum replicate count for a
+        // percentile bootstrap CI (Efron & Tibshirani 1993) -- an earlier
+        // n_boot=200 was measured (5 seeds, n=25,000 synthetic data) to
+        // produce a CI ~6.3% too narrow with +-13% run-to-run width variance
+        // relative to 1000's ~2%; this run's own effect sizes are hundreds of
+        // standard errors from zero, so that difference doesn't change any
+        // verdict below, but 1000 is the honest choice for a tool meant to
+        // also validate marginal future candidates. At this tool's real
+        // decile-group scale (~10% of 38.5M signals, several million elements
+        // per group), the weighted-median-bootstrap path measures
+        // ~458ms/resample -- ~7.6min per horizon, ~30.5min for all 4 (real,
+        // measured, not estimated -- the two-pass weighted-median-crossing
+        // search costs more than ComputeBootstrapMeanGapCI's single
+        // accumulation pass, a genuine cost of the more robust statistic, not
+        // a bug). No Bonferroni correction across horizons here, unlike
+        // drift_location_eval.cpp's directional test: this magnitude test
+        // mirrors dim_acceptance_eval.py's own predictive_power_magnitude(),
+        // which likewise doesn't apply one.
+        const auto result = ComputeBootstrapMedianGapCI(top_fwd, bottom_fwd, /*n_boot=*/1000);
         const bool survives = (result.ci_lo > 0.0) || (result.ci_hi < 0.0);
-        std::printf("  %4dmin: n_top=%-7zu n_bot=%-7zu gap=%+.6f 95%%CI=[%+.6f,%+.6f] (%s)\n",
-                    h, top_fwd.size(), bottom_fwd.size(), result.gap, result.ci_lo, result.ci_hi,
+        // Group medians, not just the gap: a high jump_ratio window (few
+        // large moves among mostly-tiny ones) and a low jump_ratio window
+        // (uniform-sized moves) differ in realized-volatility LEVEL by
+        // construction, not only in jump content -- printing both medians
+        // makes that potential confound visible rather than burying it
+        // inside a single gap number.
+        const double top_median = MedianAbs(top_fwd);
+        const double bottom_median = MedianAbs(bottom_fwd);
+        std::printf("  %4dmin: n_top=%-7zu n_bot=%-7zu median|fwd|_top=%.6f median|fwd|_bot=%.6f "
+                    "gap=%+.6f 95%%CI=[%+.6f,%+.6f] (%s)\n",
+                    h, top_fwd.size(), bottom_fwd.size(), top_median, bottom_median,
+                    result.gap, result.ci_lo, result.ci_hi,
                     survives ? "SURVIVES (CI excludes 0)" : "does not survive (CI includes 0)");
         if (json_out.is_open()) {
             json_out << "    {\"horizon_minutes\": " << h << ", \"n_top\": " << top_fwd.size()
-                      << ", \"n_bot\": " << bottom_fwd.size() << ", \"gap\": " << result.gap
+                      << ", \"n_bot\": " << bottom_fwd.size()
+                      << ", \"median_abs_fwd_top\": " << top_median
+                      << ", \"median_abs_fwd_bottom\": " << bottom_median
+                      << ", \"gap\": " << result.gap
                       << ", \"ci_lo\": " << result.ci_lo << ", \"ci_hi\": " << result.ci_hi
                       << ", \"survives\": " << (survives ? "true" : "false") << "}"
                       << (h_idx + 1 < horizons.size() ? ",\n" : "\n");
