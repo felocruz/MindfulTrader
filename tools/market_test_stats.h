@@ -4,10 +4,12 @@
 // No Arrow dependency -- fully natively testable.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <random>
 #include <vector>
 
 // Mirrors tools/dim_acceptance_eval.py's compute_forward_returns() semantics
@@ -116,5 +118,64 @@ inline HitRateResult ComputeHitRate(
     const auto ci = ComputeWilsonCI(k, n);
     result.ci_lo = ci.lo;
     result.ci_hi = ci.hi;
+    return result;
+}
+
+struct BootstrapGapResult {
+    double gap;
+    double ci_lo;
+    double ci_hi;
+};
+
+// Mirrors tools/dim_acceptance_eval.py's bootstrap_mean_gap_ci() methodology
+// (lines 179-186): point estimate is the exact gap between the two groups'
+// mean |value| (no randomness); the CI comes from n_boot resamples (with
+// replacement) of each group independently, taking the 2.5th/97.5th
+// percentile of the resampled gap distribution. NOT bit-matched to Python's
+// PCG64 bitstream (impractical and unnecessary for a stochastic CI estimate;
+// see this plan's Global Constraints) -- verified instead via the
+// deterministic zero-variance case, where the bootstrap distribution
+// collapses to a single point regardless of which PRNG algorithm is used.
+inline BootstrapGapResult ComputeBootstrapMeanGapCI(
+    const std::vector<double>& top, const std::vector<double>& bottom,
+    std::size_t n_boot = 2000, std::uint64_t seed = 0) {
+    auto mean_abs = [](const std::vector<double>& v) {
+        double sum = 0.0;
+        for (double x : v) sum += std::fabs(x);
+        return sum / static_cast<double>(v.size());
+    };
+    const double point_gap = mean_abs(top) - mean_abs(bottom);
+
+    std::mt19937_64 rng(seed);
+    std::uniform_int_distribution<std::size_t> top_dist(0, top.size() - 1);
+    std::uniform_int_distribution<std::size_t> bottom_dist(0, bottom.size() - 1);
+
+    std::vector<double> gaps(n_boot);
+    std::vector<double> resampled_top(top.size());
+    std::vector<double> resampled_bottom(bottom.size());
+    for (std::size_t b = 0; b < n_boot; ++b) {
+        for (std::size_t i = 0; i < top.size(); ++i) {
+            resampled_top[i] = top[top_dist(rng)];
+        }
+        for (std::size_t i = 0; i < bottom.size(); ++i) {
+            resampled_bottom[i] = bottom[bottom_dist(rng)];
+        }
+        gaps[b] = mean_abs(resampled_top) - mean_abs(resampled_bottom);
+    }
+
+    std::sort(gaps.begin(), gaps.end());
+    auto percentile = [&](double p) {
+        const double idx = p / 100.0 * static_cast<double>(gaps.size() - 1);
+        const std::size_t lo_idx = static_cast<std::size_t>(std::floor(idx));
+        const std::size_t hi_idx = static_cast<std::size_t>(std::ceil(idx));
+        if (lo_idx == hi_idx) return gaps[lo_idx];
+        const double frac = idx - static_cast<double>(lo_idx);
+        return gaps[lo_idx] * (1.0 - frac) + gaps[hi_idx] * frac;
+    };
+
+    BootstrapGapResult result;
+    result.gap = point_gap;
+    result.ci_lo = percentile(2.5);
+    result.ci_hi = percentile(97.5);
     return result;
 }
