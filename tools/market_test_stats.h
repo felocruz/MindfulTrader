@@ -117,8 +117,26 @@ struct HitRateResult {
 // jump ratio), which has no sign to test against and needs a magnitude-style
 // test instead. Callers must confirm which hypothesis applies to their
 // candidate before reusing this function.
+//
+// variance_inflation (DEFF, design effect): the ratio of the true
+// dependence-adjusted variance to the naive i.i.d. variance, derived
+// offline (see tools/block_length_and_variance_inflation.py) from a
+// Newey-West long-run/short-run variance ratio computed on this
+// candidate's real hit/miss indicator series. Default 1.0 (no
+// correction) is exact backward compatibility -- every formula below
+// reduces to its original, unadjusted form when variance_inflation=1.0.
+//
+// Applied via an effective-sample-size substitution: n_eff = n / DEFF,
+// k_eff = hit_rate * n_eff. Every downstream formula (se_null, z_stat,
+// p_value, Wilson CI) is fed n_eff/k_eff instead of n/k, so the CI and
+// the p-value are corrected consistently from one shared substitution --
+// they cannot disagree with each other the way two independently-adjusted
+// formulas could. result.n/result.k still report the RAW observed
+// counts (what was actually measured); only the internal statistical
+// formulas use the effective, dependence-adjusted sample size.
 inline HitRateResult ComputeHitRate(
-    const std::vector<double>& forward_returns, const std::vector<double>& candidate_values) {
+    const std::vector<double>& forward_returns, const std::vector<double>& candidate_values,
+    double variance_inflation = 1.0) {
     HitRateResult result;
     std::size_t n = 0, k = 0;
     for (std::size_t i = 0; i < forward_returns.size(); ++i) {
@@ -135,10 +153,12 @@ inline HitRateResult ComputeHitRate(
         return result;
     }
     result.hit_rate = static_cast<double>(k) / static_cast<double>(n);
-    const double se_null = std::sqrt(0.25 / static_cast<double>(n));
+    const double n_eff = static_cast<double>(n) / variance_inflation;
+    const double k_eff = result.hit_rate * n_eff;
+    const double se_null = std::sqrt(0.25 / n_eff);
     result.z_stat = (result.hit_rate - 0.5) / se_null;
     result.p_value = 2.0 * (1.0 - 0.5 * (1.0 + std::erf(std::fabs(result.z_stat) / std::sqrt(2.0))));
-    const auto ci = ComputeWilsonCI(k, n);
+    const auto ci = ComputeWilsonCI(k_eff, n_eff);
     result.ci_lo = ci.lo;
     result.ci_hi = ci.hi;
     return result;

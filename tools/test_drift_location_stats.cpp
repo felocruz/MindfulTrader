@@ -108,6 +108,75 @@ int main() {
         auto result = ComputeHitRate(forward_returns, candidate_values);
         check("zero candidate values excluded from n", result.n == 2);
     }
+    {
+        // variance_inflation default (1.0) must reproduce the existing
+        // 70/100 fixture's exact values -- proves the new parameter is
+        // additive, not a behavior change, when unset.
+        std::vector<double> forward_returns(100, 1.0);
+        std::vector<double> candidate_values(100, 1.0);
+        for (int i = 0; i < 30; ++i) candidate_values[i] = -1.0;
+        auto baseline = ComputeHitRate(forward_returns, candidate_values);
+        auto explicit_one = ComputeHitRate(forward_returns, candidate_values, /*variance_inflation=*/1.0);
+        check("variance_inflation=1.0 matches the no-argument default exactly",
+              close(explicit_one.z_stat, baseline.z_stat, 1e-12) &&
+              close(explicit_one.p_value, baseline.p_value, 1e-12) &&
+              close(explicit_one.ci_lo, baseline.ci_lo, 1e-12) &&
+              close(explicit_one.ci_hi, baseline.ci_hi, 1e-12));
+    }
+    {
+        // Effective-sample-size substitution, verified against a real
+        // mamba run -n mts python3 computation (not hand arithmetic):
+        // n=10000, k=5200 (hit_rate=0.52), variance_inflation=4.0 ->
+        // n_eff=2500, k_eff=1300.
+        //   baseline (DEFF=1.0): z=4.000000000000004 p=6.334248366623996e-05
+        //     ci=(0.510202040212211, 0.529782599288679)
+        //   DEFF=4.0: z=2.000000000000002 p=4.550026389635820e-02
+        //     ci=(0.500400006272198, 0.539538622433388)
+        // z_stat scales by EXACTLY 1/sqrt(DEFF) (pure algebraic
+        // substitution into se_null). The Wilson CI width does NOT scale
+        // by exactly sqrt(DEFF) -- Wilson's own small-sample nonlinear
+        // correction terms mean the ratio is only asymptotically exact,
+        // converging to it as n_eff grows (verified: 1.9147 at n_eff=25,
+        // 1.9991 at n_eff=2500 -- checked via real Python before choosing
+        // n=10000 for this test specifically so the approximation is tight).
+        std::vector<double> forward_returns(10000, 1.0);
+        std::vector<double> candidate_values(10000, 1.0);
+        for (int i = 0; i < 4800; ++i) candidate_values[i] = -1.0;  // 5200 hits / 10000
+        auto baseline = ComputeHitRate(forward_returns, candidate_values);
+        auto corrected = ComputeHitRate(forward_returns, candidate_values, /*variance_inflation=*/4.0);
+        check("n/k still report raw observed counts under correction",
+              corrected.n == 10000 && corrected.k == 5200);
+        check("hit_rate is unaffected by variance_inflation",
+              close(corrected.hit_rate, baseline.hit_rate, 1e-12));
+        check("z_stat matches Python reference under DEFF=4.0",
+              close(corrected.z_stat, 2.000000000000002, 1e-9));
+        check("z_stat scales by exactly 1/sqrt(DEFF)",
+              close(baseline.z_stat / corrected.z_stat, 2.0, 1e-9));
+        check("p_value matches Python reference under DEFF=4.0",
+              close(corrected.p_value, 4.550026389635820e-02, 1e-9));
+        check("Wilson CI matches Python reference under DEFF=4.0",
+              close(corrected.ci_lo, 0.500400006272198, 1e-9) &&
+              close(corrected.ci_hi, 0.539538622433388, 1e-9));
+        const double baseline_width = baseline.ci_hi - baseline.ci_lo;
+        const double corrected_width = corrected.ci_hi - corrected.ci_lo;
+        check("CI width scales by approximately sqrt(DEFF) at this n (within 1%)",
+              corrected_width / baseline_width > 1.98 && corrected_width / baseline_width < 2.02);
+    }
+    {
+        // CI/p-value consistency: both must tell the same significance
+        // story under a nontrivial correction (both are derived from the
+        // same n_eff/k_eff substitution, so this holds by construction --
+        // this test guards against a future edit breaking that shared
+        // derivation, e.g. if someone "optimizes" one path without the other).
+        std::vector<double> forward_returns(10000, 1.0);
+        std::vector<double> candidate_values(10000, 1.0);
+        for (int i = 0; i < 4800; ++i) candidate_values[i] = -1.0;
+        auto corrected = ComputeHitRate(forward_returns, candidate_values, /*variance_inflation=*/4.0);
+        const bool ci_significant = corrected.ci_lo > 0.5 || corrected.ci_hi < 0.5;
+        const bool p_significant = corrected.p_value < 0.05;
+        check("CI and p-value agree on significance under a nontrivial correction",
+              ci_significant == p_significant);
+    }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);
     return g_failures == 0 ? 0 : 1;
