@@ -28,7 +28,7 @@ namespace {
 void PrintUsage(const char* argv0) {
     std::fprintf(stderr,
         "usage: %s --ticks-parquet PATH [--window N] [--horizons 30,60,120,240] "
-        "[--report-json PATH]\n", argv0);
+        "[--report-json PATH] [--export-signals-dir DIR]\n", argv0);
 }
 
 std::vector<int> ParseHorizons(const std::string& csv) {
@@ -44,7 +44,7 @@ std::vector<int> ParseHorizons(const std::string& csv) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string ticks_path, report_json_path;
+    std::string ticks_path, report_json_path, export_signals_dir;
     std::size_t window = 100;
     std::string horizons_csv = "30,60,120,240";
 
@@ -58,6 +58,7 @@ int main(int argc, char** argv) {
         else if (arg == "--window") window = std::stoull(next("--window"));
         else if (arg == "--horizons") horizons_csv = next("--horizons");
         else if (arg == "--report-json") report_json_path = next("--report-json");
+        else if (arg == "--export-signals-dir") export_signals_dir = next("--export-signals-dir");
         else { std::fprintf(stderr, "unknown argument: %s\n", arg.c_str()); PrintUsage(argv[0]); return 1; }
     }
     if (ticks_path.empty()) {
@@ -105,6 +106,15 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[progress] computing horizon=%dmin (%zu/%zu)...\n", h, h_idx + 1, horizons.size());
         const auto fwd = ComputeForwardReturns(signal_ts, signal_price, series.timestamp_us, series.close, h);
         const auto result = ComputeHitRate(fwd, signal_z);
+        if (!export_signals_dir.empty()) {
+            std::ofstream sig_csv(export_signals_dir + "/drift_location_hitmiss_h" + std::to_string(h) + ".csv");
+            sig_csv << "hit\n";
+            for (std::size_t i = 0; i < fwd.size(); ++i) {
+                if (!std::isfinite(fwd[i])) continue;
+                if (signal_z[i] == 0.0 || !std::isfinite(signal_z[i])) continue;
+                sig_csv << (Sign(fwd[i]) == Sign(signal_z[i]) ? 1 : 0) << "\n";
+            }
+        }
         const bool survives = result.p_value < bonferroni_alpha;
         std::printf("  %4dmin: n=%-8zu hit_rate=%.4f 95%%CI=[%.4f,%.4f] p=%.4f (%s, alpha=%.5f for %zu tests)\n",
                     h, result.n, result.hit_rate, result.ci_lo, result.ci_hi, result.p_value,
