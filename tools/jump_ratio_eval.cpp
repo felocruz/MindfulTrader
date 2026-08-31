@@ -41,7 +41,7 @@ namespace {
 void PrintUsage(const char* argv0) {
     std::fprintf(stderr,
         "usage: %s --ticks-parquet PATH [--window N] [--horizons 30,60,120,240] "
-        "[--top-decile 0.10] [--report-json PATH]\n", argv0);
+        "[--top-decile 0.10] [--report-json PATH] [--export-signals-dir DIR]\n", argv0);
 }
 
 std::vector<int> ParseHorizons(const std::string& csv) {
@@ -62,7 +62,7 @@ double Percentile(std::vector<double> values, double p) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    std::string ticks_path, report_json_path;
+    std::string ticks_path, report_json_path, export_signals_dir;
     std::size_t window = 100;
     std::string horizons_csv = "30,60,120,240";
     double top_decile = 0.10;
@@ -78,6 +78,7 @@ int main(int argc, char** argv) {
         else if (arg == "--horizons") horizons_csv = next("--horizons");
         else if (arg == "--top-decile") top_decile = std::stod(next("--top-decile"));
         else if (arg == "--report-json") report_json_path = next("--report-json");
+        else if (arg == "--export-signals-dir") export_signals_dir = next("--export-signals-dir");
         else { std::fprintf(stderr, "unknown argument: %s\n", arg.c_str()); PrintUsage(argv[0]); return 1; }
     }
     if (ticks_path.empty()) {
@@ -172,6 +173,14 @@ int main(int argc, char** argv) {
         // inside a single gap number.
         const double top_median = MedianAbs(top_fwd);
         const double bottom_median = MedianAbs(bottom_fwd);
+        if (!export_signals_dir.empty()) {
+            std::ofstream top_csv(export_signals_dir + "/jump_ratio_top_belowmedian_h" + std::to_string(h) + ".csv");
+            top_csv << "below_median\n";
+            for (double v : top_fwd) top_csv << (std::fabs(v) <= top_median ? 1 : 0) << "\n";
+            std::ofstream bottom_csv(export_signals_dir + "/jump_ratio_bottom_belowmedian_h" + std::to_string(h) + ".csv");
+            bottom_csv << "below_median\n";
+            for (double v : bottom_fwd) bottom_csv << (std::fabs(v) <= bottom_median ? 1 : 0) << "\n";
+        }
         std::printf("  %4dmin: n_top=%-7zu n_bot=%-7zu median|fwd|_top=%.6f median|fwd|_bot=%.6f "
                     "gap=%+.6f 95%%CI=[%+.6f,%+.6f] (%s)\n",
                     h, top_fwd.size(), bottom_fwd.size(), top_median, bottom_median,
