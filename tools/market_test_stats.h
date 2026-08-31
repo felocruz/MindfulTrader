@@ -248,20 +248,22 @@ inline double WeightedMedianOfSortedAbs(
 // per-resample re-sort/re-selection (the O(n) SELECTION cost a naive
 // per-resample nth_element would add on top of the weight generation).
 //
-// KNOWN LIMITATION, not yet addressed here: this function resamples
-// individual elements as if they were i.i.d., but jump_ratio_eval.cpp's real
-// callers pass forward-return signals with heavy autocorrelation/overlap (a
-// 240-minute forward return computed per-tick over a 38.5M-row series
-// overlaps thousands of neighboring signals) -- textbook i.i.d. bootstrap
-// understates the true CI width under this much overlap (by a large,
-// unquantified-here factor). This codebase already has a measured block-
-// length precedent for exactly this kind of dependent-data problem (Politis-
-// White circular block length ~404.82 on real MES data, see CLAUDE.md's
-// fractal_dim window-widening entry) that a proper block bootstrap here
-// should reuse -- flagged as a real, not-yet-implemented gap in the standing
-// §10.7 methodology (shared by drift_location_eval.cpp's already-accepted
-// OUT verdict too, not unique to this candidate), not something to patch ad
-// hoc for one candidate's test.
+// DEPENDENCE CORRECTION: the bootstrap resampling above still treats
+// individual elements as i.i.d. (a real limitation for this function's
+// actual callers, whose forward-return signals overlap heavily -- see
+// tools/block_length_and_variance_inflation.py and docs/superpowers/specs/
+// 2026-08-30-bootstrap-dependence-correction-design.md for the full
+// derivation). Rather than rebuilding the resampling itself into a
+// dependence-aware (block) bootstrap -- a materially larger, higher-risk
+// change given this file's own history of resampling-algorithm rewrites
+// needing multiple review rounds -- the caller supplies a measured
+// variance_inflation (DEFF) factor, and the already-computed CI is widened
+// around the unchanged point estimate below. DEFF for this function should
+// be derived from the BELOW-MEDIAN INDICATOR series (not the raw |values|),
+// since this function tests a median, whose asymptotic variance under
+// dependence is a different quantity than a mean's -- see the design spec
+// §2 for why applying a raw-value DEFF here would be inconsistent with
+// this function's own fat-tail-robustness rationale.
 //
 // Default n_boot=1000 -- the commonly-cited Efron & Tibshirani (1993)
 // minimum replicate count for a percentile bootstrap CI, chosen over the
@@ -271,7 +273,7 @@ inline double WeightedMedianOfSortedAbs(
 // cheaper floor rather than the more conservative 2000.
 inline MedianGapResult ComputeBootstrapMedianGapCI(
     const std::vector<double>& top, const std::vector<double>& bottom,
-    std::size_t n_boot = 1000, std::uint64_t seed = 0) {
+    std::size_t n_boot = 1000, std::uint64_t seed = 0, double variance_inflation = 1.0) {
     const double point_gap = MedianAbs(top) - MedianAbs(bottom);
 
     if (n_boot == 0) {
@@ -328,5 +330,13 @@ inline MedianGapResult ComputeBootstrapMedianGapCI(
     result.gap = point_gap;
     result.ci_lo = PercentileFromSorted(gaps, 2.5);
     result.ci_hi = PercentileFromSorted(gaps, 97.5);
+
+    // Widen each side around the point estimate independently (preserves
+    // any asymmetry the bootstrap distribution itself has -- does not
+    // assume a symmetric/normal-shaped CI). variance_inflation=1.0 is the
+    // identity transform: scale=1.0, ci_lo/ci_hi unchanged.
+    const double scale = std::sqrt(variance_inflation);
+    result.ci_lo = result.gap - (result.gap - result.ci_lo) * scale;
+    result.ci_hi = result.gap + (result.ci_hi - result.gap) * scale;
     return result;
 }
