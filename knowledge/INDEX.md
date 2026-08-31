@@ -31,6 +31,7 @@
 |---|---|
 | [indicator_manager_dod.md](global/cpp/indicator_manager_dod.md) | IndicatorManager's hybrid DOD/OOD architecture — packed SoA arrays are canonical for hot-path reads; IndicatorStore/BaseIndicator/Indicator<T> stays permanently as the write-side engine + NotPacked read path; the FM-01 "row exists ≠ write side wired" trap that already bit this codebase once |
 | [candidate_validation_methodology.md](global/cpp/candidate_validation_methodology.md) | How to validate a new HMM observation-vector candidate offline (model-independent, real forward-market-return tests) before any schema/C++ commitment — directional vs. magnitude test choice, median/MAD over mean for fat-tailed data, exchangeable-bootstrap performance at real scale, the weight-variance-must-equal-1 trap |
+| [numerical_stats_library_landscape.md](global/cpp/numerical_stats_library_landscape.md) | What C++ library to reach for when a task needs NumPy/SciPy/Pandas-style functionality (Eigen, Boost.Math, NLopt/Ceres, DuckDB, FFTW) — each mapped to a real future trigger in this codebase (Hawkes-intensity MLE, a native Politis-White port), not adopted speculatively |
 
 ---
 
