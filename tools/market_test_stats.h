@@ -82,7 +82,7 @@ struct WilsonInterval {
 };
 
 // Mirrors tools/dim_acceptance_eval.py's wilson_ci() exactly (lines 171-178).
-inline WilsonInterval ComputeWilsonCI(std::size_t k, std::size_t n, double z = 1.96) {
+inline WilsonInterval ComputeWilsonCI(double k, double n, double z = 1.96) {
     const double nd = static_cast<double>(n);
     const double phat = static_cast<double>(k) / nd;
     const double denom = 1.0 + z * z / nd;
