@@ -1,5 +1,163 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-09-01 — `burstiness_index` (dim1) FeatureScaler recalibration: tool built,
+tested, one real blocker found, no calibration numbers changed yet.**
+
+- **Built and build-verified**: `tools/burstiness_recalibration.cpp` (new) — real-data replica of
+  `FeatureScaler.h` dim1's SOFTLOGZ scaling, feeding `EventVelocityEngine.h::CalculateBurstinessIndex()`
+  (the 2026-08-31 robust-CV reformulation) through the actual `FeatureScaler`. Build recipe and CLI
+  are in the file's own header comment (Arrow/Parquet + `-Iinclude`, mirrors `jump_ratio_eval.cpp`'s
+  pattern). Ran clean against real data: n=38,547,467, mean|z|=1.86, max|z|=13.49,
+  rate-at-current-bound(6.0)=0.0663%, shrinkage audit corr(localMAD,\|z\|)=-0.3638 (a real collapse
+  signature, comparable in strength to what got `liq_fragility`'s shrinkage enabled).
+- **Real blocker found, not yet resolved**: `lbrnet/data/raw/mes_continuous_ticks.parquet` (the only
+  real historical MES data in this workspace) is **1-second-bar-aggregated, not real per-tick
+  data** — verified directly (every consecutive timestamp delta is an exact multiple of 1,000,000us).
+  Production's real `raschkeBurst` runs on genuine per-tick arrival timestamps
+  (`ContextManager::m_eventTimestampsUS`, pushed on every incoming trade). So this tool's result is a
+  **real but coarser proxy** (burstiness of per-active-second bar-formation events), not a faithful
+  replica of what production actually measures — the p99==p99.9 plateau in the result above is
+  probably an artifact of this coarser cadence, not a genuine tail shape. **Decision made: do NOT
+  update `FeatureScaler.h`'s dim1 bound or `SHRINKAGE_SCALE_MIN[1]` off this run** — logged as
+  directional-only evidence, not a final calibration.
+- **Real ground-truthed sizing for a genuine per-tick file, done via the existing bar file's own
+  `trades` column (not a guess)**: 467,424,466 real trades total across the file's real
+  1,170-day (~3.2 year) span, avg 12.1 trades/active-second-bar (p50=5, p99=104, max=2,791/sec).
+  A true per-tick parquet would be ~467M rows (~12.1x the current 38.5M) — estimated **~3-8GB**
+  (fewer columns than the 12-col bar file, but less compressible per row); fully workable with this
+  codebase's existing Arrow/Parquet tooling (column projection, sequential/streaming reads) —
+  no architecture change needed, just needs the actual tick-level data sourced (e.g. Sierra Chart
+  `.scid` historical download or whatever pipeline built the current bar file) — **not yet done**.
+- **Next action, in priority order**: (1) decide whether to pursue sourcing real per-tick data before
+  trusting any burstiness_index bound change, or accept the coarse-proxy result as an interim
+  placeholder with the caveat documented; (2) if pursuing real tick data, that's new data-sourcing
+  work, not a C++/tool change; (3) regardless, `docs/superpowers/specs/2026-08-31-elite-feature-set-
+  curation-initiative.md` §7 row 2 (`burstiness_index`) has been updated to reflect this tool +
+  finding — read it before repeating this investigation.
+- Everything from the Phase 0 batch below (this section's older entries) is **still uncommitted**.
+
+---
+
+**Elite Feature Set Curation initiative, spec:
+`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` — supersedes pairwise
+dim-redundancy fixes going forward. Operator mandate: whole-vector, institutional, no going back to
+one-off pairwise patches. Read that spec before continuing this thread — it supersedes the narrower
+`log_scale_ratio`/`log_scale_expansion_ratio`-only framing in the bullets just below.**
+
+**UPDATED 2026-08-31 (later same day) — Phase 0 (Gaussian-moment audit) is now CLOSED OUT, bar 4 open
+items. Everything in this block that used to say "not yet applied" is done. Read this block, not the
+older bullets right below it, for current status.**
+
+- **Fixed and build-verified today**: `burstiness_index` (robust CV, `MAD/median × 1.4404199` — a
+  newly-derived Poisson-neutrality constant, NOT the standard 1.4826, `EventVelocityEngine.h`);
+  `vol_convexity` (REMOVED from the schema entirely, 19D→18D, `../schema/mts_schema.fbs` — already
+  decided 2026-08-25, executed today, not reformulated); `mean_rev_z` (median/MAD price z-score +
+  median-centered lag-1 autocorrelation, Kim & White 2004, `StudyHelperFunctions.cpp`'s
+  `CalculateMeanReversionSpeed`). Full detail, all three: the initiative spec's §4 Phase 0.
+- **Real bug found+fixed as a side effect of the schema shrink**: `FeatureScaler.h`'s
+  `LOGZ_WINSOR_SIGMA_OVERRIDE` array literal was missing one element (17 for an 18-slot array),
+  silently misaligning `liq_fragility`'s `21.26f` calibrated bound to index 11 instead of 12 — caught
+  by `test_feature_scaler.cpp` failing, not by inspection. Rewrote the array with one explicit,
+  individually-commented literal per dim so this class of miscount can't recur silently.
+- **Verification**: `test_feature_scaler.cpp`, `test_event_velocity_engine.cpp`,
+  `test_bipower_variation.cpp` all pass; `./build_dll.sh --no-clean` builds clean.
+- **NOT committed yet** — large batch (schema change + `StudyHelperFunctions.{cpp,h}`,
+  `TripleScreen1/2/3.cpp`, `ContextManager.{cpp,h}`, `EventVelocityEngine.h`, `FeatureScaler.h`,
+  `test_feature_scaler.cpp`, deleted `tests/cpp/fixtures_dim4_raw.h`) — pending explicit commit ask.
+- **Still open, unchanged**: the 3 ambiguous Phase 0 cases (`hurst_exponent`/`fast_hurst_exponent`,
+  `amihud_illiquidity`, `relative_range`/`liq_fragility` — need a literature decision, not a
+  mechanical fix) and `fast_mean_rev_z`'s wire-or-drop call. Phase 1 (whole-vector correlation audit)
+  is unblocked and ready to scope, not yet started.
+- **New methodological finding, same day, NOT yet acted on**: scoping a re-measurement of
+  `amihud_illiquidity`/`liq_fragility`'s cross-state discrimination ratio now that both are
+  live-reactive (2026-08-29) surfaced that this would be circular against the *existing*
+  `models/hmm_model.pkl` — its state labels were learned from the pre-Phase-0, still-contaminated
+  vector. Recorded as an open question in the initiative spec's §5, not resolved: either defer to a
+  post-retrain re-measurement, or build a model-independent lead-time test instead (no HMM needed,
+  same methodology as `jump_ratio_eval.cpp`/`drift_location_eval.cpp`). Nothing built for this yet.
+- Doc sync done today: `PRODUCTION_TRIAGE.md` row 1, `CLAUDE.md`/`GEMINI.md`'s condensed Row 1
+  pointers, and the initiative spec itself all updated to current state (this entry). Still
+  outstanding: `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s per-dim rows
+  for `burstiness_index`/`mean_rev_z`/`vol_convexity` (removed).
+
+---
+
+**Older bullets below, kept for the reasoning trail on `log_scale_ratio`/`log_scale_expansion_ratio`
+specifically (superseded as the "current state" summary by the block above, still accurate on their
+own narrower topic):**
+
+- Also confirmed, load-bearing for the whole initiative: this system's Student-t
+  HMM (`lbrnet/lbrnet/models/student_t_hmm.py`) uses **hard-enforced diagonal covariance**
+  (`covariance_type='diag'`, raises otherwise) — the curse-of-dimensionality failure mode is
+  double-counted evidence under violated conditional independence, NOT covariance-matrix
+  ill-conditioning (impossible under diagonal covariance). Every redundancy judgment in the new spec
+  is anchored on this fact.
+- Both `log_scale_ratio` (was `log_variance_ratio`) and `log_scale_expansion_ratio` (was
+  `correction_action`) had their raw-variance formulas deleted and replaced with Barndorff-Nielsen &
+  Shephard bipower variation (`include/BipowerVariation.h`, single source of truth, natively tested) —
+  raw sample variance let single-tick jumps dominate the sum quadratically (Mandelbrot 1963),
+  producing false volatility-regime signals. A fixed-ν rolling Student-t M-estimator alternative was
+  considered and rejected: measured via real microbenchmark at ~200ns-5.6µs per call, 2-3 orders of
+  magnitude over this system's hot-path budget at real window sizes — full reasoning in
+  `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_118`/`118_REPLY`.
+- Real, measured result feeding the new initiative: the two now correlate at 0.7638 both-raw, 0.8085
+  both-fixed against 38.5M real MES ticks — confirms Spearman (1904)'s correction-for-attenuation
+  prediction empirically, not just in theory.
+- **Still open**: commit everything from this thread (still uncommitted, along with the newer Phase 0
+  fixes above); re-audit `log_scale_ratio`/`log_scale_expansion_ratio`'s `FeatureScaler.h` calibration
+  against real data (both currently disabled pending that audit, not fabricated placeholders); update
+  `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s dim0/dim3 rows.
+
+---
+
+**Found from an `lbrnet`-rooted session (2026-08-31), doing the lbrnet-side integration work
+handed off in `docs/superpowers/specs/2026-08-30-context-converter-lbrnet-handoff.md`: `tools/context_to_parquet`
+needs a `--stats-json` output before `train_student_t_hmm.py` can be migrated onto it. NOT FIXED —
+fix this from a MindfulTrader-rooted session, then tell lbrnet it's ready.**
+
+- **Problem**: `lbrnet/lbrnet/scripts/train_student_t_hmm.py`'s `load_context_observations()` has an
+  existing full-stream data-quality gate (lines ~1723-1730) that hard-fails training when
+  `seq_mismatch / pair_attempts` exceeds `config.max_seq_mismatch_ratio`, or raw `seq_mismatch` count
+  exceeds `config.max_seq_mismatches`. These two counts currently come from `self.load_metrics`,
+  populated by whichever of the trainer's three loader methods ran (see the handoff doc, and
+  `train_student_t_hmm.py`'s own `_load_unbounded_mo_ss_context`/`_load_bounded_mo_ss_context`).
+  `tools/context_to_parquet.cpp` already computes the exact same counts internally — its `ReadCounters`
+  struct (`tools/context_reader.h:124-133`) has `market_records`, `system_records`, `pair_attempts`,
+  `aligned_pairs`, `sequence_mismatches`, `sequence_regressions`, `unpaired_market_records`,
+  `unpaired_system_records` — but `main()` (`tools/context_to_parquet.cpp:408-410`) only ever prints
+  `aligned_pairs`/`sequence_mismatches` to stdout as human-readable text (`"✅ wrote %s (mode=%s,
+  aligned_pairs=%zu, sequence_mismatches=%zu)\n"`), never `pair_attempts` (the ratio's denominator),
+  and writes no JSON stats file at all — the only JSON it writes is the freshness cache key
+  (`--meta-path`, via `context_cache_key.h`'s `WriteCacheKey`), which is a different, smaller struct
+  (`ContextCacheKey`, 6 fields, none of them `ReadCounters`). `tools/context_validate`'s
+  `--report-json` doesn't cover this gap either — its JSON has no counts at all (only
+  `input`/`rows_sampled`/`status`/`violations`/`warnings`), and it only ever samples a bounded
+  head/tail slice (default `--max-pairs 50000`), never the full stream, so it can't stand in for a
+  full-stream gate regardless.
+- **Impact**: the lbrnet-side integration (subsystem #1 of the handoff, the one that actually
+  unblocks fresh training runs) is blocked on this — there's no way to read the exact
+  `pair_attempts`/`aligned_pairs`/`sequence_mismatches` counts for a full unbounded conversion from
+  outside the C++ process today. User explicitly rejected both a stdout-regex approximation and
+  dropping the gate — this must be fixed with real data, not worked around.
+- **Solution** (small, surgical, mirrors an already-existing pattern in this same file pair — not a
+  new design): add a `--stats-json PATH` flag to `context_to_parquet.cpp`, writing the final
+  accumulated `counters` (the `ReadCounters` already summed across all chunks at
+  `tools/context_to_parquet.cpp:359-363`) to a flat JSON file with all 8 fields, using the exact same
+  `std::ofstream` field-by-field literal-write style `context_cache_key.h:48-59`'s `WriteCacheKey()`
+  already uses for `ContextCacheKey` (no JSON library needed, this codebase's established precedent
+  for small fixed-schema sidecars). Wire it in next to the existing `--meta-path` handling in `main()`
+  (around line 390), write it once at the very end after `counters` has its final accumulated values
+  (works for all three modes — unbounded's `counters` accumulates across the chunked loop, head/tail's
+  `counters` is a single `ReadBoundedHead`/`ReadBoundedTail` return value). Add native test coverage
+  matching this repo's existing `tools/test_context_validate.cpp` convention.
+- **After this ships**: tell the `lbrnet`-rooted session (or update
+  `docs/superpowers/specs/2026-08-30-context-converter-lbrnet-handoff.md` §3/§7 directly) that
+  `--stats-json` is available, so `train_student_t_hmm.py`'s `_load_unbounded_mo_ss_context` can read
+  it and populate `self.load_metrics['pair_attempts']`/`['seq_mismatch']` with exact, not
+  approximated, values.
+
+---
+
 **Two offline candidate-validation tools + real results — DONE and COMMITTED, 2026-08-30**
 (`MindfulTrader` `62ea7ee`..`a5fe024`, following the converter work below). Brainstorm doc §5.0/§5.1,
 §10.7/§10.8/§10.9.
