@@ -21,7 +21,7 @@
 //   tools/observation_vector/jump_ratio_eval.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-//   -o tools/jump_ratio_eval
+//   -o tools/bin/jump_ratio_eval
 #include "drift_location_stats.h"  // for ComputeLogReturns
 #include "jump_ratio_stats.h"
 #include "market_data_io.h"

@@ -44,10 +44,11 @@ TICKS_PARQUET = WORKSPACE / "lbrnet/data/raw/mes_continuous_ticks.parquet"
 BARS_15M_PARQUET = WORKSPACE / "lbrnet/data/raw/mes_ripple_15m.parquet"
 MINDFULTRADER = WORKSPACE / "MindfulTrader"
 DRIVER_SRC = MINDFULTRADER / "tools/observation_vector/mean_rev_z_variant_comparison.cpp"
-DRIVER_BIN = MINDFULTRADER / "tools/mean_rev_z_variant_comparison"
+DRIVER_BIN = MINDFULTRADER / "tools/bin/mean_rev_z_variant_comparison"
 
 
 def build_driver():
+    DRIVER_BIN.parent.mkdir(parents=True, exist_ok=True)
     print(f"building driver: g++ -O2 -std=c++17 -I{MINDFULTRADER / 'include'} {DRIVER_SRC} -o {DRIVER_BIN}")
     subprocess.run(
         ["g++", "-O2", "-std=c++17", "-I", str(MINDFULTRADER / "include"), str(DRIVER_SRC), "-o", str(DRIVER_BIN)],

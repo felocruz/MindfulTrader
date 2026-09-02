@@ -11,7 +11,7 @@
 //   tools/observation_vector/drift_location_eval.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-//   -o tools/drift_location_eval
+//   -o tools/bin/drift_location_eval
 #include "market_data_io.h"
 #include "drift_location_stats.h"
 

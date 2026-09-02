@@ -37,7 +37,7 @@
 //   tools/observation_vector/volatility_dim_redundancy_eval.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-//   -o tools/volatility_dim_redundancy_eval
+//   -o tools/bin/volatility_dim_redundancy_eval
 #include "drift_location_stats.h"  // for ComputeLogReturns
 #include "market_data_io.h"
 #include "volatility_dim_stats.h"

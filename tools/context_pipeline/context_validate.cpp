@@ -9,7 +9,7 @@
 // No Arrow/Parquet dependency -- this tool only reports, never writes a file.
 //
 // Build: mamba run -n mts g++ -O2 -std=c++17 -Iinclude \
-//   tools/context_pipeline/context_validate.cpp -o tools/context_validate
+//   tools/context_pipeline/context_validate.cpp -o tools/bin/context_validate
 #include "context_reader.h"
 #include "context_validate_stats.h"
 #include "generated/mts_schema_contract_generated.h"

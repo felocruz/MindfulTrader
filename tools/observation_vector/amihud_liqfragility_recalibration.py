@@ -28,12 +28,13 @@ WORKSPACE = Path("/home/rcruz/devel/VSCode")
 TICKS_PARQUET = WORKSPACE / "lbrnet/data/raw/mes_continuous_ticks.parquet"
 MINDFULTRADER = WORKSPACE / "MindfulTrader"
 DRIVER_SRC = MINDFULTRADER / "tools/observation_vector/amihud_liqfragility_recalibration.cpp"
-DRIVER_BIN = MINDFULTRADER / "tools/amihud_liqfragility_recalibration"
+DRIVER_BIN = MINDFULTRADER / "tools/bin/amihud_liqfragility_recalibration"
 VCPKG_JSON_INCLUDE = "/mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include"
 BINARY_PATH = Path("/tmp/amihud_liqfrag_ticks.bin")
 
 
 def build_driver():
+    DRIVER_BIN.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
         "g++", "-O2", "-std=c++17",
         "-I", str(MINDFULTRADER / "include"),

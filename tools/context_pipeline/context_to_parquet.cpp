@@ -9,7 +9,7 @@
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
 //   tools/context_pipeline/context_to_parquet.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
-//   -o tools/context_to_parquet
+//   -o tools/bin/context_to_parquet
 #include "context_cache_key.h"
 #include "context_reader.h"
 #include "generated/mts_schema_contract_generated.h"

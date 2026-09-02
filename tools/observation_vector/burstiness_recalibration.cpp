@@ -31,8 +31,8 @@
 //   tools/observation_vector/burstiness_recalibration.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-//   -o tools/burstiness_recalibration
-// Usage: ./tools/burstiness_recalibration \
+//   -o tools/bin/burstiness_recalibration
+// Usage: ./tools/bin/burstiness_recalibration \
 //   --ticks-parquet lbrnet/data/raw/mes_continuous_ticks.parquet \
 //   [--zsample-dump /tmp/burstiness_zsamples.csv]
 
