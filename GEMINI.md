@@ -18,7 +18,7 @@ critical path — verify this list is still current before trusting it. Any sess
 of those rows' status must update `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS`
 block in the same edit (Triage Protocol rule 7).
 
-**Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-28 — full account in
+**Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-31 — full account in
 `PRODUCTION_TRIAGE.md` row 1, this mirrors `CLAUDE.md`'s own pointer**: `fast_taleb_kurtosis`
 shipped as `ObservationData`'s 17th field directly (`ff22e48`/`ea8058b`); `skewness_idx` replaced
 in place to the same activity-clock source (`7c51f33`), plus a real `FeatureScaler.h` calibration
@@ -34,6 +34,26 @@ question. A staleness audit found 4 `lbrnet`-side dimensionality documents now s
 the above, handed to `lbrnet`'s own session rather than fixed here (`docs/superpowers/specs/
 2026-08-26-activity-clock-lbrnet-handoff.md` §10). See `docs/superpowers/specs/2026-08-12-gang-
 literature-grounding-spec.md` for the consolidated per-dim literature view.
+
+**New whole-vector Elite Feature Set Curation initiative, founded 2026-08-31**
+(`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`) — supersedes ad hoc
+pairwise dim fixes with a phased methodology (Gaussian-moment audit → redundancy → Feature Saliency
+→ mRMR selection), motivated by this system's Student-t HMM using hard-enforced diagonal covariance
+(the real curse-of-dimensionality risk is double-counted evidence under violated conditional
+independence, not covariance ill-conditioning). **Phase 0 CLOSED OUT, 2026-08-31, bar 3 ambiguous
+decisions**: `burstiness_index` (robust CV, MAD/median × a newly-derived 1.4404199
+Poisson-neutrality constant), `vol_convexity` (REMOVED from the schema, 19D→18D — decided
+2026-08-25, executed today), `mean_rev_z` (median/MAD price z-score + median-centered lag-1
+autocorrelation, Kim & White 2004 — do not confuse with the still-undecided `fast_mean_rev_z`/
+activity-clock move above, which remains unwired). A real bug was found and fixed as a side effect
+of the schema shrink: `FeatureScaler.h`'s `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing
+one element, misaligning `liq_fragility`'s calibrated bound by one index. All native tests pass,
+`./build_dll.sh --no-clean` builds clean; nothing from this batch is committed yet. Still open:
+`hurst_exponent`/`fast_hurst_exponent`, `amihud_illiquidity`, `relative_range`/`liq_fragility` (need
+a literature decision, not a mechanical fix), and `fast_mean_rev_z`'s wire-or-drop call. Separate
+finding: re-measuring a dim's importance against the *existing* `models/hmm_model.pkl` is circular
+(its state labels were learned from the pre-Phase-0, still-contaminated vector) — recorded as an
+open methodological question, not yet resolved.
 
 ## Project Overview
 
@@ -58,6 +78,23 @@ cd tests && ./run_python_tests.sh
 ```
 
 **Do not** use ad-hoc `flatc` or raw `cmake`/`ninja` invocations — always go through `build_dll.sh`.
+
+## Standalone Analysis Tools (`tools/`)
+
+`tools/` hosts standalone, natively-tested analysis/calibration/ingestion utilities — never
+added to `CMakeLists.txt`/`build_dll.sh`; built via bare `mamba run -n mts g++ -std=c++17 ...`
+(Arrow/Parquet tools also need `$(mamba run -n mts pkg-config --cflags/--libs arrow parquet)`
+plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
+
+- **Organized into subfolders by function** (reorg 2026-09-02): `tools/observation_vector/`
+  (16D HMM observation-vector dimension calibration/eval, incl. `market_test_stats.h`/
+  `market_data_io.h`), `tools/context_pipeline/` (`.context` training-cache file I/O),
+  `tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Put new tools in
+  the matching subfolder, not flat in `tools/`.
+- **Compiled binaries go in `tools/bin/`** (gitignored) — mirrors `build-windows/bin/`'s
+  convention; never mixed into the source subfolders above.
+- Native tests use a `check(name, bool)` + `g_failures` + final `ALL PASS`/`N FAILURE(S)`
+  harness convention (see `tools/context_pipeline/test_context_reader.cpp`) — no GoogleTest/CMake.
 
 The output artifact is `build-windows/bin/MindfulTrader.dll`. This is a Windows DLL cross-compiled via `clang-cl` using the `wsl-clang-cl-release` CMake preset.
 

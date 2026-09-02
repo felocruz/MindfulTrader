@@ -107,6 +107,15 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 ## Cross-Project Model Artifact Convention
 - Canonical HMM artifact naming used by downstream Python consumers is `models/hmm_model.pkl`.
 
+## Standalone Analysis Tools (`tools/`)
+
+`tools/` hosts standalone, natively-tested analysis/calibration/ingestion utilities — never
+added to `CMakeLists.txt`/`build_dll.sh`; bare `mamba run -n mts g++ -std=c++17 ...` builds.
+Organized into subfolders by function (reorg 2026-09-02): `tools/observation_vector/` (16D HMM
+observation-vector dim calibration/eval), `tools/context_pipeline/` (`.context` file I/O),
+`tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Compiled binaries go
+in `tools/bin/` (gitignored, mirrors `build-windows/bin/`'s convention) — never next to source.
+
 ## Backtesting Pipeline
 
 `BackTesterStudy.cpp` drives the full live pipeline during Sierra Chart replay (same managers, ZMQ, HMM as production). Three phases: data export → pure neural network → risk-managed.

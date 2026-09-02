@@ -18,7 +18,7 @@ mirrored here promptly). Any session that changes one of those rows' status must
 Protocol rule 7) — a status change that isn't reflected there didn't really happen, for planning
 purposes across the other three repos.
 
-**Row 1 / activity-clock observation-vector thread, current state as of 2026-08-27 — read
+**Row 1 / activity-clock observation-vector thread, current state as of 2026-08-31 — read
 `PRODUCTION_TRIAGE.md` row 1 for the full account, this is the condensed pointer**:
 - **Shipped and committed**: `fast_taleb_kurtosis` (`ff22e48`/`ea8058b`) as `ObservationData`'s 17th
   field directly (16D→17D — NOT via `Event`/`HMM_OBSERVATION_EXTENSIONS`, despite the original
@@ -60,6 +60,31 @@ purposes across the other three repos.
 - `docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md` (row 13,
   unrelated thread) — Phase 0 diagnosis done, still blocked on 5 open questions (§7), untouched
   since 2026-08-25.
+- **New whole-vector Elite Feature Set Curation initiative, founded 2026-08-31**
+  (`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`) — supersedes ad hoc
+  pairwise dim fixes with a phased methodology (Gaussian-moment audit → redundancy → Feature Saliency
+  → mRMR selection), motivated by this system's Student-t HMM using hard-enforced diagonal covariance
+  (so the real curse-of-dimensionality failure mode is double-counted evidence under violated
+  conditional independence, not covariance ill-conditioning). **Phase 0 (Gaussian-moment audit) CLOSED
+  OUT, 2026-08-31, bar 3 ambiguous decisions**: `burstiness_index` (robust CV, MAD/median × a
+  newly-derived 1.4404199 Poisson-neutrality constant, NOT the standard 1.4826), `vol_convexity`
+  (REMOVED from the schema entirely, 19D→18D — already decided 2026-08-25 as the weakest
+  discriminator measuring the wrong thing structurally, executed today, not reformulated), `mean_rev_z`
+  (median/MAD price z-score + median-centered lag-1 autocorrelation, Kim & White 2004) — do not confuse
+  this fix (the existing time-bar/live `mean_rev_z` formula) with the separate, still-undecided
+  `fast_mean_rev_z`/activity-clock move referenced two bullets above, which remains unwired. A real bug
+  was found and fixed as a side effect of the schema shrink: `FeatureScaler.h`'s
+  `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing one element, misaligning `liq_fragility`'s
+  calibrated bound by one index — caught by the native test suite, not inspection, the same failure
+  class `DIM_RECURRENCE_INDEX`/`DIM_FRACTAL_INDEX`'s own comments already warned about. All native
+  tests pass, `./build_dll.sh --no-clean` builds clean; **nothing from this batch is committed yet**.
+  Still open: `hurst_exponent`/`fast_hurst_exponent`, `amihud_illiquidity`, and
+  `relative_range`/`liq_fragility` (3 ambiguous Gaussian-moment-adjacent cases needing a literature
+  decision, not a mechanical fix) and `fast_mean_rev_z`'s wire-or-drop call. **Separate finding, same
+  day**: any attempt to re-measure a dim's importance against the *existing* `models/hmm_model.pkl`
+  (e.g. did making `amihud_illiquidity`/`liq_fragility` live-reactive on 2026-08-29 help) is circular —
+  that model's state labels were learned from the pre-Phase-0, still-contaminated vector. Recorded as
+  an open methodological question (initiative doc §5), not yet resolved either way.
 
 ## Project Overview
 
@@ -93,6 +118,24 @@ The output artifact is `build-windows/bin/MindfulTrader.dll`. This is a Windows 
 - If schema was touched, `regenerate_schema.sh` was run first
 - Any contract-impacting changes are documented and compatibility considered
 - Native trap-risk behavior remains available and actionable without Python confirmation
+
+## Standalone Analysis Tools (`tools/`)
+
+`tools/` hosts standalone, natively-tested analysis/calibration/ingestion utilities — never
+added to `CMakeLists.txt`/`build_dll.sh`; built via bare `mamba run -n mts g++ -std=c++17 ...`
+(Arrow/Parquet tools also need `$(mamba run -n mts pkg-config --cflags/--libs arrow parquet)`
+plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
+
+- **Organized into subfolders by function** (reorg 2026-09-02): `tools/observation_vector/`
+  (16D HMM observation-vector dimension calibration/eval, incl. `market_test_stats.h`/
+  `market_data_io.h`), `tools/context_pipeline/` (`.context` training-cache file I/O),
+  `tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Put new tools in
+  the matching subfolder, not flat in `tools/`. `#include "x.h"` resolves relative to the
+  including file's own directory, so same-group cross-includes need no path prefix.
+- **Compiled binaries go in `tools/bin/`** (gitignored) — mirrors `build-windows/bin/`'s
+  convention; never mixed into the source subfolders above.
+- Native tests use a `check(name, bool)` + `g_failures` + final `ALL PASS`/`N FAILURE(S)`
+  harness convention (see `tools/context_pipeline/test_context_reader.cpp`) — no GoogleTest/CMake.
 
 ## Local Git Repository
 
