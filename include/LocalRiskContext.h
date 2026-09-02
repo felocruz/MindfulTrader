@@ -31,9 +31,15 @@ struct LocalRiskContext {
     float fastHurstExponent = 0.5f;    // DFA Hurst over activity-clock (imbalance-bar) returns
     float fractalDim = 1.5f;           // roughness 1.0-2.0
     float meanRevZ = 0.0f;             // distance from mean in sigma
+    float fastMeanRevZ = 0.0f;         // mean-reversion elasticity over activity-clock imbalance-bar returns
 
     // Raschke (Event Dynamics)
-    float raschkeBurst = 1.0f;         // CV of inter-arrival times (clustering)
+    // Goh & Barabasi (2008) bounded burstiness parameter, range [-1,+1]:
+    // -1=perfectly regular, 0=Poisson-neutral (this field's default), +1=max
+    // bursty (approached, never reached). Changed from an unbounded [0,inf)
+    // CV-ratio scale (neutral was 1.0) 2026-09-02 -- see
+    // EventVelocityEngine.h's CalculateBurstinessIndex for the full rationale.
+    float raschkeBurst = 0.0f;         // bounded burstiness of inter-arrival times (clustering)
 
     // Fisher (Observation Reliability)
     float fisherInfo = 0.0f;           // sharpness of current estimate

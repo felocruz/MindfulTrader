@@ -1,9 +1,11 @@
 // test_carry_forward_calculators.cpp — characterization tests for
-// CarryForwardCalculators' pure degenerate-guard formulas (dims 1, 2, 8:
-// burstiness_index, relative_range, fisher_info), extracted so they can be
-// natively unit-tested without Sierra Chart/ACSIL deps, following the same
-// pattern as OrderFlowAsymmetryEngine.h (dim 7)
+// CarryForwardCalculators' pure degenerate-guard formulas (dims 2, 3, 8:
+// relative_range, log_scale_expansion_ratio, fisher_info), extracted so they
+// can be natively unit-tested without Sierra Chart/ACSIL deps, following the
+// same pattern as OrderFlowAsymmetryEngine.h (dim 7)
 // (docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md D1).
+// ComputeBurstinessIndex below is exercised generically (it's dim3's real
+// caller now, not dim1's -- see CarryForwardCalculators.h's own header comment).
 //
 // Build & run natively:
 //   g++ -std=c++17 -I include tests/cpp/test_carry_forward_calculators.cpp -o /tmp/cfc_test && /tmp/cfc_test
@@ -35,7 +37,7 @@ bool approx(float a, float b, float tol = 1e-4f) {
 int main() {
     std::printf("CarryForwardCalculators unit tests\n");
 
-    // --- ComputeBurstinessIndex (dim 1) ---
+    // --- ComputeBurstinessIndex (dim3's real caller; generic formula test) ---
     check("burstiness_normal_case_matches_log_ratio",
           approx(cfc::ComputeBurstinessIndex(4.0, 2.0, 0.0f),
                  static_cast<float>(std::log(4.0 / 2.0))));

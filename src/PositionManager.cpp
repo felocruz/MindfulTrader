@@ -1866,14 +1866,18 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     }
 
     // === GAP 12: RASCHKE BURST CLUSTERING ENTRY GUARD (Raschke — event dynamics) ===
-    // raschkeBurst (CV of inter-arrival times) measures event clustering.
+    // raschkeBurst (Goh-Barabasi bounded burstiness, [-1,+1]) measures event clustering.
     // High clustering = volatile microstructure, stale quotes, whipsaw risk.
     // Submitting during a cluster storm is walking into a minefield.
+    // Thresholds translated 2026-09-02 from the pre-bounded-scale values (2.0/3.0 in the
+    // old unbounded [0,inf) CV-ratio scale) via the same B=(x-1)/(x+1) map the raw value
+    // itself now uses -- x=2.0 -> B=1/3, x=3.0 -> B=1/2 -- so these are the SAME underlying
+    // decision boundaries, not new thresholds.
     bool burstForcePassive = false;
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
-        if (lrc.isValid && lrc.raschkeBurst > 2.0f) {
-            if (lrc.raschkeBurst > 3.0f) {
+        if (lrc.isValid && lrc.raschkeBurst > (1.0f / 3.0f)) {
+            if (lrc.raschkeBurst > 0.5f) {
                 LogOrderFailure("AUTOMATIC", action, ReasonCode::ClusteringBreach,
                     "BURST_CLUSTERING",
                     "raschke_burst=" + std::to_string(lrc.raschkeBurst),
@@ -1881,7 +1885,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
                 RejectIntentTicket(action, ReasonCode::ClusteringBreach, false);
                 return;
             }
-            burstForcePassive = true;  // 2.0-3.0 → force passive
+            burstForcePassive = true;  // 1/3-1/2 → force passive
         }
     }
 
@@ -2045,8 +2049,10 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
                 const float liqPenalty = 1.0f - 0.4f * std::clamp((lrc.spreadStress - 0.50f) / 0.50f, 0.0f, 1.0f);
                 allowedSpreadTicks *= liqPenalty;
             }
-            // Burst clustering >2.0 → tighten gate by 25%
-            if (lrc.raschkeBurst > 2.0f) {
+            // Burst clustering (Goh-Barabasi bounded, [-1,+1]) >1/3 → tighten gate by 25%
+            // (translated 2026-09-02 from the pre-bounded-scale threshold of 2.0 via
+            // B=(x-1)/(x+1) -- same underlying decision boundary, not a new one).
+            if (lrc.raschkeBurst > (1.0f / 3.0f)) {
                 allowedSpreadTicks *= 0.75f;
             }
         }

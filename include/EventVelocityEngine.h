@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -78,11 +79,50 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
     return static_cast<float>(1'000'000.0 / state.emaIntervalUs);
 }
 
-/// Burstiness Index: coefficient of variation (StdDev/Mean) of inter-arrival
-/// times (IATs) over a rolling window of event timestamps (Raschke flow
-/// dynamics). >1.0 = bursty/clustered arrivals, <1.0 = more regular than
-/// Poisson, ==1.0 = neutral default (also returned during warmup/degenerate
-/// input, matching a Poisson process's own CV).
+/// Burstiness Index: robust coefficient of variation (MAD/median, not
+/// StdDev/Mean) of inter-arrival times (IATs) over a rolling window of event
+/// timestamps (Raschke flow dynamics). Was a plain CV (StdDev/Mean) --
+/// replaced 2026-08-31, same Gaussian-moment-construct fix already applied to
+/// log_scale_ratio/log_scale_expansion_ratio (Kim & White 2004: moment
+/// statistics are least reliable exactly under the fat-tailed conditions they
+/// exist to detect -- this repo's own established FeatureScaler.h
+/// RobustLocation() convention, applied here to the raw dim's own
+/// construction instead of only the downstream scaling layer).
+///
+/// Consistency constant is NOT the standard 1.4826 (that's calibrated for
+/// MAD-to-sigma consistency under a NORMAL distribution, the wrong reference
+/// here) -- it's derived from the Exponential distribution specifically,
+/// since inter-arrival times under a Poisson process are Exponential-
+/// distributed, and this function's own semantic requires ==1.0 average out
+/// under a true Poisson process (matching what it replaces): for X~Exp(rate),
+/// median(X)=ln(2)/rate, and MAD(X) (median absolute deviation from that
+/// median) solves sinh(d)=1/2, i.e. MAD=arcsinh(1/2)/rate. The ratio
+/// median/MAD = ln(2)/arcsinh(1/2) ~= 1.440420 is scale-invariant (the rate
+/// cancels), so multiplying MAD/median by this constant reproduces exactly
+/// 1.0 for a genuine Poisson arrival process.
+///
+/// BOUNDED via Goh & Barabási (2008)'s burstiness parameter transform,
+/// B=(x-1)/(x+1) applied to the robust ratio above (not their original
+/// mean/std CV, which would regress the fat-tail-robust fix just described --
+/// this is the same bounding *device*, applied to this codebase's own
+/// already-robust estimator). REQUIRED, not optional polish: verified
+/// directly against real per-tick MES data (2026-09-02,
+/// tools/observation_vector/burstiness_recalibration.cpp against
+/// lbrnet/data/raw/mes_ticks.parquet, 471.9M rows) that the UNBOUNDED ratio
+/// diverges catastrophically at real tick density -- the median inter-arrival
+/// time in a 100-tick window collapses to the timestamp field's own minimum
+/// representable resolution (1us) in 73.9% of real windows, and the plain
+/// ratio's division-by-near-zero there produced |z| values up to 2.7 million
+/// after FeatureScaler's own downstream shrinkage compounded it. Goh-Barabási's
+/// transform is exactly the literature-standard fix for this failure mode:
+/// it was originally designed to bound the same mean/std CV against the same
+/// kind of blowup when inter-event times cluster near zero.
+///
+/// Range is now exactly [-1, +1]: -1 = perfectly regular spacing (MAD=0),
+/// 0 = Poisson-neutral (also the warmup/degenerate-input default -- this
+/// changed from the pre-2026-09-02 unbounded scale's neutral point of 1.0),
+/// +1 = maximally bursty (approached, never reached exactly, as the window's
+/// median inter-arrival time -> 0).
 ///
 /// Extracted from ContextManager::CalculateBurstinessIndex()
 /// (docs/superpowers/specs/2026-08-07-contextmanager-ring-buffer-dod-design.md
@@ -94,7 +134,7 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
 /// production's full 100-timestamp window.
 template <size_t Capacity>
 float CalculateBurstinessIndex(const RingBuffer<uint64_t, Capacity>& timestamps) {
-    if (timestamps.size() < 4) return 1.0f;  // Need samples for variance
+    if (timestamps.size() < 4) return 0.0f;  // Need samples for variance -- Poisson-neutral default
 
     // Convert timestamps to IATs -- stack-allocated, sized to Capacity (one
     // more than the max possible IAT count, matching the original's own
@@ -118,24 +158,32 @@ float CalculateBurstinessIndex(const RingBuffer<uint64_t, Capacity>& timestamps)
         prev = ts;
     }
 
-    if (iatCount == 0) return 1.0f;  // Default to Poisson
+    if (iatCount == 0) return 0.0f;  // Poisson-neutral default
 
-    // Calculate Mean IAT.
-    float sum = 0.0f;
-    for (size_t i = 0; i < iatCount; ++i) sum += iats[i];
-    float mean = sum / static_cast<float>(iatCount);
+    // Poisson-neutral consistency constant: ln(2)/arcsinh(1/2), derived above.
+    constexpr float kExponentialConsistency = 1.4404199f;
 
-    // Calculate StdDev IAT.
-    float sumSq = 0.0f;
-    for (size_t i = 0; i < iatCount; ++i) {
-        const float d = iats[i] - mean;
-        sumSq += d * d;
-    }
-    float stdDev = std::sqrt(sumSq / (iatCount > 1 ? static_cast<float>(iatCount - 1) : 1.0f));
+    // Median IAT -- nth_element at index n/2, matching this repo's own
+    // established median/MAD convention (FeatureScaler.h's RobustLocation()):
+    // NOT the textbook averaged-middle-two for even n.
+    std::array<float, Capacity> sorted = iats;
+    const size_t mid = iatCount / 2;
+    std::nth_element(sorted.begin(), sorted.begin() + mid, sorted.begin() + iatCount);
+    const float median = sorted[mid];
 
-    if (mean < 0.0001f) return 1.0f;  // Avoid division by zero
+    if (median < 0.0001f) return 0.0f;  // Avoid division by zero -- Poisson-neutral default
 
-    return stdDev / mean;
+    // MAD: median of |iat - median|, same nth_element convention.
+    std::array<float, Capacity> absDev{};
+    for (size_t i = 0; i < iatCount; ++i) absDev[i] = std::fabs(iats[i] - median);
+    std::nth_element(absDev.begin(), absDev.begin() + mid, absDev.begin() + iatCount);
+    const float mad = absDev[mid];
+
+    const float robustCv = (mad / median) * kExponentialConsistency;
+    // Goh & Barabási (2008) bounded transform, see this function's own doc
+    // comment for why: robustCv is always >= 0, so (robustCv + 1) is always
+    // >= 1 -- no new division-by-zero risk introduced here.
+    return (robustCv - 1.0f) / (robustCv + 1.0f);
 }
 
 }  // namespace eve

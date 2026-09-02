@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <random>
 
 using namespace eve;
 
@@ -156,34 +157,67 @@ int main() {
 
     std::printf("\nCalculateBurstinessIndex unit tests\n");
 
-    // Fewer than 4 timestamps: neutral Poisson default.
+    // Fewer than 4 timestamps: neutral Poisson default (0.0 in the bounded
+    // [-1,1] Goh-Barabási scale -- was 1.0 in the pre-2026-09-02 unbounded scale).
     {
         RingBuffer<uint64_t, 8> ts;
         ts.push_back(0);
         ts.push_back(1000);
         ts.push_back(2000);
         check("burstiness_below_minimum_samples_is_neutral",
-              CalculateBurstinessIndex(ts) == 1.0f);
-    }
-
-    // Perfectly regular spacing: IATs are all identical -> stdDev=0 -> CV=0.0.
-    {
-        RingBuffer<uint64_t, 8> ts;
-        for (uint64_t t = 0; t <= 4'000'000; t += 1'000'000) ts.push_back(t);
-        check("burstiness_regular_spacing_is_zero",
               CalculateBurstinessIndex(ts) == 0.0f);
     }
 
-    // Irregular spacing: independently computed via Python (statistics.stdev,
-    // sample stdev with n-1) -- iats_ms=[500,1500,200,2800], mean=1250,
-    // stdev=1173.3143937865361, cv=0.9386515150292289.
+    // Perfectly regular spacing: IATs are all identical -> MAD=0 -> robust
+    // ratio=0.0 -> Goh-Barabási B=(0-1)/(0+1)=-1.0 (the scale's own minimum,
+    // matching Goh & Barabási 2008's "perfectly regular process" endpoint).
+    {
+        RingBuffer<uint64_t, 8> ts;
+        for (uint64_t t = 0; t <= 4'000'000; t += 1'000'000) ts.push_back(t);
+        check("burstiness_regular_spacing_is_minimum",
+              CalculateBurstinessIndex(ts) == -1.0f);
+    }
+
+    // Irregular spacing: iats_ms=[500,1500,200,2800]. Hand-computed via this
+    // repo's own nth_element(mid=n/2) median/MAD convention (NOT the textbook
+    // averaged-middle-two for even n -- see FeatureScaler.h's RobustLocation()
+    // for the same convention): sorted=[200,500,1500,2800], mid=4/2=2 ->
+    // median=1500. abs devs from 1500: [1300,1000,0,1300], sorted=
+    // [0,1000,1300,1300], mid=2 -> MAD=1300. robust_cv =
+    // (1300/1500)*1.4404199 = 1.2483639. Goh-Barabási B=(1.2483639-1)/
+    // (1.2483639+1) = 0.1104643 (verified via real python3 execution, not
+    // hand arithmetic).
     {
         RingBuffer<uint64_t, 8> ts;
         for (uint64_t t : {0ULL, 500'000ULL, 2'000'000ULL, 2'200'000ULL, 5'000'000ULL}) {
             ts.push_back(t);
         }
-        check("burstiness_irregular_spacing_matches_independently_computed_cv",
-              approx(CalculateBurstinessIndex(ts), 0.9386515150292289f, 1e-4f));
+        check("burstiness_irregular_spacing_matches_hand_computed_robust_cv",
+              approx(CalculateBurstinessIndex(ts), 0.1104643f, 1e-4f));
+    }
+
+    // Poisson-neutral property: a real Exponential(rate)-distributed IAT
+    // sample must converge toward the scale's Poisson-neutral point -- 0.0 in
+    // the bounded [-1,1] Goh-Barabási scale (was 1.0 pre-2026-09-02, before
+    // the robust ratio was bounded via B=(x-1)/(x+1)) -- this is exactly why
+    // the consistency constant is derived from the Exponential distribution
+    // instead of reusing the standard normal-consistency 1.4826. Not a
+    // hand-picked pass -- a real synthetic verification, large n to average
+    // out small-sample MAD/median noise. Tolerance verified against this
+    // exact seed's real printed output before being set (not guessed).
+    {
+        RingBuffer<uint64_t, 4096> ts;
+        std::mt19937 rng(42);
+        std::exponential_distribution<double> exp_dist(1.0 / 1'000'000.0);  // mean 1s, in us
+        uint64_t t = 0;
+        ts.push_back(t);
+        for (int i = 0; i < 4095; ++i) {
+            t += static_cast<uint64_t>(exp_dist(rng)) + 1;  // +1: avoid a zero-IAT clamp artifact
+            ts.push_back(t);
+        }
+        const float b = CalculateBurstinessIndex(ts);
+        std::printf("  [info] robust burstiness (Goh-Barabasi bounded) on a real Exponential(mean=1s) sample: %.4f\n", b);
+        check("burstiness_converges_to_zero_for_a_real_poisson_process", approx(b, 0.0f, 0.05f));
     }
 
     // Capacity is independent of the production EVENT_VELOCITY_MAX=100 --
@@ -196,7 +230,7 @@ int main() {
         ts.push_back(2'000'000);
         ts.push_back(3'000'000);
         check("burstiness_works_at_small_template_capacity",
-              CalculateBurstinessIndex(ts) == 0.0f);
+              CalculateBurstinessIndex(ts) == -1.0f);
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",

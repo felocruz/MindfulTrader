@@ -1,10 +1,15 @@
 // CarryForwardCalculators.h — pure, header-only degenerate-guard formulas for
-// three observation dims (1 burstiness_index, 2 relative_range, 8 fisher_info)
-// that were returning a fixed 0.0f sentinel on routine, non-warmup degenerate
-// input (flat range, zero ATR, flat price) instead of carrying the last valid
-// physics reading forward. That fixed sentinel became frequent enough to anchor
-// FeatureScaler's rolling median, collapsing the exported, scaled observation to
-// an exact 0.0 (docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md).
+// three observation dims (2 relative_range, 3 log_scale_expansion_ratio, 8
+// fisher_info) that were returning a fixed 0.0f sentinel on routine,
+// non-warmup degenerate input (flat range, zero ATR, flat price) instead of
+// carrying the last valid physics reading forward. That fixed sentinel became
+// frequent enough to anchor FeatureScaler's rolling median, collapsing the
+// exported, scaled observation to an exact 0.0
+// (docs/superpowers/specs/2026-08-12-featurescaler-sentinel-collapse-hardening.md).
+// Dim 1 (burstiness_index) used ComputeBurstinessIndex below too until the
+// 2026-08-29 redirect to raschkeBurst (EventVelocityEngine.h) -- it no longer
+// consumes this file at all; the function name is a historical artifact of
+// that original use, not a current caller list.
 //
 // Extracted so the guard logic can be natively unit-tested
 // (tests/cpp/test_carry_forward_calculators.cpp) — same rationale as
@@ -21,21 +26,30 @@
 
 namespace cfc {
 
-// Dim 1 (burstiness_index) / dim 3 (correction_action): log(recent-window
-// realized-variance rate / reference-window rate), clamped to a data-error
-// backstop range (NOT a statistical winsorization bound -- that job belongs
-// to FeatureScaler's WIDE_STATE_WINSOR_SIGMA/DIM3_WIDE_WINSOR_SIGMA on the
-// z-scored output, several orders of magnitude further out; see that file).
-// Degenerate when the reference rate is below the numerical floor (near-flat
-// range/return over that window) — carries the last valid value forward
-// instead of a fabricated exact-zero "no change" reading.
+// Dim 3 only (CalculateLogScaleExpansionRatio, StudyHelperFunctions.cpp) as of
+// 2026-09-02 -- dim 1 (burstiness_index) redirected to raschkeBurst
+// (EventVelocityEngine.h::CalculateBurstinessIndex) 2026-08-29 and no longer
+// calls this function; its own [-6,+6] default below is a historical
+// leftover from when it did, kept as the function's default only because
+// dim3's call site always passes its own explicit [-10,+6] override anyway.
 //
-// Default bound [-6,+6] is dim1's (CalculateBurstiness: disjoint recent-half
-// vs older-half, symmetric by construction) -- verified on real 60-minute MES
-// bars (mes_wave_60m.parquet, 19,592 bars, adaptive window range [10,40]):
-// true range [-4.587, +5.082], 0/606,577 window/bar combinations clip.
+// log(recent-window realized-variance rate / reference-window rate), clamped
+// to a data-error backstop range (NOT a statistical winsorization bound --
+// that job belongs to FeatureScaler's WIDE_STATE_WINSOR_SIGMA/
+// DIM3_WIDE_WINSOR_SIGMA on the z-scored output, several orders of magnitude
+// further out; see that file). Degenerate when the reference rate is below
+// the numerical floor (near-flat range/return over that window) — carries
+// the last valid value forward instead of a fabricated exact-zero "no
+// change" reading.
 //
-// dim3 (CalculateRealizedVarianceRatio, StudyHelperFunctions.cpp) passes its
+// Default bound [-6,+6] was dim1's own (CalculateBurstiness: disjoint
+// recent-half vs older-half, symmetric by construction) -- verified on real
+// 60-minute MES bars (mes_wave_60m.parquet, 19,592 bars, adaptive window
+// range [10,40]): true range [-4.587, +5.082], 0/606,577 window/bar
+// combinations clip. No longer load-bearing now that dim1 doesn't call this
+// function, but left unchanged rather than churned for its own sake.
+//
+// dim3 (CalculateLogScaleExpansionRatio, StudyHelperFunctions.cpp) passes its
 // own [-10,+6] -- its formula compares a recent-half window against the FULL
 // window (recent is a subset of full), which makes the raw ratio structurally
 // asymmetric: positive ratios are mechanically small (recent variance can't
