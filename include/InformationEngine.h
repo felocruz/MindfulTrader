@@ -322,7 +322,7 @@ namespace MindfulTrader {
          * 1.233, a ~2.4x recentring on a ~20x-compressed scale), an order of
          * magnitude larger than this bias correction. Should entropy gates ever
          * need re-derivation, the methodology to copy is
-         * tools/analyze_kurtosis_threshold_migration.py.
+         * tools/observation_vector/analyze_kurtosis_threshold_migration.py.
          *
          * @return Entropy in bits (0.0 to ~3.32 for k=10)
          */

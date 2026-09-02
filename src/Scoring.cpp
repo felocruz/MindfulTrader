@@ -209,7 +209,7 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
     // --- 1. FRAGILITY PENALTY (Taleb Kurtosis) — No artificial floor ---
     // gate=2.5 (old) -> P30.5 -> 1.3248 (new); center=6.0 (old) -> P70.6 -> 1.6414
     // (new), percentile-matched on real MES data -- see
-    // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
+    // tools/observation_vector/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
     // .superpowers/sdd/2026-08-13-observation-vector-institutional-elevation/
     // task-7-report.md).
     // Steepness (9.7409, was 0.5) derived empirically, not percentile-matched

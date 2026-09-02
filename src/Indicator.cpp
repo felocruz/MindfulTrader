@@ -507,7 +507,7 @@ void MarketClimateIndicator::UpdateContext(const LocalRiskContext& ctx, HMMState
 
     // Percentile-matched to the pre-Task-6 moment-based threshold's original
     // intent (was 4.0 excess-kurtosis, P51.4 of the historical distribution)
-    // -- see tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+    // -- see tools/observation_vector/analyze_kurtosis_threshold_migration.py, run 2026-08-13
     // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-institutional-
     // elevation/task-7-report.md).
     bool isFragile = (kurtosis > 1.4753f);

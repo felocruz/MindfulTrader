@@ -295,7 +295,7 @@ inline RiskPriceResult ComputeRiskPrice(const RiskPriceInputs& in) {
         // (old, ambient baseline) -> P70.6 -> 1.6414 (new); full penalty at
         // 15.0 (old, crisis) -> P91.9 -> 2.0064 (new) -- same two anchors as
         // ExecutionParams' crisis-gate / halt-threshold mapping, see
-        // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+        // tools/observation_vector/analyze_kurtosis_threshold_migration.py, run 2026-08-13
         // (Task 7, .superpowers/sdd/2026-08-13-observation-vector-
         // institutional-elevation/task-7-report.md).
         // Robust Mahalanobis (16D observation vector, median/MAD estimator).

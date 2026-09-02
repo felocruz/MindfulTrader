@@ -2308,7 +2308,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // is unreliable. Chasing into a falling knife amplifies adverse selection.  Cap
     // chase to zero (pure limit) so we only fill at our stated price or not at all.
     // Threshold percentile-matched: was 10.0 (old moment-based scale), P85.8 of the
-    // historical distribution -- see tools/analyze_kurtosis_threshold_migration.py,
+    // historical distribution -- see tools/observation_vector/analyze_kurtosis_threshold_migration.py,
     // run 2026-08-13 (Task 7). No-data fallback (1.23f) is Moors' N(0,1) neutral
     // baseline (see StudyHelperFunctions.cpp), replacing the stale old-scale 3.0f.
     {
@@ -2347,7 +2347,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     //   2. NORMAL / ORDERLY-BUT-TOXIC:
     //      → static stop-limit with 2-tick offset.  Protective fill control.
     // Threshold percentile-matched: was 10.0 (old moment-based scale), P85.8 of the
-    // historical distribution -- see tools/analyze_kurtosis_threshold_migration.py,
+    // historical distribution -- see tools/observation_vector/analyze_kurtosis_threshold_migration.py,
     // run 2026-08-13 (Task 7). No-data fallback (1.23f) is Moors' N(0,1) neutral
     // baseline, replacing the stale old-scale 3.0f.
     {
@@ -2764,7 +2764,7 @@ void PositionManager::ProcessManualTradeCommand(
 
     // GAP 25: fat-tail chase cap (mirrors automatic path). Threshold/fallback
     // percentile-matched the same as the automatic path -- see that block's
-    // comment above and tools/analyze_kurtosis_threshold_migration.py (Task 7).
+    // comment above and tools/observation_vector/analyze_kurtosis_threshold_migration.py (Task 7).
     {
         const auto& lrcChase = ContextManager::Instance().GetLocalRiskContext();
         const auto* hmmChase = InferenceManager::Instance().HmmState();
@@ -2785,7 +2785,7 @@ void PositionManager::ProcessManualTradeCommand(
 
     // Bracket Stop — regime-aware STATIC stop type (mirrors automatic path Step C).
     // Threshold/fallback percentile-matched the same as the automatic path -- see
-    // that block's comment above and tools/analyze_kurtosis_threshold_migration.py
+    // that block's comment above and tools/observation_vector/analyze_kurtosis_threshold_migration.py
     // (Task 7).
     {
         const auto& lrc = ContextManager::Instance().GetLocalRiskContext();

@@ -68,7 +68,7 @@ namespace {
         double shannon_min_tenure_bars = 109.158494;
         // Percentile-matched: was 9.636797 (old moment-based kurtosis scale),
         // P85.0 of the historical distribution -- see
-        // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13
+        // tools/observation_vector/analyze_kurtosis_threshold_migration.py, run 2026-08-13
         // (Task 7). The live JSON override at
         // /mnt/c/Trading/config/hmm_regime_risk_policy.json was updated the
         // same way (its own old value, 9.697616023284109, P85.1 -> 1.8401).
@@ -852,7 +852,7 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
     // In crash regimes (DOF ≤ 4 / kurtosis > 8 [old scale]) tighten the veto
     // from p90 → p75. kurtosis threshold percentile-matched: was 8.0
     // (moment-based), P80.1 of the historical distribution -- see
-    // tools/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
+    // tools/observation_vector/analyze_kurtosis_threshold_migration.py, run 2026-08-13 (Task 7,
     // .superpowers/sdd/2026-08-13-observation-vector-institutional-elevation/
     // task-7-report.md).
     {

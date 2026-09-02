@@ -57,7 +57,7 @@ struct ExecutionParams {
     // ── Taleb kurtosis crisis gate (hysteresis) ──
     // Enter/Exit percentile-matched to the pre-Task-6 moment-based scale's
     // original intent (Enter: was 5.0, P62.7 -> 1.5650; Exit: was 3.0, P38.7
-    // -> 1.3809) -- see tools/analyze_kurtosis_threshold_migration.py, run
+    // -> 1.3809) -- see tools/observation_vector/analyze_kurtosis_threshold_migration.py, run
     // 2026-08-13 (Task 7, .superpowers/sdd/2026-08-13-observation-vector-
     // institutional-elevation/task-7-report.md). CrisisCeiling is a risk-
     // multiplier cap (fraction of normal size), not a kurtosis-scale value
