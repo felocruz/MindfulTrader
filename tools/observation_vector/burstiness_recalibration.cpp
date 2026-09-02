@@ -9,21 +9,21 @@
 // against neither of the above; it described the ORIGINAL bar-cadence,
 // plain-CV proxy's distribution.
 //
-// KNOWN, NAMED LIMITATION -- read before trusting this tool's output as
-// final: production's raschkeBurst is computed on REAL PER-TICK arrival
-// timestamps (ContextManager::m_eventTimestampsUS, pushed unconditionally on
-// every incoming trade inside CheckAndTriggerHMM -- CLAUDE.md's AutoLoop=1
-// tick cadence). The only real historical MES data available in this
-// workspace (lbrnet/data/raw/mes_continuous_ticks.parquet) is
-// 1-SECOND-BAR-AGGREGATED -- verified directly, 2026-08-31 (every
-// consecutive timestamp delta in a real 2M-row sample is an exact multiple
-// of 1,000,000us; zero sub-second gaps found). This tool therefore
-// replicates burstiness of PER-ACTIVE-SECOND bar-formation events, not
-// production's real per-tick arrival cadence -- a real, non-fabricated
-// measurement, but of a genuinely coarser event stream than what production
-// actually feeds CalculateBurstinessIndex(). Treat the resulting bound as a
-// real improvement over the current disabled placeholder, not a final
-// calibration -- re-derive once genuine sub-second tick data exists.
+// KNOWN LIMITATION, RESOLVED 2026-09-02: production's raschkeBurst is computed
+// on REAL PER-TICK arrival timestamps (ContextManager::m_eventTimestampsUS,
+// pushed unconditionally on every incoming trade inside CheckAndTriggerHMM --
+// CLAUDE.md's AutoLoop=1 tick cadence). This tool previously had to replicate
+// burstiness on 1-second-bar-aggregated data (the only historical source
+// available at the time, mes_continuous_ticks.parquet -- verified
+// 1-SECOND-BAR-AGGREGATED, 2026-08-31: every consecutive timestamp delta in a
+// real 2M-row sample was an exact multiple of 1,000,000us). That gap is now
+// closed: tools/scid_processing/scid_to_ticks_parquet.cpp (shipped
+// 2026-09-02) decodes genuine per-tick .scid data with no aggregation --
+// mes_ticks.parquet's own real-data deltas are overwhelmingly NOT 1-second
+// multiples. This tool's computation itself needed no change: it already
+// operates generically on whatever real timestamp_us values TickSeries
+// provides (RingBuffer<uint64_t>+CalculateBurstinessIndex have no embedded
+// spacing assumption) -- only the input file changed.
 //
 // Build: mamba run -n mts g++ -O2 -std=c++17 \
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
@@ -33,7 +33,7 @@
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
 //   -o tools/bin/burstiness_recalibration
 // Usage: ./tools/bin/burstiness_recalibration \
-//   --ticks-parquet lbrnet/data/raw/mes_continuous_ticks.parquet \
+//   --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ticks.parquet \
 //   [--zsample-dump /tmp/burstiness_zsamples.csv]
 
 #include "EventVelocityEngine.h"
@@ -158,7 +158,7 @@ struct ZStats {
 void PrintUsage(const char* prog) {
     std::fprintf(stderr,
         "usage: %s --ticks-parquet PATH [--zsample-dump PATH]\n"
-        "  --ticks-parquet PATH  real MES 1-second-bar parquet (timestamp_us column required)\n"
+        "  --ticks-parquet PATH  real MES tick-level parquet (timestamp_us column required)\n"
         "  --zsample-dump PATH   optional CSV of downsampled |z| values for a GPD/EVT tail fit\n",
         prog);
 }
@@ -182,38 +182,41 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    TickSeries series;
+    RingBuffer<uint64_t, kEventVelocityMax + 1> ring;
+    FeatureScaler fs;
+    ZStats stats;
+    std::size_t n_rows = 0;
+
+    // Bounded-memory streaming pass (StreamTicksParquet, not ReadTicksParquet):
+    // this computation is a pure online ring-buffer statistic with no lookback
+    // beyond kEventVelocityMax -- it never needs the whole series materialized
+    // at once, so it shouldn't pay for a ~7.5GB two-vector allocation at this
+    // file's real 471.9M-row scale.
     try {
-        series = ReadTicksParquet(ticksPath);
+        StreamTicksParquet(ticksPath, [&](std::int64_t ts, double /*trade_price*/) {
+            ++n_rows;
+            // Mirrors ContextManager.cpp's own push/pop shape exactly (pop_front
+            // once at the logical window size, THEN push_back) --
+            // ContextManager.cpp:677-680.
+            if (ring.size() >= kEventVelocityMax) ring.pop_front();
+            ring.push_back(static_cast<uint64_t>(ts));
+
+            const float burstiness = eve::CalculateBurstinessIndex(ring);
+
+            // Every other dim left at its zero default -- each dim's rolling
+            // median/MAD window is independent, same approach already used by
+            // tools/observation_vector/amihud_liqfragility_recalibration.cpp for dims 12/13.
+            std::array<float, FeatureScaler::N_DIMS> obs{};
+            obs[1] = burstiness;
+            fs.UpdateAndNormalize(obs);
+            stats.Record(fs.lastRawZ[1], fs.lastLocalMad[1]);
+        });
     } catch (const std::runtime_error& e) {
         std::fprintf(stderr, "FAILED: %s\n", e.what());
         return 1;
     }
-    std::printf("Loaded %zu real MES 1-second-bar timestamps from %s\n",
-                series.timestamp_us.size(), ticksPath.c_str());
+    std::printf("Loaded %zu real MES tick timestamps from %s\n", n_rows, ticksPath.c_str());
     std::fflush(stdout);
-
-    RingBuffer<uint64_t, kEventVelocityMax + 1> ring;
-    FeatureScaler fs;
-    ZStats stats;
-
-    for (const std::int64_t ts : series.timestamp_us) {
-        // Mirrors ContextManager.cpp's own push/pop shape exactly (pop_front
-        // once at the logical window size, THEN push_back) --
-        // ContextManager.cpp:677-680.
-        if (ring.size() >= kEventVelocityMax) ring.pop_front();
-        ring.push_back(static_cast<uint64_t>(ts));
-
-        const float burstiness = eve::CalculateBurstinessIndex(ring);
-
-        // Every other dim left at its zero default -- each dim's rolling
-        // median/MAD window is independent, same approach already used by
-        // tools/observation_vector/amihud_liqfragility_recalibration.cpp for dims 12/13.
-        std::array<float, FeatureScaler::N_DIMS> obs{};
-        obs[1] = burstiness;
-        fs.UpdateAndNormalize(obs);
-        stats.Record(fs.lastRawZ[1], fs.lastLocalMad[1]);
-    }
 
     std::printf("\n=== burstiness_index (dim 1, SOFTLOGZ) ===\n");
     stats.Report("burstiness_index", FeatureScaler::STATE_WINSOR_SIGMA);
