@@ -96,16 +96,16 @@ int main(int argc, char** argv) {
     std::printf("Loaded %zu rows from %s\n", series.timestamp_us.size(), ticks_path.c_str());
     std::fflush(stdout);
 
-    const auto log_returns = ComputeLogReturns(series.close);
+    const auto log_returns = ComputeLogReturns(series.trade_price);
     const auto jump_ratio = ComputeJumpRatio(log_returns, window);
     // jump_ratio[] is indexed against log_returns (length n-1), itself offset
-    // by 1 from series.close/timestamp_us -- same convention as drift_location_eval.cpp.
+    // by 1 from series.trade_price/timestamp_us -- same convention as drift_location_eval.cpp.
     std::vector<std::int64_t> signal_ts;
     std::vector<double> signal_price, signal_jr;
     for (std::size_t i = 0; i < jump_ratio.size(); ++i) {
         if (std::isnan(jump_ratio[i])) continue;
         signal_ts.push_back(series.timestamp_us[i + 1]);
-        signal_price.push_back(series.close[i + 1]);
+        signal_price.push_back(series.trade_price[i + 1]);
         signal_jr.push_back(jump_ratio[i]);
     }
     std::printf("%zu non-warmup jump-ratio signals (window=%zu)\n", signal_ts.size(), window);
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
     for (std::size_t h_idx = 0; h_idx < horizons.size(); ++h_idx) {
         const int h = horizons[h_idx];
         std::fprintf(stderr, "[progress] computing horizon=%dmin (%zu/%zu)...\n", h, h_idx + 1, horizons.size());
-        const auto fwd = ComputeForwardReturns(signal_ts, signal_price, series.timestamp_us, series.close, h);
+        const auto fwd = ComputeForwardReturns(signal_ts, signal_price, series.timestamp_us, series.trade_price, h);
 
         std::vector<double> top_fwd, bottom_fwd;
         for (std::size_t i = 0; i < fwd.size(); ++i) {

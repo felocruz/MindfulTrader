@@ -87,7 +87,7 @@ int main(int argc, char** argv) {
     std::printf("Loaded %zu rows from %s\n", series.timestamp_us.size(), ticks_path.c_str());
     std::fflush(stdout);
 
-    const auto log_returns = ComputeLogReturns(series.close);
+    const auto log_returns = ComputeLogReturns(series.trade_price);
     const std::size_t n = log_returns.size();
 
     std::printf("Computing log_scale_ratio (OLD/NEW, long_window=%d) and "
