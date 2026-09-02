@@ -1,4 +1,4 @@
-// tools/tick_pipeline/scid_mirror_sync.h
+// tools/scid_processing/scid_mirror_sync.h
 // Refreshes the local .scid mirror (e.g. lbrnet/data/scid/) from the live
 // Sierra Chart directory, incrementally. Ports lbrnet's own (currently
 // unimplemented) design in docs/superpowers/specs/2026-08-18-mes-scid-
@@ -48,6 +48,27 @@ inline std::vector<char> ReadPrefix(const std::filesystem::path& path, std::size
     return buf;
 }
 
+// Cheap suffix check (last n bytes) -- the head-only prefix check cannot
+// distinguish "genuinely unchanged" from "same size but content replaced"
+// for a same-size file; combined with ReadPrefix, this is the cross-check
+// used when a same-size file's mtime comparison can't be trusted (see
+// SyncScidMirror's own comment on this -- verified empirically: WSL's 9p
+// mount for a live Sierra Chart directory can report a live file's mtime
+// as unequal to an already-synced, byte-identical mirror copy, even though
+// `stat` shows nanosecond-identical timestamps on both sides).
+inline std::vector<char> ReadSuffix(const std::filesystem::path& path, std::size_t n) {
+    std::ifstream in(path, std::ios::binary);
+    in.seekg(0, std::ios::end);
+    const auto tell = in.tellg();
+    const std::size_t file_size = tell > 0 ? static_cast<std::size_t>(tell) : 0;
+    const std::size_t read_len = std::min(n, file_size);
+    in.seekg(static_cast<std::streamoff>(file_size - read_len), std::ios::beg);
+    std::vector<char> buf(read_len, 0);
+    in.read(buf.data(), static_cast<std::streamsize>(read_len));
+    buf.resize(static_cast<std::size_t>(in.gcount() > 0 ? in.gcount() : 0));
+    return buf;
+}
+
 inline void AtomicCopy(const std::filesystem::path& src, const std::filesystem::path& dst_final) {
     const std::filesystem::path tmp = dst_final;
     std::filesystem::path tmp_path = dst_final;
@@ -91,6 +112,32 @@ inline std::vector<MirrorSyncResult> SyncScidMirror(const std::string& live_dir,
 
         if (live_size == mirror_size && live_mtime == mirror_mtime) {
             results.push_back({name, MirrorSyncAction::kUnchanged});
+            continue;
+        }
+
+        if (live_size == mirror_size) {
+            // mtime alone disagreed (a cross-filesystem WSL/9p quirk, verified
+            // empirically -- not something we can fix at this layer) but the
+            // size didn't change. A full multi-GB re-copy is expensive on a
+            // slow live mount, so confirm real equality cheaply first: both
+            // ends of the file must match (head-only isn't enough to catch a
+            // same-size content replacement). Only a genuine mismatch forces
+            // the full copy.
+            const bool head_matches =
+                detail::ReadPrefix(mirror_path, kPrefixLen) == detail::ReadPrefix(live_path, kPrefixLen);
+            const bool tail_matches =
+                detail::ReadSuffix(mirror_path, kPrefixLen) == detail::ReadSuffix(live_path, kPrefixLen);
+            if (head_matches && tail_matches) {
+                results.push_back({name, MirrorSyncAction::kUnchanged});
+                continue;
+            }
+            std::fprintf(stderr,
+                         "scid_mirror_sync: %s is the same size as its mirror copy but its content "
+                         "differs (head_matches=%d tail_matches=%d) -- forcing a full re-decode of "
+                         "this contract, not a delta.\n",
+                         name.c_str(), head_matches, tail_matches);
+            detail::AtomicCopy(live_path, mirror_path);
+            results.push_back({name, MirrorSyncAction::kShrunkOrChanged});
             continue;
         }
 

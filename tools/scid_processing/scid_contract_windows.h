@@ -1,4 +1,4 @@
-// tools/tick_pipeline/scid_contract_windows.h
+// tools/scid_processing/scid_contract_windows.h
 // Contract discovery, roll-date math, quarterly-cycle validation. Ported
 // byte-for-byte from lbrnet/data/mes_continuous.py's third_friday()/
 // contract_active_end()/parse_contract_filename()/discover_contracts() --

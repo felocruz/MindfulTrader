@@ -1,5 +1,5 @@
-// tools/tick_pipeline/test_scid_decode_integration.cpp
-// Build & run: mamba run -n mts g++ -std=c++17 tools/tick_pipeline/test_scid_decode_integration.cpp \
+// tools/scid_processing/test_scid_decode_integration.cpp
+// Build & run: mamba run -n mts g++ -std=c++17 tools/scid_processing/test_scid_decode_integration.cpp \
 //   -o /tmp/test_scid_decode_integration && /tmp/test_scid_decode_integration
 //
 // End-to-end check of Tasks 1+2 together against a small REAL contract file

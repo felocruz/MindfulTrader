@@ -1,5 +1,5 @@
-// tools/tick_pipeline/test_scid_mirror_sync.cpp
-// Build & run: mamba run -n mts g++ -std=c++17 tools/tick_pipeline/test_scid_mirror_sync.cpp \
+// tools/scid_processing/test_scid_mirror_sync.cpp
+// Build & run: mamba run -n mts g++ -std=c++17 tools/scid_processing/test_scid_mirror_sync.cpp \
 //   -o /tmp/test_scid_mirror_sync && /tmp/test_scid_mirror_sync
 #include "scid_mirror_sync.h"
 
@@ -59,6 +59,30 @@ int main() {
               !results.empty() && results[0].action == scid::MirrorSyncAction::kNew);
         check("new file: mirror copy is byte-identical to live",
               ReadFile(mirror_dir / "MESU23-CME.scid") == content);
+    }
+
+    // -- Same size, mtime DIFFERS, content genuinely identical: still
+    // kUnchanged, no copy performed. Regression test for a real bug found
+    // against a live WSL/9p-mounted Sierra Chart directory: mtime can
+    // disagree even when `stat` shows nanosecond-identical timestamps on
+    // both sides, and the old same-size fallback treated that mismatch as
+    // "grown", triggering a needless full re-copy of an unchanged multi-GB
+    // file every single sync run. --
+    {
+        CleanDir(live_dir);
+        CleanDir(mirror_dir);
+        const std::string content = MakePattern(500, 'H');
+        WriteFile(live_dir / "MESH24-CME.scid", content);
+        WriteFile(mirror_dir / "MESH24-CME.scid", content);
+        SetMtime(live_dir / "MESH24-CME.scid", std::filesystem::file_time_type::clock::now());
+        SetMtime(mirror_dir / "MESH24-CME.scid",
+                  std::filesystem::file_time_type::clock::now() - std::chrono::hours(3));
+
+        auto results = scid::SyncScidMirror(live_dir.string(), mirror_dir.string());
+        check("same-size, mtime-mismatched, content-identical file: action is kUnchanged",
+              !results.empty() && results[0].action == scid::MirrorSyncAction::kUnchanged);
+        check("same-size, mtime-mismatched, content-identical file: mirror is untouched (still matches)",
+              ReadFile(mirror_dir / "MESH24-CME.scid") == content);
     }
 
     // -- Unchanged file (same size/mtime): skipped, sentinel byte untouched --

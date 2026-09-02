@@ -1,4 +1,4 @@
-// tools/tick_pipeline/scid_part_action.h
+// tools/scid_processing/scid_part_action.h
 // Per-contract incremental-decode decision logic for scid_to_ticks_parquet.cpp,
 // factored into a small pure function so it's testable without linking Arrow
 // (see docs/superpowers/plans/2026-09-02-scid-tick-parquet-cpp-tool.md Task 6).

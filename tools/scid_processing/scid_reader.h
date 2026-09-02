@@ -1,4 +1,4 @@
-// tools/tick_pipeline/scid_reader.h
+// tools/scid_processing/scid_reader.h
 // mmap'd Sierra Chart .scid tick decode: epoch conversion, benign-jitter
 // resequencing, ask/bid/spread/trade_side derivation. Ported byte-for-byte
 // from lbrnet/data/mes_continuous.py's decode_scid_ticks() -- see

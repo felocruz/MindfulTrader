@@ -1,5 +1,5 @@
-// tools/tick_pipeline/test_scid_contract_windows.cpp
-// Build & run: mamba run -n mts g++ -std=c++17 tools/tick_pipeline/test_scid_contract_windows.cpp \
+// tools/scid_processing/test_scid_contract_windows.cpp
+// Build & run: mamba run -n mts g++ -std=c++17 tools/scid_processing/test_scid_contract_windows.cpp \
 //   -o /tmp/test_scid_contract_windows && /tmp/test_scid_contract_windows
 #include "scid_contract_windows.h"
 

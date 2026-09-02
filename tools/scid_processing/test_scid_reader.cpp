@@ -1,5 +1,5 @@
-// tools/tick_pipeline/test_scid_reader.cpp
-// Build & run: mamba run -n mts g++ -std=c++17 tools/tick_pipeline/test_scid_reader.cpp \
+// tools/scid_processing/test_scid_reader.cpp
+// Build & run: mamba run -n mts g++ -std=c++17 tools/scid_processing/test_scid_reader.cpp \
 //   -o /tmp/test_scid_reader && /tmp/test_scid_reader
 #include "scid_reader.h"
 
