@@ -4,6 +4,7 @@
 #include "drift_location_stats.h"
 #include <cmath>
 #include <cstdio>
+#include <deque>
 
 namespace {
 int g_failures = 0;
@@ -176,6 +177,99 @@ int main() {
         const bool p_significant = corrected.p_value < 0.05;
         check("CI and p-value agree on significance under a nontrivial correction",
               ci_significant == p_significant);
+    }
+    {
+        // StreamingHitRateAccumulator equivalence: a synthetic tick series
+        // (irregular spacing, one deliberate large gap to exercise the
+        // 3x-horizon staleness reject, long enough that the tail signals
+        // near the end never get resolved before the stream ends) is fed
+        // through BOTH the batch path (ComputeLogReturns+ComputeDriftZScore+
+        // ComputeForwardReturns+ComputeHitRate, exactly mirroring
+        // drift_location_eval.cpp's own driver loop) and the streaming
+        // accumulator, per horizon. Both must agree exactly -- this is a
+        // self-consistency check (both implementations must produce the
+        // same answer on the same input), not a hand-verified fixture.
+        constexpr std::size_t kWindow = 50;
+        constexpr std::size_t kN = 3000;
+        constexpr std::size_t kGapAtIndex = 1500;  // one large jump to trigger a stale-gap reject
+        std::vector<std::int64_t> ts(kN);
+        std::vector<double> price(kN);
+        std::int64_t t = 1'000'000;
+        for (std::size_t i = 0; i < kN; ++i) {
+            t += (i == kGapAtIndex) ? 100'000'000LL : 100'000LL;  // ~100ms spacing, one 100s gap
+            ts[i] = t;
+            price[i] = 100.0 + 0.01 * std::sin(static_cast<double>(i) * 0.1) + 0.0001 * static_cast<double>(i);
+        }
+        const std::vector<int> horizons = {1, 2};  // minutes
+
+        // -- Batch path (mirrors drift_location_eval.cpp's driver exactly) --
+        const auto log_returns = ComputeLogReturns(price);
+        const auto z = ComputeDriftZScore(log_returns, kWindow);
+        std::vector<std::int64_t> signal_ts;
+        std::vector<double> signal_price, signal_z;
+        for (std::size_t i = 0; i < z.size(); ++i) {
+            if (std::isnan(z[i])) continue;
+            signal_ts.push_back(ts[i + 1]);
+            signal_price.push_back(price[i + 1]);
+            signal_z.push_back(z[i]);
+        }
+        std::vector<HitRateResult> batch_results;
+        for (int h : horizons) {
+            const auto fwd = ComputeForwardReturns(signal_ts, signal_price, ts, price, h);
+            batch_results.push_back(ComputeHitRate(fwd, signal_z));
+        }
+
+        // -- Streaming path --
+        StreamingHitRateAccumulator acc(horizons);
+        double prev_price = 0.0;
+        bool has_prev = false;
+        std::deque<double> ret_window;
+        double sum = 0.0, sum_sq = 0.0;
+        std::size_t returns_seen = 0;
+        for (std::size_t i = 0; i < kN; ++i) {
+            acc.Advance(ts[i], price[i]);
+            if (has_prev) {
+                const double log_ret = std::log(price[i] / prev_price);
+                ret_window.push_back(log_ret);
+                sum += log_ret;
+                sum_sq += log_ret * log_ret;
+                ++returns_seen;
+                if (ret_window.size() > kWindow) {
+                    const double oldest = ret_window.front();
+                    ret_window.pop_front();
+                    sum -= oldest;
+                    sum_sq -= oldest * oldest;
+                }
+                if (returns_seen >= kWindow) {
+                    const double mean = sum / static_cast<double>(kWindow);
+                    const double variance = sum_sq / static_cast<double>(kWindow) - mean * mean;
+                    const double stddev = std::sqrt(std::max(0.0, variance));
+                    const double zval = (stddev > 0.0) ? (mean / stddev) : 0.0;
+                    acc.PushSignal(ts[i], price[i], zval);
+                }
+            }
+            prev_price = price[i];
+            has_prev = true;
+        }
+
+        bool any_unresolved_at_end = false;  // sanity: the test data should actually exercise this edge case
+        for (std::size_t h = 0; h < horizons.size(); ++h) {
+            const auto streaming_result = acc.Result(h);
+            const auto& batch_result = batch_results[h];
+            char label[128];
+            std::snprintf(label, sizeof(label), "streaming vs batch agree exactly (horizon=%dmin): n", horizons[h]);
+            check(label, streaming_result.n == batch_result.n);
+            std::snprintf(label, sizeof(label), "streaming vs batch agree exactly (horizon=%dmin): k", horizons[h]);
+            check(label, streaming_result.k == batch_result.k);
+            std::snprintf(label, sizeof(label), "streaming vs batch agree exactly (horizon=%dmin): hit_rate/ci/p", horizons[h]);
+            check(label, close(streaming_result.hit_rate, batch_result.hit_rate) &&
+                             close(streaming_result.ci_lo, batch_result.ci_lo) &&
+                             close(streaming_result.ci_hi, batch_result.ci_hi) &&
+                             close(streaming_result.p_value, batch_result.p_value));
+            if (streaming_result.n < signal_ts.size()) any_unresolved_at_end = true;
+        }
+        check("test data actually exercises the never-resolved-at-end edge case",
+              any_unresolved_at_end);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

@@ -8,6 +8,8 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <functional>
 #include <limits>
 #include <random>
 #include <vector>
@@ -163,6 +165,128 @@ inline HitRateResult ComputeHitRate(
     result.ci_hi = ci.hi;
     return result;
 }
+
+// DOD, bounded-memory alternative to ComputeForwardReturns()+ComputeHitRate()
+// for a directional/continuation hit-rate test at real production scale
+// (471.9M+ rows): the batch path materializes the full series, a full
+// per-signal copy of it, and one full forward-return array per horizon --
+// at this system's real tick-file scale that peaks around 26GB, more than
+// this machine's physical RAM, regardless of how the file is READ (Arrow
+// streaming reads don't help if the downstream ALGORITHM still materializes
+// parallel full-length arrays). This class instead processes ticks in a
+// single forward pass, tracking only a bounded FIFO of "signals still
+// awaiting their future price" per horizon -- at this system's real tick
+// density (~23/min), a 240-minute horizon holds at most a few thousand
+// pending entries, regardless of total file size.
+//
+// Produces BIT-IDENTICAL n/k/hit_rate/ci/p_value to
+// ComputeForwardReturns()+ComputeHitRate() on the same signal/tick stream --
+// verified in test_drift_location_stats.cpp by running both paths against
+// the same synthetic fixture and asserting exact agreement, including the
+// edge cases that make this equivalence non-obvious:
+//   - ComputeForwardReturns' shared, monotonically-advancing forward
+//     pointer per horizon <-> this class advancing through ticks in
+//     chronological order (the tick stream position IS that pointer).
+//   - The 3x-horizon staleness reject (a resolution found, but too far past
+//     its target to trust) <-> checked identically at pop time here.
+//   - Signals whose target is never reached before the stream ends
+//     (ComputeForwardReturns' "idx >= m" early exit, leaving fwd[i] as NaN)
+//     <-> simply left pending forever here, silently excluded from n/k --
+//     no special-casing needed in either implementation.
+//   - Zero/non-finite candidate values, excluded by ComputeHitRate <->
+//     excluded here at PushSignal time (equivalent because a signal that
+//     will never be counted doesn't need to occupy a pending slot either).
+class StreamingHitRateAccumulator {
+public:
+    explicit StreamingHitRateAccumulator(const std::vector<int>& horizon_minutes) {
+        per_horizon_.reserve(horizon_minutes.size());
+        for (int h : horizon_minutes) {
+            per_horizon_.push_back(PerHorizon{static_cast<std::int64_t>(h) * 60 * 1'000'000LL, {}, 0, 0});
+        }
+    }
+
+    // Call once per tick, in chronological order. Resolves any pending
+    // signal (across every horizon) whose target_ts has now been reached,
+    // using THIS tick's price -- the first tick at or after target_ts,
+    // exactly matching ComputeForwardReturns' forward-pointer semantics.
+    // Safe to call before any signal has been pushed (all queues empty ->
+    // no-op) and is independent of PushSignal's call order for the same
+    // tick (a signal can never resolve against its own tick: horizon_us > 0
+    // always, so target_ts > signal_ts strictly).
+    //
+    // on_resolved, if set, is invoked once per horizon per counted
+    // resolution (not for stale-rejected or unresolved signals) with
+    // (horizon_index, hit) -- lets a caller stream a hit/miss CSV per
+    // horizon without ever materializing a forward-return array (used by
+    // drift_location_eval.cpp's --export-signals-dir).
+    void Advance(std::int64_t ts, double price,
+                 const std::function<void(std::size_t horizon_index, bool hit)>& on_resolved = nullptr) {
+        for (std::size_t h = 0; h < per_horizon_.size(); ++h) {
+            auto& ph = per_horizon_[h];
+            while (!ph.pending.empty() && ts >= ph.pending.front().target_ts) {
+                const PendingSignal sig = ph.pending.front();
+                ph.pending.pop_front();
+                if ((ts - sig.signal_ts) > ph.horizon_us * 3) continue;  // stale gap, matches the batch reject
+                const double fwd = std::log(price / sig.signal_price);
+                if (!std::isfinite(fwd)) continue;
+                ++ph.n;
+                const bool hit = Sign(fwd) == Sign(sig.candidate_value);
+                if (hit) ++ph.k;
+                if (on_resolved) on_resolved(h, hit);
+            }
+        }
+    }
+
+    // Registers a new signal at this tick, for every horizon this
+    // accumulator tracks. Silently skipped (never pending, never counted)
+    // if the candidate value is zero or non-finite -- matches
+    // ComputeHitRate's own exclusion criteria exactly.
+    void PushSignal(std::int64_t signal_ts, double signal_price, double candidate_value) {
+        if (candidate_value == 0.0 || !std::isfinite(candidate_value)) return;
+        for (auto& ph : per_horizon_) {
+            ph.pending.push_back({signal_ts, signal_price, candidate_value, signal_ts + ph.horizon_us});
+        }
+    }
+
+    std::size_t NumHorizons() const { return per_horizon_.size(); }
+
+    // Same formulas as ComputeHitRate, fed this accumulator's own running
+    // n/k tallies instead of a materialized forward_returns/candidate_values
+    // pair -- see ComputeHitRate's own comment for the variance_inflation
+    // (DEFF) derivation this shares.
+    HitRateResult Result(std::size_t horizon_index, double variance_inflation = 1.0) const {
+        const auto& ph = per_horizon_[horizon_index];
+        HitRateResult result;
+        result.n = ph.n;
+        result.k = ph.k;
+        if (ph.n == 0) return result;
+        result.hit_rate = static_cast<double>(ph.k) / static_cast<double>(ph.n);
+        const double n_eff = static_cast<double>(ph.n) / variance_inflation;
+        const double k_eff = result.hit_rate * n_eff;
+        const double se_null = std::sqrt(0.25 / n_eff);
+        result.z_stat = (result.hit_rate - 0.5) / se_null;
+        result.p_value = 2.0 * (1.0 - 0.5 * (1.0 + std::erf(std::fabs(result.z_stat) / std::sqrt(2.0))));
+        const auto ci = ComputeWilsonCI(k_eff, n_eff);
+        result.ci_lo = ci.lo;
+        result.ci_hi = ci.hi;
+        return result;
+    }
+
+private:
+    struct PendingSignal {
+        std::int64_t signal_ts;
+        double signal_price;
+        double candidate_value;
+        std::int64_t target_ts;
+    };
+    struct PerHorizon {
+        std::int64_t horizon_us;
+        std::deque<PendingSignal> pending;
+        std::size_t n;
+        std::size_t k;
+    };
+    std::vector<PerHorizon> per_horizon_;
+};
 
 struct MedianGapResult {
     double gap;

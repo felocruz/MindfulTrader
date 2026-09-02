@@ -1,10 +1,29 @@
 // tools/observation_vector/drift_location_eval.cpp
 // Offline, model-independent prototype validator for the §5.0 drift/location
-// observation-vector candidate. Reads lbrnet/data/raw/mes_continuous_ticks.parquet
-// DIRECTLY via Arrow -- the first C++ tool in this codebase to read Parquet
-// (every prior tool, e.g. context_to_parquet.cpp, only writes). This removes
-// the old mean_rev_z_variant_comparison.py pattern's Python round-trip
-// (polars-read -> custom-binary-export -> C++-read -> CSV -> Python-scores).
+// observation-vector candidate. Reads a real MES tick-level parquet
+// (tools/scid_processing/scid_to_ticks_parquet.cpp's output) DIRECTLY via
+// Arrow -- the first C++ tool in this codebase to read Parquet (every prior
+// tool, e.g. context_to_parquet.cpp, only writes). This removes the old
+// mean_rev_z_variant_comparison.py pattern's Python round-trip (polars-read
+// -> custom-binary-export -> C++-read -> CSV -> Python-scores).
+//
+// DOD, single-pass streaming architecture (rewritten 2026-09-02 once real
+// per-tick data existed at this system's real 471.9M-row scale): the
+// straightforward "materialize the whole series, then loop" version this
+// tool originally shipped with peaks around 26GB at that row count (full
+// timestamp/price arrays, a full per-signal copy of them, one full
+// forward-return array per horizon) -- more than this machine's physical
+// RAM, regardless of how lazily the Parquet file itself is read. Instead:
+// StreamTicksParquet feeds ticks one Parquet row group at a time (bounded,
+// tens of MB) into an inline rolling drift-z-score computation (a bounded
+// ring buffer of the last `window` log-returns, mirroring
+// ComputeDriftZScore's own incremental sum/sum_sq exactly) and
+// StreamingHitRateAccumulator (a bounded per-horizon pending-signal FIFO,
+// see market_test_stats.h's own comment for the full equivalence argument
+// and test_drift_location_stats.cpp for the proof against the original
+// batch functions on a synthetic fixture). Peak memory is now independent
+// of total row count -- bounded by one row-group buffer plus a few
+// thousand pending-signal entries per horizon.
 //
 // Build: mamba run -n mts g++ -O2 -std=c++17 \
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
@@ -17,7 +36,9 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
+#include <memory>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -66,33 +87,75 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    TickSeries series;
+    const auto horizons = ParseHorizons(horizons_csv);
+    StreamingHitRateAccumulator acc(horizons);
+
+    // One CSV ofstream per horizon, opened up front and written to
+    // incrementally as each signal resolves (via Advance's on_resolved
+    // callback) -- never materializes a forward-return array just to write
+    // this file, matching this whole rewrite's own no-full-materialization
+    // discipline.
+    std::vector<std::unique_ptr<std::ofstream>> sig_csv(horizons.size());
+    if (!export_signals_dir.empty()) {
+        for (std::size_t h = 0; h < horizons.size(); ++h) {
+            sig_csv[h] = std::make_unique<std::ofstream>(
+                export_signals_dir + "/drift_location_hitmiss_h" + std::to_string(horizons[h]) + ".csv");
+            *sig_csv[h] << "hit\n";
+        }
+    }
+    const auto on_resolved = [&](std::size_t horizon_index, bool hit) {
+        if (horizon_index < sig_csv.size() && sig_csv[horizon_index]) {
+            *sig_csv[horizon_index] << (hit ? 1 : 0) << "\n";
+        }
+    };
+
+    // Bounded rolling state for the drift z-score -- mirrors
+    // ComputeDriftZScore's incremental sum/sum_sq exactly (see that
+    // function's own comment), never materializing a full log_returns array.
+    double prev_price = 0.0;
+    bool has_prev = false;
+    std::deque<double> ret_window;
+    double sum = 0.0, sum_sq = 0.0;
+    std::size_t returns_seen = 0;
+    std::size_t n_signals = 0;
+    std::size_t n_rows = 0;
+
     try {
-        series = ReadTicksParquet(ticks_path);
+        StreamTicksParquet(ticks_path, [&](std::int64_t ts, double price) {
+            ++n_rows;
+            acc.Advance(ts, price, on_resolved);
+            if (has_prev) {
+                const double log_ret = std::log(price / prev_price);
+                ret_window.push_back(log_ret);
+                sum += log_ret;
+                sum_sq += log_ret * log_ret;
+                ++returns_seen;
+                if (ret_window.size() > window) {
+                    const double oldest = ret_window.front();
+                    ret_window.pop_front();
+                    sum -= oldest;
+                    sum_sq -= oldest * oldest;
+                }
+                if (returns_seen >= window) {
+                    const double mean = sum / static_cast<double>(window);
+                    const double variance = sum_sq / static_cast<double>(window) - mean * mean;
+                    const double stddev = std::sqrt(std::max(0.0, variance));
+                    const double z = (stddev > 0.0) ? (mean / stddev) : 0.0;
+                    acc.PushSignal(ts, price, z);
+                    ++n_signals;
+                }
+            }
+            prev_price = price;
+            has_prev = true;
+        });
     } catch (const std::runtime_error& e) {
         std::fprintf(stderr, "❌ %s\n", e.what());
         return 1;
     }
-    std::printf("Loaded %zu rows from %s\n", series.timestamp_us.size(), ticks_path.c_str());
+    std::printf("Loaded %zu rows from %s\n", n_rows, ticks_path.c_str());
+    std::printf("%zu non-warmup drift/location signals (window=%zu)\n", n_signals, window);
     std::fflush(stdout);
 
-    const auto log_returns = ComputeLogReturns(series.close);
-    const auto z = ComputeDriftZScore(log_returns, window);
-    // z[] is indexed against log_returns (length n-1), which is itself offset
-    // by 1 from series.close/timestamp_us -- signal at return-index i corresponds
-    // to price-series index i+1 (the price AFTER the return that produced z[i]).
-    std::vector<std::int64_t> signal_ts;
-    std::vector<double> signal_price, signal_z;
-    for (std::size_t i = 0; i < z.size(); ++i) {
-        if (std::isnan(z[i])) continue;
-        signal_ts.push_back(series.timestamp_us[i + 1]);
-        signal_price.push_back(series.close[i + 1]);
-        signal_z.push_back(z[i]);
-    }
-    std::printf("%zu non-warmup drift/location signals (window=%zu)\n", signal_ts.size(), window);
-    std::fflush(stdout);
-
-    const auto horizons = ParseHorizons(horizons_csv);
     const double bonferroni_alpha = 0.05 / static_cast<double>(horizons.size());
 
     std::printf("\n=== Predictive power (directional, continuation): forward-return sign vs. drift z-score sign ===\n");
@@ -103,18 +166,7 @@ int main(int argc, char** argv) {
     }
     for (std::size_t h_idx = 0; h_idx < horizons.size(); ++h_idx) {
         const int h = horizons[h_idx];
-        std::fprintf(stderr, "[progress] computing horizon=%dmin (%zu/%zu)...\n", h, h_idx + 1, horizons.size());
-        const auto fwd = ComputeForwardReturns(signal_ts, signal_price, series.timestamp_us, series.close, h);
-        const auto result = ComputeHitRate(fwd, signal_z);
-        if (!export_signals_dir.empty()) {
-            std::ofstream sig_csv(export_signals_dir + "/drift_location_hitmiss_h" + std::to_string(h) + ".csv");
-            sig_csv << "hit\n";
-            for (std::size_t i = 0; i < fwd.size(); ++i) {
-                if (!std::isfinite(fwd[i])) continue;
-                if (signal_z[i] == 0.0 || !std::isfinite(signal_z[i])) continue;
-                sig_csv << (Sign(fwd[i]) == Sign(signal_z[i]) ? 1 : 0) << "\n";
-            }
-        }
+        const auto result = acc.Result(h_idx);
         const bool survives = result.p_value < bonferroni_alpha;
         std::printf("  %4dmin: n=%-8zu hit_rate=%.4f 95%%CI=[%.4f,%.4f] p=%.4f (%s, alpha=%.5f for %zu tests)\n",
                     h, result.n, result.hit_rate, result.ci_lo, result.ci_hi, result.p_value,
@@ -135,3 +187,4 @@ int main(int argc, char** argv) {
     }
     return 0;
 }
+
