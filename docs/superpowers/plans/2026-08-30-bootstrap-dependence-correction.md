@@ -541,7 +541,7 @@ mamba run -n mts g++ -O2 -std=c++17 \
   tools/observation_vector/drift_location_eval.cpp \
   $(mamba run -n mts pkg-config --libs arrow parquet) \
   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-  -o tools/drift_location_eval
+  -o tools/bin/drift_location_eval
 ```
 Expected: compiles cleanly.
 
@@ -549,7 +549,7 @@ Expected: compiles cleanly.
 
 ```bash
 mkdir -p /tmp/drift_location_signals
-./tools/drift_location_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --export-signals-dir /tmp/drift_location_signals
+./tools/bin/drift_location_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --export-signals-dir /tmp/drift_location_signals
 ```
 
 Expected: the tool runs to completion exactly as before (identical console output to a run without `--export-signals-dir` -- the flag only adds file writes, no behavior change to the printed results), AND `/tmp/drift_location_signals/` contains 4 files (`drift_location_hitmiss_h30.csv`, `_h60.csv`, `_h120.csv`, `_h240.csv`). Verify with:
@@ -663,7 +663,7 @@ mamba run -n mts g++ -O2 -std=c++17 \
   tools/observation_vector/jump_ratio_eval.cpp \
   $(mamba run -n mts pkg-config --libs arrow parquet) \
   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-  -o tools/jump_ratio_eval
+  -o tools/bin/jump_ratio_eval
 ```
 Expected: compiles cleanly.
 
@@ -671,7 +671,7 @@ Expected: compiles cleanly.
 
 ```bash
 mkdir -p /tmp/jump_ratio_signals
-./tools/jump_ratio_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --export-signals-dir /tmp/jump_ratio_signals
+./tools/bin/jump_ratio_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --export-signals-dir /tmp/jump_ratio_signals
 ```
 
 Expected: this is the same ~15-minute real run as before (median-based bootstrap, `n_boot=1000`) -- budget for it, don't cut it short. Console output identical to a run without `--export-signals-dir`. `/tmp/jump_ratio_signals/` should contain 8 files (top + bottom × 4 horizons). Verify with:
@@ -1071,22 +1071,22 @@ mamba run -n mts g++ -O2 -std=c++17 \
   tools/observation_vector/drift_location_eval.cpp \
   $(mamba run -n mts pkg-config --libs arrow parquet) \
   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-  -o tools/drift_location_eval
+  -o tools/bin/drift_location_eval
 
 mamba run -n mts g++ -O2 -std=c++17 \
   $(mamba run -n mts pkg-config --cflags arrow parquet) \
   tools/observation_vector/jump_ratio_eval.cpp \
   $(mamba run -n mts pkg-config --libs arrow parquet) \
   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
-  -o tools/jump_ratio_eval
+  -o tools/bin/jump_ratio_eval
 ```
 Expected: both compile cleanly.
 
 - [ ] **Step 4: Re-run both against the real production file**
 
 ```bash
-./tools/drift_location_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --report-json /tmp/drift_location_report_corrected.json
-./tools/jump_ratio_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --report-json /tmp/jump_ratio_report_corrected.json
+./tools/bin/drift_location_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --report-json /tmp/drift_location_report_corrected.json
+./tools/bin/jump_ratio_eval --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_continuous_ticks.parquet --report-json /tmp/jump_ratio_report_corrected.json
 ```
 
 Expected: both run to completion (the `jump_ratio_eval` run takes ~15 minutes as before — do not cut it short). **Read the actual printed numbers.** Verify:

@@ -129,7 +129,7 @@ path currently only attaches after aggregation.
 
 ## 4. DOD (data-oriented design) requirements — mandatory, not optional
 
-Per this repo's established convention (`tools/context_to_parquet.cpp`'s SoA pattern, this
+Per this repo's established convention (`tools/context_pipeline/context_to_parquet.cpp`'s SoA pattern, this
 project's global hot-path discipline): **columnar (SoA) construction throughout, chunked
 writes bounding peak memory regardless of file size.**
 

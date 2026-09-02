@@ -26,7 +26,7 @@ layer, `tools/scid_processing/scid_mirror_sync.h`, porting `lbrnet`'s own (curre
 `docs/superpowers/specs/2026-08-18-mes-scid-incremental-sync-design.md` into C++: grow/shrink/
 new/unchanged detection, atomic copy-then-rename, rollover trim. **Phase C** (Tasks 5-6) is
 the CLI tool itself, `tools/scid_processing/scid_to_ticks_parquet.cpp` — wires Phases A+B together, writes
-chunked columnar Parquet via Arrow (matching `tools/context_to_parquet.cpp`'s established SoA
+chunked columnar Parquet via Arrow (matching `tools/context_pipeline/context_to_parquet.cpp`'s established SoA
 pattern), and persists per-contract parts for incremental resume. **Phase D** (Tasks 7-9) is
 the migration: repoint this repo's own `tools/` consumers at the new tick file, extend
 `tools/observation_vector/market_data_io.h` for the new schema, and produce a `lbrnet`-side handoff doc (this
@@ -35,7 +35,7 @@ repo does not edit `lbrnet/` directly, matching the existing cross-repo conventi
 **Tech Stack:** C++17, Apache Arrow/Parquet C++ (via `mamba run -n mts`, `pkg-config --cflags/
 --libs arrow parquet`), `std::filesystem` (mirror sync file ops), POSIX `mmap` (tick decode).
 Native tests via bare `g++` + the existing `check(name, bool)` helper convention (see
-`tools/test_context_reader.cpp`) — no GoogleTest/CMake. Never added to `CMakeLists.txt` or
+`tools/context_pipeline/test_context_reader.cpp`) — no GoogleTest/CMake. Never added to `CMakeLists.txt` or
 `build_dll.sh` (standalone `tools/` binary, matching `context_to_parquet.cpp`'s precedent).
 
 **Spec:** `docs/superpowers/specs/2026-09-02-scid-tick-parquet-cpp-tool-spec.md` (full spec,
@@ -58,7 +58,7 @@ produces the handoff doc, no task edits anything under `lbrnet/`.
   1-2 must trace to a specific line/behavior in `lbrnet/data/mes_continuous.py`, not be
   independently re-derived.
 - **DOD discipline throughout** (spec §4, this codebase's established convention per
-  `tools/context_to_parquet.cpp`, `CLAUDE.md` Performance Rules):
+  `tools/context_pipeline/context_to_parquet.cpp`, `CLAUDE.md` Performance Rules):
   - Decode via direct `mmap` read view over raw `.scid` bytes, reinterpreted in place — never
     copy a whole contract's active window into a `std::vector<s_IntradayRecord>` first.
   - Binary search (`std::lower_bound`) over the mmap'd timestamp stride for window slicing —
