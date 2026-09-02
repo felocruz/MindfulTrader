@@ -4,12 +4,12 @@
 
 ## 0. Problem
 
-`tools/market_test_stats.h`'s `ComputeHitRate` (closed-form Wilson CI on a hit/miss proportion) and
+`tools/observation_vector/market_test_stats.h`'s `ComputeHitRate` (closed-form Wilson CI on a hit/miss proportion) and
 `ComputeBootstrapMedianGapCI` (percentile bootstrap on a median gap) both treat individual per-tick
 forward-return signals as i.i.d. when computing a confidence interval. Real forward returns overlap
 heavily: a 240-minute forward return computed per-tick over a 38.5M-row series shares most of its
 underlying tick data with thousands of adjacent signals. Both functions' independence assumption is
-false for their real callers (`tools/drift_location_eval.cpp`, `tools/jump_ratio_eval.cpp`), which
+false for their real callers (`tools/observation_vector/drift_location_eval.cpp`, `tools/observation_vector/jump_ratio_eval.cpp`), which
 understates every reported CI/p-value's width. Neither existing verdict (drift/location rejected,
 jump/bipower-variation ratio survives) is expected to flip — both are far from a naively-calibrated
 significance boundary — but a future, more marginal candidate validated on this same apparatus could
@@ -90,16 +90,16 @@ Three approaches were considered:
 
 ## 4. Design
 
-### 4.1 Offline calibration tool: `tools/block_length_and_variance_inflation.py`
+### 4.1 Offline calibration tool: `tools/observation_vector/block_length_and_variance_inflation.py`
 
-Mirrors `tools/window_autocorrelation_diagnostic.py`'s style and conventions (same `mts` env, same
+Mirrors `tools/observation_vector/window_autocorrelation_diagnostic.py`'s style and conventions (same `mts` env, same
 `arch` dependency, same "derive once from real data, record the number" pattern as `fractal_dim`'s
 ≈404.82). For each candidate (`drift_location`, `jump_ratio`) × horizon (30/60/120/240 min):
 
 - Reconstructs the real indicator series the C++ tool actually resamples:
   - `drift_location` (`ComputeHitRate`): the hit/miss sequence (`1` if `Sign(forward_return) ==
     Sign(candidate_value)`, else `0`), in original chronological order, over the same signal set the
-    real `tools/drift_location_eval.cpp` run used.
+    real `tools/observation_vector/drift_location_eval.cpp` run used.
   - `jump_ratio` (`ComputeBootstrapMedianGapCI`): for each of the top/bottom decile groups
     separately, the below-median indicator sequence (`1` if `|forward_return| <= group median`, else
     `0`), in original chronological order.

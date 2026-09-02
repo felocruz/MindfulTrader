@@ -4,10 +4,10 @@ intent: how do we validate a new HMM observation-vector candidate dimension offl
 scope: global
 tags: [hmm, observation-vector, bootstrap, arrow, parquet, validation, fat-tail, median, mad, model-independent]
 source_files:
-  - tools/market_data_io.h
-  - tools/market_test_stats.h
-  - tools/drift_location_eval.cpp
-  - tools/jump_ratio_eval.cpp
+  - tools/observation_vector/market_data_io.h
+  - tools/observation_vector/market_test_stats.h
+  - tools/observation_vector/drift_location_eval.cpp
+  - tools/observation_vector/jump_ratio_eval.cpp
 last_verified: 2026-08-30
 dependencies: []
 ---
@@ -70,21 +70,21 @@ Shared infrastructure, extracted on the second real use (`market_data_io.h`/`mar
 pulled out of `drift_location_eval.cpp`/`drift_location_stats.h` when `jump_ratio_eval.cpp` needed
 the same pieces):
 
-- `tools/market_data_io.h` — `TickSeries ReadTicksParquet(path)`: direct Arrow Parquet read (this
+- `tools/observation_vector/market_data_io.h` — `TickSeries ReadTicksParquet(path)`: direct Arrow Parquet read (this
   codebase's first C++ tool to read Parquet — every prior tool only writes). **Must use column
   projection** (`Schema::GetFieldIndex`, never hardcoded indices) — an unprojected `ReadTable()`
   reading all columns of the real 38.5M-row MES tick file took 5+ minutes; projected to the 2 needed
   columns, 7.5s.
-- `tools/market_test_stats.h` — `ComputeForwardReturns(signal_ts, signal_price, timestamps, prices,
+- `tools/observation_vector/market_test_stats.h` — `ComputeForwardReturns(signal_ts, signal_price, timestamps, prices,
   horizon_minutes)`: the forward-return computation shared by every test. **Must be a single-pass
   two-pointer merge, not per-signal `std::lower_bound`** — both series are monotonically sorted
   (verify with a real `pl.Series.is_sorted()` check, don't assume), so binary search per signal
   cache-thrashes a large sorted array; a version doing this was measured hanging 100+ seconds across
   4 horizons on the real file. Also holds `ComputeWilsonCI`, `ComputeHitRate`,
   `ComputeBootstrapMeanGapCI`, `ComputeBootstrapMedianGapCI`.
-- Candidate-specific math (e.g. `tools/jump_ratio_stats.h`'s `ComputeJumpRatio`) stays in its own
+- Candidate-specific math (e.g. `tools/observation_vector/jump_ratio_stats.h`'s `ComputeJumpRatio`) stays in its own
   header — only the generic test/IO infrastructure is shared.
-- The CLI tool (`tools/drift_location_eval.cpp`, `tools/jump_ratio_eval.cpp`) wires candidate math +
+- The CLI tool (`tools/observation_vector/drift_location_eval.cpp`, `tools/observation_vector/jump_ratio_eval.cpp`) wires candidate math +
   shared IO + shared test, reports per-horizon results, optionally writes a JSON report.
 
 **Bootstrap performance at real scale (~3.5-3.9M elements per decile group)**: the exact multinomial
@@ -103,7 +103,7 @@ the library implementation itself measured ~73ns/draw, nearly as slow as the mem
 meant to replace.
 
 ```cpp
-// Typical call site (see tools/jump_ratio_eval.cpp for the full pattern)
+// Typical call site (see tools/observation_vector/jump_ratio_eval.cpp for the full pattern)
 auto fwd = ComputeForwardReturns(signal_ts, signal_price, series.timestamp_us, series.close, horizon_minutes);
 auto result = ComputeBootstrapMedianGapCI(top_decile_fwd, bottom_decile_fwd, /*n_boot=*/1000);
 bool survives = (result.ci_lo > 0.0) || (result.ci_hi < 0.0);
