@@ -241,7 +241,7 @@ don't create parallel paths" convention). Reuse its already-verified logic:
 ## 6. CLI surface
 
 ```
-tools/scid_processing/scid_to_ticks_parquet \
+tools/bin/scid_to_ticks_parquet \
   --data-dir lbrnet/data/scid \
   --data-dir-live /mnt/c/SierraChart2/Data \
   --output lbrnet/data/raw/mes_ticks.parquet \

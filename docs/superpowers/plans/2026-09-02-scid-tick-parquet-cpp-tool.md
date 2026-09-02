@@ -354,7 +354,7 @@ slice.
   arg-parsing style) and the orchestration steps above.
 - [ ] Step 2: Build: `mamba run -n mts g++ -O2 -std=c++17 -Iinclude
   $(mamba run -n mts pkg-config --cflags arrow parquet) tools/scid_processing/scid_to_ticks_parquet.cpp
-  $(mamba run -n mts pkg-config --libs arrow parquet) -o tools/scid_processing/scid_to_ticks_parquet`.
+  $(mamba run -n mts pkg-config --libs arrow parquet) -o tools/bin/scid_to_ticks_parquet`.
 - [ ] Step 3: Smoke-run against the real local mirror (`lbrnet/data/scid/`) with
   `--full-rebuild` on a **time-bounded** slice first if the full run is too slow for
   iteration (e.g. add a temporary `--max-contracts N` debug flag, or just let one contract

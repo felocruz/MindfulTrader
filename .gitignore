@@ -36,6 +36,11 @@ __pycache__/
 # per-agent checkouts sharing this repo's object store; not part of the tree.
 .claude/worktrees/
 
+# Standalone tools/ binaries (bare g++ builds, not part of build-windows/) —
+# mirrors build-windows/bin/'s convention: build output lives in one bin/,
+# never mixed into source folders.
+/tools/bin/
+
 # --------------------------------
 # 2. VS Code Files
 # --------------------------------
