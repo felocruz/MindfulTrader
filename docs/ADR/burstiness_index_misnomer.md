@@ -13,6 +13,22 @@ The HMM's `burstiness_index` (obs index 1) is a **different signal entirely**: s
 
 **Not yet pinned down**: the exact function that computes the HMM's raw `burstiness_index` value before scaling (the "half-window variance ratio" itself) was not located in this pass — only its scaling-stage source comments were verified. Anyone acting on this ADR to actually rename or re-document the metric should trace that computation site first, rather than assuming a specific function name.
 
+**CORRECTION, 2026-09-03 — the empirical claim above is stale and must not be cited as current-state
+evidence.** Two things changed after this ADR's "ECME-fixed K=4 retrain" analysis was run: (1) the
+HMM's `burstiness_index` (obs dim 1) was redirected 2026-08-29 to read `raschkeBurst` (the real CV-of-
+inter-arrival-times statistic this ADR itself identifies as the *other*, correctly-named metric) — so
+post-redirect, the dim this ADR calls a "half-window variance ratio" is no longer computed that way at
+all; (2) `raschkeBurst`'s own formula was subsequently found broken at real production tick density
+(73.77% of readings clipped at the winsorization bound, real 471.9M-tick MES validation, 2026-09-02)
+and was completely reformulated to a robust Index of Dispersion for Counts (Daley & Vere-Jones 2003).
+The retrain this ADR's "showed real, coherent state-differentiating signal" claim relies on therefore
+scored a formula that (a) predates the redirect and (b) was independently confirmed broken shortly
+after — it is not evidence about the dimension's discriminative power under either its current
+definition or its current (fixed) values. Per the broader model-contamination caveat now tracked in
+`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §5: any HMM-state-
+dependent conclusion measured against a retrain that predates all of Phase 0's fixes is provisional,
+not settled — this ADR's finding is a documented instance of that trap, not an exception to it.
+
 ## Why this matters
 
 Two real metrics, both plausibly called "burstiness," feed two different consumers (HMM training vs. live risk gates) under names that invite confusion between them — exactly the class of problem `vpin_toxicity`/`amihud_illiquidity` already is (a stale name describing what the field used to compute, or what it sounds like it should compute, rather than what it actually computes).

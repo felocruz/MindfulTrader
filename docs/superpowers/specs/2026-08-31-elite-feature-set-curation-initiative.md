@@ -326,6 +326,43 @@ trained against. Recorded there rather than duplicated in full here; this is the
   measurement attempted; deferred alongside `amihud_illiquidity`/`liq_fragility` until both (a) a
   retrain on the corrected/elite vector exists, AND (b) `.context` exports are regenerated from it.
 
+## 5a. Model contamination manifest — READ BEFORE citing any HMM-state-dependent conclusion
+
+**Standing rule (operator directive, 2026-09-03): any finding — in this doc, any other doc, or a
+casual claim — that relies on `models/hmm_model.pkl`'s state assignments, or on any retrain that
+predates the fixes below, is provisional evidence about a contaminated model, not a settled
+conclusion about the current system. This applies retroactively — a documented instance of this trap
+being missed was found and corrected in `docs/ADR/burstiness_index_misnomer.md` (its "ECME-fixed K=4
+retrain" empirical claim relied on a `burstiness_index` formula since found broken and reformulated
+twice over). Check every doc citing HMM cross-state ratios, spread analyses, or per-state statistics
+against the list below before trusting it; if it predates a listed fix, flag it the same way, don't
+silently treat it as current-state fact.**
+
+Production model per `docs/superpowers/specs/2026-08-26-activity-clock-lbrnet-handoff.md`: `K=4,
+feature_dim=16`, trained 2026-08-25. Every fix below post-dates that training run and is therefore
+**invisible to it** (either the model learned state boundaries from the pre-fix value, or the
+dimension didn't exist in the trained vector at all):
+
+| Dim | Contamination type | What the trained model actually saw | Fixed |
+|---|---|---|---|
+| `burstiness_index` | Invalid (formula wrong, twice) | Plain-CV bug (pre-2026-08-31), then a still-broken robust-CV variant (73.77% clip rate at real tick density, found 2026-09-02) | `1.58113883`-constant Index of Dispersion for Counts, 2026-09-02 |
+| `log_scale_ratio` / `log_scale_expansion_ratio` | Invalid (formula wrong) | Raw-variance-ratio bug | Bipower variation (Barndorff-Nielsen & Shephard), 2026-08-31 |
+| `mean_rev_z` | Invalid (formula wrong) | Mean/std z-score (non-robust) | Median/MAD (Kim & White 2004), committed `d2ab57c` 2026-09-02 |
+| `amihud_illiquidity` | Invalid (formula wrong) | Linear ratio (`|log-ret|/dollarVolume`) | Sqrt-law + geometric-mean (Kyle & Obizhaeva 2016; Hasbrouck 2009), committed `a6d0630` 2026-09-03 |
+| `liq_fragility` | Invalid (formula wrong) | ATR/volume-SMA composite | Dedicated median-based elasticity ratio, committed `a76ec00` 2026-09-03 |
+| `vol_convexity` | Structural (dim removed) | Present as the model's 19th dim | Removed from schema entirely (19D→18D), 2026-08-31 |
+| `fast_taleb_kurtosis` | Missing (never selected) | Not in training vector at all — first kurtosis dim ever added, never in `HMM_KEEP_DIMS` | Still not selected/retrained on, as of 2026-09-03 |
+| `fast_hurst_exponent` | Missing (never selected) | Not in training vector at all | Still not selected/retrained on, as of 2026-09-03 |
+| `fast_mean_rev_z` | Missing (never wired) | Schema field exists but is never computed — sits at its default | Still unwired, as of 2026-09-03 |
+| `skewness_idx` | Source changed (value discontinuity) | TS3 time-bar cadence (stale, once-per-15-min) | Replaced with activity-clock (tick-native) source, `7c51f33`, 2026-08-27 |
+
+**Conclusion, stated plainly**: at least 5 of 18 currently-shipped dims have a formula the deployed
+model never saw, 1 dim the model was trained with no longer exists, 3 dims that would materially
+matter for a fat-tail state (kurtosis, persistence, mean-reversion, all in activity-clock form) are
+entirely absent from training, and 1 more had a source-level discontinuity. `PRODUCTION_TRIAGE.md`
+row 1's own K=4/fat-tail-state sign-off question cannot be answered by this model — it needs a clean
+retrain on the corrected/elite vector first, full stop.
+
 ## 6. Immediate next action
 
 Phase 0 (Gaussian-moment audit) is closed out bar 3 ambiguous decisions (`hurst_exponent`/
