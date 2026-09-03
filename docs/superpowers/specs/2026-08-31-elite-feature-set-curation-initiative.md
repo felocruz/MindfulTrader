@@ -317,6 +317,15 @@ trained against. Recorded there rather than duplicated in full here; this is the
   after a retrain exists on the corrected/elite vector**, at which point the original discrimination-
   ratio methodology (§1's Fons et al. 2020 anchor) can be re-run directly and non-circularly.
 
+- **Same trap, caught before acting on it this time, 2026-09-02**: scoping `fast_hurst_exponent`
+  (row 10, IN-UNMEASURED)'s cross-state discrimination ratio hit the identical circularity — both
+  the *existing* `models/hmm_model.pkl` (trained before this session's Phase 0 fixes existed) and the
+  *existing* exported `.context` training-cache files (not yet regenerated with the fixed/removed/new
+  dims either) are equally untrustworthy yardsticks right now. Neither is a new circularity mode —
+  it's the same one above, just almost applied to a different dim without re-checking first. No
+  measurement attempted; deferred alongside `amihud_illiquidity`/`liq_fragility` until both (a) a
+  retrain on the corrected/elite vector exists, AND (b) `.context` exports are regenerated from it.
+
 ## 6. Immediate next action
 
 Phase 0 (Gaussian-moment audit) is closed out bar 3 ambiguous decisions (`hurst_exponent`/
@@ -379,7 +388,7 @@ actual schema field) · **CANDIDATE-DEFERRED** (proposed, explicitly pushed to a
 | 4 | `log_scale_expansion_ratio` | IN-WEAK | TS2, live-vs-bar-gated unchecked | Reformulated to bipower variation 2026-08-31, correlates with `log_scale_ratio` at 0.8085 post-fix — redundancy call owned by this doc's Phase 1, not yet run | 2026-08-31 |
 | 5 | `vol_convexity` | **REMOVED FROM SCHEMA** | N/A | Executed 2026-08-31 (19D→18D) — full cleanup across all call sites, `FeatureScaler.h`'s five positional arrays, and `test_feature_scaler.cpp`; not reformulated, independently weak on two separate measures, correctly not worth further investment (§4 Phase 0) | 2026-08-31 |
 | 6 | `lempel_ziv` | IN, not for fat-tail use | Event-native | Complexity axis rep, unchanged, already confirmed robust construct (Phase 0 audit) | 2026-08-23 |
-| 7 | `hurst_exponent` | IN-WEAK | Live (TS1), diluted weight | **Phase 0 flagged AMBIGUOUS 2026-08-31, still open**: DFA's RMS/q=2 fluctuation function assumes finite second moment; a q=1 MFDFA variant would be more fat-tail-consistent, but standard DFA isn't wrong — a real tradeoff to weigh, not a mechanical fix. Needs a decision | 2026-08-31 |
+| 7 | `hurst_exponent` | **IN, DECIDED** | Live (TS1), diluted weight | **RESOLVED 2026-09-02**: the ambiguous DFA q=2 vs MFDFA q=1 question was tested empirically, not assumed — `tools/observation_vector/dfa_vs_mfdfa_q1_montecarlo.py` extends the existing Kristoufek (2010) Monte Carlo methodology (exact Davies-Harte fGn simulation, production's exact N=100/minScale=8 window) with a paired q=1-vs-q=2 comparison, both on clean fGn and on fGn contaminated with realistic Student-t(3) fat-tail spikes. **Result contradicts the literature's general claim**: under contamination, q=2's bias flips sign across true-H (+0.19 at H=0.3 to -0.14 at H=0.7) while q=1's bias is uniformly positive and *worse* in magnitude at low H (+0.34 vs q2's +0.19 at H=0.3) — verified robust across 3 contamination severities and 2 seeds. **Decision: keep q=2 (standard DFA), do not adopt MFDFA q=1** — it doesn't survive direct empirical testing on this codebase's own exact algorithm. The real, separately-documented problem is window size (N=100 gives std≈0.13-0.19 regardless of q, "under-powered" per Weron/Kristoufek) — that's the actual lever, see row 10 | 2026-09-02 |
 | 8 | `micro_asymmetry` | OUT-HMM | TS3, unchecked | Weakest overall (0.0001), already dropped from HMM selection, unchanged | 2026-08-25 |
 | 9 | `fisher_info` | IN-WEAK | Live (TS1) | Second-worst (0.0011), already confirmed robust construct (Phase 0 audit), unchanged | 2026-08-29 |
 | 10 | `fast_hurst_exponent` | IN-UNMEASURED | Activity-clock | Shipped but cross-state ratio never measured, alone or crossed with `relative_range`; unchanged | 2026-08-29 |
