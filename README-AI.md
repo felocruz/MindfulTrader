@@ -10,7 +10,8 @@
   (activity-clock observation-vector work): `fast_taleb_kurtosis`/`skewness_idx` shipped, committed
   `ff22e48`/`ea8058b`/`7c51f33`; `fractal_dim`'s window widened to 400 bars, shipped `72ab967`;
   `mean_rev_z`/`hurst_exponent`/`recurrence_rate` literature-grounded for activity-clock treatment
-  but not yet implemented; see `CLAUDE.md`'s own North Star section for the full pointer.
+  but not yet implemented; see `CLAUDE.md`'s own North Star section (incl. its "Vision" pointer,
+  added 2026-09-03) for the full account.
 - **`burstiness_index` (Elite Feature Set Curation initiative, separate from Row 1 above) fixed
   2026-09-02** — real per-tick data revealed the prior formula still broken at production tick
   density; reformulated to a robust Index of Dispersion for Counts, real-data-validated; see

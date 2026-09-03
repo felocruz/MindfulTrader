@@ -6,9 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
 this system is production-ready — `lbrnet`, `MindfulTrader`, `MTS`, and `schema` are all bound to
-it, not just this repo. Read it before `SCRATCHPAD.md`. Check readiness programmatically, don't
-eyeball the table: `bash /home/rcruz/devel/VSCode/.claude/scripts/check_north_star.sh` (exit 0 =
-ready, 1 = not, prints exactly which rows block it).
+it, not just this repo. **Read its new "Vision" section first** (added 2026-09-03): the final-goal
+vision (chart-based Triple Screen/Raschke signal generation wrapped in a truly institutional-grade,
+literature-grounded, real-data-validated Gang statistical layer) stated plainly alongside an honest
+current-state assessment (the HMM is currently trained on a contaminated vector and has never
+passed its own fat-tail sign-off; execution-layer gates haven't been checked for HMM-regime
+awareness at all) — read this before proposing any change or describing the system's maturity.
+Then read `SCRATCHPAD.md`.
 
 `MindfulTrader` currently owns or co-owns rows 3, 5, 6, 7, 10, 11, 12, 13, 14 of that document's
 critical path (12 and 13 added 2026-08-25; 14 added 2026-08-26, TOP PRIORITY per its own top-of-doc
