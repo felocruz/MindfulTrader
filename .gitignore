@@ -41,6 +41,13 @@ __pycache__/
 # never mixed into source folders.
 /tools/bin/
 
+# Standalone tools/ run logs (progress logging for long-running recalibration/
+# analysis executables, one file per tool name) — regenerable, never committed.
+/tools/log/
+# Standalone tools/ permanent output archive (ToolProgressLogger auto-writes one
+# timestamped file per run here on exit) -- never truncated/overwritten across
+# runs, but still gitignored: these are local run artifacts, not source.
+/tools/output/
 # --------------------------------
 # 2. VS Code Files
 # --------------------------------

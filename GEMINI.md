@@ -133,6 +133,13 @@ plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
   the matching subfolder, not flat in `tools/`.
 - **Compiled binaries go in `tools/bin/`** (gitignored) — mirrors `build-windows/bin/`'s
   convention; never mixed into the source subfolders above.
+- **TOP-LEVEL DIRECTIVE (2026-09-03): always keep tool output.** Every `tools/` executable that
+  can run more than a few seconds must construct a `ToolProgressLogger` and route ALL
+  results/reports through its `Log()` (never a bare `std::printf`/`std::puts`) — it automatically
+  archives the full transcript to `tools/output/<toolName>_<timestamp>.txt` on exit (gitignored,
+  never truncated/overwritten across runs, unlike `tools/log/`'s live-progress file). This exists
+  because a real ~1h43m real-tick-data validation run's only report was printed to a terminal whose
+  scrollback was lost before being read, forcing a full re-run.
 - Native tests use a `check(name, bool)` + `g_failures` + final `ALL PASS`/`N FAILURE(S)`
   harness convention (see `tools/context_pipeline/test_context_reader.cpp`) — no GoogleTest/CMake.
 

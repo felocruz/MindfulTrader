@@ -90,6 +90,10 @@ Organized into subfolders by function (reorg 2026-09-02): `tools/observation_vec
 observation-vector dim calibration/eval), `tools/context_pipeline/` (`.context` file I/O),
 `tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Compiled binaries go
 in `tools/bin/` (gitignored, mirrors `build-windows/bin/`'s convention) — never next to source.
+**TOP-LEVEL DIRECTIVE (2026-09-03): always keep tool output.** Every long-running `tools/`
+executable must route ALL results through `ToolProgressLogger::Log()` (never a bare
+`std::printf`/`std::puts`) — it auto-archives the full transcript to
+`tools/output/<toolName>_<timestamp>.txt` on exit, permanent and never overwritten across runs.
 
 ## Backtesting Pipeline
 
