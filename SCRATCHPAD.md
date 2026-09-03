@@ -1,42 +1,34 @@
 # Session Scratchpad — Where We Left Off
 
-**PICK UP HERE, 2026-09-01 — `burstiness_index` (dim1) FeatureScaler recalibration: tool built,
-tested, one real blocker found, no calibration numbers changed yet.**
+**PICK UP HERE, 2026-09-02 — `burstiness_index` (dim1) is FIXED, real-data-validated, and committed.
+Next: pick the next dim from the Elite Feature Set Curation ledger's open rows.**
 
-- **Built and build-verified**: `tools/burstiness_recalibration.cpp` (new) — real-data replica of
-  `FeatureScaler.h` dim1's SOFTLOGZ scaling, feeding `EventVelocityEngine.h::CalculateBurstinessIndex()`
-  (the 2026-08-31 robust-CV reformulation) through the actual `FeatureScaler`. Build recipe and CLI
-  are in the file's own header comment (Arrow/Parquet + `-Iinclude`, mirrors `jump_ratio_eval.cpp`'s
-  pattern). Ran clean against real data: n=38,547,467, mean|z|=1.86, max|z|=13.49,
-  rate-at-current-bound(6.0)=0.0663%, shrinkage audit corr(localMAD,\|z\|)=-0.3638 (a real collapse
-  signature, comparable in strength to what got `liq_fragility`'s shrinkage enabled).
-- **Real blocker found, not yet resolved**: `lbrnet/data/raw/mes_continuous_ticks.parquet` (the only
-  real historical MES data in this workspace) is **1-second-bar-aggregated, not real per-tick
-  data** — verified directly (every consecutive timestamp delta is an exact multiple of 1,000,000us).
-  Production's real `raschkeBurst` runs on genuine per-tick arrival timestamps
-  (`ContextManager::m_eventTimestampsUS`, pushed on every incoming trade). So this tool's result is a
-  **real but coarser proxy** (burstiness of per-active-second bar-formation events), not a faithful
-  replica of what production actually measures — the p99==p99.9 plateau in the result above is
-  probably an artifact of this coarser cadence, not a genuine tail shape. **Decision made: do NOT
-  update `FeatureScaler.h`'s dim1 bound or `SHRINKAGE_SCALE_MIN[1]` off this run** — logged as
-  directional-only evidence, not a final calibration.
-- **Real ground-truthed sizing for a genuine per-tick file, done via the existing bar file's own
-  `trades` column (not a guess)**: 467,424,466 real trades total across the file's real
-  1,170-day (~3.2 year) span, avg 12.1 trades/active-second-bar (p50=5, p99=104, max=2,791/sec).
-  A true per-tick parquet would be ~467M rows (~12.1x the current 38.5M) — estimated **~3-8GB**
-  (fewer columns than the 12-col bar file, but less compressible per row); fully workable with this
-  codebase's existing Arrow/Parquet tooling (column projection, sequential/streaming reads) —
-  no architecture change needed, just needs the actual tick-level data sourced (e.g. Sierra Chart
-  `.scid` historical download or whatever pipeline built the current bar file) — **not yet done**.
-- **Next action, in priority order**: (1) decide whether to pursue sourcing real per-tick data before
-  trusting any burstiness_index bound change, or accept the coarse-proxy result as an interim
-  placeholder with the caveat documented; (2) if pursuing real tick data, that's new data-sourcing
-  work, not a C++/tool change; (3) regardless, `docs/superpowers/specs/2026-08-31-elite-feature-set-
-  curation-initiative.md` §7 row 2 (`burstiness_index`) has been updated to reflect this tool +
-  finding — read it before repeating this investigation.
-- Everything from the Phase 0 batch below (this section's older entries) is **still uncommitted**.
+- Real per-tick data now exists: `tools/scid_processing/scid_to_ticks_parquet.cpp` (committed) shipped
+  `lbrnet/data/raw/mes_ticks.parquet` (471,930,891 real MES ticks, all 13 rolled contracts, no
+  aggregation) — the "coarse 1-second-bar proxy" blocker below is fully resolved.
+- Recalibrating `burstiness_index` against the real tick file found the bar-file-era formula
+  (robust CV, `MAD/median × 1.4404199`, Goh-Barabási-bounded) still clipping ~74% of real readings —
+  genuinely broken, not a rare tail. Root cause (with Gemini, `lbrnet/logs/rc_gemini.log`
+  `CLAUDE_BRIEF_121`/`122`): any statistic built from inter-arrival TIMES is structurally tied at real
+  tick density (73.9% of real 100-tick windows have median IAT collapsed to the timestamp field's own
+  1us floor) — a bounding transform afterward can't repair that, confirmed by a FAILED real-data
+  re-validation of that exact attempt (clip rate unchanged at 73.78%, mean|z| roughly doubled).
+- **Real fix, committed**: reformulated to a robust Index of Dispersion for Counts (Daley & Vere-Jones
+  2003) over K=10 self-scaling time sub-bins (`include/EventVelocityEngine.h`), consistency constant
+  `1.58113883`=√10/2 (Poisson(10)'s exact sigma/MAD, verified analytically + 500K-trial Monte Carlo,
+  not the standard-Normal 1.4826 used before). Full real-data re-validation, all 471.9M ticks:
+  mean|z|=1.1356, max|z|=49.28, rate-at-bound(6.0)=1.9605% — sane, normal clip rate.
+  `STATE_WINSOR_SIGMA=6.0` needs no further recalibration. Native tests pass, `./build_dll.sh` clean.
+- Docs synced: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7 row 2,
+  `PRODUCTION_TRIAGE.md` row 1's addendum, `CLAUDE.md`'s condensed pointer.
+- **Next action**: pick the next ambiguous/open row from the Elite Feature Set Curation ledger (§7 of
+  that spec) — candidates flagged there as still needing a literature decision: `hurst_exponent`/
+  `fast_hurst_exponent`, `amihud_illiquidity`, `relative_range`/`liq_fragility`, and
+  `fast_mean_rev_z`'s wire-or-drop call.
 
 ---
+
+
 
 **Elite Feature Set Curation initiative, spec:
 `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` — supersedes pairwise

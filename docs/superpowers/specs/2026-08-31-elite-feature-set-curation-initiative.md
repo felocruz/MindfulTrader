@@ -331,9 +331,27 @@ or build a model-independent lead-time tool) before any further work on that spe
 `tools/scid_processing/scid_to_ticks_parquet.cpp` shipped and `lbrnet/data/raw/mes_ticks.parquet`
 (471.9M real rows) now exists. Re-running `burstiness_recalibration.cpp` against it found the
 production `STATE_WINSOR_SIGMA=6.0` default clipping ~74% of real readings (rate-at-bound(6.0)=
-73.7749%) — a genuinely broken bound, not a minor miscalibration. Deriving the correct bound (this
-codebase's own GPD/return-level methodology, per `amihud_illiquidity`/`liq_fragility`'s precedent) is
-the immediate next action.
+73.7749%) — a genuinely broken bound, not a minor miscalibration.
+
+**RESOLVED 2026-09-02 (same day, later)**: my first attempted fix (bounding the existing IAT-median/
+MAD ratio via the Goh & Barabási (2008) transform) **FAILED real-data validation** — re-run against
+the same 471.9M rows, rate-at-bound(6.0) was **unchanged at 73.7787%** and mean\|z\| roughly
+*doubled* (27,828→67,899). Root cause (confirmed via Gemini literature review,
+`lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_121`/`122`): any statistic built from inter-arrival TIMES
+is structurally tied at real tick density (73.9% of real 100-tick windows have median IAT collapsed
+to the timestamp field's own 1us resolution floor) — a bounding transform applied afterward just
+relabels the same point-mass to a different constant, it cannot repair the underlying degeneracy.
+**Real fix**: abandoned inter-arrival times entirely, reformulated to a robust Index of Dispersion
+for Counts (Daley & Vere-Jones 2003) over K=10 fixed-width TIME sub-bins (bin width = window span/10,
+self-scaling to local tick rate, not a fixed absolute width) — a tick count is always a well-defined
+integer regardless of same-microsecond ties, so the degeneracy cannot occur structurally. Consistency
+constant `1.58113883` (=√10/2, Poisson(N/K=10)'s true sigma/MAD ratio, not the standard-Normal
+`1.4826`) verified both analytically and via 500K-trial Monte Carlo matching this repo's own
+nth_element median convention. **Full real-data re-validation (all 471,930,891 rows,
+`include/EventVelocityEngine.h`'s final formula): mean\|z\|=1.1356, max\|z\|=49.28, p50=0.682,
+p90=2.541, p99=7.959, p99.9=15.870, rate-at-bound(6.0)=1.9605%** — a normal, sane winsorization rate.
+The existing `STATE_WINSOR_SIGMA=6.0` default needs no further recalibration; the indicator's own
+construction was the defect, not the bound.
 
 ## 7. Per-dim decision ledger (carried over from the 2026-08-29 brainstorm doc, canonical here going forward)
 
@@ -356,7 +374,7 @@ actual schema field) · **CANDIDATE-DEFERRED** (proposed, explicitly pushed to a
 | # | Dim | Status | Clock | Why (one line, updated 2026-08-31) | Last verified |
 |---|---|---|---|---|---|
 | 1 | `log_scale_ratio` | IN-WEAK | Live (TS1) | Reformulated to bipower variation 2026-08-31 (Barndorff-Nielsen & Shephard) — see brainstorm doc §9 row 1 for full derivation; unchanged since | 2026-08-31 |
-| 2 | `burstiness_index` | IN-PENDING-FIX | Event-driven (`raschkeBurst`) | Two fixes stacked: (a) redirect to `raschkeBurst` landed 2026-08-29; (b) **Phase 0 fix, 2026-08-31**: reformulated to robust CV `MAD/median × 1.4404199` (newly-derived Poisson-neutrality constant, not the standard 1.4826), build-verified (`test_event_velocity_engine.cpp` passing). **Real-tick-data gap CLOSED 2026-09-02**: `tools/scid_processing/scid_to_ticks_parquet.cpp` shipped, decoding genuine per-tick `.scid` data (no aggregation) into `lbrnet/data/raw/mes_ticks.parquet` (471.9M real rows) -- the "not yet sourced" blocker below no longer applies. `tools/observation_vector/burstiness_recalibration.cpp` rewritten to a bounded single-pass streaming architecture (`StreamTicksParquet`, ~250MB RSS regardless of row count -- the prior full-materialization design would have peaked near this machine's physical RAM at this row count) and re-run against the real file: **rate-at-current-bound(6.0)=73.7749%** (n=471,930,891, mean\|z\|=27828.54, max\|z\|=2,037,487.00, p50=1460.62, p90=111531.42, p99=339241.09, p99.9=339241.41, corr(localMAD,\|z\|)=-0.0780). This is a dramatically different, far more severe finding than the earlier bar-file-based estimate (rate-at-bound(6.0)=0.0663%) -- confirms that estimate was never trustworthy at production scale, exactly as this row's prior entry already flagged. **The production `STATE_WINSOR_SIGMA=6.0` default is clipping ~74% of real readings, not a rare tail** -- a genuinely broken bound, not a minor miscalibration. Correct-bound derivation (matching this codebase's own GPD/return-level methodology already used for `amihud_illiquidity`/`liq_fragility`) is now the immediate next action, in progress | 2026-09-02 |
+| 2 | `burstiness_index` | **IN, FIXED** | Event-driven (`raschkeBurst`) | Full history: (a) redirect to `raschkeBurst` landed 2026-08-29; (b) Phase 0 reformulated to robust CV `MAD/median × 1.4404199`; (c) real-tick-data validation (2026-09-02) found this STILL broken at production tick density (rate-at-bound(6.0)=73.77%); (d) first attempted fix (Goh-Barabási (2008) bounded transform on the same IAT-ratio) **FAILED real-data re-validation** (rate unchanged at 73.78%, mean\|z\| roughly doubled) — diagnosed with Gemini (`rc_gemini.log` `CLAUDE_BRIEF_121`/`122`) as a point-mass-degeneracy problem no post-hoc bounding transform can fix; (e) **REAL FIX, 2026-09-02**: reformulated entirely to a robust Index of Dispersion for Counts (Daley & Vere-Jones 2003) over K=10 self-scaling time sub-bins, consistency constant `1.58113883`=√10/2 (Poisson(10)'s exact sigma/MAD, verified analytically + 500K-trial Monte Carlo), same Goh-Barabási bounding device retained on the new ratio. **Full real-data re-validation, all 471.9M rows: mean\|z\|=1.1356, max\|z\|=49.28, rate-at-bound(6.0)=1.9605%** — normal, sane clip rate, existing `STATE_WINSOR_SIGMA=6.0` needs no recalibration. `test_event_velocity_engine.cpp` passing, `./build_dll.sh` clean | 2026-09-02 |
 | 3 | `relative_range` | IN | Live (TS2) | #1 discriminator (0.6373), volatility-level axis, unchanged | 2026-08-29 |
 | 4 | `log_scale_expansion_ratio` | IN-WEAK | TS2, live-vs-bar-gated unchecked | Reformulated to bipower variation 2026-08-31, correlates with `log_scale_ratio` at 0.8085 post-fix — redundancy call owned by this doc's Phase 1, not yet run | 2026-08-31 |
 | 5 | `vol_convexity` | **REMOVED FROM SCHEMA** | N/A | Executed 2026-08-31 (19D→18D) — full cleanup across all call sites, `FeatureScaler.h`'s five positional arrays, and `test_feature_scaler.cpp`; not reformulated, independently weak on two separate measures, correctly not worth further investment (§4 Phase 0) | 2026-08-31 |

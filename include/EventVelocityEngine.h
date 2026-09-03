@@ -79,111 +79,145 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
     return static_cast<float>(1'000'000.0 / state.emaIntervalUs);
 }
 
-/// Burstiness Index: robust coefficient of variation (MAD/median, not
-/// StdDev/Mean) of inter-arrival times (IATs) over a rolling window of event
-/// timestamps (Raschke flow dynamics). Was a plain CV (StdDev/Mean) --
-/// replaced 2026-08-31, same Gaussian-moment-construct fix already applied to
-/// log_scale_ratio/log_scale_expansion_ratio (Kim & White 2004: moment
-/// statistics are least reliable exactly under the fat-tailed conditions they
-/// exist to detect -- this repo's own established FeatureScaler.h
-/// RobustLocation() convention, applied here to the raw dim's own
-/// construction instead of only the downstream scaling layer).
+/// Burstiness Index: robust Index of Dispersion for Counts (IDC) over K=10
+/// fixed-width TIME sub-windows spanning the rolling event-timestamp window
+/// (Raschke flow dynamics).
 ///
-/// Consistency constant is NOT the standard 1.4826 (that's calibrated for
-/// MAD-to-sigma consistency under a NORMAL distribution, the wrong reference
-/// here) -- it's derived from the Exponential distribution specifically,
-/// since inter-arrival times under a Poisson process are Exponential-
-/// distributed, and this function's own semantic requires ==1.0 average out
-/// under a true Poisson process (matching what it replaces): for X~Exp(rate),
-/// median(X)=ln(2)/rate, and MAD(X) (median absolute deviation from that
-/// median) solves sinh(d)=1/2, i.e. MAD=arcsinh(1/2)/rate. The ratio
-/// median/MAD = ln(2)/arcsinh(1/2) ~= 1.440420 is scale-invariant (the rate
-/// cancels), so multiplying MAD/median by this constant reproduces exactly
-/// 1.0 for a genuine Poisson arrival process.
+/// REDESIGNED 2026-09-02 (2nd revision -- see git history for the intermediate
+/// IAT-median/MAD + Goh-Barabási-only attempt, which FAILED real-data
+/// validation, see below). Both revisions were reviewed with Gemini
+/// (lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_121/122): the diagnosed root cause
+/// was that ANY statistic built from inter-arrival TIMES (gaps between
+/// consecutive tick timestamps) is structurally tied/degenerate at real tick
+/// density -- 73.9% of real 100-tick windows have a median inter-arrival time
+/// that collapses to the timestamp field's own minimum resolution (1us), and
+/// a bounding transform applied afterward (Goh-Barabási) cannot repair that:
+/// it just relabels the same point-mass to a different constant, still
+/// collapsing FeatureScaler's own online local-MAD z-scoring the same way
+/// (verified: post-transform real-data recalibration was *worse*, not
+/// better -- mean|z| roughly doubled).
 ///
-/// BOUNDED via Goh & Barabási (2008)'s burstiness parameter transform,
-/// B=(x-1)/(x+1) applied to the robust ratio above (not their original
-/// mean/std CV, which would regress the fat-tail-robust fix just described --
-/// this is the same bounding *device*, applied to this codebase's own
-/// already-robust estimator). REQUIRED, not optional polish: verified
-/// directly against real per-tick MES data (2026-09-02,
-/// tools/observation_vector/burstiness_recalibration.cpp against
-/// lbrnet/data/raw/mes_ticks.parquet, 471.9M rows) that the UNBOUNDED ratio
-/// diverges catastrophically at real tick density -- the median inter-arrival
-/// time in a 100-tick window collapses to the timestamp field's own minimum
-/// representable resolution (1us) in 73.9% of real windows, and the plain
-/// ratio's division-by-near-zero there produced |z| values up to 2.7 million
-/// after FeatureScaler's own downstream shrinkage compounded it. Goh-Barabási's
-/// transform is exactly the literature-standard fix for this failure mode:
-/// it was originally designed to bound the same mean/std CV against the same
-/// kind of blowup when inter-event times cluster near zero.
+/// THIS revision abandons inter-arrival TIMES entirely and instead measures
+/// dispersion of tick COUNTS across K=10 fixed-width time sub-bins spanning
+/// the window (Daley & Vere-Jones 2003's Index of Dispersion for Counts, the
+/// standard point-process-literature burstiness measure for exactly this
+/// class of problem -- a count is always a well-defined non-negative integer
+/// regardless of how many raw ticks share the same microsecond timestamp, so
+/// the same-timestamp-tie degeneracy cannot occur structurally). Bin width is
+/// span/K (NOT a fixed absolute width like "10ms") so it self-scales to
+/// whatever the local tick rate actually is, avoiding a mirror-image
+/// degeneracy at low tick density that a fixed absolute bin width would
+/// introduce (near-empty bins => near-zero mean count => the same kind of
+/// blowup on the opposite end).
 ///
-/// Range is now exactly [-1, +1]: -1 = perfectly regular spacing (MAD=0),
-/// 0 = Poisson-neutral (also the warmup/degenerate-input default -- this
-/// changed from the pre-2026-09-02 unbounded scale's neutral point of 1.0),
-/// +1 = maximally bursty (approached, never reached exactly, as the window's
-/// median inter-arrival time -> 0).
+/// Real-data validation (2026-09-02, same recalibration methodology as the
+/// failed attempt): a fast Python sanity check across 287,234 real windows
+/// (5 row groups spanning the full mes_ticks.parquet date range) found only
+/// 0.18% of real windows land exactly at the -1.0 floor and 0.56% at the +1.0
+/// ceiling (0.74% total at either extreme) -- no dominant point mass, versus
+/// the failed revision's ~74% collapse to one exact value.
+///
+/// FULL real-data recalibration then confirmed this holds at true production
+/// scale (tools/observation_vector/burstiness_recalibration.cpp, all
+/// 471,930,891 real ticks, ~1hr runtime, RSS ~3.2GB):
+///   mean|z|=1.1356  max|z|=49.28  p50=0.682 p90=2.541 p99=7.959 p99.9=15.870
+///   |z|>=6 rate=1.9605% (vs the failed Goh-Barabási-alone attempt's 73.78%,
+///   and the original unbounded formula's 73.77% -- both were genuinely
+///   broken; this is a normal, sane winsorization clip rate, not a defense
+///   mechanism firing on the majority of real data). corr(localMAD,|z|)=
+///   -0.0959, still negative but small in magnitude, no longer the dominant
+///   collapse signature it was before (was -0.0509/-0.0780 alongside
+///   catastrophic |z| magnitudes in the two failed attempts).
+///
+/// Consistency constant 1.58113883f = sqrt(10)/2, NOT the standard normal
+/// constant 1.4826: under the null hypothesis of a homogeneous (non-bursty)
+/// arrival process, each of the K=10 bin counts is Poisson(lambda=N/K=10)-
+/// distributed (Gemini's derivation, lbrnet/logs/rc_gemini.log
+/// CLAUDE_BRIEF_122, independently cross-checked here via exact PMF
+/// computation and 5M-sample simulation: Poisson(10)'s true median=10,
+/// MAD=2.0 exactly, sigma=sqrt(10), so sigma/MAD=sqrt(10)/2=1.58113883, NOT
+/// 1.4826 which is the wrong reference distribution -- that's calibrated for
+/// continuous Normal data, not small-integer Poisson counts). A tempting
+/// alternative -- deriving sigma/MAD from the *exact* Binomial(N=100,p=0.1)
+/// marginal instead of the Poisson(10) approximation, since N is fixed here,
+/// not Poisson-distributed -- gives a cleaner-looking sigma/MAD=1.5 exactly,
+/// but was verified EMPIRICALLY WORSE: direct Monte Carlo simulation of this
+/// exact algorithm (500,000 trials, matching this repo's own
+/// nth_element(mid=K/2) median convention, not the textbook averaged-middle-
+/// two) shows Gemini's Poisson-based 1.58113883 centers the empirical
+/// Poisson-neutral point at median B=0.00000 (essentially exact), while the
+/// theoretically-tempting Binomial-based 1.5 gives median B=-0.05263 (worse)
+/// and the standard 1.4826 gives -0.06426 (worst) -- the cross-bin negative
+/// correlation inherent to a single multinomial draw (bin counts sum to a
+/// fixed N) makes the naive single-variable Binomial derivation less accurate
+/// than the Poisson approximation for THIS specific across-bin median/MAD
+/// statistic. Verified via real execution, not analytic assumption alone.
+///
+/// Degenerate defaults: span==0 (every tick in the exact same instant) or
+/// median count==0 (majority-empty bins) both return +1.0 (maximally bursty
+/// by definition -- extreme clustering, not "insufficient data"). Fewer than
+/// kMinSamples timestamps returns 0.0 (Poisson-neutral default, insufficient
+/// data to assess).
+///
+/// Range is exactly [-1, +1] via the same Goh & Barabási (2008) bounded
+/// transform device as the failed revision (that part of the diagnosis was
+/// correct -- boundedness itself is still desirable, it just wasn't
+/// sufficient on its own): -1 = perfectly regular (uniform counts across
+/// bins, MAD=0), 0 = Poisson-neutral, +1 = maximally bursty.
 ///
 /// Extracted from ContextManager::CalculateBurstinessIndex()
 /// (docs/superpowers/specs/2026-08-07-contextmanager-ring-buffer-dod-design.md
 /// §3.3, Round 2) so it's independently unit-testable -- it has zero ACSIL
 /// dependency and was only ever unreachable by a standalone test because it
 /// lived as a ContextManager member function, behind sierrachart.h. Templated
-/// on Capacity purely so a unit test can exercise every code path (empty,
-/// below-minimum, exact-minimum) at a small capacity without needing
-/// production's full 100-timestamp window.
+/// on Capacity purely so a unit test can exercise every code path at a small
+/// capacity without needing production's full 100-timestamp window.
 template <size_t Capacity>
 float CalculateBurstinessIndex(const RingBuffer<uint64_t, Capacity>& timestamps) {
-    if (timestamps.size() < 4) return 0.0f;  // Need samples for variance -- Poisson-neutral default
+    constexpr size_t kBins = 10;
+    constexpr size_t kMinSamples = 20;  // avg >=2 ticks/bin -- below this, a 10-bin count estimate is too noisy to trust
+    const size_t n = timestamps.size();
+    if (n < kMinSamples) return 0.0f;  // Poisson-neutral default -- insufficient data
 
-    // Convert timestamps to IATs -- stack-allocated, sized to Capacity (one
-    // more than the max possible IAT count, matching the original's own
-    // sized-to-max-window convention).
-    std::array<float, Capacity> iats{};
-    size_t iatCount = 0;
+    const uint64_t first = timestamps[0];
+    const uint64_t last = timestamps.back();
+    const uint64_t span = last - first;
+    if (span == 0) return 1.0f;  // every tick in the exact same instant -- maximal burstiness by definition
 
-    uint64_t prev = 0;
-    bool first = true;
-    // Iterate from oldest to newest.
-    for (const auto& ts : timestamps) {
-        if (first) {
-            prev = ts;
-            first = false;
-            continue;
-        }
-        // IAT in milliseconds for numerical stability.
-        float iat_ms = static_cast<float>(ts - prev) / 1000.0f;
-        if (iat_ms < 0.001f) iat_ms = 0.001f;  // Clamp zero IATs
-        iats[iatCount++] = iat_ms;
-        prev = ts;
+    std::array<uint32_t, kBins> counts{};
+    for (size_t i = 0; i < n; ++i) {
+        const uint64_t dt = timestamps[i] - first;
+        size_t bin = static_cast<size_t>((static_cast<double>(dt) / static_cast<double>(span)) * kBins);
+        if (bin >= kBins) bin = kBins - 1;
+        ++counts[bin];
     }
 
-    if (iatCount == 0) return 0.0f;  // Poisson-neutral default
+    std::array<float, kBins> vals{};
+    for (size_t i = 0; i < kBins; ++i) vals[i] = static_cast<float>(counts[i]);
 
-    // Poisson-neutral consistency constant: ln(2)/arcsinh(1/2), derived above.
-    constexpr float kExponentialConsistency = 1.4404199f;
-
-    // Median IAT -- nth_element at index n/2, matching this repo's own
+    // Median count -- nth_element at index kBins/2, matching this repo's own
     // established median/MAD convention (FeatureScaler.h's RobustLocation()):
     // NOT the textbook averaged-middle-two for even n.
-    std::array<float, Capacity> sorted = iats;
-    const size_t mid = iatCount / 2;
-    std::nth_element(sorted.begin(), sorted.begin() + mid, sorted.begin() + iatCount);
+    std::array<float, kBins> sorted = vals;
+    constexpr size_t mid = kBins / 2;
+    std::nth_element(sorted.begin(), sorted.begin() + mid, sorted.end());
     const float median = sorted[mid];
+    if (median <= 0.0f) return 1.0f;  // majority-empty bins -- extreme clustering, maximal burstiness
 
-    if (median < 0.0001f) return 0.0f;  // Avoid division by zero -- Poisson-neutral default
-
-    // MAD: median of |iat - median|, same nth_element convention.
-    std::array<float, Capacity> absDev{};
-    for (size_t i = 0; i < iatCount; ++i) absDev[i] = std::fabs(iats[i] - median);
-    std::nth_element(absDev.begin(), absDev.begin() + mid, absDev.begin() + iatCount);
+    // MAD: median of |count - median|, same nth_element convention.
+    std::array<float, kBins> absDev{};
+    for (size_t i = 0; i < kBins; ++i) absDev[i] = std::fabs(vals[i] - median);
+    std::nth_element(absDev.begin(), absDev.begin() + mid, absDev.end());
     const float mad = absDev[mid];
 
-    const float robustCv = (mad / median) * kExponentialConsistency;
-    // Goh & Barabási (2008) bounded transform, see this function's own doc
-    // comment for why: robustCv is always >= 0, so (robustCv + 1) is always
-    // >= 1 -- no new division-by-zero risk introduced here.
-    return (robustCv - 1.0f) / (robustCv + 1.0f);
+    // Poisson(N/kBins)-consistency scale factor, see this function's own doc
+    // comment for the derivation and why it beats the seemingly-more-exact
+    // Binomial-derived alternative in practice.
+    constexpr float kPoissonConsistency = 1.58113883f;
+    const float idc = (kPoissonConsistency * mad) * (kPoissonConsistency * mad) / median;
+    // Goh & Barabási (2008) bounded transform: idc is always >= 0, so
+    // (idc + 1) is always >= 1 -- no new division-by-zero risk introduced here.
+    return (idc - 1.0f) / (idc + 1.0f);
 }
 
 }  // namespace eve

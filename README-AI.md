@@ -11,8 +11,12 @@
   `ff22e48`/`ea8058b`/`7c51f33`; `fractal_dim`'s window widened to 400 bars, shipped `72ab967`;
   `mean_rev_z`/`hurst_exponent`/`recurrence_rate` literature-grounded for activity-clock treatment
   but not yet implemented; see `CLAUDE.md`'s own North Star section for the full pointer.
+- **`burstiness_index` (Elite Feature Set Curation initiative, separate from Row 1 above) fixed
+  2026-09-02** — real per-tick data revealed the prior formula still broken at production tick
+  density; reformulated to a robust Index of Dispersion for Counts, real-data-validated; see
+  `CLAUDE.md`'s own pointer for the full account.
 
-**Last Updated**: 2026-08-28
+**Last Updated**: 2026-09-02
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).

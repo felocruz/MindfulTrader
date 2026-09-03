@@ -157,78 +157,103 @@ int main() {
 
     std::printf("\nCalculateBurstinessIndex unit tests\n");
 
-    // Fewer than 4 timestamps: neutral Poisson default (0.0 in the bounded
-    // [-1,1] Goh-Barabási scale -- was 1.0 in the pre-2026-09-02 unbounded scale).
+    // Fewer than kMinSamples(20) timestamps: neutral Poisson default.
     {
-        RingBuffer<uint64_t, 8> ts;
-        ts.push_back(0);
-        ts.push_back(1000);
-        ts.push_back(2000);
+        RingBuffer<uint64_t, 16> ts;
+        for (uint64_t t = 0; t < 10'000'000; t += 1'000'000) ts.push_back(t);
         check("burstiness_below_minimum_samples_is_neutral",
               CalculateBurstinessIndex(ts) == 0.0f);
     }
 
-    // Perfectly regular spacing: IATs are all identical -> MAD=0 -> robust
-    // ratio=0.0 -> Goh-Barabási B=(0-1)/(0+1)=-1.0 (the scale's own minimum,
-    // matching Goh & Barabási 2008's "perfectly regular process" endpoint).
+    // Perfectly regular spacing (n=20, evenly spaced): counts land exactly 2
+    // per bin across all 10 bins (verified via real python3 execution -- the
+    // bin-index arithmetic isn't obviously uniform by inspection for n=20/
+    // kBins=10) -> MAD=0 -> idc=0 -> Goh-Barabási B=(0-1)/(0+1)=-1.0 exactly.
     {
-        RingBuffer<uint64_t, 8> ts;
-        for (uint64_t t = 0; t <= 4'000'000; t += 1'000'000) ts.push_back(t);
+        RingBuffer<uint64_t, 24> ts;
+        for (uint64_t t = 0; t < 20'000'000; t += 1'000'000) ts.push_back(t);
         check("burstiness_regular_spacing_is_minimum",
               CalculateBurstinessIndex(ts) == -1.0f);
     }
 
-    // Irregular spacing: iats_ms=[500,1500,200,2800]. Hand-computed via this
-    // repo's own nth_element(mid=n/2) median/MAD convention (NOT the textbook
-    // averaged-middle-two for even n -- see FeatureScaler.h's RobustLocation()
-    // for the same convention): sorted=[200,500,1500,2800], mid=4/2=2 ->
-    // median=1500. abs devs from 1500: [1300,1000,0,1300], sorted=
-    // [0,1000,1300,1300], mid=2 -> MAD=1300. robust_cv =
-    // (1300/1500)*1.4404199 = 1.2483639. Goh-Barabási B=(1.2483639-1)/
-    // (1.2483639+1) = 0.1104643 (verified via real python3 execution, not
-    // hand arithmetic).
+    // Every tick in the exact same instant (span=0): maximal burstiness by
+    // definition, not "insufficient data" -- this is the real-world case that
+    // broke the old IAT-based formula (median IAT collapsing to the
+    // timestamp's own minimum resolution); this formula defines it explicitly
+    // rather than letting it fall out of a division.
     {
-        RingBuffer<uint64_t, 8> ts;
-        for (uint64_t t : {0ULL, 500'000ULL, 2'000'000ULL, 2'200'000ULL, 5'000'000ULL}) {
-            ts.push_back(t);
-        }
-        check("burstiness_irregular_spacing_matches_hand_computed_robust_cv",
-              approx(CalculateBurstinessIndex(ts), 0.1104643f, 1e-4f));
+        RingBuffer<uint64_t, 24> ts;
+        for (int i = 0; i < 20; ++i) ts.push_back(5'000'000);
+        check("burstiness_all_same_instant_is_maximum", CalculateBurstinessIndex(ts) == 1.0f);
     }
 
-    // Poisson-neutral property: a real Exponential(rate)-distributed IAT
-    // sample must converge toward the scale's Poisson-neutral point -- 0.0 in
-    // the bounded [-1,1] Goh-Barabási scale (was 1.0 pre-2026-09-02, before
-    // the robust ratio was bounded via B=(x-1)/(x+1)) -- this is exactly why
-    // the consistency constant is derived from the Exponential distribution
-    // instead of reusing the standard normal-consistency 1.4826. Not a
-    // hand-picked pass -- a real synthetic verification, large n to average
-    // out small-sample MAD/median noise. Tolerance verified against this
-    // exact seed's real printed output before being set (not guessed).
+    // Extreme clustering: 19 of 20 ticks at t=0, 1 tick far later -- median
+    // bin count is 0 (majority-empty bins), which this formula treats as
+    // maximal burstiness (not neutral -- an empty-bin-majority IS the
+    // clustering signal, not an absence of data).
     {
-        RingBuffer<uint64_t, 4096> ts;
-        std::mt19937 rng(42);
-        std::exponential_distribution<double> exp_dist(1.0 / 1'000'000.0);  // mean 1s, in us
-        uint64_t t = 0;
-        ts.push_back(t);
-        for (int i = 0; i < 4095; ++i) {
-            t += static_cast<uint64_t>(exp_dist(rng)) + 1;  // +1: avoid a zero-IAT clamp artifact
+        RingBuffer<uint64_t, 24> ts;
+        for (int i = 0; i < 19; ++i) ts.push_back(0);
+        ts.push_back(100'000'000);
+        check("burstiness_extreme_clustering_is_maximum", CalculateBurstinessIndex(ts) == 1.0f);
+    }
+
+    // Irregular/moderately-clustered spacing (n=20, a mix of tight sub-100us
+    // gaps and much longer gaps -- deliberately not adversarial/degenerate).
+    // Bin counts=[4,0,4,0,3,0,4,1,2,2], median=2, MAD=2, idc=(1.58113883*2)^2/2
+    // = 4.99999998..., B=(idc-1)/(idc+1)=0.66666666... (verified via real
+    // python3 execution against this exact algorithm, not hand arithmetic).
+    {
+        RingBuffer<uint64_t, 24> ts;
+        for (uint64_t t : {0ULL, 50'000ULL, 100'000ULL, 300'000ULL, 1'100'000ULL, 1'150'000ULL,
+                           1'200'000ULL, 1'250'000ULL, 2'150'000ULL, 2'250'000ULL, 2'350'000ULL,
+                           3'050'000ULL, 3'100'000ULL, 3'150'000ULL, 3'200'000ULL, 3'800'000ULL,
+                           4'000'000ULL, 4'050'000ULL, 4'950'000ULL, 5'000'000ULL}) {
             ts.push_back(t);
         }
-        const float b = CalculateBurstinessIndex(ts);
-        std::printf("  [info] robust burstiness (Goh-Barabasi bounded) on a real Exponential(mean=1s) sample: %.4f\n", b);
-        check("burstiness_converges_to_zero_for_a_real_poisson_process", approx(b, 0.0f, 0.05f));
+        check("burstiness_irregular_spacing_matches_verified_idc",
+              approx(CalculateBurstinessIndex(ts), 0.6666667f, 1e-4f));
+    }
+
+    // Poisson-neutral property: average burstiness across many INDEPENDENT
+    // 100-tick windows (matching production's Capacity=100), each drawn from
+    // a real Exponential(mean=1s)-distributed IAT sequence (a genuine
+    // homogeneous Poisson process), must be close to 0. A SINGLE window's
+    // reading has real, expected small-sample noise (only kBins=10 data
+    // points feed its own median/MAD) -- averaging many independent windows
+    // is the correct way to demonstrate the Poisson-neutral property, not a
+    // single giant buffer (this measures a genuinely different, per-window
+    // statistic than the old IAT-based formula did). Verified via real
+    // python3 execution (not hand-picked): mean over 2000 such windows =
+    // 0.0419, well within this test's tolerance.
+    {
+        std::mt19937 rng(42);
+        std::exponential_distribution<double> exp_dist(1.0 / 1'000'000.0);  // mean 1s, in us
+        double sum = 0.0;
+        constexpr int kTrials = 2000;
+        for (int trial = 0; trial < kTrials; ++trial) {
+            RingBuffer<uint64_t, 100> ts;
+            uint64_t t = 0;
+            ts.push_back(t);
+            for (int i = 0; i < 99; ++i) {
+                t += static_cast<uint64_t>(exp_dist(rng)) + 1;  // +1: avoid a zero-span artifact
+                ts.push_back(t);
+            }
+            sum += CalculateBurstinessIndex(ts);
+        }
+        const float meanB = static_cast<float>(sum / kTrials);
+        std::printf("  [info] mean IDC-based burstiness over %d independent real Poisson-process windows: %.4f\n",
+                    kTrials, meanB);
+        check("burstiness_converges_to_zero_for_a_real_poisson_process", approx(meanB, 0.0f, 0.1f));
     }
 
     // Capacity is independent of the production EVENT_VELOCITY_MAX=100 --
-    // exercise a tiny capacity (4) to confirm the template parameter is a
-    // genuine size, not a hardcoded assumption leaking in from ContextManager.
+    // exercise a capacity just above kMinSamples(20) to confirm the template
+    // parameter is a genuine size, not a hardcoded assumption leaking in from
+    // ContextManager.
     {
-        RingBuffer<uint64_t, 4> ts;
-        ts.push_back(0);
-        ts.push_back(1'000'000);
-        ts.push_back(2'000'000);
-        ts.push_back(3'000'000);
+        RingBuffer<uint64_t, 21> ts;
+        for (uint64_t t = 0; t < 20'000'000; t += 1'000'000) ts.push_back(t);
         check("burstiness_works_at_small_template_capacity",
               CalculateBurstinessIndex(ts) == -1.0f);
     }

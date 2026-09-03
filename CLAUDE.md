@@ -67,7 +67,8 @@ purposes across the other three repos.
   (so the real curse-of-dimensionality failure mode is double-counted evidence under violated
   conditional independence, not covariance ill-conditioning). **Phase 0 (Gaussian-moment audit) CLOSED
   OUT, 2026-08-31, bar 3 ambiguous decisions**: `burstiness_index` (robust CV, MAD/median × a
-  newly-derived 1.4404199 Poisson-neutrality constant, NOT the standard 1.4826), `vol_convexity`
+  newly-derived 1.4404199 Poisson-neutrality constant, NOT the standard 1.4826 — **superseded
+  2026-09-02, see below**), `vol_convexity`
   (REMOVED from the schema entirely, 19D→18D — already decided 2026-08-25 as the weakest
   discriminator measuring the wrong thing structurally, executed today, not reformulated), `mean_rev_z`
   (median/MAD price z-score + median-centered lag-1 autocorrelation, Kim & White 2004) — do not confuse
@@ -85,6 +86,21 @@ purposes across the other three repos.
   (e.g. did making `amihud_illiquidity`/`liq_fragility` live-reactive on 2026-08-29 help) is circular —
   that model's state labels were learned from the pre-Phase-0, still-contaminated vector. Recorded as
   an open methodological question (initiative doc §5), not yet resolved either way.
+- **`burstiness_index` superseded and FIXED, 2026-09-02** — the 1.4404199-constant formula above
+  turned out to still be broken at real tick density (never validated against genuine per-tick data
+  before). Once `lbrnet/data/raw/mes_ticks.parquet` (471.9M real ticks,
+  `tools/scid_processing/scid_to_ticks_parquet.cpp`, committed) existed, recalibration found the
+  production bound clipping ~74% of real readings. A first fix attempt (Goh-Barabási bounded
+  transform on the same IAT-ratio) **failed real-data re-validation** (clip rate unchanged, mean|z|
+  roughly doubled) — diagnosed with Gemini (`lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_121`/`122`) as
+  a point-mass degeneracy no post-hoc transform can repair (73.9% of real 100-tick windows have
+  median inter-arrival-time collapsed to the timestamp field's own 1us floor). Real fix: abandoned
+  inter-arrival times entirely, reformulated to a robust Index of Dispersion for Counts (Daley &
+  Vere-Jones 2003) over K=10 self-scaling time sub-bins (`include/EventVelocityEngine.h`), constant
+  `1.58113883`=√10/2 (Poisson(10)'s exact sigma/MAD, not the standard-Normal 1.4826). Full real-data
+  re-validation, all 471.9M ticks: mean|z|=1.14, max|z|=49.28, rate-at-bound(6.0)=1.96% — sane,
+  normal clip rate, no further bound recalibration needed. Committed, native tests pass,
+  `./build_dll.sh` clean. Full detail: initiative doc §7 row 2.
 
 ## Project Overview
 
