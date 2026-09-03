@@ -100,18 +100,25 @@ int main() {
     check("fisher_info_degenerate_no_prior_value_returns_neutral",
           approx(cfc::ComputeFisherInformation(100.0f, 100.0f, 100.0f, 0.0f), 0.0f));
 
-    // --- ComputeAmihudIlliquidity (dim 11) ---
-    check("amihud_normal_case_is_mean",
-          approx(cfc::ComputeAmihudIlliquidity(0.006, 3, 0.0f), 0.006 / 3.0));
+    // --- ComputeAmihudIlliquidity (dim 11) -- geometric mean of log-ratios,
+    // reformulated 2026-09-03 (sqrt-law volume scaling + log-space
+    // aggregation, see CarryForwardCalculators.h). `sumLogRatio` is the
+    // accumulated SUM OF LOGS of each sample's ratio (the call site
+    // accumulates ln(ratio + eps) per sample, not the raw ratios).
+    {
+        const double sumLogRatio = std::log(0.002) + std::log(0.003) + std::log(0.001);
+        check("amihud_normal_case_is_geometric_mean",
+              approx(cfc::ComputeAmihudIlliquidity(sumLogRatio, 3, 0.0f), 0.0018171206f, 1e-6f));
+    }
 
     check("amihud_degenerate_count_carries_forward",
-          approx(cfc::ComputeAmihudIlliquidity(0.006, 1, 0.42f), 0.42f));
+          approx(cfc::ComputeAmihudIlliquidity(std::log(0.006), 1, 0.42f), 0.42f));
 
     check("amihud_degenerate_zero_count_carries_forward",
           approx(cfc::ComputeAmihudIlliquidity(0.0, 0, 0.42f), 0.42f));
 
     check("amihud_degenerate_no_prior_value_returns_neutral",
-          approx(cfc::ComputeAmihudIlliquidity(0.006, 1, 0.0f), 0.0f));
+          approx(cfc::ComputeAmihudIlliquidity(std::log(0.006), 1, 0.0f), 0.0f));
 
     std::printf("\n%d failure(s)\n", g_failures);
     return g_failures == 0 ? 0 : 1;

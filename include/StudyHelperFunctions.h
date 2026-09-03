@@ -296,7 +296,8 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n);
 /// Lookback: ~20-100 bars (Wave)
 float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n);
 
-/// Amihud Illiquidity: mean(|r_t| / V_t) — price impact per unit volume.
+/// Amihud Illiquidity: geometric mean(|r_t| / sqrt(V_t)) — price impact per unit volume,
+/// sqrt-law volume scaling + log-space aggregation (see CarryForwardCalculators.h).
 /// Lookback: ~20-40 bars (Ripple)
 float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n);
 

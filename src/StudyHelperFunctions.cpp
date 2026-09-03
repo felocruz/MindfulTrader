@@ -3017,17 +3017,24 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
 }
 
 float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
-    // Canonical Amihud (2002) illiquidity: mean( |r_t| / DollarVolume_t ) over the
-    // lookback, with r_t = log return ln(P_t / P_{t-1}) and DollarVolume_t = P_t * V_t.
-    // Log returns + dollar volume make the measure price-level STATIONARY: a $2 move
-    // at ES=6000 is not the same event as a $2 move at ES=2000, and a fixed threshold
-    // is meaningless without this normalization (root cause of the old 0.80/0.40 bug).
-    // Amihud is the canonical low-frequency proxy for Kyle (1985) lambda (price impact
-    // per unit dollar flow). High values = illiquid (large impact per dollar traded).
+    // REFORMULATED 2026-09-03 (see include/CarryForwardCalculators.h's
+    // ComputeAmihudIlliquidity for the full derivation/citations): geometric
+    // mean of |log-return|/sqrt(dollar-volume), replacing Amihud (2002)'s
+    // literal linear-ratio arithmetic mean. Both the sqrt-law volume exponent
+    // and the geometric-mean aggregation are independently real-data-validated
+    // fixes for the same defect (a thin-volume bar's ratio blowing up and
+    // dominating a plain arithmetic mean). Still the canonical low-frequency
+    // proxy for Kyle (1985) lambda (price impact per unit dollar flow); high
+    // values = illiquid.
     if (sc.Index < lookback_n) return 0.0f;
 
+    // Floor before ln() -- real ratios are ~1e-6 to 1e-11 scale (per real MES
+    // data), so this floor only ever engages on a genuine exact-zero return
+    // (a repeat print), never distorts a real small-but-nonzero reading.
+    constexpr double kRatioEps = 1e-20;
+
     // Historical window: closed bars only (i=1..lookback_n).
-    double sum = 0.0;
+    double sumLogRatio = 0.0;
     int count = 0;
     for (int i = 1; i <= lookback_n; ++i) {
         int idx = sc.Index - i;
@@ -3039,7 +3046,8 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
         const double dollarVol = price * vol;
         if (dollarVol < 1.0) continue;
         const double logRet = std::abs(std::log(price / prevPrice));
-        sum += logRet / dollarVol;
+        const double ratio = logRet / std::sqrt(dollarVol);
+        sumLogRatio += std::log(ratio + kRatioEps);
         ++count;
     }
 
@@ -3063,14 +3071,15 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
             const double dollarVol = livePrice * liveVol;
             if (dollarVol >= 1.0) {
                 const double logRet = std::abs(std::log(livePrice / prevClose));
-                sum += logRet / dollarVol;
+                const double ratio = logRet / std::sqrt(dollarVol);
+                sumLogRatio += std::log(ratio + kRatioEps);
                 ++count;
             }
         }
     }
 
     float& lastValidAmihud = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE);
-    const float amihud = cfc::ComputeAmihudIlliquidity(sum, count, lastValidAmihud);
+    const float amihud = cfc::ComputeAmihudIlliquidity(sumLogRatio, count, lastValidAmihud);
     lastValidAmihud = amihud;
     return amihud;
 }
