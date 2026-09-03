@@ -18,6 +18,23 @@ critical path — verify this list is still current before trusting it. Any sess
 of those rows' status must update `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS`
 block in the same edit (Triage Protocol rule 7).
 
+**NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — pick this up the moment the observation
+vector + `ContextManager` work is done, do not let it slide:** `LocalRiskContext`/`RiskGateContext`
+(the execution-layer risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on)
+must not be blind to the HMM's own signal. `PredatorContext` already carries `.regime` (the HMM's
+inferred state, via `GetPredatorContext()`), but that's a higher-level fusion struct assembled
+*after* `RiskManager`'s own hard gates already fire directly on `LocalRiskContext` — verify whether
+those lower-level gates ever see HMM output at all, or only the raw pre-HMM features. The operator's
+explicit framing: the HMM exists specifically to detect fat tails/regime shifts — its own output
+should feed back as a "heads up" signal for the Predator (and for the hard-gate layer beneath it),
+not stay siloed inside the observation-vector→model→regime pipeline while risk/execution consumes
+only the raw features that fed it. Same "solidify the data a downstream layer actually uses"
+discipline just applied to the observation vector — apply it next to trade execution / risk
+management once the observation-vector/ContextManager thread closes out. Related, not yet designed:
+the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer signal discussed
+2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a candidate concrete
+first deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own observation vector.
+
 **Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-31 — full account in
 `PRODUCTION_TRIAGE.md` row 1, this mirrors `CLAUDE.md`'s own pointer**: `fast_taleb_kurtosis`
 shipped as `ObservationData`'s 17th field directly (`ff22e48`/`ea8058b`); `skewness_idx` replaced

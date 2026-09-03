@@ -19,8 +19,12 @@
 - **Phase 0 batch (vol_convexity removal 19D→18D, bipower-variation reformulation,
   mean_rev_z/liq_fragility fixes) committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted
   across multiple prior sessions; see `../CLAUDE.md`'s own pointer for the full account.
+- **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03)**: once the observation-vector/
+  `ContextManager` work closes out, `LocalRiskContext`/`RiskGateContext` must stop being blind to
+  the HMM's own signal (a "heads up" for the Predator, not just raw pre-HMM features) — see
+  `../CLAUDE.md`'s own pointer for the full account.
 
-**Last Updated**: 2026-09-02
+**Last Updated**: 2026-09-03
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).

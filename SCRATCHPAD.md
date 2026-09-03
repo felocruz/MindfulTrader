@@ -1,32 +1,42 @@
 # Session Scratchpad — Where We Left Off
 
-**PICK UP HERE, 2026-09-02 — `burstiness_index` (dim1) is FIXED, real-data-validated, and committed.
-Next: pick the next dim from the Elite Feature Set Curation ledger's open rows.**
+**PICK UP HERE, 2026-09-03 — observation-vector dim fixes continue (`hurst_exponent` resolved,
+`amihud_illiquidity` reformulated). NEXT MAJOR INITIATIVE queued right below — do not let it slide
+once the observation-vector/ContextManager thread closes out.**
 
-- Real per-tick data now exists: `tools/scid_processing/scid_to_ticks_parquet.cpp` (committed) shipped
-  `lbrnet/data/raw/mes_ticks.parquet` (471,930,891 real MES ticks, all 13 rolled contracts, no
-  aggregation) — the "coarse 1-second-bar proxy" blocker below is fully resolved.
-- Recalibrating `burstiness_index` against the real tick file found the bar-file-era formula
-  (robust CV, `MAD/median × 1.4404199`, Goh-Barabási-bounded) still clipping ~74% of real readings —
-  genuinely broken, not a rare tail. Root cause (with Gemini, `lbrnet/logs/rc_gemini.log`
-  `CLAUDE_BRIEF_121`/`122`): any statistic built from inter-arrival TIMES is structurally tied at real
-  tick density (73.9% of real 100-tick windows have median IAT collapsed to the timestamp field's own
-  1us floor) — a bounding transform afterward can't repair that, confirmed by a FAILED real-data
-  re-validation of that exact attempt (clip rate unchanged at 73.78%, mean|z| roughly doubled).
-- **Real fix, committed**: reformulated to a robust Index of Dispersion for Counts (Daley & Vere-Jones
-  2003) over K=10 self-scaling time sub-bins (`include/EventVelocityEngine.h`), consistency constant
-  `1.58113883`=√10/2 (Poisson(10)'s exact sigma/MAD, verified analytically + 500K-trial Monte Carlo,
-  not the standard-Normal 1.4826 used before). Full real-data re-validation, all 471.9M ticks:
-  mean|z|=1.1356, max|z|=49.28, rate-at-bound(6.0)=1.9605% — sane, normal clip rate.
-  `STATE_WINSOR_SIGMA=6.0` needs no further recalibration. Native tests pass, `./build_dll.sh` clean.
-- Docs synced: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7 row 2,
-  `PRODUCTION_TRIAGE.md` row 1's addendum, `CLAUDE.md`'s condensed pointer.
-- **Next action**: pick the next ambiguous/open row from the Elite Feature Set Curation ledger (§7 of
-  that spec) — candidates flagged there as still needing a literature decision: `hurst_exponent`/
-  `fast_hurst_exponent`, `amihud_illiquidity`, `relative_range`/`liq_fragility`, and
-  `fast_mean_rev_z`'s wire-or-drop call.
+**⚠️ NEXT MAJOR INITIATIVE, queued by the operator 2026-09-03 — pick up the MOMENT the observation
+vector + ContextManager work is done:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
+risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on) must stop being blind
+to the HMM's own signal. `PredatorContext` already carries `.regime` (via `GetPredatorContext()`),
+but that's a higher-level fusion struct assembled *after* `RiskManager`'s own hard gates already fire
+directly on `LocalRiskContext` — verify whether those lower-level gates ever see HMM output at all,
+or only the raw pre-HMM features. The HMM exists specifically to detect fat tails/regime shifts —
+its own output should feed back as a "heads up" signal for the Predator (and the hard-gate layer
+beneath it), not stay siloed inside the observation-vector→model→regime pipeline. Full framing in
+`CLAUDE.md`/`GEMINI.md`'s own North Star section (same note, don't duplicate maintenance here).
+Related, not yet designed: the EVT/GPD-based "how close to the tail, and closing how fast"
+execution-layer signal discussed 2026-09-03 (`lbrnet/logs/rc_gemini.log` around `CLAUDE_BRIEF_123`)
+— a candidate first deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own vector.
+
+- `hurst_exponent` (row 7): DFA q=2 vs MFDFA q=1 ambiguity resolved via real Monte Carlo evidence
+  (`tools/observation_vector/dfa_vs_mfdfa_q1_montecarlo.py`) — keep q=2, q=1 doesn't survive real
+  contamination testing. Committed.
+- `amihud_illiquidity` (row 13): reformulated to sqrt-law volume scaling (Kyle & Obizhaeva 2016;
+  Lillo, Farmer & Mantegna 2003 — real-data-fitted impact exponent γ=0.512, matching the theoretical
+  0.5) + geometric-mean aggregation (Hasbrouck 2009 — an order of magnitude more outlier-robust than
+  median or raw mean on real MES rolling windows). An activity-clock (dollar-volume-bar) alternative
+  was tested and REJECTED — empirically worse (CV=1.175 vs 0.918), unlike the other dims where
+  activity-clock treatment helped. Committed (`a6d0630`). **Follow-up not yet done**:
+  `FeatureScaler.h`'s dim11 calibration (`AMIHUD_ABSOLUTE_FLOOR` etc.) was tuned for the old
+  linear-ratio scale and needs re-derivation against the new formula's real distribution.
+- `fast_mean_rev_z` (row 19): its unwired `ActivityClockMeanReversion.h` reformulated to median/MAD
+  ahead of its still-open wire-or-drop decision. Committed (`b0ab21a`).
+- **Next action**: `FeatureScaler` dim11 recalibration (above), then remaining ledger rows
+  (`relative_range`/`liq_fragility`'s own ambiguity, row 4's redundancy question) — see
+  `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7.
 
 ---
+
 
 
 
