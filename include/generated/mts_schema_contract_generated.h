@@ -13,34 +13,32 @@ namespace MTS {
 namespace Schema {
 namespace Contract {
 
-inline constexpr std::size_t kObservationDim = 19;
+inline constexpr std::size_t kObservationDim = 18;
 
-inline constexpr std::size_t kObsLogVarianceRatio = 0;
+inline constexpr std::size_t kObsLogScaleRatio = 0;
 inline constexpr std::size_t kObsBurstinessIndex = 1;
 inline constexpr std::size_t kObsRelativeRange = 2;
-inline constexpr std::size_t kObsCorrectionAction = 3;
-inline constexpr std::size_t kObsVolConvexity = 4;
-inline constexpr std::size_t kObsLempelZiv = 5;
-inline constexpr std::size_t kObsHurstExponent = 6;
-inline constexpr std::size_t kObsMicroAsymmetry = 7;
-inline constexpr std::size_t kObsFisherInfo = 8;
-inline constexpr std::size_t kObsFastHurstExponent = 9;
-inline constexpr std::size_t kObsTailIndex = 10;
-inline constexpr std::size_t kObsSkewnessIdx = 11;
-inline constexpr std::size_t kObsAmihudIlliquidity = 12;
-inline constexpr std::size_t kObsLiqFragility = 13;
-inline constexpr std::size_t kObsFastTalebKurtosis = 14;
-inline constexpr std::size_t kObsRecurrenceRate = 15;
-inline constexpr std::size_t kObsFractalDim = 16;
-inline constexpr std::size_t kObsMeanRevZ = 17;
-inline constexpr std::size_t kObsFastMeanRevZ = 18;
+inline constexpr std::size_t kObsLogScaleExpansionRatio = 3;
+inline constexpr std::size_t kObsLempelZiv = 4;
+inline constexpr std::size_t kObsHurstExponent = 5;
+inline constexpr std::size_t kObsMicroAsymmetry = 6;
+inline constexpr std::size_t kObsFisherInfo = 7;
+inline constexpr std::size_t kObsFastHurstExponent = 8;
+inline constexpr std::size_t kObsTailIndex = 9;
+inline constexpr std::size_t kObsSkewnessIdx = 10;
+inline constexpr std::size_t kObsAmihudIlliquidity = 11;
+inline constexpr std::size_t kObsLiqFragility = 12;
+inline constexpr std::size_t kObsFastTalebKurtosis = 13;
+inline constexpr std::size_t kObsRecurrenceRate = 14;
+inline constexpr std::size_t kObsFractalDim = 15;
+inline constexpr std::size_t kObsMeanRevZ = 16;
+inline constexpr std::size_t kObsFastMeanRevZ = 17;
 
 inline constexpr std::array<const char*, kObservationDim> kObservationFieldNames = {
-    "log_variance_ratio",
+    "log_scale_ratio",
     "burstiness_index",
     "relative_range",
-    "correction_action",
-    "vol_convexity",
+    "log_scale_expansion_ratio",
     "lempel_ziv",
     "hurst_exponent",
     "micro_asymmetry",
@@ -212,11 +210,10 @@ inline flatbuffers::Offset<MTS::Schema::MTS_Envelope> BuildEnvelope(
 inline MTS::Schema::ObservationData MakeObservationData(
     const ObservationArray& values) {
     return MTS::Schema::ObservationData(
-        values[kObsLogVarianceRatio],
+        values[kObsLogScaleRatio],
         values[kObsBurstinessIndex],
         values[kObsRelativeRange],
-        values[kObsCorrectionAction],
-        values[kObsVolConvexity],
+        values[kObsLogScaleExpansionRatio],
         values[kObsLempelZiv],
         values[kObsHurstExponent],
         values[kObsMicroAsymmetry],
@@ -236,11 +233,10 @@ inline MTS::Schema::ObservationData MakeObservationData(
 inline ObservationArray ToObservationArray(
     const MTS::Schema::ObservationData& observation) {
     return {
-        observation.log_variance_ratio(),
+        observation.log_scale_ratio(),
         observation.burstiness_index(),
         observation.relative_range(),
-        observation.correction_action(),
-        observation.vol_convexity(),
+        observation.log_scale_expansion_ratio(),
         observation.lempel_ziv(),
         observation.hurst_exponent(),
         observation.micro_asymmetry(),

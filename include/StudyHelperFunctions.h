@@ -242,6 +242,12 @@ int CalculateFisherAdaptiveWindow(SCStudyInterfaceRef sc, float coherence_score)
 // TripleScreen3.cpp's per-tick block near its VolumeIndicator::UpdateVolume
 // call, and docs/superpowers/plans/2026-08-12-observation-vector-incremental-accumulators.md's
 // "corner cases" discussion for the full root-cause writeup.
+// NOTE: amihud_illiquidity/liq_fragility (dims 11/12) are ALSO NOT computed
+// here as of 2026-08-29 (§1.11 of docs/superpowers/specs/2026-08-29-hmm-
+// fat-tail-observation-vector-brainstorm.md) -- both are causally leading
+// indicators that this once-per-bar gate was making lag by a full bar.
+// TripleScreen3.cpp now calls CalculateAmihudIlliquidity/
+// CalculateLiquidityFragility directly, every tick.
 void UpdateObservationVectorSubgraphs(
     SCStudyInterfaceRef sc,
     int observation_window_n,
@@ -249,10 +255,7 @@ void UpdateObservationVectorSubgraphs(
     SCSubgraphRef Subgraph_HurstExponent,
     SCSubgraphRef Subgraph_RealizedKurtosis,
     SCSubgraphRef Subgraph_SkewnessIdx,
-    SCSubgraphRef Subgraph_AmihudIlliquidity,
-    SCSubgraphRef Subgraph_LiqFragility,
-    SCSubgraphRef Subgraph_ATR,
-    SCSubgraphRef Subgraph_VolumeSMA);
+    SCSubgraphRef Subgraph_ATR);
 
 /// Path Efficiency SNR (Index 5): Signal-to-Noise Ratio via efficiency ratio squared
 float CalculatePathEfficiencySNR(SCStudyInterfaceRef sc, float atr10, int lookback_n = 20);
@@ -279,7 +282,7 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
 
 /// Log-Variance: Variance of log-returns (Macro Volatility)
 /// Lookback: ~100-500 bars (Tide)
-float CalculateLogVariance(SCStudyInterfaceRef sc, int lookback_n);
+float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Fisher Information: Regime change detection
 /// Lookback: ~100-500 bars (Tide)
@@ -291,15 +294,11 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Realized Variance Ratio: log(RV_recent / RV_full) — volatility expansion/contraction.
 /// Lookback: ~20-100 bars (Wave)
-float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n);
+float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Amihud Illiquidity: mean(|r_t| / V_t) — price impact per unit volume.
 /// Lookback: ~20-40 bars (Ripple)
 float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n);
-
-/// Burstiness: Inter-arrival time variance (clustering)
-/// Lookback: ~20-100 bars (Wave)
-float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Fractal Dimension: Sevcik (1998) path-length estimator (pure math in
 /// SevcikFractalDimension.h). `persistentVarIndex` selects which persistent
@@ -322,7 +321,6 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n);
 
 /// Volatility Convexity: Curvature of realized volatility (smile proxy)
 /// Lookback: ~5-20 bars (Ripple)
-float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n);
 
 // CalculateRecurrenceRate removed 2026-08-28: recurrence_rate moved to an activity-clock
 // computation (ContextManager.cpp, imbalance-bar returns). See

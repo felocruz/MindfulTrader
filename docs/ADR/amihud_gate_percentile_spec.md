@@ -82,7 +82,29 @@ The Python co-evolution cannot be validated until a fresh `.context` is regenera
 5. **Runtime contract test:** add `test_risk_gate_context_contract.py` mirroring `test_observation_contract.py` — assert the `RiskGateContext` binding fields match the C++ `LocalRiskContext` field set (+ `amihud_percentile`), so future schema drift is caught at test time.
 6. **Close** Findings 19/20/21 = PC-15/16/17; PC-03 CLOSED.
 
-**Backward-compat:** treat an absent `risk_gate_context` (old `.context`) as "legacy → keep stopgap path" until re-collection, or gate the switch on field presence.
+**Backward-compat — UPDATED 2026-08-15, two distinct absence populations, not one:**
+
+1. **True legacy** (files collected before this spec's rename/formula fix, 2026-08-04 —
+   `risk_gate_context`/`amihud_percentile` don't exist on the wire at all yet). "Keep the
+   stopgap path" was the only sane behavior for these, and remains correct — but this
+   population is moot for any file collected after 2026-08-04; do not conflate it with #2.
+2. **Fresh, post-fix, still-absent ~32% of the time** (verified 2026-08-15 against
+   `event_data_20260814_163135.context`, collected nearly a month after this spec locked):
+   `risk_gate_context` is genuinely wired and populated by `ContextManager::EmitTrainingContext()`
+   → `LogContext(..., &rgc)`, but `EventDataCollectorStudy.cpp`'s own direct
+   `LBRFileManager::LogSynchronizedEvent()` call (used for the bulk of `.context` writes during
+   historical replay/data collection) does not pass a `RiskGateContextT` at all, defaulting to
+   `nullptr`. Confirmed empirically: 67.9% of 2,000,000 sampled `MarketObservation` records had
+   `risk_gate_context` populated (with `is_valid=true` ~100% of the time when present); 32.1% had
+   it entirely absent — a structural, persistent gap, not a legacy-data artifact. This is tracked
+   as a C++-side fix in the broader observation-vector/RiskGateContext co-evolution effort
+   (always-populate `risk_gate_context` regardless of write path) — until that ships, the Python
+   side treats absence as **pass-through** (apply the faithful `amihud_percentile`/`spread_stress`/
+   Hill-α gates only when the field is present; never veto purely because it's absent, and never
+   fall back to the old stopgap constants for this population). This pass-through behavior is an
+   explicit **temporary shim** — flagged for removal once the C++ population-gap fix lands and
+   `risk_gate_context` is unconditionally present, at which point PC-15/16/17's old stopgap
+   constants can finally be deleted outright rather than kept as a fallback.
 
 ## 5. Acceptance
 

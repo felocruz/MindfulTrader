@@ -1,4 +1,4 @@
-// Auto-generated fixture: real dim0 (log_variance_ratio) raw values, tick-level
+// Auto-generated fixture: real dim0 (log_scale_ratio) raw values, tick-level
 // replica against mes_continuous_ticks.parquet, 2023-09-01..10-20 (the same
 // live-collection replay window fixtures_dim1_raw.h/fixtures_dim3_raw.h use).
 // Contiguous real-data slice [1000000:1225000] of the full replica,

@@ -2191,11 +2191,10 @@ FLATBUFFERS_STRUCT_END(IndicatorState, 92);
 
 FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
  private:
-  float log_variance_ratio_;
+  float log_scale_ratio_;
   float burstiness_index_;
   float relative_range_;
-  float correction_action_;
-  float vol_convexity_;
+  float log_scale_expansion_ratio_;
   float lempel_ziv_;
   float hurst_exponent_;
   float micro_asymmetry_;
@@ -2209,14 +2208,14 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   float recurrence_rate_;
   float fractal_dim_;
   float mean_rev_z_;
+  float fast_mean_rev_z_;
 
  public:
   ObservationData()
-      : log_variance_ratio_(0),
+      : log_scale_ratio_(0),
         burstiness_index_(0),
         relative_range_(0),
-        correction_action_(0),
-        vol_convexity_(0),
+        log_scale_expansion_ratio_(0),
         lempel_ziv_(0),
         hurst_exponent_(0),
         micro_asymmetry_(0),
@@ -2229,14 +2228,14 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         fast_taleb_kurtosis_(0),
         recurrence_rate_(0),
         fractal_dim_(0),
-        mean_rev_z_(0) {
+        mean_rev_z_(0),
+        fast_mean_rev_z_(0) {
   }
-  ObservationData(float _log_variance_ratio, float _burstiness_index, float _relative_range, float _correction_action, float _vol_convexity, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _fast_hurst_exponent, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _fast_taleb_kurtosis, float _recurrence_rate, float _fractal_dim, float _mean_rev_z)
-      : log_variance_ratio_(::flatbuffers::EndianScalar(_log_variance_ratio)),
+  ObservationData(float _log_scale_ratio, float _burstiness_index, float _relative_range, float _log_scale_expansion_ratio, float _lempel_ziv, float _hurst_exponent, float _micro_asymmetry, float _fisher_info, float _fast_hurst_exponent, float _tail_index, float _skewness_idx, float _amihud_illiquidity, float _liq_fragility, float _fast_taleb_kurtosis, float _recurrence_rate, float _fractal_dim, float _mean_rev_z, float _fast_mean_rev_z)
+      : log_scale_ratio_(::flatbuffers::EndianScalar(_log_scale_ratio)),
         burstiness_index_(::flatbuffers::EndianScalar(_burstiness_index)),
         relative_range_(::flatbuffers::EndianScalar(_relative_range)),
-        correction_action_(::flatbuffers::EndianScalar(_correction_action)),
-        vol_convexity_(::flatbuffers::EndianScalar(_vol_convexity)),
+        log_scale_expansion_ratio_(::flatbuffers::EndianScalar(_log_scale_expansion_ratio)),
         lempel_ziv_(::flatbuffers::EndianScalar(_lempel_ziv)),
         hurst_exponent_(::flatbuffers::EndianScalar(_hurst_exponent)),
         micro_asymmetry_(::flatbuffers::EndianScalar(_micro_asymmetry)),
@@ -2249,13 +2248,14 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
         fast_taleb_kurtosis_(::flatbuffers::EndianScalar(_fast_taleb_kurtosis)),
         recurrence_rate_(::flatbuffers::EndianScalar(_recurrence_rate)),
         fractal_dim_(::flatbuffers::EndianScalar(_fractal_dim)),
-        mean_rev_z_(::flatbuffers::EndianScalar(_mean_rev_z)) {
+        mean_rev_z_(::flatbuffers::EndianScalar(_mean_rev_z)),
+        fast_mean_rev_z_(::flatbuffers::EndianScalar(_fast_mean_rev_z)) {
   }
-  float log_variance_ratio() const {
-    return ::flatbuffers::EndianScalar(log_variance_ratio_);
+  float log_scale_ratio() const {
+    return ::flatbuffers::EndianScalar(log_scale_ratio_);
   }
-  void mutate_log_variance_ratio(float _log_variance_ratio) {
-    ::flatbuffers::WriteScalar(&log_variance_ratio_, _log_variance_ratio);
+  void mutate_log_scale_ratio(float _log_scale_ratio) {
+    ::flatbuffers::WriteScalar(&log_scale_ratio_, _log_scale_ratio);
   }
   float burstiness_index() const {
     return ::flatbuffers::EndianScalar(burstiness_index_);
@@ -2269,17 +2269,11 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   void mutate_relative_range(float _relative_range) {
     ::flatbuffers::WriteScalar(&relative_range_, _relative_range);
   }
-  float correction_action() const {
-    return ::flatbuffers::EndianScalar(correction_action_);
+  float log_scale_expansion_ratio() const {
+    return ::flatbuffers::EndianScalar(log_scale_expansion_ratio_);
   }
-  void mutate_correction_action(float _correction_action) {
-    ::flatbuffers::WriteScalar(&correction_action_, _correction_action);
-  }
-  float vol_convexity() const {
-    return ::flatbuffers::EndianScalar(vol_convexity_);
-  }
-  void mutate_vol_convexity(float _vol_convexity) {
-    ::flatbuffers::WriteScalar(&vol_convexity_, _vol_convexity);
+  void mutate_log_scale_expansion_ratio(float _log_scale_expansion_ratio) {
+    ::flatbuffers::WriteScalar(&log_scale_expansion_ratio_, _log_scale_expansion_ratio);
   }
   float lempel_ziv() const {
     return ::flatbuffers::EndianScalar(lempel_ziv_);
@@ -2358,6 +2352,12 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ObservationData FLATBUFFERS_FINAL_CLASS {
   }
   void mutate_mean_rev_z(float _mean_rev_z) {
     ::flatbuffers::WriteScalar(&mean_rev_z_, _mean_rev_z);
+  }
+  float fast_mean_rev_z() const {
+    return ::flatbuffers::EndianScalar(fast_mean_rev_z_);
+  }
+  void mutate_fast_mean_rev_z(float _fast_mean_rev_z) {
+    ::flatbuffers::WriteScalar(&fast_mean_rev_z_, _fast_mean_rev_z);
   }
 };
 FLATBUFFERS_STRUCT_END(ObservationData, 72);

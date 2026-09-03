@@ -315,11 +315,10 @@ public:
     // === Institutional 16D Vector Map (Elite v3.1) ===
     // Aligned with mts_schema.fbs ObservationData struct
     // Quadrant I: Market Mechanics (Energy & Ergodicity)
-    static constexpr size_t OBS_LOG_VARIANCE_RATIO = MTS::Schema::Contract::kObsLogVarianceRatio;
+    static constexpr size_t OBS_LOG_SCALE_RATIO = MTS::Schema::Contract::kObsLogScaleRatio;
     static constexpr size_t OBS_BURSTINESS_INDEX = MTS::Schema::Contract::kObsBurstinessIndex;
     static constexpr size_t OBS_REL_RANGE = MTS::Schema::Contract::kObsRelativeRange;
-    static constexpr size_t OBS_CORRECTION_ACTION = MTS::Schema::Contract::kObsCorrectionAction;
-    static constexpr size_t OBS_VOL_CONVEXITY = MTS::Schema::Contract::kObsVolConvexity;
+    static constexpr size_t OBS_LOG_SCALE_EXPANSION_RATIO = MTS::Schema::Contract::kObsLogScaleExpansionRatio;
 
     // Quadrant II: Information Theory
     static constexpr size_t OBS_LEMPEL_ZIV = MTS::Schema::Contract::kObsLempelZiv;
@@ -339,8 +338,9 @@ public:
     static constexpr size_t OBS_RECURRENCE_RATE = MTS::Schema::Contract::kObsRecurrenceRate;
     static constexpr size_t OBS_FRACTAL_DIM = MTS::Schema::Contract::kObsFractalDim;
     static constexpr size_t OBS_MEAN_REV_Z = MTS::Schema::Contract::kObsMeanRevZ;
+    static constexpr size_t OBS_FAST_MEAN_REV_Z = MTS::Schema::Contract::kObsFastMeanRevZ;
 
-    static_assert(OBS_MEAN_REV_Z + 1 == OBSERVATION_VECTOR_SIZE,
+    static_assert(OBS_FAST_MEAN_REV_Z + 1 == OBSERVATION_VECTOR_SIZE,
                   "ContextManager observation index map must cover canonical ObservationData fields");
 
     /// P1.4: Expose cached Hill alpha for direct trading gate (not just HMM input).
@@ -377,6 +377,13 @@ public:
 
     /// Layer B: current session-aware Amihud percentile [0,1] (the risk-gate input).
     float GetAmihudPercentile() const { return m_localRiskContext.amihudPercentile; }
+
+    /// Real event-arrival-timestamp CV-burstiness (`eve::CalculateBurstinessIndex`), refreshed
+    /// every `CheckAndTriggerHMM()` call (every tick, unconditionally, before any trigger-decision
+    /// gating) -- not bar-gated. Exposed so `TripleScreen2.cpp` can feed this into the observation
+    /// vector's `burstiness_index` field instead of its own cruder bar-cadence proxy
+    /// (docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md Finding 10).
+    float GetRaschkeBurst() const { return m_latestInstitutionalMetrics.raschkeBurst; }
 
 private:
     // === Institutional-Grade Physics Engines (Elite v2.5 / v3.0) ===

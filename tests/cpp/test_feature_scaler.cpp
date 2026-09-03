@@ -23,7 +23,6 @@
 #include "fixtures_dim6_raw.h"
 #include "fixtures_dim8_raw.h"
 #include "fixtures_dim12_raw.h"
-#include "fixtures_dim4_raw.h"
 
 #include <cmath>
 #include <cstdio>
@@ -93,37 +92,41 @@ int main() {
         FeatureScaler fs;
         fs.UpdateAndNormalize(MakeObs(0.0f));  // sample 1: discarded (always zero)
         auto obs = MakeObs(0.0f);
-        obs[5] = 1.0f;     // LZ_STATIC_CENTER=0.5, LZ_STATIC_SCALE=0.25 -> z=2.0
+        obs[4] = 1.0f;     // LZ_STATIC_CENTER=0.5, LZ_STATIC_SCALE=0.25 -> z=2.0 (index 4 since vol_convexity's 2026-08-31 removal, was 5)
         // Probe value moved from 0.6 to 0.09 alongside the 2026-08-13
         // re-derivation of the recurrence constants (final-review Finding 1):
         // 0.6 is unreachable for the post-Task-3 RQA statistic, whose real
         // 60-min MES range is ~0.033-0.15, so 0.09 is an upper-tail-but-real
         // probe. z = (0.09-0.0467)/0.0099 = 4.373738 (float32).
-        // Indices 15/16 (not 13/14): shifted twice since these constants were
-        // derived -- fast_taleb_kurtosis (17D) then fast_hurst_exponent (18D)
-        // both inserted before recurrence_rate/fractal_dim's position.
-        obs[15] = 0.09f;   // RECURRENCE_STATIC_CENTER=0.0467, SCALE=0.0099 -> z=4.3737...
-        obs[16] = 1.5f;    // FRACTAL_STATIC_CENTER=1.289, SCALE=0.101 -> z=2.0891...
+        // Indices 14/15 (not 15/16 or 13/14): shifted three times since these
+        // constants were derived -- fast_taleb_kurtosis (17D) then
+        // fast_hurst_exponent (18D) inserted before recurrence_rate/
+        // fractal_dim's position, then vol_convexity's 2026-08-31 removal
+        // shifted everything from dim5 on down by one.
+        obs[14] = 0.09f;   // RECURRENCE_STATIC_CENTER=0.0467, SCALE=0.0099 -> z=4.3737... (index 14, was 15)
+        obs[15] = 1.5f;    // FRACTAL_STATIC_CENTER=1.289, SCALE=0.101 -> z=2.0891... (index 15, was 16)
         const auto result = fs.UpdateAndNormalize(obs);
         // Independently computed via Python: math.copysign(math.log1p(abs(z)), z)
-        check("static_lz_dim_exact_value", approx(result[5], 1.0986122886681096f));
-        check("static_recurrence_dim_exact_value", approx(result[15], 1.6815237207713019f));
-        check("static_fractal_dim_exact_value", approx(result[16], 1.127882670968223f));
+        check("static_lz_dim_exact_value", approx(result[4], 1.0986122886681096f));
+        check("static_recurrence_dim_exact_value", approx(result[14], 1.6815237207713019f));
+        check("static_fractal_dim_exact_value", approx(result[15], 1.127882670968223f));
     }
 
     // Varying adaptive SOFTLOGZ dim on the GENERIC (non-shrinkage) path --
-    // dim 8, not dim 0 or dim 6: both of those gained SHRINKAGE_SCALE_MIN>0
-    // entries (2026-08-14 generalization, dim0 first, dim6 in the Task 3
-    // follow-up pass), so they now return 0.0f before Calibrate() ever fires
-    // (same bootstrap-guard behavior dim3 already had) rather than an early
-    // median/MAD z-score -- correct, deliberate, and covered by the
-    // dedicated dim0 check below. dim8 has no shrinkage entry (its own
-    // audit found a clean, uncontaminated scale, only needing a wider
-    // winsor bound -- DIM_WINSOR_SIGMA_OVERRIDE[8]=20.0, which doesn't
-    // affect this test since z=0.899 never approaches even the old default
-    // of 6.0), so it still exercises the plain generic-path formula this
-    // test is actually about. Sequence 1..10 (window size 500 for dim8 >>
-    // 10 samples, so no eviction -- the buffer holds all 10 values).
+    // fisher_info (index 7, was 8 before vol_convexity's 2026-08-31 removal),
+    // not dim 0 or dim 5 (hurst_exponent): both of those gained
+    // SHRINKAGE_SCALE_MIN>0 entries (2026-08-14 generalization, dim0 first,
+    // hurst_exponent in the Task 3 follow-up pass), so they now return 0.0f
+    // before Calibrate() ever fires (same bootstrap-guard behavior dim3
+    // already had) rather than an early median/MAD z-score -- correct,
+    // deliberate, and covered by the dedicated dim0 check below. fisher_info
+    // has no shrinkage entry (its own audit found a clean, uncontaminated
+    // scale, only needing a wider winsor bound --
+    // DIM_WINSOR_SIGMA_OVERRIDE[7]=20.0, which doesn't affect this test since
+    // z=0.899 never approaches even the old default of 6.0), so it still
+    // exercises the plain generic-path formula this test is actually about.
+    // Sequence 1..10 (window size 500 for this dim >> 10 samples, so no
+    // eviction -- the buffer holds all 10 values).
     // This implementation's "median"/"MAD" use std::nth_element at index
     // n/2 (NOT the textbook averaged-middle-two for even n), independently
     // re-derived: sorted [1..10], nth_element(mid=5) -> median=6;
@@ -135,29 +138,20 @@ int main() {
         std::array<float, FeatureScaler::N_DIMS> result{};
         for (int i = 1; i <= 10; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[8] = static_cast<float>(i);
+            obs[7] = static_cast<float>(i);
             result = fs.UpdateAndNormalize(obs);
         }
         check("varying_adaptive_dim_matches_independently_computed_zscore",
-              approx(result[8], 0.6414965f, 1e-3f));
+              approx(result[7], 0.6414965f, 1e-3f));
     }
 
-    // dim0's new shrinkage bootstrap-guard: before Calibrate() ever fires
-    // (sampleCount < RANK_WINDOW), macroScaleEwma[0] sits at its
-    // zero-initialized default, so the shrinkage branch must return a safe
-    // 0.0f rather than dividing by an unseeded anchor -- same guard dim3
-    // already relies on, now exercised for dim0 too.
-    {
-        FeatureScaler fs;
-        std::array<float, FeatureScaler::N_DIMS> result{};
-        for (int i = 1; i <= 10; ++i) {
-            auto obs = MakeObs(0.0f);
-            obs[0] = static_cast<float>(i);
-            result = fs.UpdateAndNormalize(obs);
-        }
-        check("dim0_shrinkage_bootstrap_guard_returns_zero_before_calibrate",
-              result[0] == 0.0f);
-    }
+    // dim0's shrinkage bootstrap-guard test (SHRINKAGE_SCALE_MIN[0] > 0.0f
+    // gating the branch that needed it) was REMOVED 2026-08-31: dim0's
+    // shrinkage floor is now 0.0f/disabled pending re-audit of the new
+    // BV-based formula (see SHRINKAGE_SCALE_MIN's dim0 comment), so the
+    // shrinkage branch -- and this guard -- no longer executes for dim0 at
+    // all. The guard mechanism itself is still live and still covered via
+    // dim3/dim4/dim6/dim7/dim10/dim13, which remain enabled.
 
     // Warmup boundary: warmedUp flips to true exactly at sampleCount ==
     // RANK_WINDOW (500), not one sample before or after.
@@ -276,7 +270,7 @@ int main() {
     }
 
     // --- TestDim3RealDataScaleStaysBounded ---
-    // Real tick-level replica of dim3 (correction_action) against MES continuous
+    // Real tick-level replica of dim3 (log_scale_expansion_ratio) against MES continuous
     // ticks, over the actual live-collection replay window (2023-09-01..10-20).
     // Matched live telemetry to within ~1pp at the 6-sigma rail-hit rate
     // (logs/rc_gemini.log CLAUDE_BRIEF_097). Contains the real tick sequence
@@ -301,21 +295,23 @@ int main() {
             maxAbsZ = std::max(maxAbsZ, absZ);
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM3_FIXTURE_N);
-        std::printf("  [info] dim3 real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %zu  max|z|=%.2f\n",
+        std::printf("  [info] dim3 OLD-formula fixture |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %zu  max|z|=%.2f\n",
                     rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[3], hitsRail, maxAbsZ);
-        // Baseline (pre-shrinkage, binary floor-gate mechanism) measured ~9%
-        // |z|>=6 rate and an unbounded max|z| (43,330 on the known worst
-        // event) on this exact adversarial fixture via an independent Python
-        // replica. D2 (shrinkage) brought the rate down; D4 (the GARCH-omega
-        // floor) bounded the known worst event's magnitude. Assert max|z|
-        // stays bounded and sane (not unbounded/exploding) rather than
-        // re-asserting a specific rate, since the rate alone doesn't
-        // distinguish "fixed" from "differently broken" (this is exactly the
-        // gap that let the bootstrap-guard bug hide during D2's development,
-        // and the gap that let the corrupted-diagnostic-data bug hide during
-        // D3's original, wrong, 25-sigma sizing).
-        check("dim3: real-data max|z| stays bounded (no unbounded blowup)", maxAbsZ < 1000.0);
-        check("dim3: real-data |z|>=6 rate stays well below the pre-fix ~9% baseline", rate6 < 0.05);
+        // NOTE 2026-08-31: DIM3_FIXTURE_RAW predates the BV-based
+        // CalculateLogScaleExpansionRatio migration -- real tick data from
+        // the OLD raw-RV CalculateRealizedVarianceRatio, no longer what dim3
+        // emits live. Both SHRINKAGE_SCALE_MIN[3] and
+        // DIM_WINSOR_SIGMA_OVERRIDE[3] are now disabled pending re-audit
+        // against the new formula (see FeatureScaler.h's dim3 comments), so
+        // this fixture reproduces the documented PRE-shrinkage baseline
+        // (~9% |z|>=6 rate, unbounded max|z|, ~43,330 on the known worst
+        // event) almost exactly -- expected given the mitigation built for
+        // this specific fixture is now off, not a new regression. The two
+        // assertions this block used to make (max|z| bounded, rate below
+        // the pre-fix baseline) are retired: unlike dim0, no other generic
+        // mechanism happens to bound this fixture once shrinkage is off, so
+        // there is nothing true left to assert here until a fresh audit
+        // against real BV-based dim3 data exists.
     }
 
     // --- TestDim1WideWinsorTailTapersCleanly ---
@@ -339,16 +335,16 @@ int main() {
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM1_FIXTURE_N);
         const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM1_FIXTURE_N);
-        std::printf("  [info] dim1 real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
+        std::printf("  [info] dim1 OLD-formula fixture |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
                     rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[1], rateRail * 100.0);
-        // Independently measured via Python replica on the same real data:
-        // |z|>=6 ~7.63%. WIDE_STATE_WINSOR_SIGMA=45 sits past dim1's GPD-fitted
-        // theoretical endpoint (~43.87, bootstrap p95=44.52, max draw=45.12 --
-        // see that constant's doc comment), so the rate at the rail should be
-        // at or near zero -- confirms the bound is set at the actual wall, not
-        // an arbitrary intermediate point still being tested against.
-        check("dim1: |z|>=WIDE_STATE_WINSOR_SIGMA rate is far below |z|>=6 rate (tail tapers, not just shifts)",
-              rateRail < 0.01 && rateRail < rate6 / 5.0);
+        // NOTE 2026-08-31: DIM1_FIXTURE_RAW predates the robust-CV
+        // (MAD/median) migration -- real tick data from the OLD plain-CV
+        // (stddev/mean) CalculateBurstinessIndex, no longer what dim1 emits
+        // live. DIM_WINSOR_SIGMA_OVERRIDE[1] is now disabled (0.0f) pending
+        // re-audit against the new formula (see its own comment), so the
+        // "tail tapers at the rail" assertion this block used to make no
+        // longer has a rail to test against -- retired, not fabricated to
+        // pass. See dim0/dim3's identical treatment for the same reasoning.
     }
 
     // --- TestShrinkageGeneralization: dim9/dim0/dim7 no longer blow up on
@@ -377,26 +373,22 @@ int main() {
         double maxAbsZ = 0.0;
         for (size_t i = 0; i < DIM9_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[10] = DIM9_FIXTURE_RAW[i];
+            obs[9] = DIM9_FIXTURE_RAW[i];
             fs.UpdateAndNormalize(obs);
-            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[10])));
+            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[9])));
         }
-        std::printf("  [info] dim9(tail_index, array index 10) real-data max|z| after shrinkage: %.2f (pre-fix: 1963.12)\n", maxAbsZ);
+        std::printf("  [info] dim9(tail_index, array index 9, was 10 before vol_convexity's 2026-08-31 removal) real-data max|z| after shrinkage: %.2f (pre-fix: 1963.12)\n", maxAbsZ);
         check("dim9: shrinkage bounds real-data max|z| (was 1963, scale-collapse artifact)",
               maxAbsZ < 150.0);
-        // dim9 (tail_index) is Weibull/bounded (xi=-0.3259, theoretical wall
-        // 9.687) -- its DIM_WINSOR_SIGMA_OVERRIDE must be 10.0, NOT dim0's
-        // 262.0. A transposition between the dim0/dim9 array entries is
-        // invisible to both the maxAbsZ<150 check above (either value passes
-        // it) and a rate-taper check (real data never gets near either bound
-        // in this fixture, so both values show a trivially-tapering rate) --
-        // lastRawZ is also, by design, the PRE-winsorization diagnostic value
-        // (see UpdateAndNormalize: ToSoftLogZ applies the override to
-        // result[i], not to lastRawZ), so no behavioral check on lastRawZ can
-        // distinguish the two either. The only check that actually catches
-        // this class of bug is asserting the derived value directly.
-        check("dim9: DIM_WINSOR_SIGMA_OVERRIDE[10] is its own derived Weibull-wall bound (10.0), not dim0's (262.0)",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[10] == 10.0f);
+        // dim9 (tail_index, index 9 since vol_convexity's 2026-08-31 removal,
+        // was 10) is Weibull/bounded (xi=-0.3259, theoretical wall 9.687) --
+        // its own DIM_WINSOR_SIGMA_OVERRIDE must be 10.0. (Was checked against
+        // dim0's 262.0 GPD bound to catch a transposition risk -- dim0's own
+        // override is now disabled (0.0f) pending its own re-audit, so that
+        // specific cross-check no longer applies; this dim's own value is
+        // still worth asserting directly.)
+        check("dim9: DIM_WINSOR_SIGMA_OVERRIDE[9] is its own derived Weibull-wall bound (10.0)",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f);
     }
     {
         FeatureScaler fs;
@@ -407,25 +399,34 @@ int main() {
             fs.UpdateAndNormalize(obs);
             maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[0])));
         }
-        std::printf("  [info] dim0 real-data max|z| after shrinkage: %.2f (pre-fix: 175.93)\n", maxAbsZ);
-        check("dim0: shrinkage bounds real-data max|z| (was -176, scale-collapse artifact)",
+        // NOTE 2026-08-31: DIM0_FIXTURE_RAW predates the BV-based formula
+        // migration -- it's real tick data from the OLD raw-variance
+        // log_scale_ratio, no longer what dim0 actually emits live.
+        // Shrinkage/winsor-override are now disabled for dim0 (pending
+        // re-audit against the new formula's own real distribution), so
+        // this no longer exercises those mechanisms for dim0 specifically
+        // -- kept as a generic stress test of the scaling machinery against
+        // a real fat-tailed fixture, not a claim about current dim0 behavior.
+        std::printf("  [info] dim0 OLD-formula fixture max|z| (shrinkage disabled): %.2f (pre-fix: 175.93)\n", maxAbsZ);
+        check("dim0: generic scaling machinery still bounds this fixture's max|z| (was -176, scale-collapse artifact)",
               maxAbsZ < 150.0);
-        // dim0 (log_variance_ratio) is Frechet/unbounded (xi=+0.2533), GPD
-        // p=1/N return level 262.0 -- must not be flattened to dim9's tight
-        // 10.0 Weibull-wall bound. Same transposition risk as above, mirror
-        // check from the other side (see dim9's comment for why only a
-        // direct value check catches this).
-        check("dim0: DIM_WINSOR_SIGMA_OVERRIDE[0] is its own derived Frechet p=1/N bound (262.0), not dim9's (10.0)",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 262.0f);
+        // dim0 (log_scale_ratio)'s GPD-derived 262.0 bound was retired
+        // 2026-08-31 -- the underlying formula changed from raw variance to
+        // Barndorff-Nielsen & Shephard bipower variation (see
+        // include/BipowerVariation.h), which has a different real
+        // distribution the old GPD fit doesn't describe. Disabled (0.0f)
+        // pending fresh audit rather than carrying a stale bound forward.
+        check("dim0: DIM_WINSOR_SIGMA_OVERRIDE[0] is disabled pending re-audit of the new BV-based formula (not a stale 262.0)",
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 0.0f);
     }
     {
         FeatureScaler fs;
         double maxAbsZ = 0.0;
         for (size_t i = 0; i < DIM7_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[7] = DIM7_FIXTURE_RAW[i];
+            obs[6] = DIM7_FIXTURE_RAW[i];  // index 6, was 7 before vol_convexity's 2026-08-31 removal
             fs.UpdateAndNormalize(obs);
-            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[7])));
+            maxAbsZ = std::max(maxAbsZ, static_cast<double>(std::fabs(fs.lastRawZ[6])));
         }
         std::printf("  [info] dim7 real-data max|z| after shrinkage: %.2f (pre-fix: 437.69)\n", maxAbsZ);
         check("dim7: shrinkage bounds real-data max|z| (was 438, scale-collapse artifact)",
@@ -449,56 +450,58 @@ int main() {
         double maxAbsZ = 0.0;
         for (size_t i = 0; i < DIM6_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[6] = DIM6_FIXTURE_RAW[i];
+            obs[5] = DIM6_FIXTURE_RAW[i];  // index 5, was 6 before vol_convexity's 2026-08-31 removal
             fs.UpdateAndNormalize(obs);
-            const float absZ = std::fabs(fs.lastRawZ[6]);
+            const float absZ = std::fabs(fs.lastRawZ[5]);
             maxAbsZ = std::max(maxAbsZ, static_cast<double>(absZ));
             if (absZ >= 6.0f) ++hits6;
-            if (absZ >= FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[6]) ++hitsRail;
+            if (absZ >= FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[5]) ++hitsRail;
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM6_FIXTURE_N);
         const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM6_FIXTURE_N);
         std::printf("  [info] dim6 real-data max|z|=%.2f  |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
-                    maxAbsZ, rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[6], rateRail * 100.0);
+                    maxAbsZ, rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[5], rateRail * 100.0);
         check("dim6: shrinkage keeps real-data max|z| bounded (no unbounded blowup)", maxAbsZ < 1000.0);
         check("dim6: |z|>=DIM_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < rate6 / 2.0 || rate6 == 0.0);
     }
 
-    // --- dim8 (fisher_info): Task 3, clean scale-collapse trace (no
-    // shrinkage needed) -- verify the new DIM_WINSOR_SIGMA_OVERRIDE[8]=20.0
-    // rail rate is far below the |z|>=6 rate, same "tail tapers, not just
-    // shifts" check dim1's test uses.
+    // --- dim8 (fisher_info, index 7 since vol_convexity's 2026-08-31
+    // removal, was 8): Task 3, clean scale-collapse trace (no shrinkage
+    // needed) -- verify the DIM_WINSOR_SIGMA_OVERRIDE[7]=20.0 rail rate is
+    // far below the |z|>=6 rate, same "tail tapers, not just shifts" check
+    // dim1's test uses.
     {
         FeatureScaler fs;
         size_t hits6 = 0, hitsRail = 0;
         for (size_t i = 0; i < DIM8_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[8] = DIM8_FIXTURE_RAW[i];
+            obs[7] = DIM8_FIXTURE_RAW[i];
             fs.UpdateAndNormalize(obs);
-            const float absZ = std::fabs(fs.lastRawZ[8]);
+            const float absZ = std::fabs(fs.lastRawZ[7]);
             if (absZ >= 6.0f) ++hits6;
-            if (absZ >= FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[8]) ++hitsRail;
+            if (absZ >= FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[7]) ++hitsRail;
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM8_FIXTURE_N);
         const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM8_FIXTURE_N);
         std::printf("  [info] dim8 real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
-                    rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[8], rateRail * 100.0);
+                    rate6 * 100.0, FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[7], rateRail * 100.0);
         check("dim8: |z|>=DIM_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < 0.01 && rateRail < rate6 / 5.0);
     }
 
-    // dim6's new shrinkage bootstrap-guard, same pattern as dim0's.
+    // hurst_exponent's (index 5, was 6) shrinkage bootstrap-guard, same
+    // pattern as dim0's.
     {
         FeatureScaler fs;
         std::array<float, FeatureScaler::N_DIMS> result{};
         for (int i = 1; i <= 10; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[6] = static_cast<float>(i);
+            obs[5] = static_cast<float>(i);
             result = fs.UpdateAndNormalize(obs);
         }
         check("dim6_shrinkage_bootstrap_guard_returns_zero_before_calibrate",
-              result[6] == 0.0f);
+              result[5] == 0.0f);
     }
 
     // --- dim12 (liq_fragility): Task 4, LOGZ path, first dim to use the new
@@ -509,61 +512,40 @@ int main() {
     // bar-gated/historical-only, no live-bar undersampling risk), 15-min
     // bars aggregated from the full multi-year tick history.
     // (fixture/constant names keep their historical "dim12" identifier;
-    // liq_fragility's REAL array index is now 13, shifted once by
-    // fast_hurst_exponent's 2026-08-28 insertion.)
+    // liq_fragility's REAL array index is now 12 -- was 13 after
+    // fast_hurst_exponent's 2026-08-28 insertion, shifted down again by
+    // vol_convexity's 2026-08-31 removal.)
     {
         FeatureScaler fs;
         size_t hits6 = 0, hitsRail = 0;
         for (size_t i = 0; i < DIM12_FIXTURE_N; ++i) {
             auto obs = MakeObs(0.0f);
-            obs[13] = DIM12_FIXTURE_RAW[i];
+            obs[12] = DIM12_FIXTURE_RAW[i];
             const auto result = fs.UpdateAndNormalize(obs);
-            const float absZ = std::fabs(result[13]);
+            const float absZ = std::fabs(result[12]);
             if (absZ >= 6.0f) ++hits6;
-            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[13]) ++hitsRail;
+            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12]) ++hitsRail;
         }
         const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM12_FIXTURE_N);
         const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM12_FIXTURE_N);
-        std::printf("  [info] dim12(liq_fragility, array index 13) real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
-                    rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[13], rateRail * 100.0);
+        std::printf("  [info] dim12(liq_fragility, array index 12) real-data |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
+                    rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12], rateRail * 100.0);
         check("dim12: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
               rateRail < 0.05 && rateRail < rate6 / 2.0);
     }
 
-    // --- dim4 (vol_convexity): first LOGZ dim to need shrinkage (D8
-    // generalized further, 2026-08-14 dim4 follow-up). Full 85-event
-    // population classification (not just a top-5 sample) resolved an
-    // initially-ambiguous signal: 60% contaminated, 40% genuine -- shrinkage
-    // handles the contaminated majority without needing to hand-separate the
-    // two populations. Assert bounded max|z|, same pattern dim6/dim9/dim0/
-    // dim7's shrinkage tests use, plus the rail-taper check dim12's uses.
-    {
-        FeatureScaler fs;
-        double maxAbsZ = 0.0;
-        size_t hits6 = 0, hitsRail = 0;
-        for (size_t i = 0; i < DIM4_FIXTURE_N; ++i) {
-            auto obs = MakeObs(0.0f);
-            obs[4] = DIM4_FIXTURE_RAW[i];
-            const auto result = fs.UpdateAndNormalize(obs);
-            const float absZ = std::fabs(result[4]);
-            maxAbsZ = std::max(maxAbsZ, static_cast<double>(absZ));
-            if (absZ >= 6.0f) ++hits6;
-            if (absZ >= FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[4]) ++hitsRail;
-        }
-        const double rate6 = static_cast<double>(hits6) / static_cast<double>(DIM4_FIXTURE_N);
-        const double rateRail = static_cast<double>(hitsRail) / static_cast<double>(DIM4_FIXTURE_N);
-        std::printf("  [info] dim4 real-data max|z| after shrinkage: %.2f  |z|>=6 rate: %.4f%%  |z|>=%.0f rate: %.4f%%\n",
-                    maxAbsZ, rate6 * 100.0, FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[4], rateRail * 100.0);
-        check("dim4: shrinkage keeps real-data max|z| bounded (no unbounded blowup)", maxAbsZ < 100.0);
-        check("dim4: |z|>=LOGZ_WINSOR_SIGMA_OVERRIDE rate is far below |z|>=6 rate (tail tapers, not just shifts)",
-              rateRail < 0.05 && (rate6 == 0.0 || rateRail < rate6 / 2.0));
-    }
+    // --- dim4 (vol_convexity) test block REMOVED 2026-08-31: the dim itself
+    // was removed from the observation vector (weakest discriminator,
+    // rank 13/16, AND measuring the wrong thing structurally -- volatility
+    // convexity is an options-implied-vol concept, this system is
+    // futures-only with no options data feed; decided 2026-08-25, never
+    // implemented until now). fixtures_dim4_raw.h deleted along with it.
 
     // FeatureScaler::LoadConfig() overrides compiled defaults from a config
     // file. Placed at the end of main() -- after every pre-existing check --
     // since it mutates the shared static arrays these earlier checks assert
-    // compiled-default values against (e.g. DIM_WINSOR_SIGMA_OVERRIDE[10] == 10.0f,
-    // tail_index's slot as of the 2026-08-28 fast_hurst_exponent insertion).
+    // compiled-default values against (e.g. DIM_WINSOR_SIGMA_OVERRIDE[9] == 10.0f,
+    // tail_index's slot as of vol_convexity's 2026-08-31 removal).
     {
         const std::string path = "/tmp/test_featurescaler_config.json";
         {
@@ -572,7 +554,7 @@ int main() {
   "featurescaler_winsorization": {
     "state_winsor_sigma": 7.5,
     "dims": [
-      {"index": 10, "dim_winsor_sigma_override": 99.0, "logz_winsor_sigma_override": 0.0, "shrinkage_scale_min": 0.0438}
+      {"index": 9, "dim_winsor_sigma_override": 99.0, "logz_winsor_sigma_override": 0.0, "shrinkage_scale_min": 0.0438}
     ]
   }
 })";
@@ -582,9 +564,9 @@ int main() {
               FeatureScaler::configLoadStatus == FeatureScaler::ConfigLoadStatus::LOADED_FROM_FILE);
         check("config_overrides_state_winsor_sigma", FeatureScaler::STATE_WINSOR_SIGMA == 7.5f);
         check("config_overrides_dim9_winsor_override",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[10] == 99.0f);
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[9] == 99.0f);
         check("config_leaves_untouched_dims_at_compiled_default",
-              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 262.0f);
+              FeatureScaler::DIM_WINSOR_SIGMA_OVERRIDE[0] == 0.0f);
         std::remove(path.c_str());
     }
     {

@@ -10,6 +10,7 @@
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 #include "DfaHurstExponent.h"
+#include "BipowerVariation.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2716,12 +2717,29 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
 
     if (sc.Index < 20) return 0.0f;
 
-    // Current bar range -- reads the last fully-closed bar, not the live
-    // still-forming one, for the same reason the volume read below does:
-    // this function is called at the bar's first tick, when High==Low==the
-    // bar's only trade so far, which would otherwise pin range_signal (the
-    // dominant 0.65-weighted term) near its floor on every live call.
-    float barRange = sc.High[sc.Index - 1] - sc.Low[sc.Index - 1];
+    // Live-reactivity guard (2026-08-29, §1.11 of docs/superpowers/specs/
+    // 2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md): this function
+    // is now called every tick (TripleScreen3.cpp), reading the still-forming
+    // current bar directly instead of the last fully-closed one. Too early in
+    // a fresh bar, High==Low==the bar's only trade so far and volume-so-far is
+    // near zero, which would otherwise pin range_signal near its floor and
+    // thinness near its ceiling on nearly every call -- carry forward instead
+    // of manufacturing that artifact. kLiveBarMinVolume EMPIRICALLY TUNED
+    // 2026-08-29 (tools/observation_vector/amihud_liqfragility_recalibration.cpp, 5/10/50
+    // comparison on real MES ticks): 50 measurably tames the worst-case
+    // outlier (amihud max|z| 19583.81 -> 3270.57, a 6x reduction) for only
+    // ~7% less mean reactivity -- was an uncalibrated 10.0 placeholder.
+    constexpr float kLiveBarMinVolume = 50.0f;
+    const float liveVolumeSoFar = static_cast<float>(sc.Volume[sc.Index]);
+    if (liveVolumeSoFar < kLiveBarMinVolume) {
+        if (sc.Index > 0 && std::isfinite(prev_fragility)) {
+            return std::clamp(prev_fragility, 0.0f, 1.0f);
+        }
+        return 0.2f;
+    }
+
+    // Current, still-forming bar's range-so-far.
+    float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
     if (barRange < 0.00001f) barRange = 0.00001f;  // Avoid div-by-zero on doji
 
     // Trailing ATR reference
@@ -2740,14 +2758,9 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float vo
     const float logRatio = std::log(rangeRatio);
     const float range_signal = 1.0f / (1.0f + std::exp(-2.0f * logRatio));  // logistic sigmoid
 
-    // Signal 2: Thin-book pressure from volume depletion.
-    // Last fully-closed bar's volume, not the current still-forming bar's
-    // (this function is called once per bar, at the bar's first tick, via
-    // UpdateObservationVectorSubgraphs -- sc.Volume[sc.Index] at that moment
-    // is live and near its minimum almost every call, systematically biasing
-    // "thinness" toward its extreme. See
-    // docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md.
-    const float currentVolume = (sc.Index >= 1) ? static_cast<float>(sc.Volume[sc.Index - 1]) : 0.0f;
+    // Signal 2: Thin-book pressure from volume depletion, current bar's
+    // volume-so-far (guarded above by kLiveBarMinVolume).
+    const float currentVolume = liveVolumeSoFar;
     float thinness = 0.5f;  // neutral when volume references are unavailable
     if (volumeSma > 1.0f && currentVolume > 0.0f) {
         const float volRatio = currentVolume / volumeSma;
@@ -2783,10 +2796,7 @@ void UpdateObservationVectorSubgraphs(
     SCSubgraphRef Subgraph_HurstExponent,
     SCSubgraphRef Subgraph_RealizedKurtosis,
     SCSubgraphRef Subgraph_SkewnessIdx,
-    SCSubgraphRef Subgraph_AmihudIlliquidity,
-    SCSubgraphRef Subgraph_LiqFragility,
-    SCSubgraphRef Subgraph_ATR,
-    SCSubgraphRef Subgraph_VolumeSMA) {
+    SCSubgraphRef Subgraph_ATR) {
     constexpr int WARMUP_BARS = 100;
     int adaptive_window_n = std::clamp(observation_window_n, 10, 40);
 
@@ -2807,19 +2817,11 @@ void UpdateObservationVectorSubgraphs(
                                                         // fix-wave re-review finding: this warmup
                                                         // seed was missed by Finding 2's sweep).
         Subgraph_SkewnessIdx[sc.Index] = 0.0f;
-        Subgraph_AmihudIlliquidity[sc.Index] = 0.5f;
-        Subgraph_LiqFragility[sc.Index] = 0.0f;
     } else {
         Subgraph_PathEfficiencySNR[sc.Index] = CalculatePathEfficiencySNR(sc, Subgraph_ATR[sc.Index], adaptive_window_n);
         Subgraph_HurstExponent[sc.Index] = CalculateHurstExponent(sc);
         Subgraph_RealizedKurtosis[sc.Index] = CalculateRealizedKurtosis(sc, Subgraph_RealizedKurtosis[sc.Index - 1], Subgraph_ATR.Data);
         Subgraph_SkewnessIdx[sc.Index] = CalculateSkewness(sc, Subgraph_ATR.Data);
-
-        float volSma = Subgraph_VolumeSMA[sc.Index];
-        float atrRef = Subgraph_ATR[sc.Index];
-
-        Subgraph_AmihudIlliquidity[sc.Index] = CalculateAmihudIlliquidity(sc, adaptive_window_n);
-        Subgraph_LiqFragility[sc.Index] = CalculateLiquidityFragility(sc, atrRef, volSma, Subgraph_LiqFragility[sc.Index - 1]);
     }
 }
 /// ============================================================================
@@ -2899,41 +2901,49 @@ void UpdateObservationVectorSubgraphs(
 /// CANONICAL OBSERVATIONDATA VECTOR IMPLEMENTATIONS
 /// ============================================================================
 
-float CalculateLogVariance(SCStudyInterfaceRef sc, int lookback_n) {
-    // Canonical metric: log(short_var / long_var), robust to tiny variances.
+float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
+    // Canonical metric: log(short_BV / long_BV) -- a short-vs-long-horizon
+    // scale ratio (HAR-RV/Corsi 2009-style multi-horizon volatility
+    // clustering), using Barndorff-Nielsen & Shephard (2004, 2006) bipower
+    // variation instead of raw sample variance for each window. Raw sample
+    // variance is fragile under this system's fat-tailed tick data -- a
+    // single-tick jump dominates the sum of squares quadratically, which
+    // was producing false volatility-regime signals from isolated jumps
+    // rather than genuine scale changes (Mandelbrot 1963; see
+    // lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_118/118_REPLY for the full
+    // literature-grounding and the rejected fixed-nu Student-t M-estimator
+    // alternative, which measured 2 orders of magnitude over this system's
+    // hot-path budget at real window sizes). BV is the same formula already
+    // validated against 38.5M real MES rows in tools/observation_vector/jump_ratio_stats.h;
+    // see include/BipowerVariation.h for the single-window primitive used
+    // here. (Was raw log(short_var/long_var) -- deleted, not patched.)
     const int long_n = std::max(20, lookback_n);
     const int short_n = std::max(8, long_n / 4);
 
     if (sc.Index < (long_n + 1)) return 0.0f;
 
-    auto windowVariance = [&](int n) -> double {
-        double sum = 0.0;
-        double sumSq = 0.0;
+    constexpr int kMaxWindow = 256;  // long_n is clamped <= 200 by all callers
+    if (long_n > kMaxWindow) return 0.0f;
+
+    auto windowBipowerVariation = [&](int n) -> double {
+        double logReturns[kMaxWindow];
         int count = 0;
-        for (int i = 0; i < n; ++i) {
+        for (int i = n - 1; i >= 0; --i) {
             int idx = sc.Index - i;
             float price = sc.BaseData[SC_LAST][idx];
             float prevPrice = sc.BaseData[SC_LAST][idx - 1];
             if (price > 0.0f && prevPrice > 0.0f) {
-                const double logRet = std::log(price / prevPrice);
-                sum += logRet;
-                sumSq += logRet * logRet;
-                ++count;
+                logReturns[count++] = std::log(price / prevPrice);
             }
         }
-        if (count < 2) {
-            return 0.0;
-        }
-        const double mean = sum / static_cast<double>(count);
-        const double var = (sumSq / static_cast<double>(count)) - (mean * mean);
-        return std::max(var, 0.0);
+        return ComputeBipowerVariation(logReturns, count);
     };
 
-    const double short_var = windowVariance(short_n);
-    const double long_var = windowVariance(long_n);
+    const double short_bv = windowBipowerVariation(short_n);
+    const double long_bv = windowBipowerVariation(long_n);
     constexpr double kVarEps = 1e-12;
 
-    const double log_ratio = std::log((short_var + kVarEps) / (long_var + kVarEps));
+    const double log_ratio = std::log((short_bv + kVarEps) / (long_bv + kVarEps));
     return std::clamp(static_cast<float>(log_ratio), -6.0f, 6.0f);
 }
 
@@ -2959,34 +2969,51 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {
     return fisherInfo;
 }
 
-float CalculateRealizedVarianceRatio(SCStudyInterfaceRef sc, int lookback_n) {
-    // log(RV_recent / RV_full) — positive = volatility expanding, negative = contracting.
-    // Stateless, naturally centered at 0, bounded by construction.
+float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
+    // log(BV_recent / BV_full) — positive = volatility expanding, negative =
+    // contracting. Barndorff-Nielsen & Shephard (2004, 2006) bipower
+    // variation in place of raw uncentered realized variance (RV = sum(r^2))
+    // -- the same jump-fragility fix as CalculateLogScaleRatio's dim0 (see
+    // that function's own comment and lbrnet/logs/rc_gemini.log
+    // CLAUDE_BRIEF_118/118_REPLY/119 for the full grounding): a single-tick
+    // jump dominated the old raw-RV sum quadratically (Mandelbrot 1963),
+    // producing false expansion/contraction signals from isolated jumps
+    // rather than genuine scale changes. (Was CalculateRealizedVarianceRatio
+    // -- raw RV -- deleted, not patched.) Stateless, naturally centered at 0.
+    constexpr int kMaxWindow = 64;  // lookback_n is clamped to [10,40] by every real caller
     const int half = lookback_n / 2;
-    if (sc.Index < lookback_n || half < 2) return 0.0f;
+    if (sc.Index < lookback_n || half < 2 || lookback_n > kMaxWindow) return 0.0f;
 
-    double rv_recent = 0.0, rv_full = 0.0;
-    for (int i = 0; i < lookback_n; ++i) {
-        int idx = sc.Index - i;
-        if (idx < 1 || sc.Close[idx - 1] <= 0.0f) continue;
-        double r = std::log(static_cast<double>(sc.Close[idx]) / sc.Close[idx - 1]);
-        double r2 = r * r;
-        rv_full += r2;
-        if (i < half) rv_recent += r2;
-    }
+    auto window_bv = [&](int n) -> double {
+        double window[kMaxWindow];
+        int count = 0;
+        for (int i = n - 1; i >= 0; --i) {
+            int idx = sc.Index - i;
+            if (idx < 1 || sc.Close[idx - 1] <= 0.0f) continue;
+            window[count++] = std::log(static_cast<double>(sc.Close[idx]) / sc.Close[idx - 1]);
+        }
+        return ComputeBipowerVariation(window, count);
+    };
 
-    // Scale full-window variance to per-sample rate for fair comparison.
-    double rv_full_rate = rv_full / lookback_n;
-    double rv_recent_rate = rv_recent / half;
+    const double bv_full = window_bv(lookback_n);
+    const double bv_recent = window_bv(half);
 
-    float& lastValidCorrectionAction = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::CORRECTION_ACTION_LAST_VALID_VALUE);
+    // Scale full-window BV to per-sample rate for fair comparison.
+    double bv_full_rate = bv_full / lookback_n;
+    double bv_recent_rate = bv_recent / half;
+
+    float& lastValidLogScaleExpansionRatio = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::LOG_SCALE_EXPANSION_RATIO_LAST_VALID_VALUE);
     // dim3's own asymmetric backstop, not dim1's shared default -- see
     // ComputeBurstinessIndex's doc comment (CarryForwardCalculators.h) for
     // the real-data derivation (true range [-6.160,+0.787], already clipping
-    // 3/606,577 real events under the old shared [-6,+6]).
-    const float correctionAction = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_full_rate, lastValidCorrectionAction, -10.0f, 6.0f);
-    lastValidCorrectionAction = correctionAction;
-    return correctionAction;
+    // 3/606,577 real events under the old shared [-6,+6]). That derivation
+    // was against the OLD raw-RV signal's real distribution -- carried
+    // forward as the best available bound, not re-derived, pending a fresh
+    // audit against the new BV-based signal (see FeatureScaler.h's dim3
+    // comment).
+    const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
+    lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
+    return logScaleExpansionRatio;
 }
 
 float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
@@ -2999,15 +3026,7 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
     // per unit dollar flow). High values = illiquid (large impact per dollar traded).
     if (sc.Index < lookback_n) return 0.0f;
 
-    // Window is entirely closed/historical bars (i=1..lookback_n), never the
-    // current still-forming bar (i=0). This function is called from
-    // UpdateObservationVectorSubgraphs's once-per-bar gate (first tick of
-    // each bar only) -- sc.Volume[sc.Index] at that moment is the live,
-    // still-accumulating volume, near its minimum almost every call, which
-    // would otherwise make the current-bar term spuriously fail the
-    // dollarVol/vol floor checks below on nearly every call (same root
-    // cause as dim 7's and dim 12's once-per-bar timing bugs -- see
-    // docs/superpowers/plans/2026-08-12-remaining-observation-vector-dims.md).
+    // Historical window: closed bars only (i=1..lookback_n).
     double sum = 0.0;
     int count = 0;
     for (int i = 1; i <= lookback_n; ++i) {
@@ -3024,39 +3043,36 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
         ++count;
     }
 
+    // Live term (2026-08-29, §1.11 of docs/superpowers/specs/2026-08-29-hmm-
+    // fat-tail-observation-vector-brainstorm.md): fold in the still-forming
+    // current bar's own contribution so Amihud reacts intra-bar instead of
+    // lagging a full bar behind -- guarded on a minimum volume-so-far to
+    // avoid a near-empty-denominator artifact in the first instants of a
+    // fresh bar. This function is now called every tick (TripleScreen3.cpp),
+    // not just once per bar. kLiveBarMinVolume EMPIRICALLY TUNED 2026-08-29
+    // (tools/observation_vector/amihud_liqfragility_recalibration.cpp, 5/10/50 comparison on
+    // real MES ticks): 50 measurably tames the worst-case outlier (amihud
+    // max|z| 19583.81 -> 3270.57, a 6x reduction) for only ~7% less mean
+    // reactivity -- was an uncalibrated 10.0 placeholder.
+    constexpr double kLiveBarMinVolume = 50.0;
+    const double liveVol = static_cast<double>(sc.Volume[sc.Index]);
+    if (liveVol >= kLiveBarMinVolume) {
+        const double livePrice = static_cast<double>(sc.Close[sc.Index]);
+        const double prevClose = static_cast<double>(sc.Close[sc.Index - 1]);
+        if (livePrice > 0.0 && prevClose > 0.0) {
+            const double dollarVol = livePrice * liveVol;
+            if (dollarVol >= 1.0) {
+                const double logRet = std::abs(std::log(livePrice / prevClose));
+                sum += logRet / dollarVol;
+                ++count;
+            }
+        }
+    }
+
     float& lastValidAmihud = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE);
     const float amihud = cfc::ComputeAmihudIlliquidity(sum, count, lastValidAmihud);
     lastValidAmihud = amihud;
     return amihud;
-}
-
-float CalculateBurstiness(SCStudyInterfaceRef sc, int lookback_n) {
-    // Half-window variance ratio: log(RV_recent_half / RV_older_half).
-    // Positive = volatility clustering in recent half = bursty.
-    // Negative = volatility clustering in older half = quieting.
-    // Replaces Barabási inter-arrival formula which is degenerate at hourly resolution.
-    const int half = lookback_n / 2;
-    if (sc.Index < lookback_n || half < 2) return 0.0f;
-
-    double rv_recent = 0.0, rv_older = 0.0;
-    for (int i = 0; i < lookback_n; ++i) {
-        int idx = sc.Index - i;
-        float range = sc.BaseData[SC_HIGH][idx] - sc.BaseData[SC_LOW][idx];
-        double r2 = static_cast<double>(range) * range;
-        if (i < half)
-            rv_recent += r2;
-        else
-            rv_older += r2;
-    }
-
-    // Per-sample rate for fair comparison (halves may differ by 1 sample for odd lookback).
-    double rv_recent_rate = rv_recent / half;
-    double rv_older_rate = rv_older / (lookback_n - half);
-
-    float& lastValidBurstiness = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::BURSTINESS_LAST_VALID_VALUE);
-    const float burstiness = cfc::ComputeBurstinessIndex(rv_recent_rate, rv_older_rate, lastValidBurstiness);
-    lastValidBurstiness = burstiness;
-    return burstiness;
 }
 
 float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int persistentVarIndex) {
@@ -3098,8 +3114,15 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
 
 float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // Mean-Reversion Elasticity Score (contract: mean_rev_z in [0, 5]).
-    // 1) Compute price stretch as |z(log-price)| over lookback window.
-    // 2) Suppress score in momentum regimes using lag-1 return autocorrelation.
+    // 1) Compute price stretch as |z(log-price)| over lookback window, using
+    //    median/MAD (Kim & White 2004) in place of mean/std -- log-price and
+    //    log-return windows are fat-tailed, and mean/std are the least
+    //    reliable summary statistics under exactly that condition. Same
+    //    median/MAD(*1.4826) construct already used by this codebase's other
+    //    robust z-scores (IndicatorComputations.h's ComputeMacd,
+    //    EventVelocityEngine.h's CalculateBurstinessIndex).
+    // 2) Suppress score in momentum regimes using lag-1 return autocorrelation,
+    //    centered on the median return rather than the mean for the same reason.
 
     // kMaxLookback matches the [10,40] adaptive observation window contract
     // this function's one caller (TripleScreen3.cpp) always passes today
@@ -3107,36 +3130,41 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // defensive upper bound so a fixed-capacity scratch buffer below can
     // never be written out of range if a future caller passes something larger.
     constexpr int kMaxLookback = 40;
+    constexpr double kMadConsistency = 1.4826;
     const int n = std::clamp(lookback_n, 5, kMaxLookback);
     if (sc.Index < (n + 1)) return 0.0f; // True cold-start, no prior value exists yet
 
     constexpr double kPriceEps = 1e-6;
     const int start_idx = sc.Index - n + 1;
 
-    // Price z-score from log-price window.
-    double sum_log_p = 0.0;
-    double sum_log_p_sq = 0.0;
+    // Price z-score from log-price window (median/MAD, not mean/std).
+    std::array<double, kMaxLookback> log_prices{};  // n <= kMaxLookback, always in range
     for (int i = 0; i < n; ++i) {
         const double p = std::max(static_cast<double>(sc.BaseData[SC_LAST][start_idx + i]), kPriceEps);
-        const double lp = std::log(p);
-        sum_log_p += lp;
-        sum_log_p_sq += lp * lp;
+        log_prices[static_cast<size_t>(i)] = std::log(p);
     }
 
-    const double mean_log_p = sum_log_p / static_cast<double>(n);
-    const double var_log_p = std::max((sum_log_p_sq / static_cast<double>(n)) - (mean_log_p * mean_log_p), 0.0);
-    const double std_log_p = std::sqrt(var_log_p);
+    std::array<double, kMaxLookback> scratch{};
+    std::copy_n(log_prices.begin(), n, scratch.begin());
+    const int priceMid = n / 2;
+    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
+    const double median_log_p = scratch[priceMid];
+
+    for (int i = 0; i < n; ++i) scratch[static_cast<size_t>(i)] = std::abs(log_prices[static_cast<size_t>(i)] - median_log_p);
+    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
+    const double mad_log_p = scratch[priceMid];
+    const double scale_log_p = mad_log_p * kMadConsistency;
 
     float& lastValidMeanRevZ = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MEAN_REV_Z_LAST_VALID_VALUE);
     // Degenerate (flat price window) carries the last valid value forward
     // instead of a fabricated exact-zero "no stretch" reading -- same
     // sentinel-collapse fix already applied to dims 1/2/3/7/8/11/12.
-    if (std_log_p < 1e-6) {
+    if (scale_log_p < 1e-6) {
         return lastValidMeanRevZ;
     }
 
     const double current_log_p = std::log(std::max(static_cast<double>(sc.BaseData[SC_LAST][sc.Index]), kPriceEps));
-    const double abs_z_price = std::abs((current_log_p - mean_log_p) / std_log_p);
+    const double abs_z_price = std::abs((current_log_p - median_log_p) / scale_log_p);
 
     // Lag-1 autocorrelation on log-returns: positive rho => momentum, negative => reversion.
     const int m = n - 1;
@@ -3150,23 +3178,25 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
         return score;
     }
 
-    double sum_r = 0.0;
     std::array<double, kMaxLookback> returns{};  // m <= n-1 < kMaxLookback, always in range
     for (int i = 0; i < m; ++i) {
         const int idx = start_idx + i + 1;
         const double p = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx]), kPriceEps);
         const double p_prev = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx - 1]), kPriceEps);
-        const double r = std::log(p / p_prev);
-        returns[static_cast<size_t>(i)] = r;
-        sum_r += r;
+        returns[static_cast<size_t>(i)] = std::log(p / p_prev);
     }
 
-    const double mean_r = sum_r / static_cast<double>(m);
+    std::array<double, kMaxLookback> returnScratch{};
+    std::copy_n(returns.begin(), m, returnScratch.begin());
+    const int retMid = m / 2;
+    std::nth_element(returnScratch.begin(), returnScratch.begin() + retMid, returnScratch.begin() + m);
+    const double median_r = returnScratch[retMid];
+
     double num = 0.0;
     double den = 0.0;
     for (int t = 1; t < m; ++t) {
-        const double r_t = returns[t] - mean_r;
-        const double r_prev = returns[t - 1] - mean_r;
+        const double r_t = returns[static_cast<size_t>(t)] - median_r;
+        const double r_prev = returns[static_cast<size_t>(t - 1)] - median_r;
         num += r_t * r_prev;
         den += r_prev * r_prev;
     }
@@ -3178,52 +3208,6 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     const float meanRevZ = std::clamp(static_cast<float>(score), 0.0f, 5.0f);
     lastValidMeanRevZ = meanRevZ;
     return meanRevZ;
-}
-
-float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
-    // Volatility of Volatility (High moment of volatility)
-    // StdDev of ATR over lookback
-    // Uses only closed/historical bars (i=1..n) -- sc.Index itself (the
-    // still-forming current bar) is never read, since this function is
-    // called every tick and its High/Low would otherwise leak the live,
-    // not-yet-final bar into a statistic meant to summarize completed bars.
-
-    // Better: Calculate TR locally to be robust
-
-    // kMaxLookback matches the [10,40] adaptive observation window contract
-    // this function's one caller (TripleScreen3.cpp) always passes today --
-    // defensive upper bound so the fixed-capacity scratch buffer below can
-    // never be written out of range if a future caller passes something larger.
-    constexpr int kMaxLookback = 40;
-    const int n = std::clamp(lookback_n, 1, kMaxLookback);
-    if (sc.Index < n + 1) return 0.0f;
-
-    std::array<float, kMaxLookback> trValues{};
-    double sumTR = 0;
-
-    for (int i = 1; i <= n; i++) {
-        int idx = sc.Index - i;
-        float h = sc.BaseData[SC_HIGH][idx];
-        float l = sc.BaseData[SC_LOW][idx];
-        float c_prev = sc.BaseData[SC_LAST][idx-1];
-
-        float tr = std::max(h-l, std::max(std::abs(h-c_prev), std::abs(l-c_prev)));
-        trValues[static_cast<size_t>(i - 1)] = tr;
-        sumTR += tr;
-    }
-
-    double meanTR = sumTR / n;
-    double sumSqDiff = 0;
-
-    for (int i = 0; i < n; i++) {
-        const float tr = trValues[static_cast<size_t>(i)];
-        sumSqDiff += (tr - meanTR) * (tr - meanTR);
-    }
-
-    const double trStd = std::sqrt(sumSqDiff / n);
-    const double trMean = std::max(meanTR, 1e-6);
-    const float cv = static_cast<float>(trStd / trMean);
-    return std::clamp(cv, 0.0f, 5.0f);
 }
 
 // CalculateRecurrenceRate (time-bar RQA) removed 2026-08-28: recurrence_rate moved to an

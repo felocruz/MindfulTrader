@@ -30,11 +30,10 @@ uint64_t GetSteadyNowUs() {
 }
 
 constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBounds = {
-    -6.0f,   // OBS_LOG_VARIANCE_RATIO
+    -6.0f,   // OBS_LOG_SCALE_RATIO
    -6.0f,   // OBS_BURSTINESS_INDEX (half-window variance ratio)
     0.0f,   // OBS_REL_RANGE
-   -6.0f,   // OBS_CORRECTION_ACTION (realized variance ratio)
-    0.0f,   // OBS_VOL_CONVEXITY
+   -6.0f,   // OBS_LOG_SCALE_EXPANSION_RATIO (realized variance ratio)
     0.0f,   // OBS_LEMPEL_ZIV
     0.0f,   // OBS_HURST_EXPONENT
    -1.0f,   // OBS_MICRO_ASYMMETRY
@@ -53,15 +52,17 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBo
             // see plan open question 3). Placeholder, revisit once backfill data exists.
     0.0f,   // OBS_RECURRENCE_RATE
     1.0f,   // OBS_FRACTAL_DIM
-    0.0f    // OBS_MEAN_REV_Z
+    0.0f,   // OBS_MEAN_REV_Z
+    0.0f    // OBS_FAST_MEAN_REV_Z — mirrors OBS_MEAN_REV_Z's floor (same [0,5] contract); NOT
+            // empirically calibrated on real activity-clock data yet, same placeholder posture
+            // as OBS_FAST_TALEB_KURTOSIS/OBS_FAST_HURST_EXPONENT.
 };
 
 constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBounds = {
-    6.0f,    // OBS_LOG_VARIANCE_RATIO
+    6.0f,    // OBS_LOG_SCALE_RATIO
     6.0f,    // OBS_BURSTINESS_INDEX (half-window variance ratio)
     25.0f,   // OBS_REL_RANGE
-    6.0f,    // OBS_CORRECTION_ACTION (realized variance ratio)
-    25.0f,   // OBS_VOL_CONVEXITY
+    6.0f,    // OBS_LOG_SCALE_EXPANSION_RATIO (realized variance ratio)
     1.0f,    // OBS_LEMPEL_ZIV
     1.5f,    // OBS_HURST_EXPONENT
     1.0f,    // OBS_MICRO_ASYMMETRY
@@ -76,7 +77,9 @@ constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBo
              // matching kObsLowerBounds comment)
     1.0f,    // OBS_RECURRENCE_RATE
     2.0f,    // OBS_FRACTAL_DIM
-    5.0f     // OBS_MEAN_REV_Z
+    5.0f,    // OBS_MEAN_REV_Z
+    5.0f     // OBS_FAST_MEAN_REV_Z — mirrors OBS_MEAN_REV_Z's ceiling (placeholder, see matching
+             // kObsLowerBounds comment)
 };
 
 inline bool ShouldSampleLog(uint64_t count, uint64_t firstN, uint64_t everyN) {
@@ -88,9 +91,8 @@ inline bool ShouldSampleLog(uint64_t count, uint64_t firstN, uint64_t everyN) {
 
 inline bool IsEnergyObservationDim(size_t dim) {
     switch (dim) {
-        case ContextManager::OBS_LOG_VARIANCE_RATIO:
+        case ContextManager::OBS_LOG_SCALE_RATIO:
         case ContextManager::OBS_REL_RANGE:
-        case ContextManager::OBS_VOL_CONVEXITY:
         case ContextManager::OBS_TAIL_INDEX:
         case ContextManager::OBS_LIQ_FRAGILITY:
         case ContextManager::OBS_FAST_TALEB_KURTOSIS:
@@ -396,7 +398,7 @@ bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool 
         return false;
     }
 
-    const float dim0 = m_observationData.log_variance_ratio();
+    const float dim0 = m_observationData.log_scale_ratio();
     const float dim6 = m_observationData.hurst_exponent();
     const float dim8 = m_observationData.fisher_info();
     // Dim9 (tail_index) authority is TailRiskEngine via cached Hill alpha.
@@ -412,8 +414,8 @@ bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool 
     }
 
     const bool inContract =
-        dim0 >= kObsLowerBounds[OBS_LOG_VARIANCE_RATIO] &&
-        dim0 <= kObsUpperBounds[OBS_LOG_VARIANCE_RATIO] &&
+        dim0 >= kObsLowerBounds[OBS_LOG_SCALE_RATIO] &&
+        dim0 <= kObsUpperBounds[OBS_LOG_SCALE_RATIO] &&
         dim6 >= kObsLowerBounds[OBS_HURST_EXPONENT] &&
         dim6 <= kObsUpperBounds[OBS_HURST_EXPONENT] &&
         dim8 >= kObsLowerBounds[OBS_FISHER_INFO] &&
@@ -509,7 +511,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
 
     // 0. Log-Variance Ratio (Ergodicity)
     // Directly from struct storage
-    obs[OBS_LOG_VARIANCE_RATIO] = m_observationData.log_variance_ratio();
+    obs[OBS_LOG_SCALE_RATIO] = m_observationData.log_scale_ratio();
 
     // 1. Burstiness Index (Shannon-Pareto Flow)
     obs[OBS_BURSTINESS_INDEX] = m_observationData.burstiness_index();
@@ -519,7 +521,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
 
     // 3. Realized Variance Ratio (replaces Correction Action)
     // Now driven by TripleScreen2 — stateless, no internal accumulation.
-    obs[OBS_CORRECTION_ACTION] = m_observationData.correction_action();
+    obs[OBS_LOG_SCALE_EXPANSION_RATIO] = m_observationData.log_scale_expansion_ratio();
 
     // === QUADRANT II (Information): Indices 5-8 - Market Quality & Confidence ===
     // Dim 5 (LZ): InformationEngine is the unconditional sole authority.
@@ -560,9 +562,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     obs[OBS_RECURRENCE_RATE] = m_observationData.recurrence_rate();
     obs[OBS_FRACTAL_DIM] = m_observationData.fractal_dim();
     obs[OBS_MEAN_REV_Z] = m_observationData.mean_rev_z();
-
-    // 4. Vol Convexity (Q1 derivative check)
-    obs[OBS_VOL_CONVEXITY] = m_observationData.vol_convexity();
 
     // === Elite v3.2: Refresh LocalRiskContext from all engines ===
     // Single write point — all engines already updated by callers before BuildObservationVector().
@@ -903,7 +902,7 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
 
     if ((m_collectionObservationCount % OBS_FRESHNESS_DIGEST_INTERVAL) == 0) {
         static constexpr std::array<size_t, 4> kTs1Dims = {
-            OBS_LOG_VARIANCE_RATIO,
+            OBS_LOG_SCALE_RATIO,
             OBS_HURST_EXPONENT,
             OBS_FISHER_INFO,
             OBS_TAIL_INDEX
@@ -915,8 +914,7 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
             OBS_RECURRENCE_RATE,
             OBS_FRACTAL_DIM
         };
-        static constexpr std::array<size_t, 5> kTs3Dims = {
-            OBS_VOL_CONVEXITY,
+        static constexpr std::array<size_t, 4> kTs3Dims = {
             OBS_MICRO_ASYMMETRY,
             OBS_AMIHUD_ILLIQUIDITY,
             OBS_LIQ_FRAGILITY,
@@ -930,7 +928,7 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
         const int ts3_stale_dims = CountStaleDims(
             m_staleRunLength, kTs3Dims, OBS_STALENESS_ALERT_RUN);
         const int cm_stale =
-            (m_staleRunLength[OBS_CORRECTION_ACTION] >= OBS_STALENESS_ALERT_RUN) ? 1 : 0;
+            (m_staleRunLength[OBS_LOG_SCALE_EXPANSION_RATIO] >= OBS_STALENESS_ALERT_RUN) ? 1 : 0;
 
         ++m_telemetryCounters.freshnessDigestEmitted;
         Logger::getInstance().log(
@@ -959,10 +957,10 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
         Logger::getInstance().log(
             "ContextManager::ZeroTrapDigest samples=" +
             std::to_string(m_collectionObservationCount) +
-            " raw(dim0=" + std::to_string(rawObs[OBS_LOG_VARIANCE_RATIO]) +
+            " raw(dim0=" + std::to_string(rawObs[OBS_LOG_SCALE_RATIO]) +
             ",dim6=" + std::to_string(rawObs[OBS_HURST_EXPONENT]) +
             ",dim8=" + std::to_string(rawObs[OBS_FISHER_INFO]) + ")" +
-            " scaled(dim0=" + std::to_string(currentObs[OBS_LOG_VARIANCE_RATIO]) +
+            " scaled(dim0=" + std::to_string(currentObs[OBS_LOG_SCALE_RATIO]) +
             ",dim6=" + std::to_string(currentObs[OBS_HURST_EXPONENT]) +
             ",dim8=" + std::to_string(currentObs[OBS_FISHER_INFO]) + ")"
         );
@@ -1257,7 +1255,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
                 std::to_string(m_ts1QualityReadyAfterReset.load(std::memory_order_relaxed) ? 1 : 0) +
                 ", age_us=" + std::to_string(GetTs1MacroAgeUs(now_us)) +
                 ", last_write_us=" + std::to_string(GetTs1MacroLastWriteUs()) +
-                ", dim0=" + std::to_string(m_observationData.log_variance_ratio()) +
+                ", dim0=" + std::to_string(m_observationData.log_scale_ratio()) +
                 ", dim6=" + std::to_string(m_observationData.hurst_exponent()) +
                 ", dim8=" + std::to_string(m_observationData.fisher_info()) + ")"
             );
@@ -1368,9 +1366,9 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
                 "ContextManager::FeatureScaler WARMUP: accumulating " +
                 std::to_string(FeatureScaler::RANK_WINDOW) +
                 " observations before emission (dim0_raw=" +
-                std::to_string(rawObs[OBS_LOG_VARIANCE_RATIO]) +
+                std::to_string(rawObs[OBS_LOG_SCALE_RATIO]) +
                 ", log_dim0=" +
-                std::to_string(FeatureScaler::ToLogEnergy(rawObs[OBS_LOG_VARIANCE_RATIO])) +
+                std::to_string(FeatureScaler::ToLogEnergy(rawObs[OBS_LOG_SCALE_RATIO])) +
                 ")"
             );
         }
@@ -1381,7 +1379,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     if (m_featureScaler.sampleCount == FeatureScaler::RANK_WINDOW) {
         Logger::getInstance().log(
             "ContextManager::FeatureScaler READY: hybrid scaler active (softlogz+logz). "
-            "dim0_logz=" + std::to_string(currentObs[OBS_LOG_VARIANCE_RATIO]) +
+            "dim0_logz=" + std::to_string(currentObs[OBS_LOG_SCALE_RATIO]) +
             " dim9_logz=" + std::to_string(currentObs[OBS_TAIL_INDEX]) +
             " dim12_logz=" + std::to_string(currentObs[OBS_LIQ_FRAGILITY]) +
             " dim14_softlogz=" + std::to_string(currentObs[OBS_RECURRENCE_RATE]) +
@@ -1485,10 +1483,10 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
 
     // Preserve valid cross-chart ownership snapshots across epoch reset.
     // TS1/TS2 studies own dims that may not rewrite immediately after arm.
-    const float savedDim0 = m_observationData.log_variance_ratio();
+    const float savedDim0 = m_observationData.log_scale_ratio();
     const float savedDim1 = m_observationData.burstiness_index();
     const float savedDim2 = m_observationData.relative_range();
-    const float savedDim3 = m_observationData.correction_action();
+    const float savedDim3 = m_observationData.log_scale_expansion_ratio();
     const float savedDim6 = m_observationData.hurst_exponent();
     const float savedDim8 = m_observationData.fisher_info();
     const float savedDim13 = m_observationData.recurrence_rate();
@@ -1558,7 +1556,7 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_tailRiskEngine.Reset();
 
     if (ts1SnapshotValid) {
-        m_observationData.mutate_log_variance_ratio(savedDim0);
+        m_observationData.mutate_log_scale_ratio(savedDim0);
         m_observationData.mutate_hurst_exponent(savedDim6);
         m_observationData.mutate_fisher_info(savedDim8);
     }
@@ -1566,7 +1564,7 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     if (ts2SnapshotValid) {
         m_observationData.mutate_burstiness_index(savedDim1);
         m_observationData.mutate_relative_range(savedDim2);
-        m_observationData.mutate_correction_action(savedDim3);
+        m_observationData.mutate_log_scale_expansion_ratio(savedDim3);
         m_observationData.mutate_recurrence_rate(savedDim13);
         m_observationData.mutate_fractal_dim(savedDim14);
     }

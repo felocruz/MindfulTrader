@@ -29,8 +29,8 @@
 /// - Energy/magnitude channels keep amplitude via rolling Log-Z with 6-sigma winsorization.
 ///
 /// Architecture:
-///   LOGZ dims:      2, 4, 12
-///   SOFTLOGZ dims:  0, 1, 3, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15
+///   LOGZ dims:      2, 12
+///   SOFTLOGZ dims:  0, 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 14, 15, 16, 17
 ///   Warmup:         500 samples for stable rolling windows
 ///
 /// After warmup, output is model-ready hybrid space:
@@ -58,10 +58,10 @@ struct FeatureScaler {
     /// existing adaptive rolling median/MAD calibration for this dim, just lets
     /// it actually clear the gate. See logs/rc_gemini.log CLAUDE_BRIEF_086/087
     /// and GEMINI_BRIEF_087_RESPONSE for the full derivation.
-    static constexpr size_t DIM_AMIHUD_INDEX = 11;               ///< == OBS_AMIHUD_ILLIQUIDITY
+    static constexpr size_t DIM_AMIHUD_INDEX = 11;               ///< == OBS_AMIHUD_ILLIQUIDITY (shifted 12->11 when vol_convexity was removed at dim4, 2026-08-31)
     static constexpr float AMIHUD_ABSOLUTE_FLOOR = 1e-16f;       ///< Negligible vs. ABSOLUTE_FLOOR; still divide-by-zero-safe
 
-    /// Dim 3 (correction_action): the binary floor-gate + carry-forward-decay
+    /// Dim 3 (log_scale_expansion_ratio): the binary floor-gate + carry-forward-decay
     /// mechanism used by the generic adaptive SOFTLOGZ path is the wrong tool
     /// for some dims. Empirically (tick-level replica against real MES data,
     /// matched to live telemetry within ~1pp -- see logs/rc_gemini.log
@@ -87,7 +87,7 @@ struct FeatureScaler {
     /// series' own p1, i.e. a modest raw deviation landing on a collapsed
     /// scale) independently reproduced the identical signature for dim9
     /// (tail_index, z=1963 from raw moving only 1.4->8.0 while local MAD sat
-    /// at 0.00336, far below its own p1=0.0249), dim0 (log_variance_ratio,
+    /// at 0.00336, far below its own p1=0.0249), dim0 (log_scale_ratio,
     /// z=-176 from raw moving only ~0.25 while local MAD sat at 0.00144,
     /// below its own p1), and dim7 (micro_asymmetry, z=438 with local MAD
     /// consistently below its own p1 across all top-10 events) -- three more
@@ -148,7 +148,7 @@ struct FeatureScaler {
     ///   dim9 (0.0438):  tail_index, window=500. p1=0.0194 p5=0.0438(chosen)
     ///                   p25=0.1907 p50=0.4372 -- Hill alpha lives on a
     ///                   ~1.1-8.0 scale, orders of magnitude above dim3's.
-    ///   dim0 (0.000389): log_variance_ratio, window=500. p1=0.000165
+    ///   dim0 (0.000389): log_scale_ratio, window=500. p1=0.000165
     ///                    p5=0.000389(chosen) p25=0.001741 p50=0.003405.
     ///   dim7 (0.00733): micro_asymmetry, window=300. p1=0.004214
     ///                   p5=0.00733(chosen) p25=0.018797 p50=0.041481 --
@@ -171,24 +171,27 @@ struct FeatureScaler {
     ///                    that existed before this) is now used by both
     ///                    scaling paths.
     inline static std::array<float, N_DIMS> SHRINKAGE_SCALE_MIN = {  // compiled defaults; overwritten in place by LoadConfig()
-        0.000389f,  //  0  log_variance_ratio   confirmed collapse signature (z=-176 traced)
+        0.0f,       //  0  log_scale_ratio   NEEDS RE-AUDIT 2026-08-31: underlying formula changed from raw log(short_var/long_var) to log(short_BV/long_BV) (Barndorff-Nielsen & Shephard bipower variation, StudyHelperFunctions.cpp's CalculateLogScaleRatio / include/BipowerVariation.h -- see lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_118/118_REPLY). The 0.000389 floor below was derived against the OLD raw-variance signal's real distribution and no longer applies. Disabled pending fresh audit against the new BV-based signal, same conservative placeholder posture as dim11/dim14.
         0.0f,       //  1  burstiness_index     disabled -- tail decays cleanly under generic path + wide bound
         0.0f,       //  2  relative_range       disabled -- LOGZ, 0.035% clip rate, no evidence of need
-        0.00007f,   //  3  correction_action    original D4 derivation
-        0.211521f,  //  4  vol_convexity        LOGZ dim, confirmed collapse signature (see LOGZ generalization note below)
-        0.0f,       //  5  lempel_ziv           disabled -- static scaler, not applicable
-        0.000145f,  //  6  hurst_exponent       confirmed collapse signature, exact-formula-derived (see below)
-        0.00733f,   //  7  micro_asymmetry      confirmed collapse signature (z=438 traced)
-        0.0f,       //  8  fisher_info          audited 2026-08-14 -- clean, no collapse signature; needs only a wider bound (DIM_WINSOR_SIGMA_OVERRIDE), not shrinkage
-        0.0f,       //  9  fast_hurst_exponent  NOT empirically calibrated yet (new activity-clock twin, 2026-08-28) -- placeholder, same conservative posture as dim14 (fast_taleb_kurtosis)
-        0.0438f,    // 10  tail_index           confirmed collapse signature (z=1963 traced)
-        0.0f,       // 11  skewness_idx         NEEDS RE-AUDIT 2026-08-27: source changed from TS3 time-bar to ActivityClockManager's imbalance-bar clock (BowleySkewness now computed over a different cadence); the 2026-08-14 audit below was against the old time-bar signal and no longer applies. Disabled pending fresh audit, same conservative placeholder posture as dim14.
-        0.0f,       // 12  amihud_illiquidity   audited 2026-08-14 -- 0.000% real production clip rate (CLAUDE_BRIEF_095), bar-gated/historical-only construction (never sees the live still-forming bar, unlike the dims above), already has its own dedicated floor fix (AMIHUD_ABSOLUTE_FLOOR) -- no action needed
-        0.0f,       // 13  liq_fragility        disabled -- LOGZ, resolved-healthy, no evidence of need
-        0.0f,       // 14  fast_taleb_kurtosis  NOT empirically calibrated yet (no historical activity-clock data to percentile-match against) -- placeholder, matches ContextManager.cpp's kObsLowerBounds/kObsUpperBounds comment
-        0.0f,       // 15  recurrence_rate      disabled -- static scaler, not applicable
-        0.0f,       // 16  fractal_dim          disabled -- static scaler, not applicable
-        0.0f,       // 17  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
+        0.0f,       //  3  log_scale_expansion_ratio    NEEDS RE-AUDIT 2026-08-31: underlying formula changed from raw uncentered realized variance (RV=sum(r^2)) to BV=bipower variation (StudyHelperFunctions.cpp's CalculateLogScaleExpansionRatio, was CalculateRealizedVarianceRatio -- see lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_118/119 and replies). The 0.00007 floor below (original D4 derivation) was against the OLD raw-RV signal's real distribution and no longer applies. Disabled pending fresh audit against the new BV-based signal, same posture as dim0.
+        // dim4 (vol_convexity) REMOVED 2026-08-31 -- see FeatureScaler's own struct-index
+        // renumbering note near DIM_WINSOR_SIGMA_OVERRIDE below. Every dim from here on is
+        // shifted down by one from its pre-2026-08-31 index (old dim5 lempel_ziv is now dim4, etc.).
+        0.0f,       //  4  lempel_ziv           disabled -- static scaler, not applicable
+        0.000145f,  //  5  hurst_exponent       confirmed collapse signature, exact-formula-derived (see below)
+        0.00733f,   //  6  micro_asymmetry      confirmed collapse signature (z=438 traced)
+        0.0f,       //  7  fisher_info          audited 2026-08-14 -- clean, no collapse signature; needs only a wider bound (DIM_WINSOR_SIGMA_OVERRIDE), not shrinkage
+        0.0f,       //  8  fast_hurst_exponent  NOT empirically calibrated yet (new activity-clock twin, 2026-08-28) -- placeholder, same conservative posture as dim14 (fast_taleb_kurtosis)
+        0.0438f,    //  9  tail_index           confirmed collapse signature (z=1963 traced)
+        0.0f,       // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27: source changed from TS3 time-bar to ActivityClockManager's imbalance-bar clock (BowleySkewness now computed over a different cadence); the 2026-08-14 audit below was against the old time-bar signal and no longer applies. Disabled pending fresh audit, same conservative placeholder posture as dim14.
+        0.0f,       // 11  amihud_illiquidity   RE-AUDITED 2026-08-29 (live-reactivity, §1.11): correlation(localMAD,|z|) = -0.0340 across 770,811 real samples -- weak, not the collapse signature seen in dims 0/3/4/6/7/10 (pre-2026-08-31 numbering). Confirmed: this dim already has its own dedicated adaptive floor (AMIHUD_ABSOLUTE_FLOOR=1e-16, DIM_AMIHUD_INDEX, above) that already prevents severe collapse; shrinkage would be redundant with a mechanism already doing the job. Stays disabled -- audited clean, not skipped.
+        0.0035f,    // 12  liq_fragility        RE-AUDITED 2026-08-29 (live-reactivity, §1.11) -- ENABLED, real collapse signature confirmed: correlation(localMAD,|z|) = -0.2058 (770,811 real samples), top-1%-most-extreme |z| events' mean local scale is 19.6% of the median, and the single worst |z| event's own local scale (0.00221) lands almost exactly at the series' own p0.1 (0.00222) -- not a coincidence. No prior dedicated floor existed for this dim (unlike dim12's AMIHUD_ABSOLUTE_FLOOR); the generic ABSOLUTE_FLOOR=1e-8 never engages since this dim's real scale (~0.025 median) is many orders of magnitude above it. Floor set at the observed local-scale p1 (0.00349, real tick-level replica, tools/observation_vector/amihud_liqfragility_recalibration.cpp), same "derive from the real observed series" convention as dim3/dim6/dim7/dim10 above (pre-2026-08-31 numbering).
+        0.0f,       // 13  fast_taleb_kurtosis  NOT empirically calibrated yet (no historical activity-clock data to percentile-match against) -- placeholder, matches ContextManager.cpp's kObsLowerBounds/kObsUpperBounds comment
+        0.0f,       // 14  recurrence_rate      disabled -- static scaler, not applicable
+        0.0f,       // 15  fractal_dim          disabled -- static scaler, not applicable
+        0.0f,       // 16  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
+        0.0f,       // 17  fast_mean_rev_z      not yet calibrated (implicit trailing default, matches pre-2026-08-31 convention for this dim)
     };
     /// dim6's floor (0.000145) was RE-DERIVED 2026-08-14 (same-day follow-up)
     /// against an EXACT port of the production DFA algorithm
@@ -266,24 +269,40 @@ struct FeatureScaler {
     ///     8.837. Set to 12.0 -- real margin (~36%) given the still-modest
     ///     sample size, same proportional-margin logic as dim8's smaller-
     ///     sample case.
-    ///   dim12 (liq_fragility): also bar-gated/historical-only (confirmed
-    ///     via source). Full-history (75,051-sample) replica: clean trace
-    ///     (top-5 events' local MAD all comfortably above the series' p1),
-    ///     n_tail=207 (0.28%, a real sample, not a handful of points),
-    ///     shape(xi)=-0.2276 (Weibull/bounded), theoretical endpoint 11.485.
-    ///     Set to 12.0 -- just past the wall, same "close to the theoretical
-    ///     ceiling" logic as dim1/dim9's finite-endpoint dims.
+    ///   dim13 (liq_fragility) -- note: mislabeled "dim12" above at the time this was
+    ///     written (index shifted 12->13 when fast_hurst_exponent was inserted at
+    ///     dim9, 2026-08-28) -- was bar-gated/historical-only (confirmed via source).
+    ///     Full-history (75,051-sample) replica: clean trace, n_tail=207 (0.28%),
+    ///     shape(xi)=-0.2276 (Weibull/bounded), theoretical endpoint 11.485, set to
+    ///     12.0. **SUPERSEDED 2026-08-29**: liq_fragility was made live-reactive
+    ///     (§1.11 of docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-
+    ///     vector-brainstorm.md) -- the bar-gated distribution this finding describes
+    ///     no longer exists. Real tick-level replica of the NEW computation
+    ///     (tools/observation_vector/amihud_liqfragility_recalibration.cpp) found the live-reactive
+    ///     signal Frechet (xi=+0.1857, not Weibull/bounded), current bound clipping
+    ///     12.8465% of readings -- recalibrated to 2472.5 (p=1/N return level, see
+    ///     the array entry below).
     inline static std::array<float, N_DIMS> LOGZ_WINSOR_SIGMA_OVERRIDE = {  // compiled defaults; overwritten in place by LoadConfig()
-        0.0f, 0.0f,
+        0.0f,   //  0  log_scale_ratio
+        0.0f,   //  1  burstiness_index
         0.0f,   //  2  relative_range   audited, closed clean (0 exceedances on 18,761 real bars)
-        0.0f,
-        12.0f,  //  4  vol_convexity    GPD-derived on corrected (shrinkage-blended) z, real margin above the theoretical wall
-        0.0f, 0.0f, 0.0f, 0.0f,
-        0.0f,   //  9  fast_hurst_exponent (SOFTLOGZ, not LOGZ -- this array is unused for it, 0.0f sentinel)
-        0.0f, 0.0f, 0.0f,
-        12.0f,  // 13  liq_fragility    GPD-derived, clean trace, real margin above the theoretical wall
-        0.0f,   // 14  fast_taleb_kurtosis -- not yet calibrated (placeholder)
-        0.0f, 0.0f, 0.0f,
+        0.0f,   //  3  log_scale_expansion_ratio
+        // dim4 (vol_convexity, 12.0f GPD-derived) REMOVED 2026-08-31 -- every dim below is
+        // shifted down by one from its pre-2026-08-31 index.
+        0.0f,   //  4  lempel_ziv
+        0.0f,   //  5  hurst_exponent
+        0.0f,   //  6  micro_asymmetry
+        0.0f,   //  7  fisher_info
+        0.0f,   //  8  fast_hurst_exponent (SOFTLOGZ, not LOGZ -- this array is unused for it, 0.0f sentinel)
+        0.0f,   //  9  tail_index
+        0.0f,   // 10  skewness_idx
+        0.0f,   // 11  amihud_illiquidity
+        21.26f, // 12  liq_fragility   RE-DERIVED 2026-08-30 -- the 2524.5f figure recorded 2026-08-29 was computed from a broken audit (tools/observation_vector/amihud_liqfragility_recalibration.cpp's liqFragZ manually recomputed the plain z formula, silently bypassing ComputeShrinkageZ(), so it never reflected SHRINKAGE_SCALE_MIN[13] actually being enabled, pre-2026-08-31 numbering). Fixed the tool to read the real shrinkage-blended lastRawZ (now populated unconditionally by the LOGZ branch below); rerunning at guard=50 showed shrinkage enabling collapses the tail entirely (max|z| 503.22 -> 20.59, corr(localMAD,|z|) -0.2058 -> +0.0016 -- collapse signature genuinely gone, not just masked). Refit GPD on the corrected z (u=p99=8.297, n_tail=7709, xi=-0.1452, Weibull/bounded), p=1/N return level (N=38,540,567 ticks) = 21.2565. The 2524.5f bound was ~120x oversized and would have gone essentially unused (rate-at-bound was already 0.0000% either way, but for the wrong reason)
+        0.0f,   // 13  fast_taleb_kurtosis -- not yet calibrated (placeholder)
+        0.0f,   // 14  recurrence_rate
+        0.0f,   // 15  fractal_dim
+        0.0f,   // 16  mean_rev_z
+        0.0f,   // 17  fast_mean_rev_z (implicit trailing default, matches pre-2026-08-31 convention)
     };
 
     /// dim1 (burstiness_index) over-saturates under the uniform 6-sigma bound
@@ -375,7 +394,7 @@ struct FeatureScaler {
     ///     this modest -- unlike dim1's originally-surprising 45, this
     ///     result is small enough that the qualitative finding, xi<0 at
     ///     all, is the load-bearing claim, not the third decimal digit).
-    ///   dim0 (log_variance_ratio): n_tail=17,584 (1.17%), shape(xi)=0.2533
+    ///   dim0 (log_scale_ratio): n_tail=17,584 (1.17%), shape(xi)=0.2533
     ///     (Frechet/unbounded), scale=5.9447. p=1/N (N=1,498,761) return
     ///     level = 261.66, same p=1/N convention as dim3. Set to 262.0.
     ///   dim7 (micro_asymmetry): n_tail=20,994 (1.40%), shape(xi)=0.0580
@@ -407,24 +426,26 @@ struct FeatureScaler {
     /// (N=74,464) return level = 344.53, same convention as dim3/dim0/dim7.
     /// Set to 345.0.
     inline static std::array<float, N_DIMS> DIM_WINSOR_SIGMA_OVERRIDE = {  // compiled defaults; overwritten in place by LoadConfig()
-        262.0f,   //  0  log_variance_ratio   GPD-derived on corrected z, Frechet (xi=+0.2533), p=1/N return level
-        45.0f,    //  1  burstiness_index     GPD+bootstrap derived (D7)
+        0.0f,     //  0  log_scale_ratio   NEEDS RE-AUDIT 2026-08-31: this GPD fit (xi=+0.2533, p=1/N return level 262.0) was against the OLD raw-variance-ratio signal, now replaced by a BV-based (Barndorff-Nielsen & Shephard) formula with a different distribution -- see SHRINKAGE_SCALE_MIN's matching comment. Disabled pending fresh audit, not a fabricated placeholder number.
+        0.0f,     //  1  burstiness_index     NEEDS RE-AUDIT 2026-08-31: underlying formula changed from plain CV (stddev/mean) to a robust CV (MAD/median, Poisson-neutral-consistency-scaled -- EventVelocityEngine.h's CalculateBurstinessIndex). The 45.0 GPD+bootstrap bound (D7) below was against the OLD moment-based signal's real distribution and no longer applies. Disabled pending fresh audit, same posture as dim0/dim3.
         0.0f,     //  2  relative_range
-        4587.0f,  //  3  correction_action    GPD-derived, p=1/N return level (D7)
-        0.0f,     //  4  vol_convexity
-        0.0f,     //  5  lempel_ziv           static scaler, not applicable
-        345.0f,   //  6  hurst_exponent       GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition
-        36.0f,    //  7  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
-        20.0f,    //  8  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
-        0.0f,     //  9  fast_hurst_exponent  not yet calibrated (placeholder, new activity-clock twin, 2026-08-28)
-        10.0f,    // 10  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
-        0.0f,     // 11  skewness_idx         NEEDS RE-AUDIT 2026-08-27 -- see matching SHRINKAGE_SCALE_MIN comment; source cadence changed
-        0.0f,     // 12  amihud_illiquidity   audited, 0.000% production clip rate, no action needed
-        0.0f,     // 13  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
-        0.0f,     // 14  fast_taleb_kurtosis  not yet calibrated (placeholder)
-        0.0f,     // 15  recurrence_rate      static scaler, not applicable
-        0.0f,     // 16  fractal_dim          static scaler, not applicable
-        0.0f,     // 17  mean_rev_z           audited, negligible clip rate, no action needed
+        0.0f,     //  3  log_scale_expansion_ratio    NEEDS RE-AUDIT 2026-08-31: this GPD fit (p=1/N return level 4587.0, D7) was against the OLD raw-RV signal, now replaced by a BV-based (Barndorff-Nielsen & Shephard) formula with a different distribution -- see SHRINKAGE_SCALE_MIN's matching comment. Disabled pending fresh audit, not a fabricated placeholder number.
+        // dim4 (vol_convexity) REMOVED 2026-08-31 -- every dim below is shifted down by one
+        // from its pre-2026-08-31 index.
+        0.0f,     //  4  lempel_ziv           static scaler, not applicable
+        345.0f,   //  5  hurst_exponent       GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition
+        36.0f,    //  6  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
+        20.0f,    //  7  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
+        0.0f,     //  8  fast_hurst_exponent  not yet calibrated (placeholder, new activity-clock twin, 2026-08-28)
+        10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
+        0.0f,     // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27 -- see matching SHRINKAGE_SCALE_MIN comment; source cadence changed
+        2706.0f,  // 11  amihud_illiquidity   RECALIBRATED 2026-08-29 (live-reactivity, §1.11), refit against kLiveBarMinVolume=50 (empirically tuned, see StudyHelperFunctions.cpp) for internal consistency: GPD-derived on real tick-level replica (tools/observation_vector/amihud_liqfragility_recalibration.cpp, u=p99=32.68, n_tail=7709, xi=+0.2920), Frechet, p=1/N return level (N=38,540,567 ticks). OLD 0.0f (generic 6.0-sigma default) was clipping 8.5254% of live readings -- the "0.000%" note above was from the pre-live-reactivity bar-gated computation, no longer applies
+        0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
+        0.0f,     // 13  fast_taleb_kurtosis  not yet calibrated (placeholder)
+        0.0f,     // 14  recurrence_rate      static scaler, not applicable
+        0.0f,     // 15  fractal_dim          static scaler, not applicable
+        0.0f,     // 16  mean_rev_z           NEEDS RE-AUDIT 2026-08-31: underlying formula changed from mean/std z-score + mean-centered lag-1 autocorrelation to median/MAD (Kim & White 2004) -- CalculateMeanReversionSpeed. The prior "negligible clip rate" audit was against the OLD moment-based signal's real distribution and no longer applies. Disabled pending fresh audit, same posture as dim0/dim1/dim3.
+        0.0f,     // 17  fast_mean_rev_z      not yet calibrated (implicit trailing default, matches pre-2026-08-31 convention)
     };
 
     enum class ConfigLoadStatus : uint8_t { DEFAULTS, LOADED_FROM_FILE, FILE_MISSING, PARSE_FAILED };
@@ -492,7 +513,7 @@ struct FeatureScaler {
     }
 
     static constexpr size_t RANK_WINDOW = 500;                   ///< Max rolling window (scratch array sizing + warmup gate)
-    static constexpr size_t EXPECTED_LOGZ_DIMS = 3;
+    static constexpr size_t EXPECTED_LOGZ_DIMS = 2;  // was 3; vol_convexity (LOGZ) removed 2026-08-31 -- relative_range, liq_fragility remain
     static constexpr size_t RECALIBRATION_INTERVAL = 5000;       ///< Re-examine adaptive floors every N samples
     static constexpr size_t CARRY_DECAY_HALFLIFE = 200;          ///< Carry-forward exponential decay half-life (samples)
 
@@ -500,7 +521,7 @@ struct FeatureScaler {
     /// LZ76 on n=64 binary string produces ~10 discrete values (step ≈ 0.094).
     /// MAD(identical values) = 0.0 → guaranteed carry-forward death spiral.
     /// Static center/scale keeps the signal alive without zero-denominator risk.
-    static constexpr size_t DIM_LZ_INDEX = 5;
+    static constexpr size_t DIM_LZ_INDEX = 4;  // shifted 5->4 when vol_convexity was removed at dim4, 2026-08-31
     static constexpr float LZ_STATIC_CENTER = 0.5f;              ///< Theoretical mean of LZ76 for n=64
     static constexpr float LZ_STATIC_SCALE = 0.25f;              ///< Maps [0,1] → [-2,+2] z-score range
 
@@ -518,8 +539,12 @@ struct FeatureScaler {
     /// since fast_taleb_kurtosis shipped -- caught via test_feature_scaler.cpp's
     /// static_recurrence_dim_exact_value/static_fractal_dim_exact_value failing
     /// after this session's dim-index audit, not by design.
-    static constexpr size_t DIM_RECURRENCE_INDEX = 15;
-    static constexpr size_t DIM_FRACTAL_INDEX = 16;
+    /// CORRECTED AGAIN 2026-08-31: shifted 15/16 -> 14/15 when vol_convexity
+    /// was removed from the vector at dim4 -- same class of bug the 2026-08-28
+    /// correction above already warned about, checked explicitly this time
+    /// rather than left to a test failure to catch.
+    static constexpr size_t DIM_RECURRENCE_INDEX = 14;
+    static constexpr size_t DIM_FRACTAL_INDEX = 15;
     /// Recalibrated 2026-07-23 against real event_data.context (500k-sample pull):
     /// original constants assumed symmetric use of the theoretical contract range,
     /// but real data centers well off that assumption and only spans a narrow band.
@@ -537,7 +562,7 @@ struct FeatureScaler {
     /// to z ~= -3.2 -- a Soft-Log-Z p01..p99 span of only 0.215, i.e. the
     /// dimension-collapse pathology this initiative exists to remove.
     /// Methodology (same as Task 7's kurtosis re-derivation: real data, not
-    /// synthetic): tools/rqa_recurrence_calibration.cpp runs the shipped
+    /// synthetic): tools/observation_vector/rqa_recurrence_calibration.cpp runs the shipped
     /// CalculateRecurrenceRate logic verbatim (n=30 -- TripleScreen2's
     /// slow_window_n is deterministically 30; bar-gated 200-bar epsilon
     /// recalibration) over 18,742 real 60-minute MES bars resampled from
@@ -555,24 +580,25 @@ struct FeatureScaler {
     /// Short-memory features (bounded, fast-decorrelating) use shorter windows.
     /// Long-memory features (structural, slow-decorrelating) use longer windows.
     inline static constexpr std::array<size_t, N_DIMS> DIM_WINDOW_SIZE = {
-        500,  //  0  log_variance_ratio    medium memory
+        500,  //  0  log_scale_ratio    medium memory
         300,  //  1  burstiness_index      bursty, shorter
         500,  //  2  relative_range        LOGZ, stable
-        300,  //  3  correction_action     regime-reactive
-        500,  //  4  vol_convexity         LOGZ, stable
-        150,  //  5  lempel_ziv            bounded [0,1], static scaler (MAD-immune)
-        200,  //  6  hurst_exponent        bounded ~[0,1], moderate
-        300,  //  7  micro_asymmetry       order flow, bursty
-        500,  //  8  fisher_info           geometry, stable
-        200,  //  9  fast_hurst_exponent   mirrors hurst_exponent's window (same quadrant, uncalibrated placeholder)
-        500,  // 10  tail_index            Hill needs depth
-        300,  // 11  skewness              activity-clock (imbalance-bar) cadence since 2026-08-27, regime-reactive
-        300,  // 12  amihud_illiquidity    regime-sensitive
-        500,  // 13  liq_fragility         LOGZ, stable
-        500,  // 14  fast_taleb_kurtosis   mirrors tail_index's window (same quadrant, uncalibrated placeholder)
-        200,  // 15  recurrence_rate       structural, periodic
-        200,  // 16  fractal_dim           structural, slow
-        300,  // 17  mean_rev_z            medium memory
+        300,  //  3  log_scale_expansion_ratio     regime-reactive
+        // dim4 (vol_convexity) REMOVED 2026-08-31 -- every dim below is shifted down by one.
+        150,  //  4  lempel_ziv            bounded [0,1], static scaler (MAD-immune)
+        200,  //  5  hurst_exponent        bounded ~[0,1], moderate
+        300,  //  6  micro_asymmetry       order flow, bursty
+        500,  //  7  fisher_info           geometry, stable
+        200,  //  8  fast_hurst_exponent   mirrors hurst_exponent's window (same quadrant, uncalibrated placeholder)
+        500,  //  9  tail_index            Hill needs depth
+        300,  // 10  skewness              activity-clock (imbalance-bar) cadence since 2026-08-27, regime-reactive
+        300,  // 11  amihud_illiquidity    regime-sensitive
+        500,  // 12  liq_fragility         LOGZ, stable
+        500,  // 13  fast_taleb_kurtosis   mirrors tail_index's window (same quadrant, uncalibrated placeholder)
+        200,  // 14  recurrence_rate       structural, periodic
+        200,  // 15  fractal_dim           structural, slow
+        300,  // 16  mean_rev_z            medium memory
+        300,  // 17  fast_mean_rev_z       mirrors mean_rev_z's window (implicit trailing default, matches pre-2026-08-31 convention)
     };
 
     /// Per-dimension adaptive scaling calibration.
@@ -589,20 +615,22 @@ struct FeatureScaler {
         ScaleMode::SOFTLOGZ, // 1
         ScaleMode::LOGZ, // 2
         ScaleMode::SOFTLOGZ, // 3
-        ScaleMode::LOGZ, // 4
+        // dim4 (vol_convexity, was LOGZ) REMOVED 2026-08-31 -- every dim below is shifted
+        // down by one.
+        ScaleMode::SOFTLOGZ, // 4
         ScaleMode::SOFTLOGZ, // 5
         ScaleMode::SOFTLOGZ, // 6
         ScaleMode::SOFTLOGZ, // 7
-        ScaleMode::SOFTLOGZ, // 8
-        ScaleMode::SOFTLOGZ, // 9  fast_hurst_exponent
-        ScaleMode::SOFTLOGZ, // 10  tail_index
-        ScaleMode::SOFTLOGZ, // 11  skewness_idx (activity-clock)
-        ScaleMode::SOFTLOGZ, // 12  amihud_illiquidity
-        ScaleMode::LOGZ, // 13  liq_fragility
-        ScaleMode::SOFTLOGZ, // 14  fast_taleb_kurtosis
-        ScaleMode::SOFTLOGZ, // 15  recurrence_rate
-        ScaleMode::SOFTLOGZ, // 16  fractal_dim
-        ScaleMode::SOFTLOGZ  // 17  mean_rev_z
+        ScaleMode::SOFTLOGZ, // 8  fast_hurst_exponent
+        ScaleMode::SOFTLOGZ, // 9  tail_index
+        ScaleMode::SOFTLOGZ, // 10  skewness_idx (activity-clock)
+        ScaleMode::SOFTLOGZ, // 11  amihud_illiquidity
+        ScaleMode::LOGZ, // 12  liq_fragility
+        ScaleMode::SOFTLOGZ, // 13  fast_taleb_kurtosis
+        ScaleMode::SOFTLOGZ, // 14  recurrence_rate
+        ScaleMode::SOFTLOGZ, // 15  fractal_dim
+        ScaleMode::SOFTLOGZ, // 16  mean_rev_z
+        ScaleMode::SOFTLOGZ  // 17  fast_mean_rev_z
     };
 
     // Rolling FIFO buffers by mode.
@@ -886,6 +914,12 @@ struct FeatureScaler {
                 }
 
                 const auto [median, madScale] = RobustLocation(stateBuf);
+                // Diagnostic-only, 2026-08-29: expose the local MAD unconditionally
+                // (previously only set inside ComputeShrinkageZ(), so dims without
+                // shrinkage enabled never populated it) -- same unconditional-exposure
+                // precedent as latestLogMedian/latestLogScale below for the LOGZ path.
+                // No effect on any computed output.
+                lastLocalMad[i] = madScale;
 
                 // Shrinkage-blended scale instead of the binary floor-gate
                 // below, for any dim with a nonzero SHRINKAGE_SCALE_MIN entry
@@ -970,6 +1004,13 @@ struct FeatureScaler {
                 }
                 calibration[i].carryForwardCount = 0;
                 const float zLog = ComputeShrinkageZ(i, currentLog, median, madScale);
+                // Diagnostic-only, 2026-08-29: expose the pre-clamp LOGZ z (shrinkage-
+                // blended when active) unconditionally, mirroring the SOFTLOGZ path's
+                // lastRawZ[] -- previously LOGZ dims never populated this, so any
+                // external tool reading lastRawZ[] for a LOGZ+shrinkage dim silently
+                // got a stale/default value instead of the real shrinkage-blended z
+                // (caught auditing liq_fragility's shrinkage fix). No effect on result[i].
+                lastRawZ[i] = zLog;
                 const float energyWinsorSigma = (LOGZ_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
                     ? LOGZ_WINSOR_SIGMA_OVERRIDE[i] : ENERGY_WINSOR_SIGMA;
                 result[i] = std::clamp(zLog, -energyWinsorSigma, energyWinsorSigma);

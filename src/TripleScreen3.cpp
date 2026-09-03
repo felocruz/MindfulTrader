@@ -697,8 +697,21 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     UpdateObservationVectorSubgraphs(sc, observation_window_n,
         Subgraph_PathEfficiencySNR, Subgraph_HurstExponent,
         Subgraph_RealizedKurtosis,
-        Subgraph_SkewnessIdx, Subgraph_AmihudIlliquidity,
-        Subgraph_LiqFragility, Subgraph_AtrTemp3, Subgraph_VolumeSma);
+        Subgraph_SkewnessIdx, Subgraph_AtrTemp3);
+
+    // amihud_illiquidity/liq_fragility (dims 11/12): live/every-tick, not
+    // gated to once per bar (2026-08-29, §1.11 of docs/superpowers/specs/
+    // 2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md) -- both are
+    // causally leading indicators that bar-gating was making lag a full bar.
+    constexpr int kAmihudLiqFragilityWarmupBars = 100;
+    if (sc.Index < kAmihudLiqFragilityWarmupBars) {
+        Subgraph_AmihudIlliquidity[sc.Index] = 0.5f;
+        Subgraph_LiqFragility[sc.Index] = 0.0f;
+    } else {
+        Subgraph_AmihudIlliquidity[sc.Index] = CalculateAmihudIlliquidity(sc, observation_window_n);
+        Subgraph_LiqFragility[sc.Index] = CalculateLiquidityFragility(
+            sc, Subgraph_AtrTemp3[sc.Index], Subgraph_VolumeSma[sc.Index], Subgraph_LiqFragility[sc.Index - 1]);
+    }
 
     sc.RSI(sc.Close, Subgraph_RSI3, MOVAVGTYPE_SIMPLE, 3);
     sc.RSI(sc.Close, Subgraph_RSI10, MOVAVGTYPE_SIMPLE, 10);
@@ -783,10 +796,9 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     const float liqFragility = Subgraph_LiqFragility[sc.Index];
     const float microAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
 
-    // These two are not yet persisted by UpdateObservationVectorSubgraphs.
-    // Keep them on the same adaptive window used by the canonical updater.
+    // Not yet persisted by UpdateObservationVectorSubgraphs.
+    // Keep it on the same adaptive window used by the canonical updater.
     const float meanRevZ = CalculateMeanReversionSpeed(sc, observation_window_n);
-    const float volConvexity = CalculateVolConvexity(sc, observation_window_n);
 
     // Update Central Observation Store
     // Note: Mutating canonical ObservationData fields owned by Screen 3
@@ -795,7 +807,6 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         obs->mutate_amihud_illiquidity(amihud);
         obs->mutate_liq_fragility(liqFragility);
         obs->mutate_mean_rev_z(meanRevZ);
-        obs->mutate_vol_convexity(volConvexity);       // Also Q1 for safety
         obs->mutate_micro_asymmetry(microAsymmetry);
     }
 

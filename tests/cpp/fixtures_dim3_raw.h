@@ -1,4 +1,4 @@
-// Auto-generated fixture: real dim3 (correction_action) raw values, tick-level
+// Auto-generated fixture: real dim3 (log_scale_expansion_ratio) raw values, tick-level
 // replica against mes_continuous_ticks.parquet, 2023-09-01..10-20 (the actual
 // live-collection replay window). Empirically matched live telemetry to within
 // ~1pp at the 6-sigma rail-hit rate (CLAUDE_BRIEF_097, lbrnet/logs/rc_gemini.log).

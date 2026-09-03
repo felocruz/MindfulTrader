@@ -203,7 +203,7 @@ bool PreflightValidation(SCStudyInterfaceRef sc)
             " ts1_quality_ready=" + std::to_string(cm.HasTs1QualityReadyAfterReset() ? 1 : 0) +
             " ts1_age_us=" + std::to_string(cm.GetTs1MacroAgeUs(now_us)) +
             " ts1_last_write_us=" + std::to_string(cm.GetTs1MacroLastWriteUs()) +
-            " ts1_dim0=" + std::to_string(obs.log_variance_ratio()) +
+            " ts1_dim0=" + std::to_string(obs.log_scale_ratio()) +
             " ts1_dim6=" + std::to_string(obs.hurst_exponent()) +
             " ts1_dim8=" + std::to_string(obs.fisher_info()) +
             " ts2_ready=" + std::to_string(ts2Ready ? 1 : 0) +

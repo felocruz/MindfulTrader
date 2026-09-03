@@ -280,8 +280,15 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
     // Slow structural features need a minimum lookback for statistical validity.
     const int slow_window_n = std::max(30, observation_window_n);
 
-    // 1. Burstiness Index (Clustering of Volatility)
-    float burstiness = CalculateBurstiness(sc, observation_window_n);
+    // 1. Burstiness Index (Clustering of Volatility) — sourced from ContextManager's real
+    //    event-arrival-timestamp CV-burstiness (raschkeBurst), refreshed every tick via
+    //    CheckAndTriggerHMM, not the bar-cadence True-Range proxy this used to compute locally
+    //    (docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md Finding 10).
+    //    REQUIRED FOLLOW-ON, not yet done: FeatureScaler.h's dim1 winsorization/shrinkage bounds
+    //    were calibrated against the old proxy's distribution and need a tick-level-replica
+    //    recalibration against raschkeBurst's real distribution before trusting them (same rebuild
+    //    log_scale_ratio already needed once) — see the 2026-08-29 brainstorm doc §9, row 2.
+    float burstiness = ContextManager::Instance().GetRaschkeBurst();
 
     // 2. Lempel-Ziv Complexity — sourced from InformationEngine (event-driven).
     //    IE is the unconditional authority; no bar-based CalculateLempelZiv here.
@@ -311,8 +318,8 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
     //    off TS3. See spec 2026-08-25-observation-vector-institutional-
     //    hardening-spec.md Section 5a.
 
-    // 5. Realized Variance Ratio (Volatility Expansion/Contraction)
-    float realizedVarRatio = CalculateRealizedVarianceRatio(sc, observation_window_n);
+    // 5. Log Scale Expansion Ratio (Volatility Expansion/Contraction)
+    float logScaleExpansionRatio = CalculateLogScaleExpansionRatio(sc, observation_window_n);
 
     const bool structuralFinite = std::isfinite(fractalDim);
     const bool structuralInRange = fractalDim >= 1.0f && fractalDim <= 2.0f;
@@ -351,7 +358,7 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
             }
         }
 
-        obs->mutate_correction_action(realizedVarRatio);
+        obs->mutate_log_scale_expansion_ratio(logScaleExpansionRatio);
     }
 
     // Update indicators with new impulse value (v5.2: pass macdDiff + ATR for derived metrics)

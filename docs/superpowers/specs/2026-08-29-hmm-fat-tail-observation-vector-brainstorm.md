@@ -145,8 +145,8 @@ four cells:
 **This is worth sitting with**: the "Trending, High-Vol" cell is, in different vocabulary, a
 description of a *crash/panic* regime — directional, violent, exactly the character of the fat-tail
 episodes this whole initiative is chasing. The Hurst exponent is the literature's own standard
-proxy for the trend axis; volatility-level dims (`relative_range`, `log_variance_ratio`,
-`correction_action`) already cover the other axis. **A genuine hypothesis worth testing later**:
+proxy for the trend axis; volatility-level dims (`relative_range`, `log_scale_ratio`,
+`log_scale_expansion_ratio`) already cover the other axis. **A genuine hypothesis worth testing later**:
 the "fat-tail state" this project has been hunting for as a single scalar-tail-shape phenomenon may
 actually be better described as the *intersection* of two axes already partially in the vector
 (trend persistence × volatility level) rather than a state requiring a wholly new tail-specific
@@ -215,7 +215,7 @@ with 3+ dims is a redundancy question worth checking pairwise, not just against 
 | Axis | Classical or dynamics/microstructure axis? | Current representative(s) | Status |
 |---|---|---|---|
 | **Location/drift** (regime-dependent mean return, sign and magnitude) | Classical (1st moment) | **None** | **Real gap — arguably larger than tail-weight's was.** Every paper in §1.1-§1.3 defines its states primarily by regime-dependent mean return. Nothing in this vector directly measures recent drift sign/magnitude; it's only inferable indirectly through volatility dims. Prototype before anything else in §5. |
-| **Scale/dispersion** (volatility level) | Classical (2nd moment) | `relative_range`, `log_variance_ratio`, `correction_action` | Well covered — 3 dims on one axis, never checked pairwise against each other specifically (only each-vs-everything, per the original 16D redundancy audit). Worth a targeted 3-way check before adding a 4th. |
+| **Scale/dispersion** (volatility level) | Classical (2nd moment) | `relative_range`, `log_scale_ratio`, `log_scale_expansion_ratio` | **3-way check DONE 2026-08-31** (pairwise, not yet 3-way with `relative_range` — needs High/Low bar data outside this thread's tick-only tooling): `log_scale_ratio`/`log_scale_expansion_ratio` correlate at 0.7638 both-raw, **0.8085 both fixed to bipower variation** — real, substantial, not the "well covered, no action" verdict this row previously implied. Superseded by the whole-vector initiative, `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` — this row's remaining "check the other axes too" framing is now that spec's Phase 1, not a standalone TODO here. |
 | **Asymmetry** (skewness) | Classical (3rd moment) | `skewness_idx` | **Contingently redundant** — a skewed-Student-t emission (Hansen 1994; Fernández & Steel 1998) would add a native per-state shape parameter for asymmetry, the same relationship ν_k already has to kurtosis (§4). Not redundant under the current symmetric-t emission; flag, don't act, unless/until that emission change happens. |
 | **Tail weight** (kurtosis) | Classical (4th moment) | `fast_taleb_kurtosis` | Same contingent-redundancy structure as above, but against ν_k specifically, already the subject of §4's headline finding. |
 | **Persistence** (trend vs. mean-reversion, serial correlation) | Dynamics | `hurst_exponent`/`fast_hurst_exponent`, `mean_rev_z`/`fast_mean_rev_z`, `recurrence_rate` | Axis is legitimate (it's §1.4's trend axis) — every current representative individually measured weak-to-null (§3). **The axis isn't the problem; the estimators are** — don't conclude "persistence doesn't matter here" from this, the null results are estimator-specific (confirmed for `mean_rev_z` via the actual horse-race test, not yet checked for the other two). |
@@ -272,12 +272,27 @@ current, still-forming bar (`sc.Index`) as the "current point" term — giving g
 reactivity without activity-clock migration.
 
 **Confirmed live/tick-reactive today** (reads `sc.Index` directly, verified via source):
-`log_variance_ratio`, `hurst_exponent`, `fisher_info` (all TS1); `relative_range`,
+`log_scale_ratio`, `hurst_exponent`, `fisher_info` (all TS1); `relative_range`,
 `burstiness_index` (both TS2); `mean_rev_z` (TS3, `current_log_p = sc.BaseData[SC_LAST][sc.Index]`).
 
 **Confirmed genuinely bar-gated** (never reads the live bar, confirmed via source comment, per the
 2026-08-14 full-institutional-coverage audit): `vol_convexity`, `amihud_illiquidity`,
-`liq_fragility` (all TS3).
+`liq_fragility` (all TS3). **STATUS, as of 2026-08-31: zero dims remain bar-gated by accident.**
+`amihud_illiquidity`/`liq_fragility` were made live-reactive per this section's own decision below,
+build-verified 2026-08-29 (winsorization/shrinkage recalibration also done, 2026-08-29/30 — see §6.1/
+§9 rows 13/14). `vol_convexity` was removed from the schema entirely, 2026-08-31 (not made
+live-reactive — independently decided low-priority regardless of clock, see below), so it's moot
+rather than fixed. The only dim still genuinely time-bar-gated today is `fractal_dim`, and that's by
+design (§1.9 — a 400-bar structural-persistence window, unrelated to this section's reactivity
+question), not an oversight. **Open methodological question, DEFERRED 2026-08-31**: nobody has
+re-measured `amihud_illiquidity`/`liq_fragility`'s cross-state discrimination ratio (0.5219/0.2521
+below, both measured pre-live-reactivity) against the now-live signal — and doing so against the
+*current* `models/hmm_model.pkl` would be circular (that model's states were learned from the
+pre-Phase-0 vector). A model-independent lead-time alternative was considered and explicitly
+**declined for now**, on priority grounds (would be more feature-vector investigation on a row
+already flagged for that exact pattern, without moving its actual blocking gate) — not built. Re-open
+only once a retrain exists on the corrected/elite vector. See `docs/superpowers/specs/2026-08-31-
+elite-feature-set-curation-initiative.md` §5 for the full decision record.
 
 **CORRECTED, 2026-08-29 — this originally hedged toward caution, citing recalibration cost as a
 reason to leave these three bar-gated. That's the same "avoid recalibration effort" rationalization
@@ -294,7 +309,7 @@ three dims don't share one verdict, evaluated properly:**
   directly undermines the one property that makes them valuable (§1.10's lead-time criterion) — an
   illiquidity spike invisible until bar close is a lagging indicator wearing a leading indicator's
   name. The "deliberate, to avoid the undersampling problem" framing doesn't hold up: the actual
-  problem `log_variance_ratio` hit wasn't "live-reactive is bad," it was "the winsorization
+  problem `log_scale_ratio` hit wasn't "live-reactive is bad," it was "the winsorization
   calibration was built from the wrong replica (bar-close-only instead of tick-level)" — already
   fixed once by rebuilding the replica correctly, not by staying frozen. **Decision: make both
   live-reactive.** The one genuine engineering risk (Amihud's `|return|/volume` can misbehave on a
@@ -303,7 +318,7 @@ three dims don't share one verdict, evaluated properly:**
   (`RELATIVE_RANGE_LAST_VALID_VALUE`, `FRACTAL_DIM_LAST_VALID_VALUE`, etc.): gate the live read on a
   minimum volume-so-far threshold, fall back below it. Recalibrating both dims' winsorization bounds
   against a genuine tick-level replica is then **required work, not optional** — budgeted the same
-  way `log_variance_ratio`'s rebuild was, not treated as a reason to skip.
+  way `log_scale_ratio`'s rebuild was, not treated as a reason to skip.
 
 **Consequence for `hurst_exponent` specifically, walking back a hypothesis from earlier this
 session**: it already reads the live bar, so its worst-in-vector discrimination score (0.0000) is
@@ -382,10 +397,10 @@ what ships.
 | `amihud_illiquidity` | \|return\|/volume | **Bar-gated today → DECISION: make live-reactive (§1.11)**, guarded on min volume-so-far to avoid a near-empty-denominator artifact | 0.5219 (#2) | Causally tail-adjacent — illiquidity spirals are a documented crash precursor (§1.5). A **leading** indicator only once made live-reactive — bar-gated for 15 min, it's lagging in practice. |
 | `burstiness_index` | Inter-arrival-time variance (activity clustering) | **Live** (TS2) | 0.3999 (#3) | Same adjacency, different mechanism — activity clustering is the empirical stylized fact self-exciting jump models exist to explain (§1.6/§5.2). Already informally capturing part of that idea. |
 | `liq_fragility` | Liquidity fragility (ATR × volume composite) | **Bar-gated today → DECISION: make live-reactive (§1.11)**, same category as Amihud | 0.2521 (#4) | Same liquidity-spiral logic as Amihud (§1.5) — same lagging-vs-leading correction applies. |
-| `correction_action` | log(RV_recent/RV_full) | TS2, not yet checked live-vs-bar-gated | 0.1823 (#5) | Volatility level, not shape. |
+| `log_scale_expansion_ratio` | log(BV_recent/BV_full) (Barndorff-Nielsen & Shephard bipower variation, **REFORMULATED 2026-08-31** — same jump-fragility fix as `log_scale_ratio`, see below) | TS2, not yet checked live-vs-bar-gated | 0.1823 (pre-fix; not yet re-measured) | Volatility level, not shape. Correlates with `log_scale_ratio` at 0.8085 once both are fixed — see the Scale/dispersion row above and `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`. |
 | `lempel_ziv` | Price-path algorithmic complexity | Event-native | 0.0356 | Weak tail relevance — predictability, not extremity. |
-| `log_variance_ratio` | Macro volatility ratio | **Live** (TS1) | 0.0221 | Volatility level, weak discriminator. |
-| `vol_convexity` | Vol-of-vol | **Bar-gated** (TS3) | 0.0032 (dropped) | Real construct, wrong sample size for the estimator (10-40 bars) — noise floor dominates regardless of regime. |
+| `log_scale_ratio` | Macro volatility ratio, `log(short_BV/long_BV)` (Barndorff-Nielsen & Shephard bipower variation, **REFORMULATED 2026-08-31** — see below) | **Live** (TS1) | 0.0221 (pre-fix; not yet re-measured against the new formula) | Volatility level, weak discriminator. |
+| `vol_convexity` | Vol-of-vol | **REMOVED FROM SCHEMA 2026-08-31** (was Bar-gated, TS3 — moot now, C++ computation itself deleted, not just the HMM selection) | 0.0032 (dropped) | Real construct, wrong sample size for the estimator (10-40 bars) — noise floor dominates regardless of regime. |
 | `mean_rev_z` | OU-style elasticity | **Live** (TS3) | 0.0030 | Not a tail-shape statistic. **Empirically null** on its own terms too (`tools/mean_rev_z_variant_comparison.py`, both time-bar and activity-clock variants indistinguishable from a coin flip on forward-return sign, well-powered test). Activity-clock twin work **paused** pending the HMM-discrimination test that was never run. |
 | `recurrence_rate` | RQA topological stability | Activity-clock (since `7f395d0`) | 0.0030 | Not a tail-shape statistic. Moved to activity-clock in place on literature grounds unrelated to fat-tail (RQA-on-event-indexed-sequences precedent), not yet re-measured for cross-state ratio. |
 | `fractal_dim` | Sevcik path roughness | TS2, time-bar by design (§1.9) | 0.0021 | Not a tail-shape statistic. Window widened to 400 bars (`72ab967`) for a structural-persistence reason, not a fat-tail reason. |
@@ -505,7 +520,7 @@ component alone. `(RV − BV)/RV` directly quantifies **what fraction of realize
 discontinuous jumps versus ordinary diffusion** — a fundamentally different, dynamic/time-varying
 question from "how heavy is the marginal tail." A high-jump-share regime is mechanistically
 different from a regime that's just generically volatile, and nothing currently in the vector
-isolates that (`relative_range`/`correction_action`/`log_variance_ratio` all measure volatility
+isolates that (`relative_range`/`log_scale_expansion_ratio`/`log_scale_ratio` all measure volatility
 *level*, none isolate the jump *component*).
 
 **Methodology correction, 2026-08-30, found by direct user challenge**: the first working version of
@@ -842,8 +857,16 @@ restated — closing them is executing the work, not writing more about it.
 
 ## 9. Per-dim decision ledger (current field manifest + status)
 
+**MOVED 2026-08-31: this ledger's canonical, kept-current copy now lives in
+`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7** — that initiative
+now owns whole-vector redundancy/relevance decisions (its own §0). The table below is left in place
+for history (it predates the Phase 0 fixes — `vol_convexity` removal, `burstiness_index`/
+`mean_rev_z` reformulation — recorded only in the §7 copy) and is **not** updated going forward; read
+§7 for current status.
+
 **Fills §8 item 5.** One row per dim — every field currently in `mts_schema.fbs`'s `ObservationData`
-(19, verified fresh 2026-08-29) plus every candidate proposed in §5 not yet in the schema at all.
+(19, verified fresh 2026-08-29; **now 18, 2026-08-31 — `vol_convexity` removed from the schema
+entirely, see its row below**) plus every candidate proposed in §5 not yet in the schema at all.
 Status vocabulary: **IN** (settled, stays as-is) · **IN-WEAK** (stays, weak, no better alternative
 identified) · **IN-CONTINGENT** (stays now, flagged future redundancy risk) · **IN-PENDING-FIX**
 (stays, a decided implementation change not yet done) · **IN-UNMEASURED** (shipped, never tested
@@ -856,11 +879,11 @@ explicitly pushed to a later window).
 
 | # | Dim | Status | Clock | Why (one line) | Last verified |
 |---|---|---|---|---|---|
-| 1 | `log_variance_ratio` | IN-WEAK | Live (TS1) | Volatility-level axis rep, weak discriminator (0.0221), no proposed change | 2026-08-25 (ratio), 2026-08-29 (clock) |
+| 1 | `log_scale_ratio` | IN-WEAK | Live (TS1) | **REFORMULATED 2026-08-31**: raw `log(short_var/long_var)` deleted outright, replaced with `log(short_BV/long_BV)` (Barndorff-Nielsen & Shephard bipower variation, `include/BipowerVariation.h`) — raw sample variance on windows as small as 8 bars let a single-tick jump dominate quadratically (Mandelbrot 1963), producing false volatility-regime signals; see `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_118`/`118_REPLY` for the full literature-grounding correspondence (also rules out a fixed-ν Student-t M-estimator alternative on real measured hot-path cost, ~200ns-5.6µs vs. this system's budget). `FeatureScaler.h`'s dim0 winsor/shrinkage calibration (fit to the old raw-variance distribution) is disabled pending re-audit against the new formula — real follow-up debt, not fabricated numbers. Discrimination score (0.0221) predates this change, not yet re-measured. | 2026-08-25 (ratio), 2026-08-29 (clock), 2026-08-31 (formula + rename) |
 | 2 | `burstiness_index` | IN-PENDING-FIX | Event-driven (redirected to `raschkeBurst`) | Redirect **landed and BUILD-VERIFIED 2026-08-29** (`TripleScreen2.cpp`, `ContextManager::GetRaschkeBurst()`, old proxy deleted, `./build_dll.sh --no-clean` succeeds — the schema-contract regen blocker was resolved elsewhere in this working tree). Required follow-on, **queued next, not yet started**: `FeatureScaler.h` dim1's existing bound (`45.0f`, GPD+bootstrap-derived) was calibrated against the old cruder proxy's distribution and now feeds a completely different signal (`raschkeBurst`'s CV-of-inter-arrival-times) — needs its own tick-level replica tool, built from scratch (no existing groundwork, unlike rows 13/14) | 2026-08-29 |
 | 3 | `relative_range` | IN | Live (TS2) | #1 discriminator (0.6373), volatility-level axis | 2026-08-25 / 2026-08-29 |
-| 4 | `correction_action` | IN-WEAK | TS2, live-vs-bar-gated **unchecked** | #5 discriminator (0.1823), third of the volatility trio | 2026-08-25 (ratio); clock never checked |
-| 5 | `vol_convexity` | OUT-HMM | Bar-gated (TS3) | Independently weak on two separate measures (cross-state 0.0032; tail-enrichment rank 13/16, below baseline); small-sample noise floor. Live-reactivity wouldn't fix it — correctly not worth further investment (§1.11) | 2026-08-25 |
+| 4 | `log_scale_expansion_ratio` | IN-WEAK | TS2, live-vs-bar-gated **unchecked** | **REFORMULATED 2026-08-31**, identical treatment to row 1's `log_scale_ratio` — raw RV replaced with bipower variation, same Mandelbrot 1963 jump-fragility grounding. `FeatureScaler.h` dim3 calibration disabled pending re-audit. Measured correlation with `log_scale_ratio`: 0.7638 pre-fix -> 0.8085 post-fix (both clean) -- a real, substantial redundancy signal, not resolved by this row alone. Redundancy/keep-or-drop decision now owned by `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`, not this row. | 2026-08-25 (ratio); clock never checked; 2026-08-31 (formula + rename + redundancy measurement) |
+| 5 | `vol_convexity` | **REMOVED FROM SCHEMA, 2026-08-31** (stronger than OUT-HMM — the C++ computation itself was deleted, 19D→18D, not just excluded from HMM selection) | Independently weak on two separate measures (cross-state 0.0032; tail-enrichment rank 13/16, below baseline); small-sample noise floor. Live-reactivity wouldn't fix it — correctly not worth further investment (§1.11). Executed via `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §4 Phase 0 | 2026-08-31 |
 | 6 | `lempel_ziv` | IN, **not for fat-tail use** | Event-native | Complexity axis, moderate general discriminator (0.0356) — but scored exactly 0.000 tail-enrichment, the cleanest tail-irrelevance signal found. Keep for complexity axis only, never lean on it for tail work | 2026-08-23 |
 | 7 | `hurst_exponent` | IN-WEAK | Live (TS1), diluted weight | Worst discriminator (0.0000); axis (persistence) is legitimate, weakness is likely one live point diluted across a 50-200-bar DFA regression, not cadence-blindness (§1.11) | 2026-08-29 |
 | 8 | `micro_asymmetry` | OUT-HMM | TS3, live-vs-bar-gated **unchecked** | Weakest overall (0.0001), already dropped from HMM selection | 2026-08-25 |

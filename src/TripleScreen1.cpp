@@ -475,7 +475,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
         const int fisher_window_n = std::clamp(fisher_obs_window_n * 3, 30, 120);
 
         // 1. Log-Variance Ratio (Vol of Log-Returns) - adaptive macro window
-        float logVariance = CalculateLogVariance(sc, macro_window_n);
+        float logScaleRatio = CalculateLogScaleRatio(sc, macro_window_n);
 
         // 2. Hurst Exponent (Persistence) - adaptive macro window, min scale 8.
         // Graceful degradation: when history is insufficient after replay/chart reload,
@@ -526,7 +526,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                 );
             }
 
-            const bool dim0Finite = std::isfinite(logVariance);
+            const bool dim0Finite = std::isfinite(logScaleRatio);
             const bool dim6Finite = std::isfinite(hurst);
             const bool dim8Finite = std::isfinite(fisherInfo);
             const float dim9TailIndex = obs->tail_index();
@@ -552,7 +552,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
             }
 
             if (s_prevMacroValid) {
-                if (IsMacroValueChanged(s_prevDim0, logVariance)) {
+                if (IsMacroValueChanged(s_prevDim0, logScaleRatio)) {
                     ++s_dim0ChangeCount;
                     s_dim0StaleRun = 0;
                 } else {
@@ -574,7 +574,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                 }
             }
 
-            s_prevDim0 = logVariance;
+            s_prevDim0 = logScaleRatio;
             s_prevDim6 = hurst;
             s_prevDim8 = fisherInfo;
             s_prevMacroValid = true;
@@ -590,14 +590,14 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                         );
                     }
                 };
-                maybeLogStale(s_dim0StaleRun, "dim0_log_variance_ratio");
+                maybeLogStale(s_dim0StaleRun, "dim0_log_scale_ratio");
                 maybeLogStale(s_dim6StaleRun, "dim6_hurst_exponent");
                 maybeLogStale(s_dim8StaleRun, "dim8_fisher_info");
 
                 if ((s_macroWriteCount % kTs1MacroDigestEveryWrites) == 0) {
                     Logger::getInstance().log(
                         "TS1 MacroObs digest writes=" + std::to_string(s_macroWriteCount) +
-                        " values(dim0=" + std::to_string(logVariance) +
+                        " values(dim0=" + std::to_string(logScaleRatio) +
                         ",dim6=" + std::to_string(hurst) +
                         ",dim8=" + std::to_string(fisherInfo) + ")" +
                         " changes(dim0=" + std::to_string(s_dim0ChangeCount) +
@@ -613,7 +613,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
             if (ShouldLogTs1MacroVerbose() && s_macroWriteCount <= 10) {
                 Logger::getInstance().log(
                     "TS1 MacroObs write=" + std::to_string(s_macroWriteCount) +
-                    " dim0=" + std::to_string(logVariance) +
+                    " dim0=" + std::to_string(logScaleRatio) +
                     " dim6=" + std::to_string(hurst) +
                     " dim8=" + std::to_string(fisherInfo)
                 );
@@ -625,7 +625,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
             static uint64_t s_macroQualityRejectCount = 0;
 
             if (allTs1DimsFinite) {
-                obs->mutate_log_variance_ratio(logVariance);
+                obs->mutate_log_scale_ratio(logScaleRatio);
                 obs->mutate_hurst_exponent(hurst);
                 // tail_index: sourced from TailRiskEngine in BuildObservationVector()
                 obs->mutate_fisher_info(fisherInfo);
@@ -646,7 +646,7 @@ SCSFExport scsf_Screen1_Impulse(SCStudyInterfaceRef sc)
                             std::to_string(hurstUsingInsufficientHistoryFallback ? 1 : 0) +
                             ", macro_window=" + std::to_string(macro_window_n) +
                             ", fisher_window=" + std::to_string(fisher_window_n) +
-                            ", dim0=" + std::to_string(logVariance) +
+                            ", dim0=" + std::to_string(logScaleRatio) +
                             ", dim6=" + std::to_string(hurst) +
                             ", dim8=" + std::to_string(fisherInfo) + ")"
                         );
