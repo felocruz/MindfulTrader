@@ -36,7 +36,10 @@ the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer 
 2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a candidate concrete
 first deliverable for this initiative, deliberately scoped to feed `RiskGateContext` directly, not
 the HMM's own observation vector (avoiding the `tail_index` redundancy trap already learned this
-session).
+session). **Living ledger opened 2026-09-03**:
+`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` (same
+spirit/format as the observation-vector ledger below) — seeded with the 8 already-audited
+`RiskManager`/`ExecutionGate` gates and this section's own founding question, not yet actively worked.
 
 **Row 1 / activity-clock observation-vector thread, current state as of 2026-08-31 — read
 `PRODUCTION_TRIAGE.md` row 1 for the full account, this is the condensed pointer**:

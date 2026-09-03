@@ -33,7 +33,10 @@ discipline just applied to the observation vector — apply it next to trade exe
 management once the observation-vector/ContextManager thread closes out. Related, not yet designed:
 the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer signal discussed
 2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a candidate concrete
-first deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own observation vector.
+deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own observation vector. **Living
+ledger opened 2026-09-03**:
+`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` (same
+spirit/format as the observation-vector ledger below) -- seeded, not yet actively worked.
 
 **Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-31 — full account in
 `PRODUCTION_TRIAGE.md` row 1, this mirrors `CLAUDE.md`'s own pointer**: `fast_taleb_kurtosis`

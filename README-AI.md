@@ -21,7 +21,8 @@
 - **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03)**: once the observation-vector/
   `ContextManager` work closes out, `LocalRiskContext`/`RiskGateContext` must stop being blind to
   the HMM's own signal (a "heads up" for the Predator, not just raw pre-HMM features) — see
-  `CLAUDE.md`'s own pointer for the full account.
+  `CLAUDE.md`'s own pointer for the full account. Living ledger:
+  `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`.
 
 **Last Updated**: 2026-09-03
 
