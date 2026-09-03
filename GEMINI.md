@@ -49,9 +49,12 @@ autocorrelation, Kim & White 2004 — do not confuse with the still-undecided `f
 activity-clock move above, which remains unwired). A real bug was found and fixed as a side effect
 of the schema shrink: `FeatureScaler.h`'s `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing
 one element, misaligning `liq_fragility`'s calibrated bound by one index. All native tests pass,
-`./build_dll.sh --no-clean` builds clean; nothing from this batch is committed yet. Still open:
-`hurst_exponent`/`fast_hurst_exponent`, `amihud_illiquidity`, `relative_range`/`liq_fragility` (need
-a literature decision, not a mechanical fix), and `fast_mean_rev_z`'s wire-or-drop call. Separate
+`./build_dll.sh --no-clean` builds clean; **committed 2026-09-02 (`d2ab57c`)** after sitting
+uncommitted across multiple prior sessions — verified clean before committing. Still open:
+`amihud_illiquidity`/`relative_range`/`liq_fragility` (need a literature decision, not a mechanical
+fix, since `hurst_exponent` was resolved 2026-09-02). `fast_mean_rev_z`'s wire-or-drop call remains
+open, but its unwired `ActivityClockMeanReversion.h` implementation was reformulated to median/MAD
+2026-09-02 (`b0ab21a`) ahead of that decision. Separate
 finding: re-measuring a dim's importance against the *existing* `models/hmm_model.pkl` is circular
 (its state labels were learned from the pre-Phase-0, still-contaminated vector) — recorded as an
 open methodological question, not yet resolved.

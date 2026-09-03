@@ -78,10 +78,13 @@ purposes across the other three repos.
   `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing one element, misaligning `liq_fragility`'s
   calibrated bound by one index — caught by the native test suite, not inspection, the same failure
   class `DIM_RECURRENCE_INDEX`/`DIM_FRACTAL_INDEX`'s own comments already warned about. All native
-  tests pass, `./build_dll.sh --no-clean` builds clean; **nothing from this batch is committed yet**.
-  Still open: `hurst_exponent`/`fast_hurst_exponent`, `amihud_illiquidity`, and
-  `relative_range`/`liq_fragility` (3 ambiguous Gaussian-moment-adjacent cases needing a literature
-  decision, not a mechanical fix) and `fast_mean_rev_z`'s wire-or-drop call. **Separate finding, same
+  tests pass, `./build_dll.sh --no-clean` builds clean; **committed 2026-09-02 (`d2ab57c`)** after
+  sitting uncommitted across multiple prior sessions — verified clean before committing, not just
+  trusting the prior claim. Still open: `amihud_illiquidity`/`relative_range`/`liq_fragility` (2
+  ambiguous Gaussian-moment-adjacent cases needing a literature decision, not a mechanical fix, since
+  `hurst_exponent` was resolved 2026-09-02, see below) and `fast_mean_rev_z`'s wire-or-drop call
+  (its unwired `ActivityClockMeanReversion.h` implementation was reformulated to median/MAD
+  2026-09-02, `b0ab21a`, ahead of that decision, so it no longer needs a formula fix first). **Separate finding, same
   day**: any attempt to re-measure a dim's importance against the *existing* `models/hmm_model.pkl`
   (e.g. did making `amihud_illiquidity`/`liq_fragility` live-reactive on 2026-08-29 help) is circular —
   that model's state labels were learned from the pre-Phase-0, still-contaminated vector. Recorded as

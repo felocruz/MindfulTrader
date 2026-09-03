@@ -16,6 +16,9 @@
   2026-09-02** — real per-tick data revealed the prior formula still broken at production tick
   density; reformulated to a robust Index of Dispersion for Counts, real-data-validated; see
   `../CLAUDE.md`'s own pointer for the full account.
+- **Phase 0 batch (vol_convexity removal 19D→18D, bipower-variation reformulation,
+  mean_rev_z/liq_fragility fixes) committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted
+  across multiple prior sessions; see `../CLAUDE.md`'s own pointer for the full account.
 
 **Last Updated**: 2026-09-02
 
