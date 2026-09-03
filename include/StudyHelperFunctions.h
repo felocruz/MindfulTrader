@@ -273,8 +273,10 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
 /// (0 = symmetric). NOT the old 3rd moment (replaced 2026-08-13, 298b9e0).
 float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray);
 
-/// Liquidity Fragility (Index 11): Bid-Ask spread volatility stress
-float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float volumeSma, float prev_fragility);
+/// Liquidity Fragility (Index 12): microstructure elasticity ratio -- decoupled from the
+/// shared ATR(10,Wilder), see CalculateLiquidityFragility's own doc comment for the
+/// sqrt-volume-law + median-based reformulation (2026-09-03).
+float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility);
 
 // ============================================================================
 // CANONICAL OBSERVATIONDATA ADDITIONS (Screen 1 - Macro)

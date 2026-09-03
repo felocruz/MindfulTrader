@@ -710,7 +710,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     } else {
         Subgraph_AmihudIlliquidity[sc.Index] = CalculateAmihudIlliquidity(sc, observation_window_n);
         Subgraph_LiqFragility[sc.Index] = CalculateLiquidityFragility(
-            sc, Subgraph_AtrTemp3[sc.Index], Subgraph_VolumeSma[sc.Index], Subgraph_LiqFragility[sc.Index - 1]);
+            sc, Subgraph_LiqFragility[sc.Index - 1]);
     }
 
     sc.RSI(sc.Close, Subgraph_RSI3, MOVAVGTYPE_SIMPLE, 3);

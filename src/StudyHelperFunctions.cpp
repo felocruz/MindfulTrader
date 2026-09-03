@@ -2694,96 +2694,96 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     return skewness;
 }
 
-float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float atrRef, float volumeSma, float prev_fragility) {
-    /// Liquidity Fragility v3 — Institutional Redesign (Almgren & Chriss + Gemini Review)
+float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) {
+    /// Liquidity Fragility -- REFORMULATED 2026-09-03 (Gemini literature grounding,
+    /// lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_124): a dedicated microstructure
+    /// elasticity ratio, replacing the prior ATR/volume-SMA composite outright.
     ///
-    /// Prior versions used ATR-expansion (atrCurrent / atrMean - 1) which produces near-zero
-    /// signal on 15-sec ES bars because ATR is a trailing average that barely fluctuates.
+    /// Relevance was checked first, not assumed: this dim measures RESILIENCE
+    /// (does the order book replenish after a shock -- Foucault, Kadan & Kandel
+    /// 2005; Morris & Shin 2004's "liquidity black holes" -- range expanding
+    /// faster than volume can explain), a genuinely distinct axis from
+    /// amihud_illiquidity's DEPTH (price impact per unit volume). Verified
+    /// empirically, not just theoretically: Pearson correlation between the
+    /// two dims' real per-bar values on real MES data (2026-09-03) = 0.024,
+    /// i.e. no meaningful redundancy.
     ///
-    /// v3 Fix: Dual-signal fragility from INSTANTANEOUS bar metrics:
-    ///   Signal 1: Bar Range Expansion — (High-Low) / ATR. Individual bars fluctuate 0.3x-2.5x
-    ///             of trailing ATR, providing continuous variation.
-    ///   Signal 2: Volume Depletion — when volume drops below SMA, market is thin.
-    ///             Thin volume + wide range = fragile microstructure.
+    /// The prior formula's two flaws matched exactly what this session found
+    /// wrong with amihud_illiquidity: (1) its scale reference was the shared
+    /// ATR(10,Wilder) -- a mean-based smoothing, same class of unreliability
+    /// under fat tails as every other mean-based statistic reformulated this
+    /// week (Kim & White 2004); (2) its volume term was a LINEAR ratio to a
+    /// volume SMA, when the same square-root price-impact law validated for
+    /// amihud_illiquidity (Kyle & Obizhaeva 2016; Lillo, Farmer & Mantegna
+    /// 2003) applies here too.
     ///
-    /// Formula: fragility = sigmoid(range_expansion × volume_amplifier)
-    ///   range_expansion = max(0, barRange/ATR - 1.0)  [0 = normal, scales up with expansion]
-    ///   volume_amplifier = clamp(2.0 - vol/volSMA, 1.0, 2.0)  [thin volume = 2x amplifier]
-    ///   sigmoid mapping: x / (1 + x) for bounded [0, 1) output
-    ///   EMA smoothing: α=0.30 (expansion) / α=0.15 (decay) for asymmetric response
+    /// New construction: F_raw = eta_t / ScaleRef_W, where
+    ///   eta_t      = barRange_t / sqrt(liveVolume_t)        (live, still-forming bar)
+    ///   ScaleRef_W = median(barRange) / median(sqrt(volume)) over the last
+    ///                W=30 CLOSED bars (both medians over the SAME window --
+    ///                a ratio of medians, not a median of ratios -- immune to
+    ///                fat-tailed outliers, 50% breakdown point, Rousseeuw &
+    ///                Croux 1993). Dedicated to this dim -- does NOT touch or
+    ///                depend on the shared ATR indicator other consumers use.
+    /// F_raw==1.0 is the theoretically neutral point (real-data median 1.0031,
+    /// verified against 2,211 real MES 15-min bars, 2026-09-03) -- normal
+    /// elasticity. F_raw>1 = range expanding faster than volume explains
+    /// (fragile/evaporating book); F_raw<1 = deep absorption.
     ///
-    /// ES Calibration: On 15-sec bars, typical barRange/ATR is 0.3-1.5 in normal conditions,
-    /// producing fragility of 0.0-0.35 (normal) and 0.4-0.8 (stressed).
-
-    if (sc.Index < 20) return 0.0f;
-
-    // Live-reactivity guard (2026-08-29, §1.11 of docs/superpowers/specs/
-    // 2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md): this function
-    // is now called every tick (TripleScreen3.cpp), reading the still-forming
-    // current bar directly instead of the last fully-closed one. Too early in
-    // a fresh bar, High==Low==the bar's only trade so far and volume-so-far is
-    // near zero, which would otherwise pin range_signal near its floor and
-    // thinness near its ceiling on nearly every call -- carry forward instead
-    // of manufacturing that artifact. kLiveBarMinVolume EMPIRICALLY TUNED
-    // 2026-08-29 (tools/observation_vector/amihud_liqfragility_recalibration.cpp, 5/10/50
-    // comparison on real MES ticks): 50 measurably tames the worst-case
-    // outlier (amihud max|z| 19583.81 -> 3270.57, a 6x reduction) for only
-    // ~7% less mean reactivity -- was an uncalibrated 10.0 placeholder.
+    /// Mapped through sigmoid(2*ln(F_raw)) -- the SAME bounded [0,1] shape this
+    /// dim's own prior formula already used for its range signal -- so every
+    /// existing consumer of this dim's absolute-threshold contract
+    /// (RiskManager's hard veto spreadStress>0.85, Scoring's penalty>0.70)
+    /// stays valid without its own recalibration. Real-data distribution under
+    /// this mapping (2,211 bars): p1=0.175, median=0.502, p99=0.855, max=0.977
+    /// -- uses the full [0,1] range, not compressed into a narrow band the way
+    /// the old formula's own "0.0-0.35 normal" doc comment described.
+    constexpr int kWindow = 30;
     constexpr float kLiveBarMinVolume = 50.0f;
+    constexpr float kEps = 1e-6f;
+
+    if (sc.Index < kWindow) {
+        return std::clamp(prev_fragility, 0.0f, 1.0f);  // true cold start, no prior value exists yet
+    }
+
+    // Dedicated median-based scale reference over the last kWindow CLOSED bars
+    // (never the live, still-forming one) -- same nth_element(mid=n/2)
+    // convention as this repo's other robust statistics (FeatureScaler.h's
+    // RobustLocation()).
+    std::array<float, kWindow> rangeWindow{};
+    std::array<float, kWindow> sqrtVolWindow{};
+    for (int i = 0; i < kWindow; ++i) {
+        const int idx = sc.Index - kWindow + i;
+        rangeWindow[static_cast<size_t>(i)] = sc.High[idx] - sc.Low[idx];
+        sqrtVolWindow[static_cast<size_t>(i)] = std::sqrt(std::max(static_cast<float>(sc.Volume[idx]), 0.0f));
+    }
+    constexpr int kMid = kWindow / 2;
+    std::array<float, kWindow> rangeScratch = rangeWindow;
+    std::nth_element(rangeScratch.begin(), rangeScratch.begin() + kMid, rangeScratch.end());
+    const float medRange = rangeScratch[kMid];
+    std::array<float, kWindow> volScratch = sqrtVolWindow;
+    std::nth_element(volScratch.begin(), volScratch.begin() + kMid, volScratch.end());
+    const float medSqrtVol = volScratch[kMid];
+    const float scaleRef = medRange / (medSqrtVol + kEps);
+
+    // Live-reactivity guard (unchanged rationale from the prior formula):
+    // too early in a fresh bar, volume-so-far is near zero, which would
+    // otherwise manufacture a spurious eta_t artifact.
     const float liveVolumeSoFar = static_cast<float>(sc.Volume[sc.Index]);
-    if (liveVolumeSoFar < kLiveBarMinVolume) {
-        if (sc.Index > 0 && std::isfinite(prev_fragility)) {
-            return std::clamp(prev_fragility, 0.0f, 1.0f);
-        }
-        return 0.2f;
+    if (liveVolumeSoFar < kLiveBarMinVolume || scaleRef < kEps) {
+        return std::clamp(prev_fragility, 0.0f, 1.0f);
     }
 
-    // Current, still-forming bar's range-so-far.
     float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
-    if (barRange < 0.00001f) barRange = 0.00001f;  // Avoid div-by-zero on doji
+    if (barRange < 0.00001f) barRange = 0.00001f;  // avoid div-by-zero on doji
 
-    // Trailing ATR reference
-    if (atrRef < 0.0001f) {
-        if (sc.Index > 0 && std::isfinite(prev_fragility)) {
-            return std::clamp(prev_fragility, 0.0f, 1.0f);
-        }
-        return 0.2f;
-    }
+    const float eta = barRange / (std::sqrt(liveVolumeSoFar) + kEps);
+    const float fRaw = eta / scaleRef;
+    const float logF = std::log(std::max(fRaw, 1e-6f));
+    const float fragilityRaw = 1.0f / (1.0f + std::exp(-2.0f * logF));
 
-    // Signal 1: Continuous range pressure via log-ratio for wider dynamic range.
-    // log(rangeRatio) maps [0.1, 5.0] → [-2.3, +1.6], then sigmoid to [0, 1].
-    // This spreads the typical ES 15-min range (0.3-1.5 ATR) across [0.15, 0.60]
-    // instead of the old sigmoid which compressed to [0.23, 0.33].
-    const float rangeRatio = std::clamp(barRange / atrRef, 0.1f, 5.0f);
-    const float logRatio = std::log(rangeRatio);
-    const float range_signal = 1.0f / (1.0f + std::exp(-2.0f * logRatio));  // logistic sigmoid
-
-    // Signal 2: Thin-book pressure from volume depletion, current bar's
-    // volume-so-far (guarded above by kLiveBarMinVolume).
-    const float currentVolume = liveVolumeSoFar;
-    float thinness = 0.5f;  // neutral when volume references are unavailable
-    if (volumeSma > 1.0f && currentVolume > 0.0f) {
-        const float volRatio = currentVolume / volumeSma;
-        thinness = std::clamp(1.5f - volRatio, 0.0f, 1.0f);
-    }
-
-    // Institutional composite: range pressure is primary; thinness amplifies fragility.
-    const float fragility_raw = std::clamp(
-        0.65f * range_signal +
-        0.35f * (range_signal * thinness),
-        0.0f,
-        1.0f
-    );
-
-    // Asymmetric EMA: fast rise (α=0.30) / slow decay (α=0.15)
-    // Fragility should spike quickly but linger — market memory is asymmetric
-    if (sc.Index == 0) {
-        return 0.0f;
-    }
-    const float alpha = (fragility_raw > prev_fragility) ? 0.30f : 0.15f;
-    const float fragility_smoothed = alpha * fragility_raw + (1.0f - alpha) * prev_fragility;
-
-    return std::clamp(fragility_smoothed, 0.0f, 1.0f);
+    const float alpha = (fragilityRaw > prev_fragility) ? 0.30f : 0.15f;
+    return std::clamp(alpha * fragilityRaw + (1.0f - alpha) * prev_fragility, 0.0f, 1.0f);
 }
 
 // NOTE: micro_asymmetry (dim 7) is NOT computed here -- see the declaration's

@@ -1,151 +1,88 @@
 // amihud_liqfragility_recalibration.cpp -- tick-level replica for the
-// required (not optional) FeatureScaler.h recalibration follow-on named in
-// SCRATCHPAD.md/docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-
-// vector-brainstorm.md §1.11: amihud_illiquidity/liq_fragility (dims 12/13)
-// were just made live-reactive (StudyHelperFunctions.cpp, 2026-08-29),
-// reading the current still-forming bar instead of the last closed one --
-// the old winsorization bounds were calibrated against the OLD (lagging)
-// distribution and no longer describe what these dims now measure.
+// FeatureScaler.h dim11 (amihud_illiquidity) recalibration required after the
+// 2026-09-03 sqrt-law + geometric-mean reformulation (CalculateAmihudIlliquidity,
+// StudyHelperFunctions.cpp / CarryForwardCalculators.h). The formula's entire
+// numeric scale and behavior changed (sqrt(dollar-volume) instead of linear,
+// geometric mean instead of arithmetic) -- the OLD calibration
+// (AMIHUD_ABSOLUTE_FLOOR etc.) was tuned against the pre-2026-09-03
+// distribution and must be re-verified, not assumed to still apply.
 //
-// This tool replicates the NEW CalculateAmihudIlliquidity/
-// CalculateLiquidityFragility logic (faithful reference port -- the real
-// functions take SCStudyInterfaceRef and cannot be #included standalone,
-// same constraint as tools/observation_vector/mean_rev_z_variant_comparison.cpp) against real
-// MES 1-second bars, aggregated into 15-min bars for the ATR(10,Wilder)/
-// VolumeSMA(21) reference series exactly as TripleScreen3.cpp computes them.
+// REBUILT 2026-09-03 to stream genuine per-tick data (StreamTicksWithVolumeParquet,
+// lbrnet/data/raw/mes_ticks.parquet, 471.9M real ticks) instead of the prior
+// 1-second-bar-aggregated ticks_1s.bin -- the same "coarse proxy hid the real
+// defect" lesson learned from burstiness_index applies here: this dim's live
+// intra-bar term is called every real tick in production (TripleScreen3.cpp),
+// not once per second, so a 1-second-bar replica under-samples true
+// live-reactivity the same way the old burstiness tool did.
+//
+// Builds 15-min bars (ATR(10,Wilder)/VolumeSMA(21) reference series, exactly
+// as TripleScreen3.cpp computes them) and the live intra-bar Amihud/
+// liq_fragility reactivity in a SINGLE streaming pass, bounded memory
+// (RingBuffer-backed bar history, no full-file materialization) -- same DOD
+// architecture as tools/observation_vector/burstiness_recalibration.cpp.
 // Every raw per-tick value is fed through the REAL FeatureScaler
 // (include/FeatureScaler.h, unmodified) via UpdateAndNormalize(), so the
 // z-score/exceedance-rate statistics reported are against the actual
 // production scaling code, not a re-derivation of it.
 //
-// Build: g++ -O2 -std=c++17 -Iinclude -I<vcpkg>/nlohmann tools/observation_vector/amihud_liqfragility_recalibration.cpp -o amihud_liqfragility_recalibration
-// Usage: ./amihud_liqfragility_recalibration ticks_1s.bin [live_bar_min_volume]
-//   ticks_1s.bin: [int64 count][int64 timestamp_us][float32 high][float32 low][float32 close][float32 volume]
+// Build: mamba run -n mts g++ -O2 -std=c++17 \
+//   $(mamba run -n mts pkg-config --cflags arrow parquet) \
+//   -Iinclude tools/observation_vector/amihud_liqfragility_recalibration.cpp \
+//   $(mamba run -n mts pkg-config --libs arrow parquet) \
+//   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
+//   -o tools/bin/amihud_liqfragility_recalibration
+// Usage: ./tools/bin/amihud_liqfragility_recalibration \
+//   --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ticks.parquet
 
 #include "FeatureScaler.h"
+#include "RingBuffer.h"
+#include "market_data_io.h"
+#include "../ToolProgressLogger.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
-#include <fstream>
+#include <cstring>
 #include <string>
 #include <vector>
 
 namespace {
 
-constexpr int kLookbackN = 20;              // representative mid-point of the adaptive [10,40] range, same
-                                             // precedent as tools/observation_vector/mean_rev_z_variant_comparison.cpp's kGateThreshold note
-constexpr long long kBarUs = 15LL * 60 * 1'000'000; // 15-min bar bucket width in microseconds
-
-struct Tick {
-    long long timestamp_us;
-    float high, low, close, volume;
-};
-
-template <typename T>
-std::vector<T> ReadArray(std::ifstream& in, std::int64_t count) {
-    std::vector<T> out(static_cast<std::size_t>(count));
-    in.read(reinterpret_cast<char*>(out.data()), static_cast<std::streamsize>(count * static_cast<std::int64_t>(sizeof(T))));
-    return out;
-}
-
-std::vector<Tick> LoadTicks(const std::string& path) {
-    std::ifstream in(path, std::ios::binary);
-    std::int64_t count = 0;
-    in.read(reinterpret_cast<char*>(&count), sizeof(count));
-    const auto ts = ReadArray<std::int64_t>(in, count);
-    const auto high = ReadArray<float>(in, count);
-    const auto low = ReadArray<float>(in, count);
-    const auto close = ReadArray<float>(in, count);
-    const auto volume = ReadArray<float>(in, count);
-
-    std::vector<Tick> out(static_cast<std::size_t>(count));
-    for (std::int64_t i = 0; i < count; ++i) {
-        const auto idx = static_cast<std::size_t>(i);
-        out[idx] = {ts[idx], high[idx], low[idx], close[idx], volume[idx]};
-    }
-    return out;
-}
+constexpr int kLookbackN = 20;                       // representative mid-point of the adaptive [10,40] range
+constexpr long long kBarUs = 15LL * 60 * 1'000'000;  // 15-min bar bucket width in microseconds
+constexpr size_t kLiqFragWindow = 30;                 // matches CalculateLiquidityFragility's kWindow
+constexpr float kLiveBarMinVolume = 50.0f;           // matches production's kLiveBarMinVolume
+constexpr size_t kBarHistoryCapacity = 32;            // >= max(kLookbackN, kLiqFragWindow) + headroom
+constexpr double kRatioEps = 1e-20;                   // matches production's floor before ln()
 
 struct Bar {
-    long long timestamp_us;
-    float high, low, close, volume;
-    float atr = 0.0f;        // Wilder's ATR(10)
-    float volumeSma = 0.0f;  // SimpleMovAvg(volume, 21)
+    float close = 0.0f;
+    float volume = 0.0f;
+    float range = 0.0f;
 };
 
-// Wilder's ATR(period), matching sc.ATR(sc.BaseDataIn, ..., 10, MOVAVGTYPE_WILDERS).
-void ComputeAtrWilder(std::vector<Bar>& bars, int period) {
-    if (bars.empty()) return;
-    float prevAtr = 0.0f;
-    for (std::size_t i = 0; i < bars.size(); ++i) {
-        const float prevClose = (i == 0) ? bars[i].close : bars[i - 1].close;
-        const float tr = std::max({bars[i].high - bars[i].low,
-                                    std::fabs(bars[i].high - prevClose),
-                                    std::fabs(bars[i].low - prevClose)});
-        if (i == 0) {
-            prevAtr = tr;
-        } else {
-            prevAtr = (prevAtr * (period - 1) + tr) / period;
-        }
-        bars[i].atr = prevAtr;
-    }
-}
-
-void ComputeVolumeSma(std::vector<Bar>& bars, int period) {
-    double sum = 0.0;
-    for (std::size_t i = 0; i < bars.size(); ++i) {
-        sum += bars[i].volume;
-        if (static_cast<int>(i) >= period) sum -= bars[i - period].volume;
-        const int n = std::min<int>(period, static_cast<int>(i) + 1);
-        bars[i].volumeSma = static_cast<float>(sum / n);
-    }
-}
-
-// Faithful port of the NEW (2026-08-29, live-reactive) CalculateAmihudIlliquidity
-// (StudyHelperFunctions.cpp) -- historical closed-bar window (i=1..lookback_n)
-// plus a live term from the current tick's volume-so-far/live price, guarded
-// on kLiveBarMinVolume.
-float AmihudLive(const std::vector<Bar>& bars, std::size_t barIdx, double historicalSum, int historicalCount,
-                  float liveVolumeSoFar, float livePrice, float liveBarMinVolume) {
-    double sum = historicalSum;
-    int count = historicalCount;
-    const double prevClose = static_cast<double>(bars[barIdx - 1].close);
-    if (liveVolumeSoFar >= liveBarMinVolume && livePrice > 0.0f && prevClose > 0.0) {
-        const double dollarVol = static_cast<double>(livePrice) * static_cast<double>(liveVolumeSoFar);
-        if (dollarVol >= 1.0) {
-            const double logRet = std::fabs(std::log(static_cast<double>(livePrice) / prevClose));
-            sum += logRet / dollarVol;
-            ++count;
-        }
-    }
-    if (count < 2) return 0.0f;  // cfc::ComputeAmihudIlliquidity's degenerate carry-forward -- no prior value at cold start
-    return static_cast<float>(sum / count);
-}
-
-// Faithful port of the NEW (2026-08-29, live-reactive) CalculateLiquidityFragility.
-float LiqFragilityLive(float liveHigh, float liveLow, float liveVolumeSoFar, float atrRef, float volumeSma,
-                        float prevFragility, float liveBarMinVolume) {
-    if (liveVolumeSoFar < liveBarMinVolume) {
+// Faithful port of the NEW (2026-09-03) CalculateLiquidityFragility --
+// dedicated microstructure elasticity ratio (Gemini literature grounding,
+// lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_124), replacing the prior
+// ATR/volume-SMA composite. medRange/medSqrtVol are this dim's own dedicated
+// median-based scale reference over the last kLiqFragWindow CLOSED bars --
+// see CalculateLiquidityFragility's own doc comment (StudyHelperFunctions.cpp)
+// for the full derivation.
+float LiqFragilityLive(float liveHigh, float liveLow, float liveVolumeSoFar, float medRange, float medSqrtVol,
+                        float prevFragility) {
+    constexpr float kEps = 1e-6f;
+    const float scaleRef = medRange / (medSqrtVol + kEps);
+    if (liveVolumeSoFar < kLiveBarMinVolume || scaleRef < kEps) {
         return std::clamp(prevFragility, 0.0f, 1.0f);
     }
     float barRange = liveHigh - liveLow;
     if (barRange < 0.00001f) barRange = 0.00001f;
-    if (atrRef < 0.0001f) {
-        return std::clamp(prevFragility, 0.0f, 1.0f);
-    }
-    const float rangeRatio = std::clamp(barRange / atrRef, 0.1f, 5.0f);
-    const float logRatio = std::log(rangeRatio);
-    const float rangeSignal = 1.0f / (1.0f + std::exp(-2.0f * logRatio));
-
-    float thinness = 0.5f;
-    if (volumeSma > 1.0f && liveVolumeSoFar > 0.0f) {
-        const float volRatio = liveVolumeSoFar / volumeSma;
-        thinness = std::clamp(1.5f - volRatio, 0.0f, 1.0f);
-    }
-    const float fragilityRaw = std::clamp(0.65f * rangeSignal + 0.35f * (rangeSignal * thinness), 0.0f, 1.0f);
+    const float eta = barRange / (std::sqrt(liveVolumeSoFar) + kEps);
+    const float fRaw = eta / scaleRef;
+    const float logF = std::log(std::max(fRaw, 1e-6f));
+    const float fragilityRaw = 1.0f / (1.0f + std::exp(-2.0f * logF));
     const float alpha = (fragilityRaw > prevFragility) ? 0.30f : 0.15f;
     return std::clamp(alpha * fragilityRaw + (1.0f - alpha) * prevFragility, 0.0f, 1.0f);
 }
@@ -154,10 +91,10 @@ struct ZStats {
     std::size_t n = 0;
     double sumAbsZ = 0.0;
     float maxAbsZ = 0.0f;
-    float madAtMaxZ = 0.0f;  // shrinkage-audit: local MAD scale at the single most extreme |z| event
+    float madAtMaxZ = 0.0f;
     std::size_t hits6 = 0, hits25 = 0, hits45 = 0;
-    std::vector<float> sample;    // for percentile reporting (downsampled)
-    std::vector<float> madSample; // paired 1:1 with `sample` -- local MAD scale at that same tick
+    std::vector<float> sample;
+    std::vector<float> madSample;
 
     void Record(float z, float localMad) {
         ++n;
@@ -171,18 +108,12 @@ struct ZStats {
         if (az >= 25.0f) ++hits25;
         if (az >= 45.0f) ++hits45;
         if (n % 50 == 0) {
-            sample.push_back(az);       // downsample for percentile calc
+            sample.push_back(az);
             madSample.push_back(localMad);
         }
     }
 
-    // Rate at an arbitrary threshold -- the actual production winsorization
-    // bound in force for a dim isn't always one of the 6/25/45 fixed points
-    // above (e.g. liq_fragility's real bound is LOGZ_WINSOR_SIGMA_OVERRIDE[13]=12.0).
     double RateAt(float threshold) const {
-        // Reuse the downsampled `sample` (already |z| values) for an approximate
-        // rate at an arbitrary threshold -- consistent sampling rate as the
-        // percentile calc above, same statistical validity.
         if (sample.empty()) return 0.0;
         std::size_t hits = 0;
         for (float az : sample) {
@@ -206,16 +137,9 @@ struct ZStats {
                     name, 100.0 * hits6 / std::max<std::size_t>(n, 1),
                     100.0 * hits25 / std::max<std::size_t>(n, 1),
                     100.0 * hits45 / std::max<std::size_t>(n, 1));
-        std::printf("%s: REAL PRODUCTION BOUND=%.1f  rate-at-bound=%.4f%%\n",
+        std::printf("%s: CURRENT PRODUCTION BOUND=%.1f  rate-at-bound=%.4f%%\n",
                     name, productionBound, RateAt(productionBound));
 
-        // Shrinkage-collapse audit: correlate local MAD scale against |z| for
-        // the downsampled pairs. A genuine collapse signature (the pattern
-        // that made dim3/dim9/dim7/dim0/dim6/dim4 need shrinkage) looks like
-        // the most extreme |z| events clustering at anomalously SMALL local
-        // MAD relative to its own typical value -- not a large raw deviation
-        // on a normal-scale MAD (a real tail event, which needs a wider
-        // winsorization bound, not shrinkage).
         if (!madSample.empty()) {
             std::vector<float> madSorted = madSample;
             std::sort(madSorted.begin(), madSorted.end());
@@ -223,7 +147,6 @@ struct ZStats {
                 std::size_t idx = static_cast<std::size_t>(p * (madSorted.size() - 1));
                 return madSorted[idx];
             };
-            // Pearson correlation between local MAD and |z| across all downsampled pairs.
             double sumMad = 0, sumZ = 0;
             for (std::size_t k = 0; k < sample.size(); ++k) { sumMad += madSample[k]; sumZ += sample[k]; }
             const double meanMad = sumMad / sample.size(), meanZ = sumZ / sample.size();
@@ -233,7 +156,6 @@ struct ZStats {
                 cov += dm * dz; varMad += dm * dm; varZ += dz * dz;
             }
             const double corr = (varMad > 0 && varZ > 0) ? cov / std::sqrt(varMad * varZ) : 0.0;
-            // Mean local MAD among the top 1% most extreme |z| events, vs. the overall median MAD.
             std::vector<std::size_t> idxSorted(sample.size());
             for (std::size_t k = 0; k < idxSorted.size(); ++k) idxSorted[k] = k;
             std::sort(idxSorted.begin(), idxSorted.end(), [&](std::size_t a, std::size_t b) { return sample[a] > sample[b]; });
@@ -254,142 +176,165 @@ struct ZStats {
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::fprintf(stderr, "usage: %s ticks_1s.bin [zsample_dump_path] [guard1,guard2,...]\n", argv[0]);
+    std::string ticksPath;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--ticks-parquet") == 0 && i + 1 < argc) {
+            ticksPath = argv[++i];
+        }
+    }
+    if (ticksPath.empty()) {
+        std::fprintf(stderr, "usage: %s --ticks-parquet PATH\n", argv[0]);
         return 1;
     }
-    // Multi-candidate mode: test several kLiveBarMinVolume guards in ONE tick pass
-    // (empirical-tuning requirement, SCRATCHPAD.md) instead of re-reading 38.5M
-    // ticks once per candidate. Default set spans the range explicitly named as
-    // unvalidated: 5, 10 (current placeholder), 50.
-    std::vector<float> guards = {5.0f, 10.0f, 50.0f};
-    if (argc >= 4) {
-        guards.clear();
-        std::string s = argv[3];
-        std::size_t pos = 0;
-        while (pos < s.size()) {
-            std::size_t comma = s.find(',', pos);
-            guards.push_back(std::strtof(s.substr(pos, comma - pos).c_str(), nullptr));
-            if (comma == std::string::npos) break;
-            pos = comma + 1;
-        }
-    }
 
-    const auto ticks = LoadTicks(argv[1]);
-    std::printf("loaded %zu 1-second ticks; testing guards:", ticks.size());
-    for (float g : guards) std::printf(" %.1f", g);
-    std::printf("\n");
+    FeatureScaler fs;
+    ZStats amihudStats, liqFragStats;
+    ToolProgressLogger progress("amihud_liqfragility_recalibration");
+    progress.Log("streaming from " + ticksPath);
+    constexpr std::size_t kProgressEveryNTicks = 5'000'000;
 
-    // --- Aggregate into 15-min bars ---
-    std::vector<Bar> bars;
-    std::vector<std::size_t> barStartTickIdx;  // first tick index belonging to each bar
+    RingBuffer<Bar, kBarHistoryCapacity> barHistory;
+    float liqFragMedRange = 0.0f;
+    float liqFragMedSqrtVol = 0.0f;
+
     long long curBucket = -1;
-    for (std::size_t i = 0; i < ticks.size(); ++i) {
-        const long long bucket = ticks[i].timestamp_us / kBarUs;
-        if (bucket != curBucket) {
-            curBucket = bucket;
-            bars.push_back({ticks[i].timestamp_us, ticks[i].high, ticks[i].low, ticks[i].close, ticks[i].volume});
-            barStartTickIdx.push_back(i);
-        } else {
-            Bar& b = bars.back();
-            b.high = std::max(b.high, ticks[i].high);
-            b.low = std::min(b.low, ticks[i].low);
-            b.close = ticks[i].close;
-            b.volume += ticks[i].volume;
-        }
-    }
-    barStartTickIdx.push_back(ticks.size());  // sentinel end
-    std::printf("aggregated into %zu 15-min bars\n", bars.size());
+    float curHigh = -1e30f, curLow = 1e30f, curClose = 0.0f, curVolume = 0.0f;
+    double historicalSumLogRatio = 0.0;
+    int historicalCount = 0;
+    float liqFragPrev = 0.0f;
+    std::size_t barsClosed = 0;
+    std::size_t ticksProcessed = 0;
 
-    ComputeAtrWilder(bars, 10);
-    ComputeVolumeSma(bars, 21);
-
-    struct Candidate {
-        float guard;
-        FeatureScaler fs;
-        ZStats amihudStats, liqFragStats;
-        float prevFragility = 0.0f;
-    };
-    std::vector<Candidate> cands;
-    for (float g : guards) cands.push_back({g});
-
-    constexpr int kWarmupBars = 100;
-    for (std::size_t barIdx = kWarmupBars; barIdx + 1 < bars.size(); ++barIdx) {
-        // Historical Amihud window (i=1..kLookbackN closed bars), recomputed once per bar --
-        // independent of the guard (only the live term depends on it).
-        double historicalSum = 0.0;
-        int historicalCount = 0;
-        for (int i = 1; i <= kLookbackN; ++i) {
-            if (static_cast<int>(barIdx) - i < 1) break;
-            const auto& cur = bars[barIdx - i];
-            const auto& prev = bars[barIdx - i - 1];
+    auto recomputeHistorical = [&]() {
+        historicalSumLogRatio = 0.0;
+        historicalCount = 0;
+        const std::size_t n = barHistory.size();
+        if (n < 1) return;
+        const std::size_t maxPairs = std::min<std::size_t>(kLookbackN, n - 1);
+        for (std::size_t k = 0; k < maxPairs; ++k) {
+            const std::size_t curIdx = n - 1 - k;
+            const std::size_t prevIdx = curIdx - 1;
+            const Bar& cur = barHistory[curIdx];
+            const Bar& prev = barHistory[prevIdx];
             if (cur.volume < 1.0f || cur.close <= 0.0f || prev.close <= 0.0f) continue;
             const double dollarVol = static_cast<double>(cur.close) * static_cast<double>(cur.volume);
             if (dollarVol < 1.0) continue;
             const double logRet = std::fabs(std::log(static_cast<double>(cur.close) / prev.close));
-            historicalSum += logRet / dollarVol;
+            const double ratio = logRet / std::sqrt(dollarVol);
+            historicalSumLogRatio += std::log(ratio + kRatioEps);
             ++historicalCount;
         }
+    };
 
-        const float atrRef = bars[barIdx].atr;
-        const float volumeSma = bars[barIdx].volumeSma;
+    auto onNewContractOrStart = [&]() {
+        barHistory.clear();
+        liqFragMedRange = 0.0f;
+        liqFragMedSqrtVol = 0.0f;
+        curBucket = -1;
+        historicalSumLogRatio = 0.0;
+        historicalCount = 0;
+        liqFragPrev = 0.0f;
+    };
 
-        float liveHigh = -1e30f, liveLow = 1e30f, liveVolumeSoFar = 0.0f;
-        for (std::size_t t = barStartTickIdx[barIdx]; t < barStartTickIdx[barIdx + 1]; ++t) {
-            liveHigh = std::max(liveHigh, ticks[t].high);
-            liveLow = std::min(liveLow, ticks[t].low);
-            liveVolumeSoFar += ticks[t].volume;
-            const float livePrice = ticks[t].close;
+    auto recomputeLiqFragScaleRef = [&]() {
+        const std::size_t n = barHistory.size();
+        const std::size_t w = std::min<std::size_t>(kLiqFragWindow, n);
+        if (w == 0) {
+            liqFragMedRange = 0.0f;
+            liqFragMedSqrtVol = 0.0f;
+            return;
+        }
+        std::array<float, kLiqFragWindow> rangeBuf{};
+        std::array<float, kLiqFragWindow> sqrtVolBuf{};
+        for (std::size_t k = 0; k < w; ++k) {
+            const Bar& b = barHistory[n - w + k];
+            rangeBuf[k] = b.range;
+            sqrtVolBuf[k] = std::sqrt(std::max(b.volume, 0.0f));
+        }
+        const std::size_t mid = w / 2;
+        std::array<float, kLiqFragWindow> rangeScratch = rangeBuf;
+        std::nth_element(rangeScratch.begin(), rangeScratch.begin() + mid, rangeScratch.begin() + w);
+        liqFragMedRange = rangeScratch[mid];
+        std::array<float, kLiqFragWindow> volScratch = sqrtVolBuf;
+        std::nth_element(volScratch.begin(), volScratch.begin() + mid, volScratch.begin() + w);
+        liqFragMedSqrtVol = volScratch[mid];
+    };
 
-            for (auto& c : cands) {
-                const float amihud = AmihudLive(bars, barIdx, historicalSum, historicalCount, liveVolumeSoFar, livePrice, c.guard);
-                const float liqFragility = LiqFragilityLive(liveHigh, liveLow, liveVolumeSoFar, atrRef, volumeSma, c.prevFragility, c.guard);
+    auto finalizeBar = [&]() {
+        if (barHistory.size() == kBarHistoryCapacity) barHistory.pop_front();
+        barHistory.push_back({curClose, curVolume, curHigh - curLow});
+        ++barsClosed;
 
-                std::array<float, FeatureScaler::N_DIMS> obs{};
-                obs[12] = amihud;
-                obs[13] = liqFragility;
-                c.fs.UpdateAndNormalize(obs);
-                // lastLocalMad[12] now populated unconditionally (FeatureScaler.h,
-                // 2026-08-29 diagnostic addition) for the shrinkage-collapse audit.
-                c.amihudStats.Record(c.fs.lastRawZ[12], c.fs.lastLocalMad[12]);
-                // liq_fragility (dim 13) is a LOGZ dim. lastRawZ[13] is now populated
-                // unconditionally by the LOGZ branch itself (FeatureScaler.h, 2026-08-29
-                // diagnostic addition) with the REAL shrinkage-blended z -- reading it
-                // directly (instead of manually recomputing the plain formula from
-                // latestLogMedian/latestLogScale, which silently bypassed
-                // ComputeShrinkageZ() and made the prior audit run blind to
-                // SHRINKAGE_SCALE_MIN[13]) is what makes this audit shrinkage-aware.
-                c.liqFragStats.Record(c.fs.lastRawZ[13], c.fs.latestLogScale[13]);
+        recomputeHistorical();
+        recomputeLiqFragScaleRef();
+    };
+
+    StreamTicksWithVolumeParquet(
+        ticksPath,
+        [&](std::int64_t ts, double price, std::int64_t volume, bool isNewContract) {
+            ++ticksProcessed;
+            if (ticksProcessed % kProgressEveryNTicks == 0) {
+                progress.LogProgress(ticksProcessed, 471'930'891);
             }
-        }
-        // Bar-close value becomes next bar's prev_fragility, matching the real EMA anchor.
-        for (auto& c : cands) {
-            c.prevFragility = LiqFragilityLive(liveHigh, liveLow, liveVolumeSoFar, atrRef, volumeSma, c.prevFragility, c.guard);
-        }
-    }
+            if (isNewContract) onNewContractOrStart();
 
-    for (auto& c : cands) {
-        std::printf("\n=== guard=%.1f -- amihud_illiquidity (dim 12, SOFTLOGZ) ===\n", c.guard);
-        c.amihudStats.Report("amihud", FeatureScaler::STATE_WINSOR_SIGMA);
-        std::printf("\n=== guard=%.1f -- liq_fragility (dim 13, LOGZ) ===\n", c.guard);
-        c.liqFragStats.Report("liq_fragility", FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[13]);
-    }
+            const long long bucket = ts / kBarUs;
+            if (curBucket == -1) {
+                curBucket = bucket;
+                curHigh = curLow = curClose = static_cast<float>(price);
+                curVolume = 0.0f;
+            } else if (bucket != curBucket) {
+                finalizeBar();
+                curBucket = bucket;
+                curHigh = curLow = curClose = static_cast<float>(price);
+                curVolume = 0.0f;
+            }
 
-    // Dump the FIRST candidate's (guards[0], the current placeholder=10 unless
-    // overridden) |z| samples for the GPD/EVT bound fit -- same file as before.
-    ZStats& amihudStats = cands[0].amihudStats;
-    ZStats& liqFragStats = cands[0].liqFragStats;
+            curHigh = std::max(curHigh, static_cast<float>(price));
+            curLow = std::min(curLow, static_cast<float>(price));
+            curClose = static_cast<float>(price);
+            curVolume += static_cast<float>(volume);
 
-    // Dump downsampled |z| samples for a proper GPD/EVT tail fit in Python --
-    // same Pickands-Balkema-de Haan methodology already used for every other
-    // dim's winsorization bound in this project (Gang doc, D6/D7/Task 3/4).
-    if (argc >= 3) {
-        const std::string dumpPath = argv[2];
-        std::ofstream out(dumpPath);
-        out << "dim,abs_z\n";
-        for (float az : amihudStats.sample) out << "amihud," << az << "\n";
-        for (float az : liqFragStats.sample) out << "liq_fragility," << az << "\n";
-        std::printf("\ndumped %zu+%zu |z| samples to %s\n", amihudStats.sample.size(), liqFragStats.sample.size(), dumpPath.c_str());
-    }
+            // Warmup: need enough closed-bar history for a meaningful Amihud/liq_fragility reading.
+            if (barsClosed < 100) return;
+
+            const float prevBarClose = barHistory.empty() ? curClose : barHistory.back().close;
+            float amihud = 0.0f;
+            {
+                double sumLogRatio = historicalSumLogRatio;
+                int count = historicalCount;
+                if (curVolume >= kLiveBarMinVolume && curClose > 0.0f && prevBarClose > 0.0f) {
+                    const double dollarVol = static_cast<double>(curClose) * static_cast<double>(curVolume);
+                    if (dollarVol >= 1.0) {
+                        const double logRet = std::fabs(std::log(static_cast<double>(curClose) / prevBarClose));
+                        const double ratio = logRet / std::sqrt(dollarVol);
+                        sumLogRatio += std::log(ratio + kRatioEps);
+                        ++count;
+                    }
+                }
+                if (count >= 2) amihud = static_cast<float>(std::exp(sumLogRatio / count));
+            }
+
+            const float liqFrag = LiqFragilityLive(curHigh, curLow, curVolume, liqFragMedRange, liqFragMedSqrtVol, liqFragPrev);
+
+            std::array<float, FeatureScaler::N_DIMS> obs{};
+            obs[11] = amihud;
+            obs[12] = liqFrag;
+            fs.UpdateAndNormalize(obs);
+            amihudStats.Record(fs.lastRawZ[11], fs.lastLocalMad[11]);
+            liqFragStats.Record(fs.lastRawZ[12], fs.latestLogScale[12]);
+        });
+
+    // Finalize the last still-forming bar's fragility EMA anchor for completeness (not required for reporting).
+    (void)liqFragPrev;
+
+    progress.Log("streaming done, writing final report");
+    std::printf("processed %zu real ticks, %zu closed 15-min bars\n", ticksProcessed, barsClosed);
+    std::printf("\n=== amihud_illiquidity (dim 11, SOFTLOGZ) ===\n");
+    amihudStats.Report("amihud", FeatureScaler::STATE_WINSOR_SIGMA);
+    std::printf("\n=== liq_fragility (dim 12, LOGZ) ===\n");
+    liqFragStats.Report("liq_fragility", FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12]);
+
     return 0;
 }
+
