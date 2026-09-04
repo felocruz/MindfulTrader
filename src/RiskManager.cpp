@@ -74,7 +74,9 @@ namespace {
         // same way (its own old value, 9.697616023284109, P85.1 -> 1.8401).
         // Compiled default synced to that exact live value 2026-08-15 (was
         // 1.8382, a stale near-duplicate never updated to match) -- see
-        // docs/ADR/gate_stack_stationarity_audit_findings.md finding 8.
+        // docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md
+        // sec3 gate 8 (formerly docs/ADR/gate_stack_stationarity_audit_findings.md finding 8,
+        // removed 2026-09-04, fully merged into that living doc).
         double taleb_signal_sigma_threshold = 1.8401;
     };
 
@@ -417,7 +419,7 @@ float RiskManager::GetTransitionDefensiveForceTightenAtrProfile() const {
     return ClampFloat(policy.transition_defensive_force_tighten_atr_profile, 0.10f, 10.0f);
 }
 
-float RiskManager::GetParetoTopStateRatioMax() const {
+float RiskManager::GetHillTailIndexProxyMax() const {
     const HMMRiskPolicy& policy = GetHMMRiskPolicy();
     return ClampFloat(static_cast<float>(policy.pareto_top_state_ratio_max), 0.0f, 1.0f);
 }
@@ -427,7 +429,7 @@ float RiskManager::GetShannonMinTenureBars() const {
     return std::max(0.0f, static_cast<float>(policy.shannon_min_tenure_bars));
 }
 
-float RiskManager::GetTalebSignalSigmaThreshold() const {
+float RiskManager::GetTalebKurtosisEntryGateThreshold() const {
     const HMMRiskPolicy& policy = GetHMMRiskPolicy();
     return std::max(0.0f, static_cast<float>(policy.taleb_signal_sigma_threshold));
 }
@@ -882,6 +884,10 @@ Result<void> RiskManager::EvaluateHardGates(const LocalRiskContext& ctx) const {
             " | shannon_entropy=" + std::to_string(ctx.shannonFlowEntropy) +
             " threshold=" + std::to_string(m_execParams.shannonEntropyHaltFrac * kShannonMaxEntropyBits));
     }
+    // Not a duplicate of ExecutionGate's HmmRegimeGateTalebBreach (same raw ctx.talebKurtosis,
+    // different threshold/scope, verdict 2026-09-04, trade-execution-risk-management-curation-
+    // initiative.md sec3a item 2): this gate runs continuously via EnforceHardGates() and can
+    // flatten an existing position; the ExecutionGate check only ever blocks NEW entry admission.
     if (ShouldHaltOnKurtosis(ctx.talebKurtosis, m_execParams.talebKurtosisHaltThreshold,
                              ctx.fastTalebKurtosis, m_execParams.fastTalebKurtosisHaltThreshold)) {
         return Result<void>::Failure(

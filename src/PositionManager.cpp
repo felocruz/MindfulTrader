@@ -61,7 +61,7 @@ ExecutionGate::ReasonCode ToGateConnectivityReason(PositionManager::ReasonCode r
     }
 }
 
-float ComputeParetoTopStateRatioProxy(const LocalRiskContext& ctx) {
+float ComputeHillTailIndexProxy(const LocalRiskContext& ctx) {
     const float alpha = ctx.paretoTailAlpha;
     if (!std::isfinite(alpha) || alpha <= 1e-6f) {
         return 1.0f;
@@ -1618,12 +1618,12 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         gateCtx.hasPendingEntryOrder = m_pendingEntryOrder.active;
         gateCtx.tradingHalted = RiskManager::Instance().IsTradingHalted();
         gateCtx.hmmMetricsValid = ctx.isValid;
-        gateCtx.paretoTopStateRatio = ComputeParetoTopStateRatioProxy(ctx);
+        gateCtx.hillTailIndexProxy = ComputeHillTailIndexProxy(ctx);
         gateCtx.shannonTenureBars = static_cast<float>(std::max(0, ctx.regimeDuration));
-        gateCtx.talebSignalSigma = std::max(0.0f, ctx.talebKurtosis);
-        gateCtx.paretoTopStateRatioMax = RiskManager::Instance().GetParetoTopStateRatioMax();
+        gateCtx.talebKurtosisEntryGate = std::max(0.0f, ctx.talebKurtosis);
+        gateCtx.hillTailIndexProxyMax = RiskManager::Instance().GetHillTailIndexProxyMax();
         gateCtx.shannonMinTenureBars = RiskManager::Instance().GetShannonMinTenureBars();
-        gateCtx.talebSignalSigmaThreshold = RiskManager::Instance().GetTalebSignalSigmaThreshold();
+        gateCtx.talebKurtosisEntryGateThreshold = RiskManager::Instance().GetTalebKurtosisEntryGateThreshold();
 
         const auto decision = ExecutionGate::EvaluateEntry(gateCtx);
         if (decision.outcome == ExecutionGate::Outcome::Ignore) {
@@ -2505,12 +2505,12 @@ void PositionManager::ProcessManualTradeCommand(
     gateCtx.hasPendingEntryOrder = m_pendingEntryOrder.active;
     gateCtx.tradingHalted = RiskManager::Instance().IsTradingHalted();
     gateCtx.hmmMetricsValid = ctx.isValid;
-    gateCtx.paretoTopStateRatio = ComputeParetoTopStateRatioProxy(ctx);
+    gateCtx.hillTailIndexProxy = ComputeHillTailIndexProxy(ctx);
     gateCtx.shannonTenureBars = static_cast<float>(std::max(0, ctx.regimeDuration));
-    gateCtx.talebSignalSigma = std::max(0.0f, ctx.talebKurtosis);
-    gateCtx.paretoTopStateRatioMax = RiskManager::Instance().GetParetoTopStateRatioMax();
+    gateCtx.talebKurtosisEntryGate = std::max(0.0f, ctx.talebKurtosis);
+    gateCtx.hillTailIndexProxyMax = RiskManager::Instance().GetHillTailIndexProxyMax();
     gateCtx.shannonMinTenureBars = RiskManager::Instance().GetShannonMinTenureBars();
-    gateCtx.talebSignalSigmaThreshold = RiskManager::Instance().GetTalebSignalSigmaThreshold();
+    gateCtx.talebKurtosisEntryGateThreshold = RiskManager::Instance().GetTalebKurtosisEntryGateThreshold();
 
     const auto manualDecision = ExecutionGate::EvaluateEntry(gateCtx);
     if (manualDecision.outcome == ExecutionGate::Outcome::Ignore) {

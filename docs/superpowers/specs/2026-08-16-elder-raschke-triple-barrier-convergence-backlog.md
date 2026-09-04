@@ -168,9 +168,11 @@ confirmed Raschke-canonical.
 **Problem**: `docs/RISK_MANAGEMENT_SYSTEM.md` §5/§7 still describes a live half-Kelly sizing
 multiplier; `include/KellyCalculator.h`'s own docstring confirms Kelly-fraction computation was
 correctly removed (30-trade samples are too small for reliable f* estimation — the doc simply never
-caught up). Separately, the "Pareto top-state-ratio" gate is actually a `1/Hill-α` proxy
-(`docs/ADR/gate_stack_stationarity_audit_findings.md`) — cosmetic naming debt, already tracked, no
-new action needed beyond what that ADR already recorded.
+caught up). Separately, the "Pareto top-state-ratio" gate was a `1/Hill-α` proxy with a misleading
+name — **fixed 2026-09-04**: renamed to `hillTailIndexProxy`, see
+`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §3a item 1
+(formerly tracked in `docs/ADR/gate_stack_stationarity_audit_findings.md`, now removed, fully merged
+into that living doc).
 
 **Scope**: correct `RISK_MANAGEMENT_SYSTEM.md`'s Kelly section to describe the actual current sizing
 chain (Elder 2%/6% + institutional risk-multiplier chain, no Kelly). Pareto-gate renaming stays

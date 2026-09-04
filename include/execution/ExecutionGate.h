@@ -52,13 +52,18 @@ public:
 
         // Empirical HMM regime gate inputs (wired from LocalRiskContext + RiskPolicy).
         bool hmmMetricsValid{false};
-        float paretoTopStateRatio{0.0f};
+        // Hill (1975) tail-index proxy (1/alpha), NOT an HMM state-occupancy probability
+        // despite the field's pre-2026-09-04 name (paretoTopStateRatio) -- see
+        // docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md sec3a.
+        float hillTailIndexProxy{0.0f};
         float shannonTenureBars{0.0f};
-        float talebSignalSigma{0.0f};
+        // Raw Moors octile kurtosis (same feature as RiskManager's gate 4), NOT a z-score/sigma
+        // reading despite the field's pre-2026-09-04 name (talebSignalSigma) -- see the same doc.
+        float talebKurtosisEntryGate{0.0f};
 
-        float paretoTopStateRatioMax{0.0f};
+        float hillTailIndexProxyMax{0.0f};
         float shannonMinTenureBars{0.0f};
-        float talebSignalSigmaThreshold{0.0f};
+        float talebKurtosisEntryGateThreshold{0.0f};
     };
 
     struct GateDecision {

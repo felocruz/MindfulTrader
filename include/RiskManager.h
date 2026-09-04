@@ -205,9 +205,9 @@ public:
     float GetLiveForceFlatConfidenceCap() const;
     float GetTransitionDefensiveDistanceAtrMultiplier() const;
     float GetTransitionDefensiveForceTightenAtrProfile() const;
-    float GetParetoTopStateRatioMax() const;
+    float GetHillTailIndexProxyMax() const;
     float GetShannonMinTenureBars() const;
-    float GetTalebSignalSigmaThreshold() const;
+    float GetTalebKurtosisEntryGateThreshold() const;
 
 private:
     RiskManager() = default;

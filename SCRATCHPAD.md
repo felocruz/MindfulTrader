@@ -1445,14 +1445,15 @@ per this project's standing Python-env rule, not `conda run` (corrected mid-sess
 Split the spec below into three separate plans (per subsystem, per `writing-plans` skill
 guidance) and executed two of them inline this session, direct-to-master, all six commits green:
 
-- **Unit B — DONE** (plan doc removed 2026-09-04, fully duplicated by its own output; see
-  `docs/ADR/gate_stack_stationarity_audit_findings.md`, now itself superseded by
-  `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`;
-  original commits `f9f676c`/`1d4cc7a`): `docs/ADR/gate_stack_stationarity_audit_findings.md` written — audited all
+- **Unit B — DONE** (plan doc removed 2026-09-04, fully duplicated by its own output; its output doc
+  `docs/ADR/gate_stack_stationarity_audit_findings.md` was itself ALSO removed 2026-09-04, fully
+  merged into `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`
+  §3/§3a; original commits `f9f676c`/`1d4cc7a`): audited all
   8 fixed-threshold gates in `RiskManager::EvaluateHardGates()`/
   `ExecutionGate::EvaluateEmpiricalRegimeGates()`, 7 confirmed stationary (5 by direct citation to
   the existing `amihud_gate_percentile_spec.md` verdicts, 1 new finding for the Pareto-top-state-ratio
-  gate, which is actually a `1/Hill-α` proxy despite its name — naming debt noted, not fixed).
+  gate, which is actually a `1/Hill-α` proxy despite its name — naming debt noted at the time, fixed
+  2026-09-04 (renamed to `hillTailIndexProxy`)).
   `taleb_signal_sigma_threshold` compiled default fixed `1.8382` -> `1.8401` in `RiskManager.cpp:74`
   to match the live JSON exactly. `build_dll.sh` green.
 - **Unit C — DONE** (`docs/superpowers/plans/2026-08-15-risk-gate-shared-config-unit-c.md`, commits

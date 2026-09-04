@@ -21,8 +21,8 @@ ExecutionGate::GateDecision EvaluateEmpiricalRegimeGates(const ExecutionGate::Ga
         return AllowDecision();
     }
 
-    if (ctx.paretoTopStateRatioMax > 0.0f &&
-        ctx.paretoTopStateRatio > ctx.paretoTopStateRatioMax) {
+    if (ctx.hillTailIndexProxyMax > 0.0f &&
+        ctx.hillTailIndexProxy > ctx.hillTailIndexProxyMax) {
         return DenyDecision(ExecutionGate::ReasonCode::HmmRegimeGateParetoBreach);
     }
 
@@ -31,8 +31,12 @@ ExecutionGate::GateDecision EvaluateEmpiricalRegimeGates(const ExecutionGate::Ga
         return DenyDecision(ExecutionGate::ReasonCode::HmmRegimeGateShannonBreach);
     }
 
-    if (ctx.talebSignalSigmaThreshold > 0.0f &&
-        ctx.talebSignalSigma > ctx.talebSignalSigmaThreshold) {
+    // Not a duplicate of RiskManager's gate-4 kurtosis hard gate (same raw ctx.talebKurtosis,
+    // different threshold/scope, verdict 2026-09-04, trade-execution-risk-management-curation-
+    // initiative.md sec3a item 2): this only blocks NEW entry admission, independently calibrated
+    // (lbrnet empirical HMM-regime study) from RiskManager's broader, continuously-enforced halt.
+    if (ctx.talebKurtosisEntryGateThreshold > 0.0f &&
+        ctx.talebKurtosisEntryGate > ctx.talebKurtosisEntryGateThreshold) {
         return DenyDecision(ExecutionGate::ReasonCode::HmmRegimeGateTalebBreach);
     }
 
