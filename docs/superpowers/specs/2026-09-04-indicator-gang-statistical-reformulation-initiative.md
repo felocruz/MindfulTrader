@@ -47,7 +47,7 @@ Real load-bearing surface, not a peripheral signal:
 - Both `FI2`/`FI13` are exported into the observation/training data (`interm_fi2_norm`,
   `long_fi13_norm`) feeding the Transformer.
 
-### 1.2 Literature-grounding findings (CLAUDE_BRIEF_127/127_REPLY, 2026-09-04)
+### 1.2 Literature-grounding findings (CLAUDE_BRIEF_127/127_REPLY/128/128_REPLY, 2026-09-04)
 
 **Key mathematical insight (Gemini)**: on a *fixed-volume* clock, `V_t = C` (a constant per bar by
 construction), so `FI_t = ΔP_t x V_t = C x ΔP_t` — Force Index reduces to plain price momentum once
@@ -96,6 +96,30 @@ signal — changing its formula is a higher-stakes touch than this session's ris
 vector work and should not be done without real-data validation first (same discipline as every
 other reformulation this repo has shipped this session).
 
+**Imbalance-clock question RESOLVED, 2026-09-04 (CLAUDE_BRIEF_128/128_REPLY)**: Gemini's original
+`V_t = C` claim was checked against this system's actual `ImbalanceBarEngine` (a fixed-imbalance
+clock, not fixed-volume) and found not to hold literally — total volume within an imbalance-
+triggered bar varies with how much two-sided "fighting" occurred before the threshold tripped.
+Gemini, on being corrected, gave a coherent argument for why this actually *rescues* the
+volume-weighting concept rather than making it redundant: a "fast" imbalance bar (threshold reached
+on thin, one-sided volume) and a "slow" imbalance bar (threshold reached only after heavy two-sided
+volume) represent genuinely different liquidity conditions, and `ΔP x √V` on this specific clock is
+a plausible way to distinguish "thin sweep" from "thick institutional grind." Gemini was explicit,
+appropriately, that **no settled literature (unlike Amihud's case) directly validates this specific
+construction on an imbalance clock** — this is a theoretically-motivated hypothesis, not an
+established result, and needs empirical validation, not just literature grounding, before treating
+it as CANDIDATE-with-confidence.
+
+**Concrete empirical test design (Gemini's proposal, endorsed)**: does `ΔP x √V` (sampled on the
+real imbalance clock) contain more forward-predictive information about momentum
+continuation/exhaustion than pure `ΔP` alone, sampled on the same clock? If yes, the robustified
+Force Index survives as a real candidate; if no (the imbalance clock's own construction already
+captures the useful clustering), it should be dropped rather than built. **Not yet run** — this
+would be a new offline validation tool in the same family as `tools/observation_vector/
+mean_rev_z_variant_comparison.cpp`/`drift_location_eval.cpp` (real tick data, forward-return/
+hit-rate methodology, no schema/C++ commitment until validated). This is now the concrete next step
+for this case study, not further literature research.
+
 ## 2. Status vocabulary
 
 Same as the sibling ledgers, for consistency: **IN** (settled, stays as-is) · **IN-WEAK** (stays,
@@ -108,11 +132,13 @@ Force Index (§1): **CANDIDATE**.
 
 ## 3. Open questions (Phase 0, not started)
 
-1. Does this system's real imbalance-bar data actually show volume-weighting adds negligible
-   marginal information over pure momentum (Gemini's core claim), or does the imbalance clock's
-   non-fixed total volume mean FI retains real signal beyond momentum here? Not yet measured —
-   needs a real-data correlation/redundancy check (same methodology already used for
-   `log_scale_ratio`/`log_scale_expansion_ratio`'s own 0.8085-correlation redundancy finding).
+1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
+   imbalance-bar data actually show `ΔP x √V` carries more forward-predictive information about
+   momentum continuation/exhaustion than pure `ΔP` alone? Literature grounding says the imbalance
+   clock's non-fixed volume plausibly preserves real signal (see §1.2's resolution), but no settled
+   literature validates the specific construction — needs the concrete offline test §1.2 describes
+   (same family as `mean_rev_z_variant_comparison.cpp`/`drift_location_eval.cpp`), not further
+   literature search.
 2. If `ΔP x √V` (median/MAD) is built, does it replace FI2/FI13 in place (train/serve parity risk
    for the live Screen 2 gate and the Transformer's `interm_fi2_norm`/`long_fi13_norm` inputs) or
    ship as a new, additive signal first? Not yet decided — same category of question as the sibling
