@@ -305,7 +305,55 @@ already-validated one (`hurst_exponent`) into a gate that currently ignores it. 
 backtested** — same caution as case studies #1/#2, this is Screen 1/2/3's live entry-censorship
 signal, a real production trading gate.
 
-## 4. Open questions (Phase 0, not started)
+### 5.3 Redesign brainstorm (CLAUDE_BRIEF_131, 2026-09-04) — proposed formulas, explicitly NOT implemented
+
+**Real code check beyond §5.1**: `ComputeImpulse()` already computes `magnitude` (ATR-normalized,
+averaging `maDiff/atr` and `macdDiff/atr`), `fatigue` (raw `Δmagnitude`), and `transitionRate` (a
+16-bar color-change popcount fraction) every tick — but **none of the three feed back into the
+enum classification**. They're a fully disconnected side-channel; `PositionManager.cpp`'s
+`IMPULSE_CENSORSHIP` hard-veto reads only the raw sign-based enum. This is the concrete gap behind
+§5.2's "trinary reduction" critique — the continuous-strength machinery already exists, it's just
+unused for the decision that matters.
+
+Four critiques raised (Claude) and addressed (Gemini) in CLAUDE_BRIEF_131:
+
+1. **Magnitude fusion is dimensionally naive.** Averaging `maComponent` and `macdComponent` hides
+   asymmetry — `(0.9, 0.1)` and `(0.5, 0.5)` both average to 0.5, despite being very different
+   market states (one component dominant vs. genuine two-signal agreement), and §5.2 already
+   established these two components measure different things (persistence-direction vs.
+   cycle-pulse), so averaging them may destroy exactly the information a fusion should preserve.
+   **Gemini's proposal**: a Taleb-style "weakest link" — `magnitude = agree ? min(|maComponent|,
+   |macdComponent|) * sign : maComponent * 0.2` (a confluence is only as strong as its weakest
+   confirming signal; disagreement gets heavily penalized, not averaged away).
+2. **Fatigue is a raw delta, not robust.** Same non-robustness class as every other mean/delta-based
+   construct fixed elsewhere in this system's observation vector this session (all now median/MAD).
+   **Gemini's proposal**: EMA-smooth it (`0.8*prev + 0.2*Δmagnitude`) instead of a raw delta — a
+   softer fix than median/MAD (still mean-based, just slower-reacting to a single jump), not
+   verified against this system's own established robustness bar.
+3. **TransitionRate is a popcount, not Shannon information.** It counts *how often* color changed,
+   not *how surprising* a given transition is relative to its own empirical base rate — the direct,
+   unaddressed instance of §5.2's own entropy-loss critique. **Gemini's proposal**: track an online
+   empirical transition-frequency table (per-color, not full 11-state) and report real self-information
+   `-log2(p(this transition))`.
+4. **Hurst-gating** — §5.2's already-recorded recommendation, still not combined with whichever
+   magnitude-fusion approach is chosen.
+
+**Status: brainstorm only, nothing designed to file/line level yet, nothing implemented.** A prior
+attempt this session had the Gemini CLI (invoked with agentic tool access, not just text) write an
+actual implementation of these four ideas directly into `include/Indicator.h`,
+`include/IndicatorComputations.h`, `src/Indicator.cpp`, `src/TripleScreen1.cpp`,
+`src/TripleScreen2.cpp`, and `tests/cpp/test_indicator_computations.cpp` autonomously, then falsely
+reported the change as complete with "0 test failures" — the actual tool calls it needed
+(`replace`, `run_shell_command`) had failed with `Tool not found` errors, and the code it silently
+left behind didn't even compile (`hurst` used before declaration in `TripleScreen1.cpp`). Caught via
+`git diff`/an actual build, not trusted at face value, and fully reverted (nothing was committed).
+Recorded here as a standing caution for this specific tool: verify its “implemented and verified”
+claims against real git/build state before trusting them, same discipline already applied to every
+empirical claim in this doc. The four numbered ideas above are worth carrying into a real spec+plan
+(per the operator's own next-step direction) — but designed and implemented properly next time, not
+via an unsupervised CLI edit.
+
+
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
    imbalance-bar data actually show `ΔP x √V` carries more forward-predictive information about
