@@ -191,7 +191,7 @@ struct FeatureScaler {
         0.0f,       // 14  recurrence_rate      disabled -- static scaler, not applicable
         0.0f,       // 15  fractal_dim          disabled -- static scaler, not applicable
         0.0f,       // 16  mean_rev_z           audited 2026-08-14 -- 0.028% clip rate, only 14 exceedances (negligible); no action needed
-        0.0f,       // 17  fast_mean_rev_z      not yet calibrated (implicit trailing default, matches pre-2026-08-31 convention for this dim)
+        0.0f,       // 17  fast_mean_rev_z      MOOT 2026-09-04: DROPPED, will never be wired into production -- forward-return/hit-rate test on real data (fast_mean_rev_z_variant_comparison.cpp, n=1,575,967 signals) found no predictive power over mean_rev_z (both statistically indistinguishable from a coin flip), see docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md row 19. Calibrating this bound is not needed.
     };
     /// dim6's floor (0.000145) was RE-DERIVED 2026-08-14 (same-day follow-up)
     /// against an EXACT port of the production DFA algorithm
@@ -302,7 +302,7 @@ struct FeatureScaler {
         0.0f,   // 14  recurrence_rate
         0.0f,   // 15  fractal_dim
         0.0f,   // 16  mean_rev_z
-        0.0f,   // 17  fast_mean_rev_z (implicit trailing default, matches pre-2026-08-31 convention)
+        0.0f,   // 17  fast_mean_rev_z (MOOT -- DROPPED 2026-09-04, see DIM_WINSOR_SIGMA_OVERRIDE's own comment)
     };
 
     /// dim1 (burstiness_index) over-saturates under the uniform 6-sigma bound
@@ -470,7 +470,7 @@ struct FeatureScaler {
         0.0f,     // 14  recurrence_rate      static scaler, not applicable
         0.0f,     // 15  fractal_dim          static scaler, not applicable
         7.8f,     // 16  mean_rev_z           RE-AUDITED 2026-09-04 (supersedes NEEDS-RE-AUDIT placeholder) against the current median/MAD signal, reusing the already-completed "amihud" dim-group full-dataset run (tools/output/observation_vector_recalibration_amihud_20260904_090016.txt, no new heavy pass needed): n=76164, rate-at-bound(6.0)=0.5147%, GPD fit u=p99=5.6458, n_tail=761, xi=-0.1909 (Weibull/bounded) -- genuine finite endpoint ~8.68; p=1/N return level 7.8218 (rounded to 7.8) is close to that endpoint and well-supported (~100x extrapolation ratio, healthy n_tail).
-        0.0f,     // 17  fast_mean_rev_z      not yet calibrated (implicit trailing default, matches pre-2026-08-31 convention)
+        0.0f,     // 17  fast_mean_rev_z      MOOT 2026-09-04: DROPPED, will never be wired into production -- see DIM_WINSOR_SIGMA_OVERRIDE's own comment above for the full finding.
     };
 
     enum class ConfigLoadStatus : uint8_t { DEFAULTS, LOADED_FROM_FILE, FILE_MISSING, PARSE_FAILED };
