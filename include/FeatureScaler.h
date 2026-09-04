@@ -439,7 +439,32 @@ struct FeatureScaler {
         0.0f,     //  8  fast_hurst_exponent  not yet calibrated (placeholder, new activity-clock twin, 2026-08-28)
         10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
         0.0f,     // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27 -- see matching SHRINKAGE_SCALE_MIN comment; source cadence changed
-        2706.0f,  // 11  amihud_illiquidity   RECALIBRATED 2026-08-29 (live-reactivity, §1.11), refit against kLiveBarMinVolume=50 (empirically tuned, see StudyHelperFunctions.cpp) for internal consistency: GPD-derived on real tick-level replica (tools/observation_vector/amihud_liqfragility_recalibration.cpp, u=p99=32.68, n_tail=7709, xi=+0.2920), Frechet, p=1/N return level (N=38,540,567 ticks). OLD 0.0f (generic 6.0-sigma default) was clipping 8.5254% of live readings -- the "0.000%" note above was from the pre-live-reactivity bar-gated computation, no longer applies
+        // 11  amihud_illiquidity   RECALIBRATED 2026-09-04 (supersedes 2026-08-29's 2706.0f): fresh full-dataset GPD refit (all
+        // 467,376,145 real MES ticks, tools/observation_vector/observation_vector_recalibration.cpp,
+        // u=p99=46.76, n_tail=93,475, xi=+0.4013, sigma=162.42) found the raw "p=1/N return level"
+        // convention (this array's own established methodology elsewhere) gives 191,704 here -- a
+        // ~71x jump from the 2026-08-29 value, driven mostly by xi drifting 0.29->0.40 between fits.
+        // Per Coles (2001), Ch.4, and McNeil/Frey/Embrechts's POT/GPD practice, GPD return-level
+        // estimates are exponentially sensitive to xi at large return periods, and extrapolating far
+        // beyond the fitted tail sample's own size (here: n_tail=93,475, so "p=1/N" implies a
+        // ~5,000x extrapolation past the tail's own 1-in-~5000 natural resolution, ζ_u=2.0004e-4) is
+        // exactly the regime where such estimates become unreliable -- NOT evidence the true tail
+        // actually grew 71x heavier. Since the whole point of this bound is protecting the Student-t
+        // HMM from numerically pathological outliers (e.g. near-zero-volume prints), not suppressing
+        // genuine fat-tail signal the model is designed to use, a FIXED, well-supported return period
+        // is the institutionally sound target here, not "full historical N" (which is mathematically
+        // guaranteed to keep moving as the dataset grows, as just demonstrated). Targeting p=1e-6
+        // (comfortably closer to, though still beyond, standard ~10-50x-tail-sample extrapolation
+        // guidance, and a common "severe but estimable" convention in liquidity/VaR practice) on the
+        // fresh fit gives z_p = u + (sigma/xi)*((p/zeta_u)^(-xi) - 1) = 46.76 + 404.73*(8.384-1) =
+        // 3035.7 -- notably close to the superseded 2706 value, consistent with this being a modest,
+        // genuine refinement rather than the 71x swing a literal "1/N" application would produce.
+        // NOTE: a live-Gemini literature consult was attempted for this exact question
+        // (lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_125) but failed on an invalid/leaked API key --
+        // this decision rests on Coles (2001)/McNeil-Frey-Embrechts's well-established POT
+        // extrapolation-risk guidance directly, not an independently-verified reply; re-verify with
+        // Gemini once the API key is fixed.
+        3036.0f,  // 11  amihud_illiquidity (see comment above)
         0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
         0.0f,     // 13  fast_taleb_kurtosis  not yet calibrated (placeholder)
         0.0f,     // 14  recurrence_rate      static scaler, not applicable
@@ -1035,6 +1060,12 @@ struct FeatureScaler {
 
             calibration[i].carryForwardCount = 0;  // Reset on live signal
             const float zLog = (currentLog - median) / madScale;
+            // Diagnostic-only, 2026-09-03: expose the pre-clamp LOGZ z here too,
+            // same as the shrinkage branch above -- this plain (non-shrinkage)
+            // LOGZ path was the one remaining branch that left lastRawZ[] stale,
+            // caught when a recalibration tool read lastRawZ[] for a plain-LOGZ
+            // dim and got a silently-wrong all-zero series. No effect on result[i].
+            lastRawZ[i] = zLog;
             const float energyWinsorSigma = (LOGZ_WINSOR_SIGMA_OVERRIDE[i] > 0.0f)
                 ? LOGZ_WINSOR_SIGMA_OVERRIDE[i] : ENERGY_WINSOR_SIGMA;
             result[i] = std::clamp(zLog, -energyWinsorSigma, energyWinsorSigma);

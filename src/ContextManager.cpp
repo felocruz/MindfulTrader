@@ -575,12 +575,28 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
         if (count >= 100) {
             std::array<float, 100> returnsArray;
             std::copy(rawReturns, rawReturns + 100, returnsArray.begin());
-            m_localRiskContext.fastTalebKurtosis = MoorsKurtosis(returnsArray);
+            // BowleySkewness()/MoorsKurtosis() return NaN on a degenerate window
+            // (RobustMoments.h's own documented contract: "caller must carry-forward") --
+            // this call site never checked, so a degenerate imbalance-bar window could
+            // silently write NaN into both the HMM observation vector (OBS_SKEWNESS) and
+            // RiskGateContext (fastTalebKurtosis), the latter defeating any risk gate
+            // comparison against it (NaN > threshold is always false in IEEE754). Found
+            // 2026-09-04 via a real full-dataset recalibration run showing mean|z|=nan for
+            // both dims from the very first checkpoint onward. Same carry-forward pattern
+            // as fast_hurst_exponent's own additive twin just below.
+            static float s_lastValidFastTalebKurtosis = 1.23f;
+            const float moorsKurtosisRaw = MoorsKurtosis(returnsArray);
+            m_localRiskContext.fastTalebKurtosis = std::isfinite(moorsKurtosisRaw) ? moorsKurtosisRaw : s_lastValidFastTalebKurtosis;
+            if (std::isfinite(moorsKurtosisRaw)) { s_lastValidFastTalebKurtosis = m_localRiskContext.fastTalebKurtosis; }
+
             // Dim 10 (skewness_idx): replaced 2026-08-27, source moved from TS3's
             // stale (once-per-15min-bar) CalculateSkewness() to this same
             // tick-native activity-clock buffer -- no existing gate consumed the
             // old value, unlike kurtosis, so no additive twin was needed.
-            obs[OBS_SKEWNESS] = BowleySkewness(returnsArray);
+            static float s_lastValidSkewnessIdx = 0.0f;
+            const float bowleySkewnessRaw = BowleySkewness(returnsArray);
+            obs[OBS_SKEWNESS] = std::isfinite(bowleySkewnessRaw) ? bowleySkewnessRaw : s_lastValidSkewnessIdx;
+            if (std::isfinite(bowleySkewnessRaw)) { s_lastValidSkewnessIdx = obs[OBS_SKEWNESS]; }
 
             // Dim 9 (fast_hurst_exponent): additive twin, 2026-08-28 -- hurst_exponent
             // has a real live gate (Scoring.cpp:266), so this follows kurtosis's additive

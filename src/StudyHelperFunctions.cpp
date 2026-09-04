@@ -625,8 +625,6 @@ static void ResetAdaptiveWindowState(SCStudyInterfaceRef sc) {
 // Pattern Detection Constants
 namespace PatternConstants {
     constexpr float HURST_TREND_THRESHOLD = 0.60f;
-    constexpr float PINBALL_OVERSOLD = 30.0f;
-    constexpr float PINBALL_OVERBOUGHT = 70.0f;
     constexpr int TURTLE_SOUP_LOOKBACK = 4;
     constexpr int REVERSAL_BAR_LOOKBACK = 3;
     constexpr int TWO_B_LOOKBACK = 5;  // Reduced from 20 to allow earlier pattern detection
@@ -638,11 +636,6 @@ namespace PatternConstants {
 
     // Tactical Trigger Detection Constants
     constexpr int TACTICAL_MIN_LOOKBACK = 20;  // Minimum bars needed for ITR/Elder patterns
-    constexpr int PINBALL_MIN_BARS = 4;  // Need 4 bars for ROC + 3-period RSI
-    constexpr int PINBALL_ROC_BARS = 4;  // Number of bars for 1-period ROC calculation
-    constexpr int PINBALL_RSI_PERIOD = 3;  // 3-period RSI of ROC
-    constexpr float PINBALL_ROC_MULTIPLIER = 100.0f;  // ROC percentage multiplier
-    constexpr float PINBALL_RSI_BASE = 100.0f;  // RSI base value for calculation
     constexpr int VOLUME_AVG_LOOKBACK = 10;  // Bars for volume average calculation
     constexpr float VOLUME_BREAKOUT_MULTIPLIER = 1.2f;  // Volume must be 20% above avg
 
@@ -1261,62 +1254,12 @@ RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, floa
         return RaschkeTacticalTrigger::NONE;
     }
 
-    // --- Momentum Pinball (Linda Raschke/Larry Connors) ---
-    // Pinball Indicator = LBR/RSI = 3-period RSI of 1-period Rate of Change
-    // This is the exact indicator from "Street Smarts" for identifying extreme oversold/overbought
-    // Note: Full strategy includes "first hour ITR" entry mechanics for daily charts,
-    // but we detect the signal condition here (Pinball < 30 or > 70)
-    if (sc.Index >= PINBALL_MIN_BARS) { // Need 4 bars for ROC calculation + 3-period RSI
-        // Calculate 1-period Rate of Change for last 4 bars
-        float roc[PINBALL_ROC_BARS];
-        for (int i = 0; i < PINBALL_ROC_BARS; ++i) {
-            int idx = sc.Index - i;
-            if (idx > 0 && sc.Close[idx - 1] > 0) {
-                roc[PINBALL_ROC_BARS - 1 - i] = ((sc.Close[idx] - sc.Close[idx - 1]) / sc.Close[idx - 1]) * PINBALL_ROC_MULTIPLIER;
-            } else {
-                roc[PINBALL_ROC_BARS - 1 - i] = 0.0f;
-            }
-        }
-
-        // Calculate 3-period RSI of ROC (Pinball Indicator)
-        float gains = 0.0f;
-        float losses = 0.0f;
-        int gainCount = 0;
-        int lossCount = 0;
-
-        for (int i = 1; i < PINBALL_ROC_BARS; ++i) {
-            float change = roc[i] - roc[i - 1];
-            if (change > 0) {
-                gains += change;
-                gainCount++;
-            } else if (change < 0) {
-                losses += std::abs(change);
-                lossCount++;
-            }
-        }
-
-        const float avgGain = (gainCount > 0) ? (gains / static_cast<float>(PINBALL_RSI_PERIOD)) : 0.0f;
-        const float avgLoss = (lossCount > 0) ? (losses / static_cast<float>(PINBALL_RSI_PERIOD)) : 0.0f;
-
-        float pinballIndicator = 0.0f;
-        if (avgLoss > 0) {
-            const float rs = avgGain / avgLoss;
-            pinballIndicator = PINBALL_RSI_BASE - (PINBALL_RSI_BASE / (1.0f + rs));
-        } else if (avgGain > 0) [[unlikely]] {
-            // All gains, no losses = extreme overbought
-            pinballIndicator = PINBALL_RSI_BASE;
-        }
-
-        // Pinball Buy: Indicator < 30 (extreme oversold, expect "flip" to upside)
-        if (pinballIndicator < PINBALL_OVERSOLD) {
-            return RaschkeTacticalTrigger::MOMENTUM_PINBALL_BUY;
-        }
-
-        // Pinball Sell: Indicator > 70 (extreme overbought, expect "flip" to downside)
-        if (pinballIndicator > PINBALL_OVERBOUGHT) {
-            return RaschkeTacticalTrigger::MOMENTUM_PINBALL_SELL;
-        }
-    }
+    // Momentum Pinball's raschke_tactical_trigger write REMOVED 2026-09-04 (docs/superpowers/specs/
+    // 2026-08-25-pattern-detection-institutional-hardening-spec.md §4.0/§5, item 1): the official
+    // DetectMomentumPinball() (TripleScreen3.cpp) already stopped writing to this field ("moved to
+    // Python/Orchestrator"), but this crude cascade check kept writing anyway -- the only path that
+    // ever populated MOMENTUM_PINBALL_BUY/SELL here was this admittedly-simplified proxy. Removed, not
+    // reformulated: no official C++ detector claims this field for Momentum Pinball any more.
 
     // --- RSI Failure Swing (Divergence Pattern) ---
     // Linda Raschke: RSI makes higher low while price makes lower low = bullish divergence (buy)
@@ -1376,48 +1319,14 @@ RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, floa
         }
     }
 
-    // --- Turtle Soup Detection (Optimized with STL) ---
-
-    // Use STL algorithms to find min/max instead of manual loops
-    // Note: std::min_element expects [first, last) where last is one-past-the-end
-    const float lowestLow_1_to_4 = *std::min_element(
-        &sc.Low[sc.Index - TURTLE_SOUP_LOOKBACK],
-        &sc.Low[sc.Index + 1]  // Fixed: +1 for one-past-end
-    );
-    if (sc.Low[sc.Index] < lowestLow_1_to_4 && sc.Close[sc.Index] > lowestLow_1_to_4) {
-        return RaschkeTacticalTrigger::TURTLE_SOUP_BUY;
-    }
-
-    const float highestHigh_1_to_4 = *std::max_element(
-        &sc.High[sc.Index - TURTLE_SOUP_LOOKBACK],  // Fixed: was sc.Low, should be sc.High
-        &sc.High[sc.Index + 1]  // Fixed: +1 for one-past-end
-    );
-    if (sc.High[sc.Index] > highestHigh_1_to_4 && sc.Close[sc.Index] < highestHigh_1_to_4) {
-        return RaschkeTacticalTrigger::TURTLE_SOUP_SELL;
-    }
-
-    // 2. If no other trigger is found, check for the Elder Breakout.
-    //    CONTRACT REFACTOR: Logic flow moved to Scoring.cpp.
-    //    Pure indicator logic: Any break of the prior bar's high is a POTENTIAL breakout.
-    //    The validity (is_long_bias) is now enforced by the Scoring engine, not here.
-
-    // Remove old bias check logic (lines 1422-1426 deleted)
-    // We now return the raw pattern detection without context filtering.
-
-    SCFloatArrayRef high = sc.High;
-    SCFloatArrayRef low = sc.Low;
-    int currentIndex = sc.Index;
-
-    if (currentIndex > 0) { // Ensure we are not on the first bar
-        // Pure price action detection
-        if (high[currentIndex] > high[currentIndex - 1]) {
-            return RaschkeTacticalTrigger::ELDER_BREAKOUT_BUY;
-        }
-
-        if (low[currentIndex] < low[currentIndex - 1]) {
-            return RaschkeTacticalTrigger::ELDER_BREAKOUT_SELL;
-        }
-    }
+    // Turtle Soup's and Elder Breakout's raschke_tactical_trigger writes REMOVED 2026-09-04
+    // (docs/superpowers/specs/2026-08-25-pattern-detection-institutional-hardening-spec.md §4.0/§5,
+    // item 1): both patterns already have a properly-gated official detector in TripleScreen3.cpp that
+    // writes this same field when ITS OWN gate passes -- but when it doesn't, no reset happened, so
+    // whichever of these two crude checks ran here earlier in the same tick stood unchallenged (Elder
+    // Breakout's crude version fires on almost any new high/low vs. the immediately-prior bar, with no
+    // consolidation/volume/Hurst gate at all). Removed, not reformulated: the official detectors are
+    // strictly better-gated and already own this field for both patterns.
 
     // --- ITR (Initial Trading Range) Strategy ---
     // Linda Raschke: "The first hour establishes the framework for the rest of the trading day"
