@@ -297,7 +297,20 @@ struct FeatureScaler {
         0.0f,   //  9  tail_index
         0.0f,   // 10  skewness_idx
         0.0f,   // 11  amihud_illiquidity
-        21.26f, // 12  liq_fragility   RE-DERIVED 2026-08-30 -- the 2524.5f figure recorded 2026-08-29 was computed from a broken audit (tools/observation_vector/amihud_liqfragility_recalibration.cpp's liqFragZ manually recomputed the plain z formula, silently bypassing ComputeShrinkageZ(), so it never reflected SHRINKAGE_SCALE_MIN[13] actually being enabled, pre-2026-08-31 numbering). Fixed the tool to read the real shrinkage-blended lastRawZ (now populated unconditionally by the LOGZ branch below); rerunning at guard=50 showed shrinkage enabling collapses the tail entirely (max|z| 503.22 -> 20.59, corr(localMAD,|z|) -0.2058 -> +0.0016 -- collapse signature genuinely gone, not just masked). Refit GPD on the corrected z (u=p99=8.297, n_tail=7709, xi=-0.1452, Weibull/bounded), p=1/N return level (N=38,540,567 ticks) = 21.2565. The 2524.5f bound was ~120x oversized and would have gone essentially unused (rate-at-bound was already 0.0000% either way, but for the wrong reason)
+        1100.8f, // 12  liq_fragility  RECALIBRATED 2026-09-04 -- supersedes 2026-08-30's 21.26f, stale on
+        // two independent grounds: (1) computed from a partial 38,540,567-tick sample, not the full
+        // 467,376,145-tick stream; (2) computed against liq_fragility's live-reactive-but-still-ATR-
+        // coupled formula, superseded hours later the same day (a76ec00, 2026-09-03 11:42) by a
+        // dedicated median-based elasticity ratio fully decoupled from ATR/volume-SMA (see
+        // CalculateLiquidityFragility's own doc comment). Fresh full-dataset GPD refit against the
+        // CURRENT formula (tools/output/observation_vector_recalibration_amihud_20260904_090016.txt,
+        // final report, all 467,376,145 real MES ticks; the tool's own LiqFragilityLive() is a
+        // verified byte-for-byte port): u=p99=5.1727, n_tail=93,475, xi=+0.3147 (Frechet/unbounded),
+        // sigma=2.7671. Correctly-subsampling-unbiased zeta_u=nTail/nSample_retained=0.01 (u=p99 is a
+        // genuine 1-in-100 event here, the same "~100x" resolution as dims 3/8/10/13/16 -- see
+        // dim11's own DIM_WINSOR_SIGMA_OVERRIDE comment for the sibling bug this shares and how it
+        // was diagnosed) -- no pathological-extrapolation case, direct p=1/N applies. Tool's own
+        // report: p=1/N return level (N=467,376,145) = 1100.7906. Set to 1100.8.
         0.0f,   // 13  fast_taleb_kurtosis (SOFTLOGZ, not LOGZ -- this array is unused for it, 0.0f sentinel; see DIM_WINSOR_SIGMA_OVERRIDE[13]=97.0f)
         0.0f,   // 14  recurrence_rate
         0.0f,   // 15  fractal_dim
@@ -439,32 +452,23 @@ struct FeatureScaler {
         10.9f,    //  8  fast_hurst_exponent  RECALIBRATED 2026-09-04 (supersedes not-yet-calibrated placeholder): real full-dataset activity-clock run (tools/output/observation_vector_recalibration_activity_20260904_122334.txt, all 471,930,891 ticks), n=4,664,244, rate-at-bound(6.0)=0.0125% (already low), GPD fit u=p99=3.3491, n_tail=46642 (healthy sample), xi=+0.0373 (Gumbel/borderline), sigma=0.5671, p=1/N return level 10.8502 (rounded to 10.9). Extrapolation ratio only ~100x -- used p=1/N directly, same convention as dim3/dim16 (moderate ratio, not amihud's pathological case).
         10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
         269.0f,   // 10  skewness_idx         RECALIBRATED 2026-09-04 (final step, supersedes the intentional 0.0f placeholder above): re-ran with SHRINKAGE_SCALE_MIN[10]=0.000781 enabled (tools/output/observation_vector_recalibration_activity_20260904_174018.txt, all 471,930,891 ticks). Shrinkage worked as intended but did not fully eliminate the tail (unlike dim12's near-total fix): mean|z| 18.28->0.8812, max|z| 1761.25->177.46, corr(localMad,|z|) -0.2459->-0.1691 (meaningfully reduced, not zeroed -- a genuine residual heavy tail remains, not just a collapse artifact). GPD fit on the corrected z: u=p99=6.0968, n_tail=46642 (healthy sample, same order as dim13's), xi=+0.2670 (Frechet/unbounded, a real tail now that the collapse-driven outliers are shrunk out), sigma=4.2196. Extrapolation ratio ~100x (N/n_tail), the same moderate, well-supported ratio as dim3/dim8/dim13 -- used the tool's own p=1/N return level directly (269.0766, rounded to 269.0), same convention as those dims.
-        // 11  amihud_illiquidity   RECALIBRATED 2026-09-04 (supersedes 2026-08-29's 2706.0f): fresh full-dataset GPD refit (all
-        // 467,376,145 real MES ticks, tools/observation_vector/observation_vector_recalibration.cpp,
-        // u=p99=46.76, n_tail=93,475, xi=+0.4013, sigma=162.42) found the raw "p=1/N return level"
-        // convention (this array's own established methodology elsewhere) gives 191,704 here -- a
-        // ~71x jump from the 2026-08-29 value, driven mostly by xi drifting 0.29->0.40 between fits.
-        // Per Coles (2001), Ch.4, and McNeil/Frey/Embrechts's POT/GPD practice, GPD return-level
-        // estimates are exponentially sensitive to xi at large return periods, and extrapolating far
-        // beyond the fitted tail sample's own size (here: n_tail=93,475, so "p=1/N" implies a
-        // ~5,000x extrapolation past the tail's own 1-in-~5000 natural resolution, ζ_u=2.0004e-4) is
-        // exactly the regime where such estimates become unreliable -- NOT evidence the true tail
-        // actually grew 71x heavier. Since the whole point of this bound is protecting the Student-t
-        // HMM from numerically pathological outliers (e.g. near-zero-volume prints), not suppressing
-        // genuine fat-tail signal the model is designed to use, a FIXED, well-supported return period
-        // is the institutionally sound target here, not "full historical N" (which is mathematically
-        // guaranteed to keep moving as the dataset grows, as just demonstrated). Targeting p=1e-6
-        // (comfortably closer to, though still beyond, standard ~10-50x-tail-sample extrapolation
-        // guidance, and a common "severe but estimable" convention in liquidity/VaR practice) on the
-        // fresh fit gives z_p = u + (sigma/xi)*((p/zeta_u)^(-xi) - 1) = 46.76 + 404.73*(8.384-1) =
-        // 3035.7 -- notably close to the superseded 2706 value, consistent with this being a modest,
-        // genuine refinement rather than the 71x swing a literal "1/N" application would produce.
-        // NOTE: a live-Gemini literature consult was attempted for this exact question
-        // (lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_125) but failed on an invalid/leaked API key --
-        // this decision rests on Coles (2001)/McNeil-Frey-Embrechts's well-established POT
-        // extrapolation-risk guidance directly, not an independently-verified reply; re-verify with
-        // Gemini once the API key is fixed.
-        3036.0f,  // 11  amihud_illiquidity (see comment above)
+        // 11  amihud_illiquidity   RECALIBRATED 2026-09-04, SECOND PASS -- supersedes the SAME DAY's
+        // own 3036.0f: that value rested on a real bug, found and fixed the same session while
+        // investigating dim12's own follow-up below. The "~5,000x pathological extrapolation, use a
+        // fixed p=1e-6 target instead" reasoning computed zeta_u as nTail/N_true_ticks (93,475 /
+        // 467,376,145 = 2.0004e-4) -- but nTail was counted from a 1-in-50 SUBSAMPLE (this dim's own
+        // tool-side collection, subsampleEveryN=50, same as burstiness_index), so that ratio
+        // undercounts the true per-tick exceedance probability by exactly the 50x subsampling factor.
+        // The correctly subsampling-unbiased zeta_u = nTail/nSample_retained = 93,475/9,347,522 =
+        // 0.01 -- i.e. u=p99 genuinely represents a 1-in-100 event here, EXACTLY the same "~100x"
+        // resolution as dims 3/8/10/13/16, not a uniquely pathological ~5,000x case. There is nothing
+        // special about this dim after all -- the direct "p=1/N_true return level" convention already
+        // used for those other 5 dims applies here too, and the tool's own internal computation
+        // (which correctly uses nTail/nSample_retained, not the buggy manual re-derivation this
+        // comment previously did by hand) already reports it directly: p=1/N return level
+        // (N=467,376,145 real ticks) = 191,703.8870 (tools/output/observation_vector_recalibration_
+        // amihud_20260904_090016.txt, final report). Set to 191703.9.
+        191703.9f,  // 11  amihud_illiquidity (see comment above)
         0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
         97.0f,    // 13  fast_taleb_kurtosis  RECALIBRATED 2026-09-04 (supersedes not-yet-calibrated placeholder): real full-dataset activity-clock run (tools/output/observation_vector_recalibration_activity_20260904_122334.txt, all 471,930,891 ticks), n=4,664,244, rate-at-bound(6.0)=0.3044%, GPD fit u=p99=4.0398, n_tail=46641 (healthy sample), xi=+0.2513 (Frechet/unbounded), sigma=1.6827, p=1/N return level 97.0987 (rounded to 97.0). Extrapolation ratio only ~100x -- used p=1/N directly, same convention as dim3/dim16/dim8 (moderate ratio, not amihud's pathological case).
         0.0f,     // 14  recurrence_rate      static scaler, not applicable
