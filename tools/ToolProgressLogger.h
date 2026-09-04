@@ -31,6 +31,9 @@
 #include <cstring>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 
 class ToolProgressLogger {
@@ -84,17 +87,57 @@ public:
         std::fflush(m_file);
     }
 
-    // Convenience: "processed N / ~M (P%)" -- pass 0 for totalEstimate if
-    // unknown (e.g. streaming without a pre-counted row total).
+    // Convenience: "processed N / ~M (P%) rss=X MB" -- pass 0 for totalEstimate
+    // if unknown (e.g. streaming without a pre-counted row total). Always
+    // includes current RSS: a real ~1h43m run was OOM-killed (VS Code/WSL
+    // taken down with it, 2026-09-03) with a log full of progress percentages
+    // and zero memory visibility -- useless for telling "working normally" from
+    // "about to be killed". RSS in every checkpoint line makes that visible.
     void LogProgress(std::size_t processed, std::size_t totalEstimate) {
-        char buf[160];
+        char buf[200];
+        const std::size_t rssMb = CurrentRssKB() / 1024;
         if (totalEstimate > 0) {
             const double pct = 100.0 * static_cast<double>(processed) / static_cast<double>(totalEstimate);
-            std::snprintf(buf, sizeof(buf), "processed %zu / ~%zu (%.1f%%)", processed, totalEstimate, pct);
+            std::snprintf(buf, sizeof(buf), "processed %zu / ~%zu (%.1f%%) rss=%zuMB", processed, totalEstimate, pct, rssMb);
         } else {
-            std::snprintf(buf, sizeof(buf), "processed %zu", processed);
+            std::snprintf(buf, sizeof(buf), "processed %zu rss=%zuMB", processed, rssMb);
         }
         Log(buf);
+    }
+
+    // Reads this process's own resident set size from /proc/self/status.
+    // Returns 0 if unavailable (e.g. non-Linux) rather than throwing --
+    // memory reporting is a diagnostic nicety, must never crash the tool.
+    static std::size_t CurrentRssKB() {
+        std::ifstream status("/proc/self/status");
+        if (!status.is_open()) return 0;
+        std::string line;
+        while (std::getline(status, line)) {
+            if (line.rfind("VmRSS:", 0) == 0) {
+                std::istringstream iss(line.substr(6));
+                std::size_t kb = 0;
+                iss >> kb;
+                return kb;
+            }
+        }
+        return 0;
+    }
+
+    // Self-imposed memory ceiling for long-running tools -- call at the same
+    // cadence as LogProgress. Throws (not exit()/abort()) so main()'s own
+    // try/catch can log the fatal cause and let this object's destructor run
+    // normally, archiving the full transcript instead of losing it to a raw
+    // OOM-kill (see class-level directive). Callers running several dim-group
+    // passes concurrently should pass a correspondingly lower budget, since
+    // the OS memory ceiling is shared across all of them.
+    void CheckMemoryBudget(std::size_t maxRssMB) {
+        const std::size_t rssMb = CurrentRssKB() / 1024;
+        if (rssMb > maxRssMB) {
+            const std::string msg = "FATAL: RSS " + std::to_string(rssMb) + "MB exceeded budget " +
+                                     std::to_string(maxRssMB) + "MB -- aborting before OOM-kill";
+            Log(msg);
+            throw std::runtime_error(m_toolName + ": " + msg);
+        }
     }
 
 private:
