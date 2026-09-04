@@ -1,5 +1,13 @@
 # Gate-Stack Stationarity Audit Findings
 
+**SUPERSEDED 2026-09-04**: this audit's stationarity axis (is each gate's raw signal stationary
+enough for a fixed threshold) is unchanged and still valid, but this doc's content is now fully
+reproduced, plus extended with the HMM-signal-awareness axis this audit explicitly did not cover,
+in `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §3/§3a
+— read that doc for the current, actively-maintained version. Kept here as the historical ADR
+record of the original 2026-08-15 decision, per this project's ADR convention (superseded, not
+deleted).
+
 **Status:** COMPLETE — audit closed 2026-08-15, per Unit B of
 `docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md`.
 **Methodology:** re-running `docs/ADR/amihud_gate_percentile_spec.md` §6's own

@@ -52,6 +52,7 @@
 #include "ImbalanceBarEngine.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -117,11 +118,17 @@ std::vector<Bar15m> LoadBars15m(const std::string& path) {
     return out;
 }
 
-// Faithful reference port of CalculateMeanReversionSpeed (StudyHelperFunctions.cpp:3247),
+// Faithful reference port of CalculateMeanReversionSpeed (StudyHelperFunctions.cpp:3033),
 // operating on a chronological in-memory price window instead of sc.BaseData. Returns
-// both the clamped score and the SIGNED (current - mean) deviation before abs(), needed
+// both the clamped score and the SIGNED (current - median) deviation before abs(), needed
 // here to classify forward-return direction (the production function only returns the
 // abs-valued, elasticity-gated score).
+//
+// FIXED 2026-09-04: this port was stale, still using mean/std -- CalculateMeanReversionSpeed
+// was reformulated to median/MAD (Kim & White 2004) 2026-08-31/committed 2026-09-02, but this
+// tool was never updated to match, silently invalidating its own "empirically null" verdict
+// (that result was measuring the OLD, already-abandoned formula). Re-ported verbatim against
+// the current real function before re-running.
 struct TimeBarResult { float score; float signedDeviation; };
 
 TimeBarResult TimeBarMeanRevZ(const std::vector<float>& prices, int endIdxInclusive, int n) {
@@ -130,20 +137,27 @@ TimeBarResult TimeBarMeanRevZ(const std::vector<float>& prices, int endIdxInclus
     if (start_idx < 0) return {0.0f, 0.0f};
 
     constexpr double kPriceEps = 1e-6;
-    double sum_log_p = 0.0, sum_log_p_sq = 0.0;
+    constexpr double kMadConsistency = 1.4826;
+    std::array<double, 40> log_prices{};
     for (int i = 0; i < n; ++i) {
         const double p = std::max(static_cast<double>(prices[static_cast<std::size_t>(start_idx + i)]), kPriceEps);
-        const double lp = std::log(p);
-        sum_log_p += lp;
-        sum_log_p_sq += lp * lp;
+        log_prices[static_cast<std::size_t>(i)] = std::log(p);
     }
-    const double mean_log_p = sum_log_p / n;
-    const double var_log_p = std::max((sum_log_p_sq / n) - (mean_log_p * mean_log_p), 0.0);
-    const double std_log_p = std::sqrt(var_log_p);
-    if (std_log_p < 1e-6) return {0.0f, 0.0f};
+
+    std::array<double, 40> scratch{};
+    std::copy_n(log_prices.begin(), n, scratch.begin());
+    const int priceMid = n / 2;
+    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
+    const double median_log_p = scratch[static_cast<std::size_t>(priceMid)];
+
+    for (int i = 0; i < n; ++i) scratch[static_cast<std::size_t>(i)] = std::fabs(log_prices[static_cast<std::size_t>(i)] - median_log_p);
+    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
+    const double mad_log_p = scratch[static_cast<std::size_t>(priceMid)];
+    const double scale_log_p = mad_log_p * kMadConsistency;
+    if (scale_log_p < 1e-6) return {0.0f, 0.0f};
 
     const double current_log_p = std::log(std::max(static_cast<double>(prices[static_cast<std::size_t>(endIdxInclusive)]), kPriceEps));
-    const double signedDeviation = (current_log_p - mean_log_p) / std_log_p;
+    const double signedDeviation = (current_log_p - median_log_p) / scale_log_p;
     const double abs_z_price = std::fabs(signedDeviation);
 
     const int m = n - 1;
@@ -151,21 +165,23 @@ TimeBarResult TimeBarMeanRevZ(const std::vector<float>& prices, int endIdxInclus
         return {std::clamp(static_cast<float>(abs_z_price), 0.0f, 5.0f), static_cast<float>(signedDeviation)};
     }
 
-    std::vector<double> returns(static_cast<std::size_t>(m));
-    double sum_r = 0.0;
+    std::array<double, 40> returns{};
     for (int i = 0; i < m; ++i) {
         const int idx = start_idx + i + 1;
         const double p = std::max(static_cast<double>(prices[static_cast<std::size_t>(idx)]), kPriceEps);
         const double p_prev = std::max(static_cast<double>(prices[static_cast<std::size_t>(idx - 1)]), kPriceEps);
-        const double r = std::log(p / p_prev);
-        returns[static_cast<std::size_t>(i)] = r;
-        sum_r += r;
+        returns[static_cast<std::size_t>(i)] = std::log(p / p_prev);
     }
-    const double mean_r = sum_r / m;
+    std::array<double, 40> returnScratch{};
+    std::copy_n(returns.begin(), m, returnScratch.begin());
+    const int retMid = m / 2;
+    std::nth_element(returnScratch.begin(), returnScratch.begin() + retMid, returnScratch.begin() + m);
+    const double medianR = returnScratch[static_cast<std::size_t>(retMid)];
+
     double num = 0.0, den = 0.0;
     for (int t = 1; t < m; ++t) {
-        const double r_t = returns[static_cast<std::size_t>(t)] - mean_r;
-        const double r_prev = returns[static_cast<std::size_t>(t - 1)] - mean_r;
+        const double r_t = returns[static_cast<std::size_t>(t)] - medianR;
+        const double r_prev = returns[static_cast<std::size_t>(t - 1)] - medianR;
         num += r_t * r_prev;
         den += r_prev * r_prev;
     }
@@ -240,19 +256,29 @@ int main(int argc, char** argv) {
                     const float score = ActivityClockMeanRevZ(window.data(), kReturnBufferN);
                     if (std::isfinite(score) && score > kGateThreshold) {
                         // Recompute the signed deviation the same way ActivityClockMeanRevZ
-                        // does internally (cumsum z-score), since the header only returns
-                        // the final abs-valued/elasticity-gated score.
-                        double cumsum = 0.0, sum = 0.0, sumSq = 0.0;
+                        // does internally (cumulative-path MEDIAN/MAD z-score, Kim & White 2004
+                        // -- FIXED 2026-09-04, this previously used a stale mean/std
+                        // recomputation even after the header itself was reformulated
+                        // 2026-09-02), since the header only returns the final abs-valued/
+                        // elasticity-gated score.
+                        constexpr double kMadConsistency = 1.4826;
+                        std::array<double, kReturnBufferN + 1> path{};
+                        double cumsum = 0.0;
+                        path[0] = 0.0;
                         for (int k = 0; k < kReturnBufferN; ++k) {
                             cumsum += static_cast<double>(window[static_cast<std::size_t>(k)]);
-                            sum += cumsum;
-                            sumSq += cumsum * cumsum;
+                            path[static_cast<std::size_t>(k + 1)] = cumsum;
                         }
-                        const double count = static_cast<double>(kReturnBufferN + 1);
-                        const double mean = sum / count;
-                        const double var = std::max((sumSq / count) - (mean * mean), 0.0);
-                        const double stdDev = std::sqrt(var);
-                        const double signedDeviation = (stdDev > 1e-9) ? (cumsum - mean) / stdDev : 0.0;
+                        constexpr int count = kReturnBufferN + 1;
+                        constexpr int pathMid = count / 2;
+                        std::array<double, count> scratch = path;
+                        std::nth_element(scratch.begin(), scratch.begin() + pathMid, scratch.begin() + count);
+                        const double medianPath = scratch[static_cast<std::size_t>(pathMid)];
+                        for (int k = 0; k < count; ++k) scratch[static_cast<std::size_t>(k)] = std::fabs(path[static_cast<std::size_t>(k)] - medianPath);
+                        std::nth_element(scratch.begin(), scratch.begin() + pathMid, scratch.begin() + count);
+                        const double madPath = scratch[static_cast<std::size_t>(pathMid)];
+                        const double scalePath = madPath * kMadConsistency;
+                        const double signedDeviation = (scalePath > 1e-9) ? (cumsum - medianPath) / scalePath : 0.0;
 
                         out << ticks[static_cast<std::size_t>(i)].timestamp_us << ","
                             << ticks[static_cast<std::size_t>(i)].close << ","

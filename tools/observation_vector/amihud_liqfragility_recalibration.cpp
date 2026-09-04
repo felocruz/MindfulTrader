@@ -122,7 +122,7 @@ struct ZStats {
         return 100.0 * hits / sample.size();
     }
 
-    void Report(const char* name, float productionBound) const {
+    void Report(const char* name, float productionBound, ToolProgressLogger& logger) const {
         std::vector<float> sorted = sample;
         std::sort(sorted.begin(), sorted.end());
         auto pct = [&](double p) -> float {
@@ -130,15 +130,22 @@ struct ZStats {
             std::size_t idx = static_cast<std::size_t>(p * (sorted.size() - 1));
             return sorted[idx];
         };
-        std::printf("%s: n=%zu  mean|z|=%.4f  max|z|=%.2f  p50=%.3f p90=%.3f p99=%.3f p99.9=%.3f\n",
+        char line[512];
+        std::snprintf(line, sizeof(line),
+                    "%s: n=%zu  mean|z|=%.4f  max|z|=%.2f  p50=%.3f p90=%.3f p99=%.3f p99.9=%.3f",
                     name, n, sumAbsZ / std::max<std::size_t>(n, 1), maxAbsZ,
                     pct(0.50), pct(0.90), pct(0.99), pct(0.999));
-        std::printf("%s: |z|>=6 rate=%.4f%%  |z|>=25 rate=%.4f%%  |z|>=45 rate=%.4f%%\n",
+        std::puts(line); logger.Log(line);
+        std::snprintf(line, sizeof(line),
+                    "%s: |z|>=6 rate=%.4f%%  |z|>=25 rate=%.4f%%  |z|>=45 rate=%.4f%%",
                     name, 100.0 * hits6 / std::max<std::size_t>(n, 1),
                     100.0 * hits25 / std::max<std::size_t>(n, 1),
                     100.0 * hits45 / std::max<std::size_t>(n, 1));
-        std::printf("%s: CURRENT PRODUCTION BOUND=%.1f  rate-at-bound=%.4f%%\n",
+        std::puts(line); logger.Log(line);
+        std::snprintf(line, sizeof(line),
+                    "%s: CURRENT PRODUCTION BOUND=%.1f  rate-at-bound=%.4f%%",
                     name, productionBound, RateAt(productionBound));
+        std::puts(line); logger.Log(line);
 
         if (!madSample.empty()) {
             std::vector<float> madSorted = madSample;
@@ -163,12 +170,17 @@ struct ZStats {
             double sumMadTop = 0;
             for (std::size_t k = 0; k < topN; ++k) sumMadTop += madSample[idxSorted[k]];
             const double meanMadTop = sumMadTop / topN;
-            std::printf("%s: [shrinkage audit] corr(localMAD,|z|)=%.4f (negative = collapse signature)  "
-                        "median_MAD=%.6g  mean_MAD_top1pct|z|=%.6g (ratio=%.4f)  MAD_at_max|z|=%.6g\n",
+            char line2[512];
+            std::snprintf(line2, sizeof(line2),
+                        "%s: [shrinkage audit] corr(localMAD,|z|)=%.4f (negative = collapse signature)  "
+                        "median_MAD=%.6g  mean_MAD_top1pct|z|=%.6g (ratio=%.4f)  MAD_at_max|z|=%.6g",
                         name, corr, madPct(0.50), meanMadTop, meanMadTop / std::max(madPct(0.50), 1e-30f), madAtMaxZ);
-            std::printf("%s: [MAD percentiles, candidate SHRINKAGE_SCALE_MIN floor points] "
-                        "p0.1=%.6g p1=%.6g p5=%.6g p10=%.6g p50=%.6g\n",
+            std::puts(line2); logger.Log(line2);
+            std::snprintf(line2, sizeof(line2),
+                        "%s: [MAD percentiles, candidate SHRINKAGE_SCALE_MIN floor points] "
+                        "p0.1=%.6g p1=%.6g p5=%.6g p10=%.6g p50=%.6g",
                         name, madPct(0.001), madPct(0.01), madPct(0.05), madPct(0.10), madPct(0.50));
+            std::puts(line2); logger.Log(line2);
         }
     }
 };
@@ -329,11 +341,14 @@ int main(int argc, char** argv) {
     (void)liqFragPrev;
 
     progress.Log("streaming done, writing final report");
-    std::printf("processed %zu real ticks, %zu closed 15-min bars\n", ticksProcessed, barsClosed);
-    std::printf("\n=== amihud_illiquidity (dim 11, SOFTLOGZ) ===\n");
-    amihudStats.Report("amihud", FeatureScaler::STATE_WINSOR_SIGMA);
-    std::printf("\n=== liq_fragility (dim 12, LOGZ) ===\n");
-    liqFragStats.Report("liq_fragility", FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12]);
+    char summaryLine[256];
+    std::snprintf(summaryLine, sizeof(summaryLine), "processed %zu real ticks, %zu closed 15-min bars",
+                  ticksProcessed, barsClosed);
+    std::puts(summaryLine); progress.Log(summaryLine);
+    progress.Log("=== amihud_illiquidity (dim 11, SOFTLOGZ) ===");
+    amihudStats.Report("amihud", FeatureScaler::STATE_WINSOR_SIGMA, progress);
+    progress.Log("=== liq_fragility (dim 12, LOGZ) ===");
+    liqFragStats.Report("liq_fragility", FeatureScaler::LOGZ_WINSOR_SIGMA_OVERRIDE[12], progress);
 
     return 0;
 }

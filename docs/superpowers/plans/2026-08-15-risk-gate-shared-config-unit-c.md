@@ -104,7 +104,7 @@ Expected: no output (the two are structurally identical once the new keys are re
     "pareto_top_state_ratio_max": 0.5,
     "shannon_min_tenure_bars": 143.5184571838369,
     "taleb_signal_sigma_threshold": 1.8401,
-    "_taleb_signal_sigma_threshold_note": "percentile-matched to Moors-kurtosis scale, rescaled 2026-08-13 (was 9.697616023284109). Compiled C++ default synced to this exact value in src/RiskManager.cpp:74 per docs/superpowers/plans/2026-08-15-risk-gate-audit-unit-b.md Task 2.",
+    "_taleb_signal_sigma_threshold_note": "percentile-matched to Moors-kurtosis scale, rescaled 2026-08-13 (was 9.697616023284109). Compiled C++ default synced to this exact value in src/RiskManager.cpp:74 per docs/ADR/gate_stack_stationarity_audit_findings.md (superseded 2026-09-04 by docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md).",
     "window_count_used": 34
   }
 }

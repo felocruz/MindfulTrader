@@ -152,6 +152,39 @@ GPDFit FitGPD(std::vector<float> values, std::size_t totalObservedCount) {
 // 471.9M-tick history, not per-tick volume). Burstiness_index (tick-level)
 // subsamples 1-in-50, same as this tool family's established convention.
 // ---------------------------------------------------------------------
+// ---------------------------------------------------------------------
+// Online Pearson correlation, same diagnostic convention FeatureScaler.h's
+// own comments describe for confirming/ruling-out a "collapse signature"
+// (local MAD collapsing toward zero while the raw value doesn't move
+// proportionally, inflating |z|) -- e.g. dim6/dim9/dim12's own audits
+// ("correlation(localMAD,|z|) = ..."). Added 2026-09-04 for dim10
+// (skewness_idx): its raw value (BowleySkewness) is mathematically bounded
+// to [-1,1] by construction, so a max|z| of 1761 and a 5.4% rate-at-bound(6.0)
+// found by this tool's own "activity" run cannot reflect a genuinely huge
+// raw excursion -- it can only be a denominator (local MAD) collapse, same
+// mechanism as the already-confirmed dims, or a real new bug. This settles
+// which, empirically, against real data, rather than guessing.
+// ---------------------------------------------------------------------
+struct CorrTracker {
+    std::size_t n = 0;
+    double sumX = 0.0, sumY = 0.0, sumXY = 0.0, sumX2 = 0.0, sumY2 = 0.0;
+
+    void Record(double x, double y) {
+        ++n;
+        sumX += x; sumY += y; sumXY += x * y; sumX2 += x * x; sumY2 += y * y;
+    }
+
+    double Correlation() const {
+        if (n < 2) return 0.0;
+        const double nD = static_cast<double>(n);
+        const double cov = sumXY / nD - (sumX / nD) * (sumY / nD);
+        const double varX = sumX2 / nD - (sumX / nD) * (sumX / nD);
+        const double varY = sumY2 / nD - (sumY / nD) * (sumY / nD);
+        if (varX <= 0.0 || varY <= 0.0) return 0.0;
+        return cov / std::sqrt(varX * varY);
+    }
+};
+
 struct TailStats {
     std::size_t n = 0;
     double sumAbsZ = 0.0;
@@ -365,6 +398,9 @@ int main(int argc, char** argv) {
 
     TailStats zLogScaleRatio, zLogScaleExpansion, zBurstiness, zMeanRevZ,
               zFastHurst, zSkewness, zFastKurtosis, zAmihud, zLiqFrag;
+    // dim10 (skewness_idx) collapse-signature diagnostic -- see CorrTracker's own comment.
+    CorrTracker corrSkewnessMadZ;
+    std::vector<float> skewnessLocalMad;
     zBurstiness.subsampleEveryN = 50;  // tick-level volume -- same subsampling this tool family already uses
     // amihud_illiquidity/liq_fragility are ALSO tick-reactive intra-bar (see file header),
     // not bar-close-only like the other TailStats dims -- missing this subsample (found
@@ -510,6 +546,20 @@ int main(int argc, char** argv) {
         zLiqFrag.Report(           "dim12 liq_fragility            ", 21.26f, progress);  // LOGZ_WINSOR_SIGMA_OVERRIDE, a separate array -- unaffected by this fix
         zFastKurtosis.Report(      "dim13 fast_taleb_kurtosis       ", currentBoundFor(MTS::Schema::Contract::kObsFastTalebKurtosis), progress);
         zMeanRevZ.Report(          "dim16 mean_rev_z               ", currentBoundFor(MTS::Schema::Contract::kObsMeanRevZ), progress);
+        if (corrSkewnessMadZ.n > 1) {
+            std::vector<float> madSorted = skewnessLocalMad;
+            std::sort(madSorted.begin(), madSorted.end());
+            const auto pct = [&](double p) -> float {
+                if (madSorted.empty()) return 0.0f;
+                std::size_t idx = std::min(static_cast<std::size_t>(p * static_cast<double>(madSorted.size())), madSorted.size() - 1);
+                return madSorted[idx];
+            };
+            char line[512];
+            std::snprintf(line, sizeof(line),
+                          "dim10 skewness_idx localMad diag: n=%zu corr(localMad,|z|)=%.4f  localMad p1=%.6g p10=%.6g p50=%.6g p99=%.6g",
+                          corrSkewnessMadZ.n, corrSkewnessMadZ.Correlation(), pct(0.01), pct(0.10), pct(0.50), pct(0.99));
+            std::puts(line); progress.Log(line);
+        }
     };
 
     try {
@@ -731,6 +781,12 @@ int main(int argc, char** argv) {
         if (freshHurstSkewKurt) {
             zFastHurst.Record(fs.lastRawZ[MTS::Schema::Contract::kObsFastHurstExponent]);
             zSkewness.Record(fs.lastRawZ[MTS::Schema::Contract::kObsSkewnessIdx]);
+            // dim10 collapse-signature diagnostic -- must read AFTER UpdateAndNormalize()
+            // so lastLocalMad/lastRawZ reflect this tick, not the previous one.
+            const float localMad = fs.lastLocalMad[MTS::Schema::Contract::kObsSkewnessIdx];
+            corrSkewnessMadZ.Record(static_cast<double>(localMad),
+                                     std::fabs(static_cast<double>(fs.lastRawZ[MTS::Schema::Contract::kObsSkewnessIdx])));
+            skewnessLocalMad.push_back(localMad);
             zFastKurtosis.Record(fs.lastRawZ[MTS::Schema::Contract::kObsFastTalebKurtosis]);
         }
     });

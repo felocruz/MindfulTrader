@@ -22,20 +22,20 @@ mirrored here promptly). Any session that changes one of those rows' status must
 Protocol rule 7) — a status change that isn't reflected there didn't really happen, for planning
 purposes across the other three repos.
 
-**NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — pick this up the moment the observation
-vector + `ContextManager` work is done, do not let it slide:** `LocalRiskContext`/`RiskGateContext`
-(the execution-layer risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on)
-must not be blind to the HMM's own signal. `PredatorContext` already carries `.regime` (the HMM's
-inferred state, via `GetPredatorContext()`), but that's a higher-level fusion struct assembled
-*after* `RiskManager`'s own hard gates already fire directly on `LocalRiskContext` — verify whether
-those lower-level gates ever see HMM output at all, or only the raw pre-HMM features. The operator's
-explicit framing: the HMM exists specifically to detect fat tails/regime shifts — its own output
-should feed back as a "heads up" signal for the Predator (and for the hard-gate layer beneath it),
-not stay siloed inside the observation-vector→model→regime pipeline while risk/execution consumes
-only the raw features that fed it. This is the same "solidify the data a downstream layer actually
-uses" discipline just applied to the observation vector (real per-tick data, literature-grounded
-reformulations, real validation before implementing) — apply it next to trade execution / risk
-management once the observation-vector/ContextManager thread closes out. Related, not yet designed:
+**NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — founding question ANSWERED 2026-09-04,
+see recommendations before implementing:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
+risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on) was verified to be
+blind to the HMM's own signal for 7 of its 8 hard gates — only the Amihud illiquidity veto genuinely
+reads live HMM state (`InferenceManager::Instance().HmmState()->Dof()`); the other 7, including two
+whose names (`paretoTopStateRatio`, `talebSignalSigma`) suggest otherwise, are blind. Operator's own
+framing: a predator with regime-aware eyes but a regime-blind nervous system isn't fully a predator —
+it's half of one (the entry-fusion layer, e.g. Turtle Soup Option A's applicability mask, already
+conditions *whether to pounce* on `PredatorContext.regime`; the risk layer governing *how carefully*
+mostly doesn't). Full trace + prioritized recommendations (fix 2 misleading gate names first, resolve
+gate 8's apparent duplication of gate 4, extend gate 1's own proven `Dof()`-based pattern to gates
+2-5 rather than inventing a new mechanism) now live in
+`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2/§3/§3a
+— not yet implemented, review the recommendations before starting. Related, not yet designed:
 the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer signal discussed
 2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a candidate concrete
 first deliverable for this initiative, deliberately scoped to feed `RiskGateContext` directly, not

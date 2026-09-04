@@ -24,25 +24,26 @@ critical path — verify this list is still current before trusting it. Any sess
 of those rows' status must update `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS`
 block in the same edit (Triage Protocol rule 7).
 
-**NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — pick this up the moment the observation
-vector + `ContextManager` work is done, do not let it slide:** `LocalRiskContext`/`RiskGateContext`
-(the execution-layer risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on)
-must not be blind to the HMM's own signal. `PredatorContext` already carries `.regime` (the HMM's
-inferred state, via `GetPredatorContext()`), but that's a higher-level fusion struct assembled
-*after* `RiskManager`'s own hard gates already fire directly on `LocalRiskContext` — verify whether
-those lower-level gates ever see HMM output at all, or only the raw pre-HMM features. The operator's
-explicit framing: the HMM exists specifically to detect fat tails/regime shifts — its own output
-should feed back as a "heads up" signal for the Predator (and for the hard-gate layer beneath it),
-not stay siloed inside the observation-vector→model→regime pipeline while risk/execution consumes
-only the raw features that fed it. Same "solidify the data a downstream layer actually uses"
-discipline just applied to the observation vector — apply it next to trade execution / risk
-management once the observation-vector/ContextManager thread closes out. Related, not yet designed:
-the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer signal discussed
-2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a candidate concrete
-deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own observation vector. **Living
-ledger opened 2026-09-03**:
+**NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — founding question ANSWERED 2026-09-04,
+see recommendations before implementing:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
+risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on) was verified to be
+blind to the HMM's own signal for 7 of its 8 hard gates — only the Amihud illiquidity veto genuinely
+reads live HMM state (`InferenceManager::Instance().HmmState()->Dof()`); the other 7, including two
+whose names (`paretoTopStateRatio`, `talebSignalSigma`) suggest otherwise, are blind. Operator's own
+framing: a predator with regime-aware eyes but a regime-blind nervous system isn't fully a predator —
+it's half of one (the entry-fusion layer already conditions *whether to pounce* on
+`PredatorContext.regime`; the risk layer governing *how carefully* mostly doesn't). Full trace +
+prioritized recommendations (fix 2 misleading gate names first, resolve gate 8's apparent
+duplication of gate 4, extend gate 1's own proven `Dof()`-based pattern to gates 2-5 rather than
+inventing a new mechanism) now live in `docs/superpowers/specs/2026-09-03-trade-execution-risk-
+management-curation-initiative.md` §2/§3/§3a — not yet implemented, review before starting. Related,
+not yet designed: the EVT/GPD-based "how close to the tail, and closing how fast" execution-layer
+signal discussed 2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a
+candidate concrete deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own
+observation vector. **Living ledger opened 2026-09-03**:
 `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` (same
-spirit/format as the observation-vector ledger below) -- seeded, not yet actively worked.
+spirit/format as the observation-vector ledger below) -- item 1 answered 2026-09-04, §3a's
+recommendations not yet actively worked.
 
 **Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**
 (`docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`)

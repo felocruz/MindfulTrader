@@ -19,10 +19,10 @@
 - **Phase 0 batch (vol_convexity removal 19D→18D, bipower-variation reformulation,
   mean_rev_z/liq_fragility fixes) committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted
   across multiple prior sessions; see `CLAUDE.md`'s own pointer for the full account.
-- **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03)**: once the observation-vector/
-  `ContextManager` work closes out, `LocalRiskContext`/`RiskGateContext` must stop being blind to
-  the HMM's own signal (a "heads up" for the Predator, not just raw pre-HMM features) — see
-  `CLAUDE.md`'s own pointer for the full account. Living ledger:
+- **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — founding question ANSWERED
+  2026-09-04**: `LocalRiskContext`/`RiskGateContext` was verified blind to the HMM's own signal for
+  7 of its 8 hard gates (only the Amihud illiquidity veto reads live HMM state) — see `CLAUDE.md`'s
+  own pointer for the full account and prioritized recommendations. Living ledger:
   `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`.
 - **Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**: swing high/low,
   oscillator divergence, and (case study #2) Wyckoff Spring/Upthrust/Livermore stop-harvest-reversal

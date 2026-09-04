@@ -1445,8 +1445,10 @@ per this project's standing Python-env rule, not `conda run` (corrected mid-sess
 Split the spec below into three separate plans (per subsystem, per `writing-plans` skill
 guidance) and executed two of them inline this session, direct-to-master, all six commits green:
 
-- **Unit B — DONE** (`docs/superpowers/plans/2026-08-15-risk-gate-audit-unit-b.md`, commits
-  `f9f676c`/`1d4cc7a`): `docs/ADR/gate_stack_stationarity_audit_findings.md` written — audited all
+- **Unit B — DONE** (plan doc removed 2026-09-04, fully duplicated by its own output; see
+  `docs/ADR/gate_stack_stationarity_audit_findings.md`, now itself superseded by
+  `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`;
+  original commits `f9f676c`/`1d4cc7a`): `docs/ADR/gate_stack_stationarity_audit_findings.md` written — audited all
   8 fixed-threshold gates in `RiskManager::EvaluateHardGates()`/
   `ExecutionGate::EvaluateEmpiricalRegimeGates()`, 7 confirmed stationary (5 by direct citation to
   the existing `amihud_gate_percentile_spec.md` verdicts, 1 new finding for the Pareto-top-state-ratio
