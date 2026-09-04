@@ -41,12 +41,15 @@ public:
         const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
     // Sequence-locked stitcher: write MarketObservation + SystemState + TrainingEvent under one shared sequence_id.
+    // Optional risk_gate_context, same convention as LogContext/LogContextWithSequence: nullptr
+    // leaves the field unset.
     void LogSynchronizedEvent(
         MTS::Training::TrainingEventT& event,
         const MTS::Schema::ObservationData& obs,
         const MTS::Schema::AsymmetryContext& ctx,
         uint64_t timestamp_us,
-        float bars_since_last_update
+        float bars_since_last_update,
+        const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
 
 private:

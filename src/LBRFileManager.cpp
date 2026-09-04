@@ -231,7 +231,8 @@ void LBRFileManager::LogSynchronizedEvent(
     const MTS::Schema::ObservationData& obs,
     const MTS::Schema::AsymmetryContext& ctx,
     uint64_t timestamp_us,
-    float bars_since_last_update) {
+    float bars_since_last_update,
+    const MTS::Schema::RiskGateContextT* risk_gate_context) {
     std::lock_guard<std::mutex> lock(m_mutex);
 
     if (!m_isOpen || !m_alphaStream.is_open() || !m_contextStream.is_open()) {
@@ -240,7 +241,7 @@ void LBRFileManager::LogSynchronizedEvent(
 
     const uint64_t sequence_id = m_globalSequenceId++;
 
-    LogContextUnlocked(obs, ctx, timestamp_us, bars_since_last_update, sequence_id);
+    LogContextUnlocked(obs, ctx, timestamp_us, bars_since_last_update, sequence_id, risk_gate_context);
     LogAlphaUnlocked(event, sequence_id);
 }
 

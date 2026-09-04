@@ -985,6 +985,29 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
     return any_observation_changed;
 }
 
+MTS::Schema::RiskGateContextT ContextManager::BuildRiskGateContext() const {
+    const LocalRiskContext& lrc = m_localRiskContext;
+    MTS::Schema::RiskGateContextT rgc;
+    rgc.shannon_flow_entropy  = lrc.shannonFlowEntropy;
+    rgc.shannon_efficiency    = lrc.shannonEfficiency;
+    rgc.taleb_kurtosis        = lrc.talebKurtosis;
+    rgc.taleb_skewness        = lrc.talebSkewness;
+    rgc.elder_chandelier_atr  = lrc.elderChandelierATR;
+    rgc.pareto_tail_alpha     = lrc.paretoTailAlpha;
+    rgc.amihud_illiquidity    = lrc.amihudIlliquidity;   // raw canonical Amihud (log-ret / dollar-volume)
+    rgc.spread_stress         = lrc.spreadStress;
+    rgc.hurst_exponent        = lrc.hurstExponent;
+    rgc.fractal_dim           = lrc.fractalDim;
+    rgc.mean_rev_z            = lrc.meanRevZ;
+    rgc.raschke_burst         = lrc.raschkeBurst;
+    rgc.fisher_info           = lrc.fisherInfo;
+    rgc.regime_duration       = lrc.regimeDuration;
+    rgc.is_valid              = lrc.isValid;
+    rgc.snapshot_timestamp_us = static_cast<int64_t>(lrc.snapshotTimestampUs);
+    rgc.amihud_percentile     = lrc.amihudPercentile;   // Layer B: session-aware rolling percentile (the gate input)
+    return rgc;
+}
+
 bool ContextManager::EmitTrainingContext(
     const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
     const MTS::Schema::AsymmetryContext& asymContext,
@@ -1002,25 +1025,7 @@ bool ContextManager::EmitTrainingContext(
         // Raw gate-input twin (Findings 19/20/21): serialize the exact, UNSCALED
         // LocalRiskContext values the RiskManager gates evaluate, so the Python
         // execution-sim reads the same signals C++ gates on (no scaled proxies).
-        const LocalRiskContext& lrc = m_localRiskContext;
-        MTS::Schema::RiskGateContextT rgc;
-        rgc.shannon_flow_entropy  = lrc.shannonFlowEntropy;
-        rgc.shannon_efficiency    = lrc.shannonEfficiency;
-        rgc.taleb_kurtosis        = lrc.talebKurtosis;
-        rgc.taleb_skewness        = lrc.talebSkewness;
-        rgc.elder_chandelier_atr  = lrc.elderChandelierATR;
-        rgc.pareto_tail_alpha     = lrc.paretoTailAlpha;
-        rgc.amihud_illiquidity    = lrc.amihudIlliquidity;   // raw canonical Amihud (log-ret / dollar-volume)
-        rgc.spread_stress         = lrc.spreadStress;
-        rgc.hurst_exponent        = lrc.hurstExponent;
-        rgc.fractal_dim           = lrc.fractalDim;
-        rgc.mean_rev_z            = lrc.meanRevZ;
-        rgc.raschke_burst         = lrc.raschkeBurst;
-        rgc.fisher_info           = lrc.fisherInfo;
-        rgc.regime_duration       = lrc.regimeDuration;
-        rgc.is_valid              = lrc.isValid;
-        rgc.snapshot_timestamp_us = static_cast<int64_t>(lrc.snapshotTimestampUs);
-        rgc.amihud_percentile     = lrc.amihudPercentile;   // Layer B: session-aware rolling percentile (the gate input)
+        MTS::Schema::RiskGateContextT rgc = BuildRiskGateContext();
 
         // Log both Physics (16D) and Asymmetry (8D) + raw gate context.
         lbr_mgr.LogContext(obs_data, asymContext, now_us, bars_since_last_update, &rgc);

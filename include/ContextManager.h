@@ -8,6 +8,7 @@
 #include <cassert>
 #include <cstdint>
 #include "generated/mts_schema_contract_generated.h"
+#include "generated/mts_schema_generated.h"
 #include "LocalRiskContext.h"
 #include "PredatorContext.h"
 #include "InformationEngine.h"
@@ -351,6 +352,16 @@ public:
     /// locally-computed Gang intelligence (Shannon/Taleb/Pareto/Raschke/Fisher).
     /// Updated every BuildObservationVector() call.
     const LocalRiskContext& GetLocalRiskContext() const { return m_localRiskContext; }
+
+    /// Builds the raw, UNSCALED RiskGateContext table from the current m_localRiskContext
+    /// snapshot -- the same field mapping EmitTrainingContext() uses internally, exposed so
+    /// any other writer into the .context/.alpha stream (e.g. EventDataCollectorStudy.cpp's
+    /// direct LogSynchronizedEvent() call) can populate risk_gate_context too, instead of
+    /// silently leaving it unset (docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-
+    /// coevolution.md Unit A -- the two writers into that stream have independent trigger
+    /// conditions, confirmed by inspection: ContextManager's own ShouldTriggerHMM()/
+    /// significant_change gate vs. EventDataCollectorStudy's LockA-E readiness gate).
+    MTS::Schema::RiskGateContextT BuildRiskGateContext() const;
 
     /// Predator Decision Contract's unified macro context — LocalRiskContext + HMM regime
     /// state composed into one struct (docs/superpowers/specs/2026-08-16-predator-context-

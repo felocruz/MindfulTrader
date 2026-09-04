@@ -94,6 +94,21 @@ the rest of the live gate stack for the same drifted-threshold/non-stationary-co
 
 ## Unit A: Close the `risk_gate_context` population gap
 
+**Status, 2026-09-04: implementation DONE, live-replay verification NOT YET DONE.** Confirmed
+Finding 1's hypothesis via static trace (no live replay needed for this part): `EventDataCollector-
+Study.cpp`'s direct `LogSynchronizedEvent` call site is gated by its own independent LockA-E
+readiness state machine, structurally unrelated to `ContextManager`'s internal `ShouldTriggerHMM()`/
+`significant_change` gate that guards `EmitTrainingContext()` -- two genuinely independent writers,
+as hypothesized. Implemented per the design below: added `ContextManager::BuildRiskGateContext()`
+(extracted from `EmitTrainingContext()`'s own field-mapping block, now shared, not duplicated), added
+an optional `risk_gate_context` parameter to `LBRFileManager::LogSynchronizedEvent()` (same
+default-nullptr convention as `LogContext()`), and wired `EventDataCollectorStudy.cpp:788`'s call
+site to build and pass a fresh snapshot. `./build_dll.sh --no-clean` clean.
+**Not done**: the Test Plan's items 1-2 below (a dedicated native test, and a real replay re-run
+confirming the population rate actually reaches ~100%) require either writing new native test
+infrastructure or an actual Sierra Chart replay session -- neither was performed this session. Treat
+the fix as implemented-and-compiling, not yet empirically confirmed against real data.
+
 ### Problem
 
 See Audit Finding 1. Whatever the precise mechanism, the fix must not duplicate

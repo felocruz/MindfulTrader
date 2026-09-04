@@ -795,12 +795,19 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
                 const float stitched_regime_tenure = static_cast<float>(eventT->regime_tenure);
                 if (eventT->observation && eventT->asymmetry_context) {
                     WriteBreadcrumb(50);  // Entering LogSynchronizedEvent
+                    // Unit A fix, docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-
+                    // coevolution.md: this writer has its own independent trigger gate
+                    // (LockA-E readiness above, not ContextManager's ShouldTriggerHMM()), so
+                    // it must build its own fresh risk_gate_context snapshot -- previously
+                    // omitted entirely, leaving 32.1% of MarketObservation records without it.
+                    MTS::Schema::RiskGateContextT rgc = ContextManager::Instance().BuildRiskGateContext();
                     LBRFileManager::Instance().LogSynchronizedEvent(
                         *eventT,
                         *eventT->observation,
                         *eventT->asymmetry_context,
                         now_us,
-                        stitched_regime_tenure
+                        stitched_regime_tenure,
+                        &rgc
                     );
                     WriteBreadcrumb(60);  // LogSynchronizedEvent returned
                 } else {
