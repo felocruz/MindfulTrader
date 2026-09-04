@@ -4,8 +4,9 @@
 (CLAUDE_BRIEF_127/127_REPLY, `lbrnet/logs/rc_gemini.log`). Scope is deliberately broad — every
 named technical *indicator* this system computes and feeds into Screen 1/2/3 timing, `Scoring.cpp`
 quality bonuses, or the observation vector (MACD, Force Index, Stochastic, RSI, 3/10 oscillator,
-etc.), not a single-indicator effort. Force Index (FI2/FI13) is the first case study (§1). Not yet
-actively worked beyond that — no code written, no other indicators triaged yet.**
+etc.), not a single-indicator effort. Three case studies so far: Force Index (§1), MACD (§2),
+Elder's Impulse System (§3, the EMA-slope + MACD-Histogram-slope confluence gate). No code written
+yet on any of them beyond the literature-grounding stage.**
 
 ## 0. Origin and mandate
 
@@ -142,7 +143,7 @@ comes from MACD histogram slope (`MacdEnum`: `AT_ZERO`/`BULLISH_CROSS`/`BEARISH_
 `INTERM_MACD_DIVERGENCE` (Screen 2) — a genuinely sophisticated, hand-coded divergence tracker, not
 a simple threshold check.
 
-### 2.2 Literature-grounding findings (2026-09-04, Claude's own analysis, Gemini consult pending)
+### 2.2 Literature-grounding findings (2026-09-04, Claude's own analysis, RESOLVED via CLAUDE_BRIEF_129/129_REPLY)
 
 **Structurally different from Force Index**: MACD is pure price (no volume multiplication), so the
 "multiplying two heavy-tailed distributions" fragility that hit Force Index doesn't apply the same
@@ -223,6 +224,86 @@ work identified, blocked on something else finishing first).
 
 Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature grounding resolved,
 CLAUDE_BRIEF_129/129_REPLY; empirical validation and any implementation decision not started).
+Impulse System (§4): **CANDIDATE** (literature grounding resolved, CLAUDE_BRIEF_130/130_REPLY; a
+concrete conditioning change proposed, not yet implemented or backtested).
+
+## 5. Case study #3 — Elder's Impulse System (13-EMA slope "inertia" + MACD-Histogram slope
+"momentum" confluence gate)
+
+**Founding pattern match (operator, 2026-09-04)**: same audit instinct as case studies #1/#2,
+turned on the system's actual trend-color gate — does Elder's own physics metaphor ("inertia" +
+"momentum") hold up, or is it another instance of the same multi-scale-EMA-discrepancy move?
+
+### 5.1 Current implementation (baseline, as of 2026-09-04)
+
+Two signals combined via a sign-agreement AND-gate (`GetImpulse()`, `src/StudyHelperFunctions.cpp`):
+
+```
+maDiff   = EMA13[t] - EMA13[t-1]                      ("inertia": 13-EMA's own first difference)
+macdDiff = Hist[t] - Hist[t-1]                        ("momentum": MACD-Histogram's own first difference)
+
+if (maDiff > 0 && macdDiff > 0) return GREEN;
+else if (maDiff < 0 && macdDiff < 0) return RED;
+else return BLUE;
+```
+
+This raw 3-color gate is the base signal for a much richer v5.1+ 11-state extension
+(`ImpulseEnum`, `include/IndicatorComputations.h`'s `ComputeImpulse()`) — `BLUE_BULL`/`BLUE_BEAR`
+split by `maDiff` polarity, a magnitude-decay ("fatigue") term, run-length tracking, and a 16-bar
+transition-history bitmask — but every one of those still derives from the same two base signals.
+Downstream, `PositionManager.cpp`'s `IMPULSE_CENSORSHIP` gate hard-blocks any long entry while
+`currentImpulse == RED` (and vice versa for shorts) — a real, live-trading hard veto, not just a
+display color. Notably, a **separate, structurally unrelated** TS2 Hurst regime filter
+(`EvaluateTs2HurstRegime`) already runs immediately adjacent to this same censorship check in the
+same function, without the two being formally connected.
+
+### 5.2 Literature-grounding findings (CLAUDE_BRIEF_130/130_REPLY, 2026-09-04)
+
+**"Inertia = Hurst" is a category error, corrected**: Elder's Inertia (EMA slope) is an observation
+of *expected direction*; the Hurst exponent is an observation of *stochastic memory/structure*
+(whether price tends to keep doing what it just did, regardless of what that was). You cannot
+replace the EMA slope with H — if H=0.8 (extreme persistence) but the 13-EMA is flat, there is no
+trend to have inertia about. **The correct relationship: H is the *significance test* for the EMA
+slope**, not its replacement. A rising EMA slope when H≤0.5 (mean-reverting regime) is a
+"statistical ghost" — a lucky string of positive returns in a process that structurally wants to
+reverse. The Impulse System's GREEN signal is only Gang-valid when H>0.5.
+
+**"Momentum" (MACD-Histogram slope) needs no new resolution** — confirmed as the same construct
+already settled in case study #2 (§2.2): genuinely distinct information from Hurst ("length of the
+memory" vs "pulse of the current vibration"), not redundant.
+
+**Double-counting risk (both signals derive from overlapping EMA windows on the same price
+series)**: real from a pure Gaussian/linear correlation view (the 13-EMA and MACD's own 12-EMA are
+highly correlated), but not from a Multi-Resolution Analysis (wavelet) view — this is a crude
+consensus check between a low-frequency component (13-EMA) and a mid-frequency acceleration term
+(MACD-Hist slope), the same separation MF-DFA/ARFIMA formalize between long-memory "trend" and
+short-term "innovations." Citation: **Diebold & Inoue (2001), "Long Memory and Regime Switching"**
+— what looks like a trend is often just a sequence of regime shifts, tradeable safely only if true
+long-memory persistence (H) can be distinguished from spurious trends in mean-reverting processes.
+
+**The real weakness, bigger than the original inertia/momentum question**: the trinary reduction
+itself (GREEN/RED/BLUE). It treats a 0.01 slope change identically to a 10-sigma thrust, discarding
+the Shannon information content of a color *change* — a BLUE-to-GREEN flip in a high-volatility
+regime carries far more surprise/entropy than the identical flip in a quiet session. Not yet
+followed up on (a magnitude- or entropy-weighted color-transition signal is a plausible future
+angle, not designed here).
+
+**Concrete conditioning proposal (Gemini's own framing, not implemented)**:
+```cpp
+bool isPersistent = (hurst > 0.55);  // Mandelbrot/Taleb "permission" to trend
+if (maDiff > 0 && macdDiff > 0 && isPersistent) return GANG_GREEN;
+```
+If `isPersistent` is false, the color is "Fake Green" — a trend built on sand. This would wire the
+already-implemented `hurst_exponent` into Impulse's own confluence logic directly, rather than
+leaving the TS2 Hurst regime filter as a structurally separate, uncoordinated gate sitting next to
+it in `PositionManager.cpp`.
+
+**Conclusion (Gemini's own honest framing, as requested)**: a weaker case than Force Index (which
+had a real activity-clock literature debate) — this is a fusion heuristic, not a formula needing
+replacement — but a clean, concrete opportunity: no new construct is needed, just wiring an
+already-validated one (`hurst_exponent`) into a gate that currently ignores it. **Not implemented or
+backtested** — same caution as case studies #1/#2, this is Screen 1/2/3's live entry-censorship
+signal, a real production trading gate.
 
 ## 4. Open questions (Phase 0, not started)
 
