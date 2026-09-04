@@ -353,6 +353,110 @@ empirical claim in this doc. The four numbered ideas above are worth carrying in
 (per the operator's own next-step direction) — but designed and implemented properly next time, not
 via an unsupervised CLI edit.
 
+### 5.4 Claude's own take on §5.3's four open design questions (2026-09-04, not decided/ratified)
+
+1. **Weakest-link fusion vs. two separate axes — lean toward NOT fusing into one scalar for the
+   confluence decision itself.** §5.2 established the EMA-slope and MACD-Hist-slope components
+   measure genuinely different things (persistence-direction vs. cycle-pulse) — the enum's existing
+   sign-agreement check already *is* the fusion logic. Collapsing both into one blended `magnitude`
+   float (whether by mean or `min()`) throws away exactly the resolution the whole session's
+   Force-Index/MACD work fought to preserve ("you need both," not "you need one number combining
+   both"). `min()` is a reasonable single-scalar *summary* if some downstream consumer genuinely
+   needs one confidence number (e.g. a future `Scoring.cpp` bonus), but the two components should
+   stay separately reported (two z-scores/two magnitudes), not pre-collapsed at the source.
+2. **EMA-smoothed fatigue vs. median/MAD — genuinely unclear, needs a real diagnostic before
+   deciding either way, not an assumption.** Unlike `liq_fragility`'s ATR-scale-reference collapse
+   or `burstiness_index`'s point-mass degeneracy, `magnitude` is already ATR-normalized and clamped
+   to [-1,1] before `fatigue` is computed from it — so `fatigue` (`Δmagnitude`) is structurally
+   bounded to [-2,2] regardless of a raw price jump's size. That's a materially different failure
+   mode than the other dims this session reformulated (which had genuinely unbounded raw deltas).
+   Worth an actual `corr(...)`-style check (same convention as dim6/dim9/dim12's collapse audits)
+   before assuming this needs the same median/MAD treatment — it may already be adequately
+   robust by construction.
+3. **Per-color (3-state) transition table, not full 11-state — favor the coarser table.** A full
+   11×11 transition matrix (121 cells) will be sparse for most real cells given realistic sample
+   sizes, producing a noisy/unreliable `-log2(p)` estimate for the majority of actual transitions —
+   the same "don't extrapolate past what the tail sample actually supports" lesson this session
+   already learned the hard way (`amihud_illiquidity`/`liq_fragility`'s ζ_u bug). Gemini's own
+   critique in §5.2 was phrased in terms of the 3 raw colors ("a BLUE-to-GREEN flip..."), not the
+   11 sub-states, so a 3×3 table (9 cells, each well-sampled) directly answers the actual complaint
+   without inventing a sparsity problem the critique never asked for. The full 11-state enum can
+   stay as-is for every other consumer; only the Shannon-surprise term needs the coarser table.
+4. **Where the Hurst gate sits — favor a separate signal over silently reclassifying the enum.**
+   Downgrading `GREEN`/`RED` straight to `BLUE_BULL`/`BLUE_BEAR` when `H≤0.55` is elegant (reuses
+   existing enum vocabulary, no new states) but destroys the distinction between "genuinely no
+   color signal" (raw `maDiff≈0`) and "color signal present but Hurst-vetoed" — a real information
+   loss for anyone auditing/backtesting off the raw enum later. Prefer keeping the raw enum
+   unchanged and exposing a separate `IsPersistent()`/confidence value alongside it (matching this
+   class's own existing pattern of separate `Magnitude()`/`Fatigue()`/`TransitionRate()` getters) —
+   `PositionManager.cpp`'s censorship gate can then AND the two together explicitly, and the raw
+   signal stays available for whoever needs it unmodified.
+
+### 5.5 First-principles redesign (operator directive, 2026-09-04: "not in production yet, anything
+goes" — throw away and reimplement, don't just patch)
+
+§5.3/5.4 above still treat Elder's two-signal AND-gate as the fixed starting structure and patch its
+weak points. This section asks the harder question directly: if this system's OWN already-validated
+Gang toolkit were used to answer "is now a good time to have directional conviction, and how strong
+is it" from scratch — the actual question Impulse exists to answer — what would it look like? Not
+yet decided, no code, deliberately speculative — a target for the eventual spec, not a spec itself.
+
+**The two inputs, replaced by already-existing, already-more-rigorous system components, not new
+math**:
+- **"Inertia" → persistence-confidence, not an EMA slope at all.** This system already computes
+  `hurst_exponent`/`fast_hurst_exponent` — the literal, rigorous formalization of "is price
+  currently in a state where recent direction is likely to continue" (Mandelbrot's own original
+  motivation for H). A persistence-confidence axis needs no 13-EMA: `sign(robust recent drift) *
+  f(H)`, where `f(H)` scales from 0 at `H=0.5` (no persistence, no inertia) up to 1 as `H` moves
+  toward its extremes. This *is* Elder's inertia concept, done with the tool this system already
+  trusts for exactly this question, instead of a fixed-window EMA slope standing in for it.
+- **"Momentum" → the wavelet-MRA replacement already scoped in case study #2 (§2.2), not a new
+  idea.** Case study #2 already concluded MACD/MACD-Histogram is a crude band-pass filter standing
+  in for what a Haar/Daubechies MODWT on the `ImbalanceBarEngine` clock would give rigorously
+  (Gençay, Selçuk & Whitcher 2001) — the detail-coefficient sign/magnitude at the relevant scale
+  *is* the Gang-native momentum axis. Until that's built, MACD-Histogram slope can stay as an
+  interim proxy for this specific axis — but the target replacement is already named, not invented
+  here.
+
+**Confluence and output, replaced by a continuous conviction score with percentile-derived color
+bands, not a fixed-threshold AND-gate**:
+- Fuse the two axes via §5.4's already-preferred weakest-link logic (not averaging), producing one
+  signed continuous "conviction" value instead of three fixed colors.
+- Derive GREEN/RED/BLUE band edges from this conviction score's own real empirical percentile
+  distribution (same convention as every winsorization-bound fix already closed out this session,
+  `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`) — not Elder's
+  original arbitrary sign-only cutoffs.
+- Attach the real Shannon self-information term already scoped in §5.3 point 3 (`-log2(p(transition))`
+  on a 3-state per-color table) as a companion "how surprising is this confluence state" signal,
+  not folded into the color itself.
+
+**Two genuinely new connections, not in §5.3/5.4, surfaced by taking "anything goes" seriously**:
+- **Taleb: DOF-adaptive confidence, reusing `HmmStateIndicator::DofConfidenceThreshold()`'s existing
+  pattern verbatim rather than inventing a new one.** When the live Student-t HMM's current DOF is
+  low (fat tails, genuine model uncertainty), demand a stronger conviction score before honoring
+  GREEN/RED — exactly the same "penalty = clamp(1/(DOF-1), 0, 0.5)" shape already implemented and
+  used elsewhere in this class. This would make Impulse the **first** hard-veto risk gate in this
+  system that is genuinely HMM-regime-aware in its own right, rather than sitting structurally next
+  to (but disconnected from) the regime layer — directly relevant to the still-open founding
+  question of `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-
+  initiative.md` (7 of 8 execution-layer gates found blind to live HMM state).
+- **Pareto: regime-duration decay, reusing `HmmStateIndicator::DurationDecayFactor()`'s existing
+  pattern verbatim.** As bars-held-in-regime approaches `ExpectedDuration()`, discount the
+  conviction score the same way trailing-stop distance is already discounted elsewhere — a regime
+  nearing its own expected lifetime is more likely to flip soon, so a "trend confirmed" signal
+  should be treated with rising suspicion near that boundary, not full confidence up to the moment
+  it actually breaks.
+
+**Deliberately not resolved here**: whether this replaces `GetImpulse()`/`ComputeImpulse()` in place
+(train/serve parity risk for every downstream consumer: `PositionManager.cpp`'s censorship gate,
+`MomentumPinball`/`Elder Breakout` pattern detectors that read `ImpulseJustChanged()`/screen
+alignment, and the Transformer's `impulse_run_length`/enum training inputs) or ships as a new,
+additive signal first, evaluated in parallel before any cutover — the same open question already
+recorded for Force Index (§4 item 2) and the sibling TA initiative. Given how deeply `ImpulseEnum`
+is threaded through this system (§5.1), a from-scratch replacement is exactly the kind of change
+that needs its own dedicated spec and plan (per the operator's own stated next step), not a
+brainstorm-doc decision.
+
 
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
