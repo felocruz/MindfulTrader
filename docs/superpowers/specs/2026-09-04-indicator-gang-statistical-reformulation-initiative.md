@@ -120,7 +120,73 @@ mean_rev_z_variant_comparison.cpp`/`drift_location_eval.cpp` (real tick data, fo
 hit-rate methodology, no schema/C++ commitment until validated). This is now the concrete next step
 for this case study, not further literature research.
 
-## 2. Status vocabulary
+## 2. Case study #2 — MACD (fast/slow EMA discrepancy) and MACD-Histogram divergence
+
+**Founding pattern match (operator, 2026-09-04)**: same conceptual shape already named in the
+sibling TA-patterns initiative's own §0 founding observation ("MACD, the 3/10 oscillator,
+Bollinger/Keltner bands... structurally all the same move") — recognizing this for MACD
+specifically, not a new discovery, extending an already-correct instinct.
+
+### 2.1 Current implementation (baseline, as of 2026-09-04)
+
+```
+MACD_line      = EMA(fast) - EMA(slow)              (standard: 12, 26)
+MACD_histogram = MACD_line - EMA(MACD_line, 9)
+```
+
+Even more deeply embedded than Force Index: Screen 1's **entire trend-direction determination**
+comes from MACD histogram slope (`MacdEnum`: `AT_ZERO`/`BULLISH_CROSS`/`BEARISH_CROSS`/four
+"seasons" `SUMMER`/`FALL`/`WINTER`/`SPRING` mapping slope+sign combinations). A dedicated
+`MACDDivergenceEnum` state machine (`include/Indicator.h`, `include/StudyHelperFunctions.h`'s
+`MACDDivergenceState`) tracks peaks/troughs for both `LONG_MACD_DIVERGENCE` (Screen 1) and
+`INTERM_MACD_DIVERGENCE` (Screen 2) — a genuinely sophisticated, hand-coded divergence tracker, not
+a simple threshold check.
+
+### 2.2 Literature-grounding findings (2026-09-04, Claude's own analysis, Gemini consult pending)
+
+**Structurally different from Force Index**: MACD is pure price (no volume multiplication), so the
+"multiplying two heavy-tailed distributions" fragility that hit Force Index doesn't apply the same
+way. MACD's real weakness: a linear (non-robust), fixed-time-constant (12/26/9) two-pole band-pass
+filter comparing two arbitrary scales, with hand-coded peak/trough divergence detection.
+
+**Sharpest Gang connection identified so far**: MACD's core question — "does the fast-scale trend
+agree with the slow-scale trend" — is *structurally identical* to what Hurst/DFA scaling analysis
+(already this system's own toolkit, `hurst_exponent`/`fast_hurst_exponent`) answers rigorously via
+log-log regression across many window sizes, not two arbitrary fixed periods. This system also
+already shipped MACD's **volatility-domain twin** this session: `log_scale_ratio`/
+`log_scale_expansion_ratio` (`log(short_BV/long_BV)`, bipower-variation-based, activity-clock-ready,
+GPD-recalibrated 2026-09-04) is structurally the same "compare two window scales" move MACD makes,
+just already reformulated rigorously for volatility. MACD's **trend-domain** twin — a robust,
+multi-window drift/momentum discrepancy — does not yet exist anywhere in this system's Gang
+toolkit. Unlike Force Index (redundant with Amihud/OFI concepts already present), this is
+genuinely novel territory for this system, not a fix to something already covered.
+
+**Candidate literature** (not yet Gemini-verified — see §2.3):
+- Peters, E. (1994), *Fractal Market Analysis* — explicitly reframes moving-average-crossover
+  systems (which MACD literally is) through a Hurst/R-S-analysis lens; the most direct hit found.
+- Mandelbrot, B., Fisher, A. & Calvet, L. (1997), "A Multifractal Model of Asset Returns."
+- Gençay, R., Selçuk, F. & Whitcher, B. (2001), *An Introduction to Wavelets and Other Filtering
+  Methods in Finance and Economics* — MACD as a crude two-pole filter vs. proper wavelet/
+  multiresolution decomposition.
+- Same standing activity-clock citations (Mandelbrot & Taylor 1967; Clark 1973; Ané & Geman 2000).
+
+**Divergence-as-pattern overlap**: MACD-Histogram divergence is conceptually the same "oscillator
+disagrees with price at an extreme" pattern already opened as case study #1 in the sibling
+`2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md` (3/10 oscillator
+divergence) — cross-reference there, do not duplicate the pattern-detection angle; this doc's own
+concern is the underlying indicator formula, same split as Force Index's §1.3.
+
+### 2.3 Gemini consult
+
+**Status: QUEUED, not yet sent.** Follow the same CLAUDE_BRIEF pattern as Force Index
+(CLAUDE_BRIEF_127-128) — get an independent read on (1) whether Peters (1994)'s MA-crossover/Hurst
+framing is as directly applicable as it looks, (2) whether the multifractal/wavelet citations above
+are the right ones or whether better literature exists, (3) whether MACD deserves the same
+"redundant once you fix the underlying question properly" verdict Force Index got, or whether its
+trend-domain question is genuinely distinct enough from `log_scale_ratio`'s volatility-domain
+question to be worth building as its own construct.
+
+## 3. Status vocabulary
 
 Same as the sibling ledgers, for consistency: **IN** (settled, stays as-is) · **IN-WEAK** (stays,
 weak, no better alternative identified) · **IN-PENDING-FIX** (stays, a decided implementation change
@@ -128,9 +194,9 @@ not yet done) · **PAUSED** (groundwork exists, explicitly do not proceed withou
 **CANDIDATE** (proposed, not yet built) · **OPEN** (actively being investigated) · **BLOCKED** (real
 work identified, blocked on something else finishing first).
 
-Force Index (§1): **CANDIDATE**.
+Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature consult queued).
 
-## 3. Open questions (Phase 0, not started)
+## 4. Open questions (Phase 0, not started)
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
    imbalance-bar data actually show `ΔP x √V` carries more forward-predictive information about
@@ -147,14 +213,22 @@ Force Index (§1): **CANDIDATE**.
    in scope of the sibling `2026-09-04-technical-analysis-gang-statistical-reformulation-
    initiative.md`'s oscillator-divergence case study, or does it need its own entry there once this
    doc's formula-level work is further along? Cross-reference, don't duplicate.
-4. Other indicators not yet triaged for this initiative: MACD (both Screen 1 histogram-slope and
-   Screen 2/3 divergence uses), Stochastic (5,3,3)/(14,3,3), RSI, the 3/10 oscillator's own
-   fast/slow construction (already partially covered by the sibling initiative's case study #1, but
-   from the *pattern* angle, not the indicator-formula angle) — none investigated yet.
+4. Other indicators not yet triaged for this initiative: Stochastic (5,3,3)/(14,3,3), RSI, the 3/10
+   oscillator's own fast/slow construction (already partially covered by the sibling initiative's
+   case study #1, but from the *pattern* angle, not the indicator-formula angle) — none
+   investigated yet.
+5. MACD-specific (§2): is Gemini's literature read going to confirm Peters (1994)/multifractal
+   framing, or point somewhere else entirely? Queued, not yet sent.
+6. MACD-specific: if a robust multi-window trend-discrepancy construct is built, does it replace
+   MACD in place (Screen 1's entire trend-direction mechanism — a much higher-stakes touch than
+   Force Index's Screen 2 role) or ship additively first? Not yet decided — likely an even more
+   conservative answer than Force Index's own open question 2, given Screen 1 is upstream of
+   everything else in the Triple Screen hierarchy.
 
-## 4. References
+## 5. References
 
-- Elder, A. (1993), *Trading for a Living* — Force Index's original definition and divergence rule.
+- Elder, A. (1993), *Trading for a Living* — Force Index's original definition and divergence rule,
+  and MACD-Histogram divergence (case study #2).
 - Hasbrouck, J. (1991), "Measuring the Information Content of Stock Trades," *Journal of Finance*.
 - Kyle, A.S. (1985), "Continuous Auctions and Insider Trading," *Econometrica*.
 - Kyle, A.S. & Obizhaeva, A.A. (2016), "Market Microstructure Invariance," *Econometrica* — already
@@ -166,4 +240,11 @@ Force Index (§1): **CANDIDATE**.
 - Mandelbrot, B. & Taylor, H. (1967); Clark, P. (1973); Ané, T. & Geman, H. (2000) — subordinated
   stochastic processes / activity-clock justification, already this repo's standing citation for
   every other activity-clock dim (`fast_hurst_exponent`, `fast_taleb_kurtosis`, `fast_mean_rev_z`).
-- `lbrnet/logs/rc_gemini.log` CLAUDE_BRIEF_127/127_REPLY — full consult transcript.
+- Peters, E. (1994), *Fractal Market Analysis* — moving-average-crossover systems via Hurst/R-S
+  analysis (case study #2, not yet Gemini-verified).
+- Mandelbrot, B., Fisher, A. & Calvet, L. (1997), "A Multifractal Model of Asset Returns" (case
+  study #2, not yet Gemini-verified).
+- Gençay, R., Selçuk, F. & Whitcher, B. (2001), *An Introduction to Wavelets and Other Filtering
+  Methods in Finance and Economics* (case study #2, not yet Gemini-verified).
+- `lbrnet/logs/rc_gemini.log` CLAUDE_BRIEF_127/127_REPLY/128/128_REPLY — Force Index consult
+  transcript.
