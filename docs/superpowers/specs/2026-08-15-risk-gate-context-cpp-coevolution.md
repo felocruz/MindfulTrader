@@ -1,8 +1,11 @@
 # Spec: `risk_gate_context` C++ Co-Evolution — Close the Population Gap, Recalibrate Live Gates, Shared Calibration Config
 
-**Status**: SPEC — approved via `superpowers:brainstorming` from an lbrnet-rooted session (2026-08-15).
-**Implementation deferred** to a future MindfulTrader-rooted session — nothing in this spec has been
-built yet. Read this in full plus `SCRATCHPAD.md`'s 2026-08-15 section before starting.
+**Status, 2026-09-04: all three units now addressed.** Unit B and Unit C were done 2026-08-15
+(see their own status markers below); Unit A (the population gap) was implemented 2026-09-04 but its
+live-replay verification step was not performed this session — see Unit A's own status marker for the
+exact caveat. Originally: **Status**: SPEC — approved via `superpowers:brainstorming` from an
+lbrnet-rooted session (2026-08-15). Read this in full plus `SCRATCHPAD.md`'s 2026-08-15 section for
+history.
 **Companion spec**: `lbrnet/docs/superpowers/specs/2026-08-15-risk-gate-context-backtester-fidelity.md`
 (Python side — already implemented under that spec; this spec's Unit A directly unblocks that spec's
 temporary pass-through shim).
@@ -161,6 +164,15 @@ regression surfaces; no schema change in this unit (the field already exists).
 
 ## Unit B: Audit the live gate stack for the same drifted-threshold / non-stationary-comparison pattern
 
+**Status: DONE, 2026-08-15** (`docs/superpowers/plans/2026-08-15-risk-gate-audit-unit-b.md`, now
+removed -- fully duplicated by its own output). Findings merged into
+`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §3
+(2026-09-04, after the original output doc `docs/ADR/gate_stack_stationarity_audit_findings.md` was
+also merged there and removed). `taleb_signal_sigma_threshold`'s three-way drift was resolved
+(compiled default synced to the live JSON's `1.8401`); the lbrnet-side stale copies
+(`backtest_runner.py`'s `9.636797`, `HMMEmpiricalGateThresholds.json`'s `6.67559...`) remain an open
+cross-repo follow-up, not fixed from this repo.
+
 ### Problem
 
 `amihud_gate_percentile_spec.md` found and fixed exactly one instance of "raw, non-stationary
@@ -202,6 +214,20 @@ pattern (fixture-verified before commit).
 ---
 
 ## Unit C: Shared calibration config — git-tracked, versioned, single-writer-per-section
+
+**Status: DONE, 2026-08-15** (`docs/superpowers/plans/2026-08-15-risk-gate-shared-config-unit-c.md`,
+commits `3ac4419`/`a8a2f34`/`7454e17`) — **with one deliberate, documented scope reduction**:
+acceptance criterion 3 below (a script syncing `empirical_gate_thresholds` from lbrnet's own
+calibration output) was explicitly descoped by that plan's own Global Constraints ("That script
+lives in the lbrnet repo and is a separate session's work — out of scope here"), not silently
+missed. Criteria 1/2/4 were met: `config/` is git-tracked and versioned (`execution_params.json`
+`1.1.0`, `hmm_regime_risk_policy.json` `1.0.0`), `FeatureScaler.h`'s four winsorization arrays are
+`static` (not `constexpr`), loaded once via `FeatureScaler::LoadConfig()` from `ContextManager`'s
+constructor, every section carries `_owner`/`_generated_by`. Verified 2026-09-04 by cross-checking
+against `FeatureScaler.h`'s current source (still exactly this shape after many subsequent
+recalibrations this session, e.g. `amihud_illiquidity`'s bound). The plan doc itself is kept (not
+merged/deleted like Unit B's) — its exact JSON schema/migration values are a real historical
+implementation record with no full duplicate elsewhere, unlike Unit B's fully-reproduced ADR.
 
 ### Problem
 

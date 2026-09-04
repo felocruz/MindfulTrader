@@ -25,9 +25,12 @@ consumes" discipline just applied to the observation vector, one hop further dow
 prior work was `docs/ADR/gate_stack_stationarity_audit_findings.md` (CLOSED 2026-08-15, a similar
 per-gate table but a point-in-time stationarity audit, not a living ledger; **fully subsumed by §3
 below and removed 2026-09-04** — nothing in it wasn't already reproduced here) and
-`docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md` (Units A/B/C, partially
-implemented — Unit B fully done, Unit C's shared-config work status needs re-verification before
-trusting it's still current). This doc is the new living home going forward.
+`docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md` (Units A/B/C, **all three now
+addressed as of 2026-09-04** — Unit B/C done 2026-08-15 (Unit C re-verified 2026-09-04, one deliberate
+scope reduction: the lbrnet-side threshold-sync script was explicitly descoped, not missed), Unit A
+(the `risk_gate_context` population gap) implemented 2026-09-04 but its live-replay verification step
+was not performed this session — see that spec's own Unit A status marker). This doc is the new
+living home going forward.
 
 ## 1. Status vocabulary
 
