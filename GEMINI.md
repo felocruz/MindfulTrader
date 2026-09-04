@@ -44,6 +44,18 @@ ledger opened 2026-09-03**:
 `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` (same
 spirit/format as the observation-vector ledger below) -- seeded, not yet actively worked.
 
+**Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**
+(`docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`)
+— swing high/low, oscillator divergence, and (case study #2) Wyckoff Spring/Upthrust/Livermore
+stop-harvest-reversal patterns are being reassessed for Shannon/Mandelbrot/Taleb/Pareto
+reformulation, informed by real imbalance-vs-time-bar chart comparisons on real MES ticks
+(`tools/visualization/imbalance_vs_time_bars.py`). **Standing caution, same day**: this is
+genuinely elite-grade methodology (extrapolation-risk-aware EVT/GPD calibration, cross-checked via
+independent Gemini review — e.g. `amihud_illiquidity`'s winsorization bound recalibrated 2706→3036
+this session, `CLAUDE_BRIEF_125`/`_REPLY`) but methodology rigor is not the same claim as a
+validated trading edge — keep the Vision section's honest current-state gaps in view, don't let
+this work read as "therefore closer to done" than it is.
+
 **Row 1 / activity-clock observation-vector thread, condensed as of 2026-08-31 — full account in
 `PRODUCTION_TRIAGE.md` row 1, this mirrors `CLAUDE.md`'s own pointer**: `fast_taleb_kurtosis`
 shipped as `ObservationData`'s 17th field directly (`ff22e48`/`ea8058b`); `skewness_idx` replaced

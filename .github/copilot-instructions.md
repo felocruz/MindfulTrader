@@ -25,8 +25,17 @@
   the HMM's own signal (a "heads up" for the Predator, not just raw pre-HMM features) — see
   `../CLAUDE.md`'s own pointer for the full account. Living ledger:
   `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`.
+- **Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**: swing high/low,
+  oscillator divergence, and (case study #2) Wyckoff Spring/Upthrust/Livermore stop-harvest-reversal
+  patterns are being reassessed for Shannon/Mandelbrot/Taleb/Pareto reformulation, informed by real
+  imbalance-vs-time-bar chart comparisons on real MES ticks. Living ledger:
+  `docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`.
+  **Standing caution**: this is genuinely elite-grade methodology (extrapolation-risk-aware EVT/GPD
+  calibration, cross-checked via independent Gemini review — e.g. `amihud_illiquidity`'s
+  winsorization bound recalibrated 2706→3036 this session) but methodology rigor is not a validated
+  trading edge; don't let it read as "closer to done" than the Vision section's honest gaps allow.
 
-**Last Updated**: 2026-09-03
+**Last Updated**: 2026-09-04
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).
