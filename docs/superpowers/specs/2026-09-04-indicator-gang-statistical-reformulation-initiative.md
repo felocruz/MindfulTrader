@@ -161,30 +161,57 @@ multi-window drift/momentum discrepancy — does not yet exist anywhere in this 
 toolkit. Unlike Force Index (redundant with Amihud/OFI concepts already present), this is
 genuinely novel territory for this system, not a fix to something already covered.
 
-**Candidate literature** (not yet Gemini-verified — see §2.3):
-- Peters, E. (1994), *Fractal Market Analysis* — explicitly reframes moving-average-crossover
-  systems (which MACD literally is) through a Hurst/R-S-analysis lens; the most direct hit found.
-- Mandelbrot, B., Fisher, A. & Calvet, L. (1997), "A Multifractal Model of Asset Returns."
-- Gençay, R., Selçuk, F. & Whitcher, B. (2001), *An Introduction to Wavelets and Other Filtering
-  Methods in Finance and Economics* — MACD as a crude two-pole filter vs. proper wavelet/
-  multiresolution decomposition.
-- Same standing activity-clock citations (Mandelbrot & Taylor 1967; Clark 1973; Ané & Geman 2000).
+**Literature grounding, RESOLVED 2026-09-04 (CLAUDE_BRIEF_129/129_REPLY)**:
+- **MACD is mathematically a discrete-time band-pass filter, confirmed.** An EMA is a first-order
+  low-pass filter; `EMA(12) - EMA(26)` isolates frequencies roughly between those two periods,
+  rejecting both high-frequency microstructure noise and ultra-low-frequency macro drift. The
+  histogram (`MACD_line - EMA(MACD_line, 9)`) is a further high-pass-filtered/detrended version of
+  the MACD line (Gemini's own "second derivative" framing is a loose analogy, not a literal
+  discrete operation — described here more precisely). Because EMAs are linear, mean-based (L2)
+  operators, a single price jump/gap pollutes the filter for its entire half-life, producing
+  "phantom" crossovers that are math artifacts, not real trend-structure changes — same class of
+  fragility already fixed elsewhere this session (`burstiness_index`/`mean_rev_z`/`liq_fragility`).
+- **Peters (1994) confirmed conceptually, not mechanically**: Peters' Fractal Market Hypothesis
+  argues markets consist of investors at different horizons/frequencies, and MACD divergence is a
+  retail attempt to measure horizon-disagreement (price pushed by high-frequency actors while
+  lower-frequency/institutional momentum has ceased) — but Peters measures this via R/S analysis
+  and Hurst exponents, NOT EMAs. This system's own `DfaHurstExponent`/`fractal_dim` are the already-
+  built, rigorous, modern answer to Peters' own thesis — a confirmed, direct connection.
+- **Gençay, Selçuk & Whitcher (2001) confirmed as "the gold standard"**: Wavelet Multiresolution
+  Analysis (MRA), specifically Maximal Overlap Discrete Wavelet Transform (MODWT) with a Haar or
+  Daubechies wavelet, decomposes a price series into strictly orthogonal frequency bands without
+  EMA's phase-shift lag or fat-tail vulnerability — the mathematically correct version of what MACD
+  attempts heuristically.
+- **MACD is genuinely distinct from Hurst/DFA, not redundant with it** (unlike Force Index's
+  overlap with Amihud/OFI): Hurst measures the *entire series'* persistence (global memory/
+  roughness) — whether the market is trending at all. A band-pass filter (MACD or its wavelet
+  replacement) isolates *directional momentum within a specific frequency band* — which way the
+  local wave is moving. "You need both" (Gemini's own phrasing) — this is a real, additive
+  construct, not a duplicate of an existing dim.
+- **New activity-clock citations, this system's specific gap**: O'Hara, M. (2015), "High Frequency
+  Market Microstructure," *Journal of Financial Economics* — traditional indicators failing in
+  continuous time, needing remapping to transaction-time. Dacorogna, M. et al. (2001), *An
+  Introduction to High-Frequency Finance* (the Olsen & Associates group's canonical HF-finance
+  text) — explicitly details moving-average/directional indicators mapped onto tick-time and
+  "operational time" (volatility time) to stabilize variance; the most directly on-point activity-
+  clock citation found for this case study so far, more specific than the generic Clark/Ané-Geman
+  subordination citations used everywhere else in this project.
+
+**Recommended path (Gemini's own two-phase framing, endorsed as appropriately cautious given MACD's
+stakes)**: **Phase 1 (near-term, if ever pursued)** — do not replace MACD's structure yet; the
+cheap, low-risk "Gang patch" would be swapping EMA for a robust smoothing operator (median/MAD or
+a Huber-loss smoother), matching this project's own established convention for every other
+EMA/mean-based construct fixed this session. **Phase 2 (final form, real project, not scoped here)**
+— replace MACD's structure entirely with a Haar/Daubechies MODWT on the `ImbalanceBarEngine` clock,
+giving mathematically orthogonal, zero-phase-lag, scale-specific momentum. **Neither phase is
+scheduled or implemented** — MACD is Screen 1's entire trend-direction mechanism, the highest-
+stakes indicator in this system to touch; this case study stays at the literature-grounding stage.
 
 **Divergence-as-pattern overlap**: MACD-Histogram divergence is conceptually the same "oscillator
 disagrees with price at an extreme" pattern already opened as case study #1 in the sibling
 `2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md` (3/10 oscillator
 divergence) — cross-reference there, do not duplicate the pattern-detection angle; this doc's own
 concern is the underlying indicator formula, same split as Force Index's §1.3.
-
-### 2.3 Gemini consult
-
-**Status: QUEUED, not yet sent.** Follow the same CLAUDE_BRIEF pattern as Force Index
-(CLAUDE_BRIEF_127-128) — get an independent read on (1) whether Peters (1994)'s MA-crossover/Hurst
-framing is as directly applicable as it looks, (2) whether the multifractal/wavelet citations above
-are the right ones or whether better literature exists, (3) whether MACD deserves the same
-"redundant once you fix the underlying question properly" verdict Force Index got, or whether its
-trend-domain question is genuinely distinct enough from `log_scale_ratio`'s volatility-domain
-question to be worth building as its own construct.
 
 ## 3. Status vocabulary
 
@@ -194,7 +221,8 @@ not yet done) · **PAUSED** (groundwork exists, explicitly do not proceed withou
 **CANDIDATE** (proposed, not yet built) · **OPEN** (actively being investigated) · **BLOCKED** (real
 work identified, blocked on something else finishing first).
 
-Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature consult queued).
+Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature grounding resolved,
+CLAUDE_BRIEF_129/129_REPLY; empirical validation and any implementation decision not started).
 
 ## 4. Open questions (Phase 0, not started)
 
@@ -217,13 +245,25 @@ Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature consult queue
    oscillator's own fast/slow construction (already partially covered by the sibling initiative's
    case study #1, but from the *pattern* angle, not the indicator-formula angle) — none
    investigated yet.
-5. MACD-specific (§2): is Gemini's literature read going to confirm Peters (1994)/multifractal
-   framing, or point somewhere else entirely? Queued, not yet sent.
+5. **RESOLVED 2026-09-04 (CLAUDE_BRIEF_129/129_REPLY)**: Gemini confirmed Peters (1994)'s
+   MA-crossover/Hurst framing conceptually (not mechanically — Peters uses R/S/Hurst, not EMAs),
+   confirmed Gençay/Selçuk/Whitcher (2001) as "the gold standard" wavelet-MRA reference, and added
+   two new activity-clock-specific citations (O'Hara 2015; Dacorogna et al. 2001) more directly
+   on-point than the generic subordination citations used elsewhere. Verdict: MACD is genuinely
+   distinct from Hurst/DFA (global persistence vs. local band-specific directional momentum) —
+   "you need both," not a redundant re-derivation. Not yet independently cross-checked by Claude
+   the way the Force Index reply's central claim was (no correction was needed this time, but that
+   itself hasn't been separately verified against primary sources).
 6. MACD-specific: if a robust multi-window trend-discrepancy construct is built, does it replace
    MACD in place (Screen 1's entire trend-direction mechanism — a much higher-stakes touch than
    Force Index's Screen 2 role) or ship additively first? Not yet decided — likely an even more
    conservative answer than Force Index's own open question 2, given Screen 1 is upstream of
-   everything else in the Triple Screen hierarchy.
+   everything else in the Triple Screen hierarchy. Gemini's own two-phase framing (§2.2) — robust
+   smoothing patch now (if ever), full MODWT wavelet replacement later — implies additive/careful
+   staging is the right instinct, but this is still an open decision, not a plan.
+7. MACD-specific: neither of Gemini's two proposed phases (robust-smoothing EMA patch; full MODWT
+   wavelet replacement) has been empirically validated against this system's real tick data. Same
+   discipline as Force Index — literature grounding is not sufficient on its own to implement.
 
 ## 5. References
 
@@ -241,10 +281,18 @@ Force Index (§1): **CANDIDATE**. MACD (§2): **OPEN** (literature consult queue
   stochastic processes / activity-clock justification, already this repo's standing citation for
   every other activity-clock dim (`fast_hurst_exponent`, `fast_taleb_kurtosis`, `fast_mean_rev_z`).
 - Peters, E. (1994), *Fractal Market Analysis* — moving-average-crossover systems via Hurst/R-S
-  analysis (case study #2, not yet Gemini-verified).
+  analysis (case study #2); confirmed conceptually applicable by Gemini (CLAUDE_BRIEF_129_REPLY),
+  not a mechanical match (Peters uses R/S/Hurst, not EMAs).
 - Mandelbrot, B., Fisher, A. & Calvet, L. (1997), "A Multifractal Model of Asset Returns" (case
-  study #2, not yet Gemini-verified).
+  study #2).
 - Gençay, R., Selçuk, F. & Whitcher, B. (2001), *An Introduction to Wavelets and Other Filtering
-  Methods in Finance and Economics* (case study #2, not yet Gemini-verified).
+  Methods in Finance and Economics* (case study #2) — confirmed by Gemini as "the gold standard"
+  reference for wavelet Multiresolution Analysis (MODWT) as MACD's rigorous replacement.
+- O'Hara, M. (2015), "High Frequency Market Microstructure," *Journal of Financial Economics* —
+  traditional indicators failing in continuous time, remapping to transaction-time (case study #2).
+- Dacorogna, M. et al. (2001), *An Introduction to High-Frequency Finance* — the Olsen & Associates
+  group's canonical text; moving-average/directional indicators mapped onto tick-time/"operational
+  time" (case study #2), the most directly on-point activity-clock citation found for MACD.
 - `lbrnet/logs/rc_gemini.log` CLAUDE_BRIEF_127/127_REPLY/128/128_REPLY — Force Index consult
   transcript.
+- `lbrnet/logs/rc_gemini.log` CLAUDE_BRIEF_129/129_REPLY — MACD consult transcript.
