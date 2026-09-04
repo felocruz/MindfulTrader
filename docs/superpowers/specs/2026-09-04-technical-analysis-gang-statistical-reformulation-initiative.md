@@ -105,6 +105,12 @@ Open, not yet answered: does an imbalance-run-based reformulation belong as a NE
 existing TRAP framework (most likely, given TRAP is already the authoritative owner of this exact
 pattern class), or as an independent pattern-detection addition? Not yet decided.
 
+**Sibling initiative, opened same day**: `docs/superpowers/specs/2026-09-04-indicator-gang-
+statistical-reformulation-initiative.md` covers named *indicators*' own formulas (Force Index, MACD,
+Stochastic, RSI, the 3/10 oscillator's construction) — a distinct scope from this doc's *pattern-
+detection logic* concern, though the two will cross-reference often (e.g. Force Index divergence-
+with-price is both "an indicator's formula" there and "a divergence pattern" here).
+
 ## 4. Status vocabulary
 
 Same as the sibling ledgers, for consistency: **IN** (settled, stays as-is) · **IN-WEAK** (stays,
