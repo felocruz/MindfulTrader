@@ -159,6 +159,13 @@ plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
   never truncated/overwritten across runs, unlike `tools/log/`'s live-progress file). This exists
   because a real ~1h43m real-tick-data validation run's only report was printed to a terminal whose
   scrollback was lost before being read, forcing a full re-run.
+- **TOP-LEVEL DIRECTIVE (2026-09-04): check `tools/RECALIBRATION_LEDGER.md` before launching a new
+  heavy recalibration pass.** `tools/output/` is entirely gitignored, so a completed archive full of
+  real findings is otherwise invisible to `git status`/code review and can sit unused indefinitely
+  (found 2026-09-04: 3 completed archives sat unused for hours, only noticed by chance). Every
+  `ToolProgressLogger` now auto-appends a row to this git-tracked ledger on exit — check its
+  PENDING REVIEW rows first; a pending row may already answer the question a new run would
+  re-derive at real compute cost. Update its Status column by hand once a finding is consumed.
 - Native tests use a `check(name, bool)` + `g_failures` + final `ALL PASS`/`N FAILURE(S)`
   harness convention (see `tools/context_pipeline/test_context_reader.cpp`) — no GoogleTest/CMake.
 

@@ -393,6 +393,7 @@ int main(int argc, char** argv) {
 
     FeatureScaler fs;
     ToolProgressLogger progress("observation_vector_recalibration_" + dimsFlag);
+    progress.SetScope("dims=" + dimsFlag);
     progress.Log("streaming from " + ticksPath + " (dims=" + dimsFlag + ", max-rss-mb=" + std::to_string(maxRssMB) + ")");
     constexpr std::size_t kProgressEveryNTicks = 5'000'000;
 

@@ -23,6 +23,20 @@
 // truncated/overwritten across runs (unlike tools/log/'s live-progress
 // file). No extra code is required per-tool for this guarantee; it is
 // automatic for anything already using ToolProgressLogger.
+//
+// TOP-LEVEL DIRECTIVE (2026-09-04): an archived tools/output/*.txt is USELESS
+// if nobody ever looks at it -- found 2026-09-04 that 3 completed recalibration
+// archives sat unused for hours despite containing real, actionable findings
+// (only noticed by chance while investigating an unrelated question). Root
+// cause: tools/output/ is entirely gitignored, so nothing in it is ever
+// visible to `git status`/diffs/code review -- the only way to "notice" a
+// finding was to remember it existed, which does not scale. Fix: this class
+// now ALSO appends one row per run to tools/RECALIBRATION_LEDGER.md (git-
+// tracked, unlike tools/output/ itself), automatically, on destruction --
+// same "no extra code required per-tool" guarantee as the archive above.
+// Every session touching tools/observation_vector/ MUST check that ledger's
+// PENDING rows before launching a new heavy pass (a pending row may already
+// answer the question a new run would re-derive at real compute cost).
 
 #pragma once
 
@@ -66,10 +80,17 @@ public:
             std::fclose(m_file);
         }
         ArchiveTranscript();
+        AppendLedgerEntry();
     }
 
     ToolProgressLogger(const ToolProgressLogger&) = delete;
     ToolProgressLogger& operator=(const ToolProgressLogger&) = delete;
+
+    // Optional, set once near the top of main() after parsing argv (e.g.
+    // SetScope(dimsFlag)) -- appears in the ledger row so a PENDING entry is
+    // actionable without opening the archive first. Defaults to "unspecified"
+    // if never called; not required for the ledger guarantee to apply.
+    void SetScope(const std::string& scope) { m_scope = scope; }
 
     // Writes one timestamped line (wall-clock HH:MM:SS + elapsed seconds
     // since construction) and flushes immediately, so `tail -f`/`cat` always
@@ -167,11 +188,50 @@ private:
         }
         std::fwrite(m_transcript.data(), 1, m_transcript.size(), out);
         std::fclose(out);
+        m_archivedPath = path;
+    }
+
+    // Appends one row to the git-tracked tools/RECALIBRATION_LEDGER.md so this
+    // run's archive can never again go unnoticed -- see the class-level
+    // TOP-LEVEL DIRECTIVE (2026-09-04) above. Creates the ledger with a header
+    // if it doesn't exist yet. Append-only, single short line -- safe under
+    // POSIX O_APPEND semantics even with a few concurrent tool runs (this
+    // repo's own established "no CI gate, loudly logged, never silent"
+    // convention; not worth a lock file for a solo-dev tool).
+    void AppendLedgerEntry() {
+        constexpr const char* kLedgerPath = "tools/RECALIBRATION_LEDGER.md";
+        const bool exists = std::filesystem::exists(kLedgerPath);
+        std::ofstream ledger(kLedgerPath, std::ios::app);
+        if (!ledger.is_open()) {
+            std::fprintf(stderr, "ToolProgressLogger: could not open %s for the ledger entry\n", kLedgerPath);
+            return;
+        }
+        if (!exists) {
+            ledger << "# Recalibration Ledger\n\n"
+                      "Auto-appended by ToolProgressLogger on every tools/ run -- see its own\n"
+                      "2026-09-04 TOP-LEVEL DIRECTIVE. **Check PENDING REVIEW rows before launching\n"
+                      "a new heavy recalibration pass**; a pending row may already answer the question.\n"
+                      "Update the Status column by hand once a row's finding is actually consumed\n"
+                      "(e.g. `ACTED ON (commit abc1234, 2026-09-05)`) -- this file is git-tracked\n"
+                      "specifically so that edit shows up in normal code review, unlike the archives\n"
+                      "themselves (tools/output/ is gitignored).\n\n"
+                      "| Date | Tool | Scope | Archive | Status |\n"
+                      "|------|------|-------|---------|--------|\n";
+        }
+        char timeBuf[32];
+        const auto now = std::chrono::system_clock::now();
+        const std::time_t nowC = std::chrono::system_clock::to_time_t(now);
+        std::strftime(timeBuf, sizeof(timeBuf), "%Y-%m-%d %H:%M", std::localtime(&nowC));
+        ledger << "| " << timeBuf << " | " << m_toolName << " | " << (m_scope.empty() ? "unspecified" : m_scope)
+               << " | " << (m_archivedPath.empty() ? "(archive write failed)" : m_archivedPath)
+               << " | PENDING REVIEW |\n";
     }
 
     std::string m_toolName;
     std::string m_outputDir;
     std::string m_transcript;
+    std::string m_scope;
+    std::string m_archivedPath;
     std::FILE* m_file = nullptr;
     std::chrono::steady_clock::time_point m_startTime;
 };

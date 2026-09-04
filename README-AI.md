@@ -104,6 +104,10 @@ in `tools/bin/` (gitignored, mirrors `build-windows/bin/`'s convention) — neve
 executable must route ALL results through `ToolProgressLogger::Log()` (never a bare
 `std::printf`/`std::puts`) — it auto-archives the full transcript to
 `tools/output/<toolName>_<timestamp>.txt` on exit, permanent and never overwritten across runs.
+**TOP-LEVEL DIRECTIVE (2026-09-04): check `tools/RECALIBRATION_LEDGER.md` before launching a new
+heavy recalibration pass** — `tools/output/` is gitignored, so a completed archive is otherwise
+invisible to code review; every `ToolProgressLogger` auto-appends a row to this git-tracked ledger
+on exit, check its PENDING REVIEW rows first.
 
 ## Backtesting Pipeline
 
