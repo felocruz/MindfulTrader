@@ -46,6 +46,7 @@
 #include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -98,7 +99,11 @@ public:
     // Also appended to the in-memory transcript archived on destruction --
     // any result/report a tool wants preserved must go through Log(), not a
     // bare std::printf/std::puts, or it will not survive (see directive above).
+    // Thread-safe (mutex-guarded): some tools/ executables decode/process in
+    // parallel (e.g. scid_to_ticks_parquet.cpp's per-contract worker threads) --
+    // a bare std::string append here would race across threads.
     void Log(const std::string& message) {
+        std::lock_guard<std::mutex> lock(m_mutex);
         char timeBuf[32];
         const std::string line = FormatLine(message, timeBuf, sizeof(timeBuf));
         m_transcript += line;
@@ -234,5 +239,6 @@ private:
     std::string m_archivedPath;
     std::FILE* m_file = nullptr;
     std::chrono::steady_clock::time_point m_startTime;
+    std::mutex m_mutex;
 };
 
