@@ -298,7 +298,7 @@ struct FeatureScaler {
         0.0f,   // 10  skewness_idx
         0.0f,   // 11  amihud_illiquidity
         21.26f, // 12  liq_fragility   RE-DERIVED 2026-08-30 -- the 2524.5f figure recorded 2026-08-29 was computed from a broken audit (tools/observation_vector/amihud_liqfragility_recalibration.cpp's liqFragZ manually recomputed the plain z formula, silently bypassing ComputeShrinkageZ(), so it never reflected SHRINKAGE_SCALE_MIN[13] actually being enabled, pre-2026-08-31 numbering). Fixed the tool to read the real shrinkage-blended lastRawZ (now populated unconditionally by the LOGZ branch below); rerunning at guard=50 showed shrinkage enabling collapses the tail entirely (max|z| 503.22 -> 20.59, corr(localMAD,|z|) -0.2058 -> +0.0016 -- collapse signature genuinely gone, not just masked). Refit GPD on the corrected z (u=p99=8.297, n_tail=7709, xi=-0.1452, Weibull/bounded), p=1/N return level (N=38,540,567 ticks) = 21.2565. The 2524.5f bound was ~120x oversized and would have gone essentially unused (rate-at-bound was already 0.0000% either way, but for the wrong reason)
-        0.0f,   // 13  fast_taleb_kurtosis -- not yet calibrated (placeholder)
+        0.0f,   // 13  fast_taleb_kurtosis (SOFTLOGZ, not LOGZ -- this array is unused for it, 0.0f sentinel; see DIM_WINSOR_SIGMA_OVERRIDE[13]=97.0f)
         0.0f,   // 14  recurrence_rate
         0.0f,   // 15  fractal_dim
         0.0f,   // 16  mean_rev_z
@@ -436,7 +436,7 @@ struct FeatureScaler {
         345.0f,   //  5  hurst_exponent       GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition
         36.0f,    //  6  micro_asymmetry      GPD-derived on corrected z, p=1/N return level
         20.0f,    //  7  fisher_info          GPD-derived, margin above a smaller-sample fit (see above)
-        0.0f,     //  8  fast_hurst_exponent  not yet calibrated (placeholder, new activity-clock twin, 2026-08-28)
+        10.9f,    //  8  fast_hurst_exponent  RECALIBRATED 2026-09-04 (supersedes not-yet-calibrated placeholder): real full-dataset activity-clock run (tools/output/observation_vector_recalibration_activity_20260904_122334.txt, all 471,930,891 ticks), n=4,664,244, rate-at-bound(6.0)=0.0125% (already low), GPD fit u=p99=3.3491, n_tail=46642 (healthy sample), xi=+0.0373 (Gumbel/borderline), sigma=0.5671, p=1/N return level 10.8502 (rounded to 10.9). Extrapolation ratio only ~100x -- used p=1/N directly, same convention as dim3/dim16 (moderate ratio, not amihud's pathological case).
         10.0f,    //  9  tail_index           GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall
         0.0f,     // 10  skewness_idx         NEEDS RE-AUDIT 2026-08-27 -- see matching SHRINKAGE_SCALE_MIN comment; source cadence changed
         // 11  amihud_illiquidity   RECALIBRATED 2026-09-04 (supersedes 2026-08-29's 2706.0f): fresh full-dataset GPD refit (all
@@ -466,7 +466,7 @@ struct FeatureScaler {
         // Gemini once the API key is fixed.
         3036.0f,  // 11  amihud_illiquidity (see comment above)
         0.0f,     // 12  liq_fragility        LOGZ -- uses LOGZ_WINSOR_SIGMA_OVERRIDE instead, this array unused for it
-        0.0f,     // 13  fast_taleb_kurtosis  not yet calibrated (placeholder)
+        97.0f,    // 13  fast_taleb_kurtosis  RECALIBRATED 2026-09-04 (supersedes not-yet-calibrated placeholder): real full-dataset activity-clock run (tools/output/observation_vector_recalibration_activity_20260904_122334.txt, all 471,930,891 ticks), n=4,664,244, rate-at-bound(6.0)=0.3044%, GPD fit u=p99=4.0398, n_tail=46641 (healthy sample), xi=+0.2513 (Frechet/unbounded), sigma=1.6827, p=1/N return level 97.0987 (rounded to 97.0). Extrapolation ratio only ~100x -- used p=1/N directly, same convention as dim3/dim16/dim8 (moderate ratio, not amihud's pathological case).
         0.0f,     // 14  recurrence_rate      static scaler, not applicable
         0.0f,     // 15  fractal_dim          static scaler, not applicable
         7.8f,     // 16  mean_rev_z           RE-AUDITED 2026-09-04 (supersedes NEEDS-RE-AUDIT placeholder) against the current median/MAD signal, reusing the already-completed "amihud" dim-group full-dataset run (tools/output/observation_vector_recalibration_amihud_20260904_090016.txt, no new heavy pass needed): n=76164, rate-at-bound(6.0)=0.5147%, GPD fit u=p99=5.6458, n_tail=761, xi=-0.1909 (Weibull/bounded) -- genuine finite endpoint ~8.68; p=1/N return level 7.8218 (rounded to 7.8) is close to that endpoint and well-supported (~100x extrapolation ratio, healthy n_tail).
