@@ -713,6 +713,8 @@ seed for all 9 Raschke/Elder patterns, the Triple-Barrier exit engine's own barr
 position-sizing multiplier, and the R-multiple denominator every live/backtest P&L metric is measured
 against. Full inventory and verdict: `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-
 curation-initiative.md` §2 item 5 — that write-up supersedes this candidate's scope, not just adds to it.
+Design spec drafted 2026-09-05: `docs/superpowers/specs/2026-09-05-robust-atr-reformulation-spec.md`
+(median-of-True-Range replacing Wilder's EMA-of-True-Range, same interface, no consumer changes).
 
 ### 6.4 NH-NL (New High − New Low) breadth signal thresholds — different category, not a formula
 rewrite
