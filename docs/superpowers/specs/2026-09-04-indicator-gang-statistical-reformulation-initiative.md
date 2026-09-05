@@ -584,6 +584,29 @@ question, 2026-09-04), not just an architectural footnote**:
    needs re-validation against the divergence detector's own existing tuned parameters specifically,
    not just against Impulse's new needs.
 
+**A parallel constraint on the OTHER input (13-EMA "inertia"), same question asked of the operator's
+own next observation (2026-09-04), verified directly against source**: `Subgraph_ImpulseEMA`
+(`src/TripleScreen1.cpp`) is plotted with `sc.GraphRegion = 0` — the **main price panel**, literally
+overlaid on candles, not a separate oscillator region — and turns out to have a THIRD consumer
+beyond §5.1's own already-documented `maDiff` use: `bool priceIsRising = (currentPrice >
+Subgraph_ImpulseEMA[barIndex])` feeds the NH-NL signal's own trend-direction input. So this one EMA
+is genuinely three-purpose, not one: (1) `maDiff` → Impulse's inertia/confluence logic (the thing
+§5.5 proposes replacing), (2) a plotted visual trend-reference line on the price chart, (3) a
+price-vs-EMA comparison feeding NH-NL's trend direction.
+
+**Consequence for the redesign**: a Hurst-persistence-scaled conviction score (§5.5's proposed
+replacement, `sign(drift) * f(H)`, a bounded dimensionless confidence value) is not a price-level
+quantity and cannot be drawn as a line overlaid on candles the way an EMA can — units are
+incompatible, not just a display-styling detail. This means the redesign cannot simply "replace the
+EMA" outright: consumers (2) and (3) above have no dependency on §5.5's specific `maDiff`-based
+inertia logic and should keep using the EMA completely unchanged; only consumer (1) — the actual
+Impulse confluence decision — would read the new persistence-based signal instead. The new signal
+would need its own separate visual representation (a new oscillator-style subgraph in its own
+`GraphRegion`, matching this system's existing MACD/RSI panel convention) if trader visibility into
+the new logic's own reasoning is wanted, rather than reusing the price-panel EMA slot. Not a blocker
+to the redesign, but a real "decouple the three uses, don't delete the EMA" constraint that any
+eventual implementation plan needs to account for explicitly.
+
 
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
