@@ -457,6 +457,93 @@ is threaded through this system (§5.1), a from-scratch replacement is exactly t
 that needs its own dedicated spec and plan (per the operator's own stated next step), not a
 brainstorm-doc decision.
 
+### 5.6 Independent critique of §5.5 (CLAUDE_BRIEF_132/132_REPLY, 2026-09-04, fresh Gemini instance,
+no repo access) — real flaws found, not just validation
+
+Sent as a fully self-contained brief (no assumed repo access) specifically to get an independent
+read not primed by this doc's own framing. The reply pushed back hard on nearly every element of
+§5.5, rather than endorsing it — recorded here in full since it materially revises the proposal,
+not just polishes it.
+
+**Real flaw #1 — sign error in mean-reverting regimes, confirmed via fBm increment autocorrelation.**
+§5.5's `sign(robust drift) * f(H)` construction was flagged there as "only the trending side would
+count as inertia... not yet decided" for the `H<0.5` case. Gemini closed that gap with the actual
+mechanism: for fractional Brownian motion, the lag-1 autocorrelation of increments `γ(1)` flips sign
+exactly at `H=0.5` — positive for `H>0.5` (persistence: positive drift predicts more positive drift),
+negative for `H<0.5` (anti-persistence: positive drift predicts a REVERSAL). Multiplying
+`sign(drift)` by a positive `f(H)` regardless of which side of 0.5 `H` sits on asserts continuation
+in exactly the regime (mean-reverting) where continuation is least likely — a real sign error, not
+a cosmetic gap. Confirms §5.5's own flagged uncertainty was hiding a genuine defect, not just an
+unfinished detail.
+
+**Real flaw #2 — `sign(drift)` also discards magnitude/SNR, a second information-loss compounding
+the trinary-reduction critique from §5.2.** A 4σ institutional impulse and a 0.1σ noise spike both
+collapse to `sign()=+1`, identical downstream. Recommends a robust normalized drift estimator
+(Theil-Sen slope or Huber-loss regression, scaled by MAD) instead of a bare sign, preserving
+magnitude the same way this session already insisted on elsewhere (Amihud, burstiness_index,
+liq_fragility).
+
+**Real flaw #3 — percentile-derived color bands are non-stationary, confirmed with a concrete
+failure mechanism (directly answers §5.5's own open question 3, decisively "no").** Two distinct
+failure modes, not one: (a) during a genuine sustained trend, a rolling percentile window adapts
+*upward* over time, so the conviction score's own persistence pushes valid continuation signals
+below the percentile cutoff and misclassifies them as neutral — the system would grow numb to its
+own real trend the longer that trend continues; (b) during a flat, range-bound market, percentiles
+force the top/bottom fraction of pure noise into GREEN/RED regardless of whether any real
+directional edge exists — manufacturing false signals out of nothing. Recommends absolute,
+tail-adjusted SNR/z-score boundaries (derived from a null distribution) instead of rolling rank
+order, so the gate defaults to neutral during genuine noise regardless of the historical window.
+
+**Real flaw #4 — weakest-link (`min()`) fusion discards evidentiary weight, per signal-detection
+theory.** If momentum registers a 3.5σ extreme while persistence is only a moderate 1.0σ, `min()`
+clamps the combined conviction to 1.0σ — throwing away real evidence rather than combining it. The
+theoretically correct combination (Green & Swets 1966 signal-detection framing) is a joint
+log-likelihood-ratio / Mahalanobis-style score using the actual empirical covariance between the two
+axes, not a `min()` or a mean. **Real tradeoff, not a free upgrade**: this requires estimating a
+joint covariance matrix and class-conditional means (trending vs. non-trending regime) — materially
+more estimation machinery than `min()`'s two numbers and no parameters. The arbitrary `0.2` constant
+on sign-disagreement (§5.5 point 3) is separately flagged as the same class of ad hoc number this
+whole initiative exists to eliminate elsewhere.
+
+**The bigger architectural point — don't fuse two separately-estimated signals at all; unify the
+estimation itself via one wavelet decomposition.** Rather than computing persistence (Hurst/DFA) and
+momentum (band-pass/MACD) as two independent pipelines and inventing a fusion rule to combine them
+(§5.5's whole "confluence and output" section), compute a single Maximum Overlap Discrete Wavelet
+Transform (MODWT) on the price series and pull BOTH signals natively from it: momentum from the
+scale-specific detail coefficients at the horizon matching the trading timeframe (the same MACD
+replacement already scoped in case study #2, §2.2), and Hurst from the well-established wavelet-
+variance-vs-scale power law `Var(W_j) ∝ 2^(j(2H+1))` (Abry & Veitch 1998) — a log-log regression of
+per-scale detail-coefficient variance against scale index, which yields H directly from the SAME
+decomposition already producing momentum. This eliminates the "how do we fuse two heterogeneous
+signals" question entirely, since both would be two views of one coherent estimation rather than
+two independently-estimated quantities glued together after the fact. Citations: Gençay, Selçuk &
+Whitcher (2001, already this doc's case-study-#2 reference for MACD's own wavelet replacement);
+Abry, P. & Veitch, D. (1998), "Wavelet Analysis of Long-Range-Dependent Traffic," *IEEE Transactions
+on Information Theory* (new citation, not previously used in this doc).
+
+**Two secondary findings that generalize beyond Impulse, not yet acted on anywhere**: (1) the DOF-
+confidence-widening pattern §5.5 proposed reusing verbatim (`HmmStateIndicator::
+DofConfidenceThreshold()`) is itself flagged as an ad hoc linear clamp rather than a derived
+quantity — recommends grounding it in the actual Student-t quantile ratio,
+`Threshold(ν) = Threshold_∞ * t_{α/2,ν} / z_{α/2}`, a real hypothesis-testing derivation rather than
+`clamp(1/(DOF-1), 0, 0.5)`. (2) the duration-decay pattern (`DurationDecayFactor()`) is similarly
+flagged as assuming a memoryless/linear hazard rate — recommends a Weibull survival-function-based
+decay (`S(t) = exp(-(t/λ)^k)`) if regime durations exhibit non-constant hazard (`k≠1`), a real
+survival-analysis framing rather than a linear clamp. Neither of these two findings is specific to
+Impulse — both critique existing, already-shipped `HmmStateIndicator` methods reused by reference in
+§5.5, and would need their own separate investigation (regime-duration hazard shape is an empirical
+question, not yet checked against this system's real HMM regime-duration data) before acting on
+either.
+
+**Status after this critique: §5.5's general direction (throw away Elder's exact two-EMA
+construction, ground both axes in this system's own already-validated Gang tools, output a
+continuous score not three fixed colors) still stands, but several of its specific formulas are now
+known-flawed rather than just "not yet decided."** The MODWT-unification idea is a materially
+stronger architectural answer than §5.5's own fusion-rule framing — reduces this to "build the
+wavelet decomposition already scoped for MACD, then derive both Impulse axes from it" rather than a
+separate design problem. Nothing implemented; this remains design-stage, one step short of a real
+spec+plan (per the operator's own stated next step for this whole case study).
+
 
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
