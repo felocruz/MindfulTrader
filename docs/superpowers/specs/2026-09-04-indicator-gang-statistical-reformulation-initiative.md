@@ -707,6 +707,13 @@ already established). Ranked highest priority by both Gemini instances specifica
 generalizable, already-half-proven principle (one fix already shipped for `liq_fragility`), not a
 new hypothesis.
 
+**Escalated, 2026-09-05**: a full-system inventory (operator question, "is ATR an Achilles heel?")
+found this fragility is far broader than these two consumers — raw Wilder ATR is also the stop-width
+seed for all 9 Raschke/Elder patterns, the Triple-Barrier exit engine's own barrier seed, `RiskManager`'s
+position-sizing multiplier, and the R-multiple denominator every live/backtest P&L metric is measured
+against. Full inventory and verdict: `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-
+curation-initiative.md` §2 item 5 — that write-up supersedes this candidate's scope, not just adds to it.
+
 ### 6.4 NH-NL (New High − New Low) breadth signal thresholds — different category, not a formula
 rewrite
 
