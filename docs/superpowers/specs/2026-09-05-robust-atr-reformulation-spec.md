@@ -1,13 +1,17 @@
 # Robust (Gang-Grounded) ATR Reformulation — Spec
 
-**Status: SPEC v2 — design proposed, NOT implemented. Opened 2026-09-05, following directly from
+**Status: SPEC v3 — design proposed, NOT implemented. Opened 2026-09-05, following directly from
 `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 5
 ("Wilder ATR as a systemic single point of failure") and its cross-reference from
 `docs/superpowers/specs/2026-09-04-indicator-gang-statistical-reformulation-initiative.md` §6.3.
-v1's plain-median design was sent to an independent Gemini instance for critique
-(`lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_134`/`_REPLY`); v2 (§2-§3 below) supersedes it with a
-recursive Huber-in-log-space filter + Kaufman Efficiency-Ratio-adaptive learning rate, following
-further independent literature search beyond what Gemini's own reply cited.**
+v1's plain-median design was critiqued by an independent Gemini instance (`CLAUDE_BRIEF_134`/`_REPLY`),
+producing v2 (Huber-in-log-space + Kaufman ER-adaptive rate). v2 was itself sent back for review
+(`CLAUDE_BRIEF_135`/`_REPLY`) and one real design flaw was found in it — Kaufman's Efficiency Ratio
+measures directional persistence, not volatility/scale, and gating ATR's own reactivity on it is a
+category error (the same class of mistake already caught once before in this repo's Impulse System
+redesign work, "Inertia = Hurst"). v3 (§2a, §3) replaces it with a scale-innovation-driven trigger,
+adds a Jensen's-inequality correction (with an explicit target-quantity decision flagged, not silently
+resolved), and validates all prior citations.**
 
 **Risk framing (operator directive, 2026-09-05): this system is not in production yet — no live
 capital is at risk, so the stakes here are lower than the "changes the executable risk contract"
@@ -86,7 +90,52 @@ distributions; True Range is right-skewed, so a Huber-robustified center will AL
 softer in degree, not eliminated by switching estimator family alone. Flagged here so it isn't
 silently inherited from Gemini's table into an implementation.
 
-## 3. Revised proposed design (v2, 2026-09-05, incorporating the critique + independent literature)
+## 2a. Second-round critique received (CLAUDE_BRIEF_135/135_REPLY, 2026-09-05) — one real flaw found
+in v2, everything else confirmed
+
+v2 (§3 as it stood) was sent back with two explicit pushbacks (against Gemini's correction constant
+and his HMM-DOF gate) and two independently-sourced additions (log-space transform, named citations
+for the recursive filter), asking Gemini to check whether the pushbacks were justified. Verdicts:
+
+1. **Pushback on the `c = E[TR]/Median(TR)` correction constant — Gemini agrees, empirical
+   re-fitting is correct.** His own reasoning strengthens §3.3's case further: `ATR_wilder /
+   ATR_robust` isn't even a constant ratio across regimes (Wilder's EMA explodes under fat-tailed
+   spikes while a robust estimator stays grounded, so the ratio itself varies non-linearly) — a
+   single scalar correction would have been wrong on its own terms, not just an unnecessary extra
+   moving part. §3.3 stands, strengthened.
+2. **Pushback on Kaufman ER-adaptive rate — REJECTED. Gemini found a real, fatal category error in
+   my own v2 design, not a stylistic preference.** Kaufman's Efficiency Ratio measures *directional
+   path efficiency* (a fractal/persistence-like axis: `ER→1` = straight-line movement, `ER→0` =
+   choppy/non-directional). Volatility EXPANSION during a genuine regime shift (a crash, a
+   liquidity-break panic) is frequently accompanied by exactly the kind of high-entropy, two-sided,
+   whipsaw price action that drives `ER→0` — under v2's formula this would drive `alpha_t` toward
+   its SLOWEST value at precisely the moment the filter most needs to react fast. **This is
+   confirmed as the same category-error class already caught once before in this exact repo**: the
+   Impulse System redesign work (`docs/superpowers/specs/2026-09-04-indicator-gang-statistical-
+   reformulation-initiative.md` §5.2) already established that Hurst/persistence-type measures and
+   volatility/scale-type measures are different statistical axes that must not be conflated ("Inertia
+   = Hurst is a category error") — Kaufman's ER is architecturally the same kind of
+   persistence/path-efficiency axis as Hurst, so gating a scale/dispersion filter's reactivity on it
+   repeats the identical mistake in a new location. **§3.2 below is fully replaced, not patched.**
+   (Caveat, not fully conceded either way: Gemini's framing treats this as a universal failure mode;
+   in fact a strongly one-directional crash — most bars moving the same way — would keep `ER`
+   relatively high even while volatility is expanding, so the failure mode is specifically two-sided/
+   whipsaw volatility expansions, not literally every volatility expansion. This doesn't change the
+   verdict — the category error is real and ER is still the wrong axis to gate on regardless — but
+   the failure isn't quite as universal as stated.)
+3. **Huber-unbiased-under-skew overstatement — confirmed as an overstatement, as I flagged.**
+4. **Log-space transform — confirmed sound, with one addition: Jensen's inequality.** Exponentiating
+   a log-space location estimate back to linear units recovers the GEOMETRIC center, not `E[TR]`
+   (`E[TR] = E[exp(logTR)] > exp(E[logTR])` for any non-degenerate distribution, by Jensen's
+   inequality for the convex `exp()` function) — a real, correct mathematical point, addressed in §3
+   below with an explicit decision (not a silent fix), since **this does NOT automatically mean the
+   correction must be applied**: it depends on which quantity the design is actually targeting (see
+   §3.1a's revision).
+5. **Citations verified as real and on-point**: Gemini independently confirmed Gelper, Fried & Croux
+   (2010) and Muler & Yohai (2008) as accurate, non-hallucinated, correctly-matched citations for the
+   recursive Huber-EMA construction — both now treated as settled rather than provisional.
+
+## 3. Revised proposed design (v3, 2026-09-05, incorporating both rounds of critique + independent literature)
 
 **Two independent upgrades over the v1 plain-median design, each separately grounded, combined as a
 single synthesis (not itself a single named published technique — labeled honestly as a synthesis,
@@ -136,33 +185,58 @@ scale where its symmetric-distribution assumption is closest to true, materially
 necessarily eliminating) the residual skew-bias flagged above — **this is a genuine additional
 finding from independent literature search, not something Gemini's own reply raised.**
 
-### 3.2 Replace Gemini's ad hoc HMM-DOF state-gate with Kaufman's Efficiency-Ratio-adaptive rate
-(already implemented in this exact codebase)
+**Jensen's-inequality correction — an explicit design decision, not a silent bug fix (round-2
+finding, CLAUDE_BRIEF_135_REPLY).** Exponentiating a robust LOCATION estimate of `log(TR)` back to
+linear units gives that location's exact monotonic image (e.g. exponentiating a median-of-log-TR
+gives exactly the median of TR — no correction needed, true for any distribution). But if the design
+goal is to reconstruct something closer to Wilder's original *mean-like* ATR level (which is pulled
+upward by the right tail, arguably a deliberately conservative property for a stop-width reference —
+under-estimating tail-driven risk is the worse failure mode for a stop distance), a further
+log-normal-style correction is needed: `ATR_robust = exp(mu_hat + 0.5 * sigma_hat^2)` (the standard
+lognormal-moment formula, valid under an approximate log-normality assumption for `TR`). **Decision:
+apply this correction** — preserving Wilder's original conservative (mean-pulled-by-tail) semantics
+rather than silently shifting to a more aggressive median-like target, keeping §3.3's empirical
+re-fit focused on removing single-outlier contamination rather than absorbing a deliberate,
+unacknowledged change in what "typical range" means for stop-sizing purposes.
 
-Gemini's own fix for volatility-expansion lag (§2 item 3) was a hard threshold ("if HMM DOF<4, switch
-to a fast learning rate") — itself a new, untuned discontinuity. **A materially better-grounded
-alternative already exists, fully implemented, in this repo**: `ContextManager::efficiency`
-(`src/StudyHelperFunctions.cpp:98`'s `EfficiencyRatioCalculator`) computes Kaufman's Efficiency Ratio
-— already confirmed, in this repo's own prior literature-grounding pass
-(`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`), as "most precisely Kaufman's
-Efficiency Ratio (Perry Kaufman, *Trading Systems and Methods*, 1998 — the same ER used in Kaufman's
-Adaptive Moving Average)." Reuse it directly, via Kaufman's own exact, decades-precedented
-smoothing-constant formula (Kaufman, P. (1995), *Smarter Trading*, and Kaufman (1998) as above):
+### 3.2 Trigger fast-tracking from the filter's OWN scale innovations, not Kaufman's Efficiency Ratio
+(Kaufman ER REJECTED, category error — see §2a item 2)
+
+**v2's Kaufman-ER-adaptive rate is rejected outright** — Kaufman's Efficiency Ratio is a directional-
+persistence measure, the same statistical axis as Hurst, and gating a volatility/scale filter's
+reactivity on it repeats the exact "Inertia = Hurst" category error this repo already corrected once
+in the Impulse System redesign (§2a item 2). The replacement must be driven by the filter's own scale
+innovations directly, not an external persistence/direction proxy.
+
+Gemini's own round-2 fix (`CLAUDE_BRIEF_135_REPLY`) proposes exactly this — switch to a fast learning
+rate when the standardized innovation `e_t` exceeds the Huber clipping threshold `k` for **two
+consecutive bars** (distinguishing a sustained regime shift from a single-bar spike, which alone
+never moves the slow rate) — but the specific "two consecutive" rule is an arbitrary, uncited
+threshold. **This spec adopts the underlying idea but grounds the trigger rule properly, reusing a
+theoretical framework already adopted elsewhere in this exact repo for the identical class of
+problem** (distinguish a genuine persistent shift from noise, react as fast as possible without
+whipsawing): `CLAUDE.md`'s own TRAP-detection doctrine already cites Wald's Sequential Probability
+Ratio Test (1945) and the Shiryaev quickest-detection/disorder problem for exactly this
+"react-the-instant-there's-real-evidence, not before" question. The directly-applicable, purpose-built
+tool from that same theoretical lineage is **CUSUM** (Page, E.S. (1954), "Continuous Inspection
+Schemes," *Biometrika* 41(1/2):100-115) — a running cumulative-sum statistic on the standardized
+innovations that crosses a decision threshold once accumulated evidence of a sustained shift exceeds
+what a single noisy bar could produce, rather than an arbitrary fixed "N consecutive bars" count:
 
 ```
-SC_fast = 2/(2+1),  SC_slow = 2/(N+1)                       -- N = the same window already in use
-alpha_t = [ ER_t * (SC_fast - SC_slow) + SC_slow ]^2        -- Kaufman's KAMA formula, continuous
+S_t     = max(0, S_t-1 + e_t - referenceOffset)     -- one-sided CUSUM on standardized innovations
+alpha_t = alpha_fast   if S_t > cusumThreshold        (sustained expansion detected)
+        = alpha_slow   otherwise
 ```
 
-This gives a **continuous** (not step-function) adaptive learning rate — fast during genuinely
-directional/efficient price action (`ER_t` near 1), slow during choppy/inefficient noise (`ER_t` near
-0) — reusing an indicator this system already computes and already has a confirmed literature
-attribution for, rather than introducing a new HMM-DOF threshold requiring its own separate
-validation. This directly answers Gemini's own item 4 concern (fast reaction to genuine volatility
-regime shifts) without inventing a new mechanism.
+This is internally consistent with a theoretical framework this repo has already adopted for a
+conceptually identical detection problem, rather than importing Kaufman's KAMA formula (wrong axis)
+or keeping Gemini's own ad hoc "two consecutive bars" rule (arbitrary, untuned). `referenceOffset`
+and `cusumThreshold` are open parameters requiring the same empirical validation as everything else
+in §5 — not assumed correct from the literature alone.
 
 ### 3.3 Recalibration: use this repo's own established percentile-matching method, not a synthetic
-bias-correction constant
+bias-correction constant (unchanged from v2 — confirmed correct in round 2, §2a item 1)
 
 Gemini's proposed `c = E[TR]/Median(TR)` correction constant is **not adopted** — it's an extra,
 separately-estimated piece of machinery solving a problem this repo already has a proven, simpler
@@ -203,61 +277,71 @@ ground it in the literature, then move both sides together), this must ship iden
 in `lbrnet/backtest`'s Python replica — ATR isn't computed independently on each side today and must
 not become two divergent formulas.
 
-## 5. Validation plan (empirical, required before cutover; revised for the v2 design)
+## 5. Validation plan (empirical, required before cutover; revised for the v3 design)
 
 Same family and discipline as `tools/observation_vector/*` — build a standalone comparison tool
 (`tools/observation_vector/atr_robustness_comparison.cpp`, `tools/bin/`, `ToolProgressLogger`-routed
 per this repo's own standing directive) over the full real MES tick/bar dataset
 (`lbrnet/data/raw/mes_ticks.parquet`, resampled to the relevant bar timeframes), computing
-`Wilder_EMA(TR,N)` alongside the v2 Huber-in-log-space/Kaufman-adaptive filter (§3) and reporting:
+`Wilder_EMA(TR,N)` alongside the v3 Huber-in-log-space/CUSUM-adaptive filter (§3) and reporting:
 
-1. **R-Scale Distortion Ratio** (Gemini's own proposed diagnostic, adopted): `S_R = ATR_v2 / ATR_wilder`
+1. **R-Scale Distortion Ratio** (Gemini's own proposed diagnostic, adopted): `S_R = ATR_v3 / ATR_wilder`
    computed at every historical trade-entry timestamp — report its full distribution (not just its
    mean), since a mean near 1.0 could still hide a fat-tailed distortion at exactly the volatility
    extremes where it matters most.
-2. **Skew-bias magnitude, empirically** (resolving §2 item 1's unverified "15-30%" figure): directly
-   measure `E[TR] - center_estimate(TR)` for both the plain-median baseline and the v2 Huber-in-log
-   estimator, on real data — confirm whether log-space Huber materially reduces the bias relative to
-   plain linear-space median, as §3.1a's literature grounding predicts, or not.
+2. **Skew-bias magnitude, empirically, WITH and WITHOUT the Jensen correction** (resolving §2 item 1's
+   unverified "15-30%" figure, and §3.1a's decision to apply the correction): directly measure
+   `E[TR] - center_estimate(TR)` for (a) the plain-median baseline, (b) linear-space Huber, (c)
+   log-space Huber without Jensen correction, and (d) log-space Huber WITH the `+0.5*sigma^2`
+   correction — confirm (d) closes the gap to `E[TR]` materially better than (a)-(c), as §3.1a's
+   literature grounding predicts, or not.
 3. **Contamination-window / regime-lag behavior**: pick real historical outlier-TR bars (gap events,
    halt reopens) AND real historical genuine volatility-expansion episodes (sustained regime shifts,
-   not one-off spikes) and trace the v2 filter's trajectory through both — confirm it suppresses the
-   former (Huber clipping) while tracking the latter faster than Wilder's fixed-alpha EMA (Kaufman-ER
-   adaptive rate), not just one or the other.
-4. **R-multiple basis shift and consumer re-fit**: for the existing 7 golden-vector Triple-Barrier
+   not one-off spikes — including two-sided/whipsaw expansions specifically, per §2a item 2's
+   caveat) and trace the v3 filter's trajectory through both — confirm the CUSUM trigger (§3.2)
+   suppresses the former while tracking the latter faster than Wilder's fixed-alpha EMA, including
+   the whipsaw case that would have defeated the rejected Kaufman-ER approach.
+4. **CUSUM parameter sensitivity**: sweep `referenceOffset`/`cusumThreshold` (§3.2) against the same
+   real historical episodes from item 3 — these are literature-grounded in form (Page 1954) but not
+   yet validated in magnitude for this specific instrument/timeframe.
+5. **R-multiple basis shift and consumer re-fit**: for the existing 7 golden-vector Triple-Barrier
    fixtures plus a broader real-replay sample, recompute every consumer in §4's inventory under the
-   v2 estimator and re-percentile-match each one's own constant/threshold directly (per §3.3 — no
+   v3 estimator and re-percentile-match each one's own constant/threshold directly (per §3.3 — no
    synthetic correction factor, empirical re-fit only).
 
-**Decision rule**: if the v2 filter's contamination-window and regime-lag behavior both confirm the
+**Decision rule**: if the v3 filter's contamination-window and regime-lag behavior both confirm the
 expected benefits (robust to single-bar noise, no slower than Wilder EMA at tracking genuine
-expansions) and every consumer's constant has been re-fit against it, cut over directly (no dual-run
-shadow period needed for capital-preservation reasons, per the pre-production risk framing above —
-Gemini's own recommendation for a parallel-run period is worth doing anyway if it surfaces regime
-coverage a single validation pass might miss, but is not required by capital risk).
+expansions, including whipsaw ones) and every consumer's constant has been re-fit against it, cut
+over directly (no dual-run shadow period needed for capital-preservation reasons, per the
+pre-production risk framing above — Gemini's own recommendation for a parallel-run period is worth
+doing anyway if it surfaces regime coverage a single validation pass might miss, but is not required
+by capital risk).
 
 ## 6. Open questions (not yet decided)
 
-1. **Window length parity**: TS1 uses `ATR(14)`, TS3 uses `ATR(10)` — for the v2 filter, these map to
-   `SC_slow` in Kaufman's formula (§3.2). Same recommendation as v1: keep the existing effective
-   windows for this spec's scope; a separate window-length study is a distinct question, out of
-   scope here.
+1. **Window length parity**: TS1 uses `ATR(14)`, TS3 uses `ATR(10)` — for the v3 filter, these map to
+   `SC_slow`/the recursive filter's own slow rate. Same recommendation as v1/v2: keep the existing
+   effective windows for this spec's scope; a separate window-length study is a distinct question,
+   out of scope here.
 2. **Downstream double-smoothing removal**: does `TripleScreen1.cpp`'s 20-bar `MovingMedian` on top
    of the new robust base ATR become fully redundant, or does it still add value? Decide empirically
-   during validation, not by assumption — unchanged from v1.
-3. **Scope of "ATR" being replaced**: unchanged from v1 — confirm no other independent ATR
+   during validation, not by assumption — unchanged from v1/v2.
+3. **Scope of "ATR" being replaced**: unchanged from v1/v2 — confirm no other independent ATR
    computation exists elsewhere in the codebase (`sc.ATR(` / `MOVAVGTYPE_WILDERS` grep) before calling
    the swap complete.
-4. **`scale_t`'s own estimator (new, v2)**: §3.1's Huber filter needs a running robust dispersion
-   estimate to standardize innovations before clipping — not yet specified precisely (a natural
-   candidate is an EWMA of `|logTR_t - RATR_t-1|`, i.e. an exponentially-weighted MAD-like
-   quantity, but the exact recursion needs to be pinned down and validated, not assumed).
-5. **Honesty check on the v2 synthesis itself**: §3's combination (Huber-in-log-space + Kaufman-ER-
-   adaptive rate) is this spec's own synthesis of three independently well-grounded techniques, not
-   itself a single published, directly-on-point paper — flagged explicitly so this isn't
-   mis-read as more literature-canonical than it is (same honesty convention already used elsewhere
-   in this repo, e.g. the `FeatureScaler` shrinkage-floor spec's own "principled synthesis, not a
-   direct implementation" framing).
+4. **`scale_t`'s own estimator — RESOLVED, 2026-09-05 (CLAUDE_BRIEF_135_REPLY)**: Gemini's round-2
+   reply specified a concrete recursive scale-update reusing this repo's own standing `1.4826` MAD-
+   consistency constant (already used for `liq_fragility` and elsewhere): `sigma_hat_t = sigma_hat_t-1
+   + alpha_slow * (1.4826 * |x_t - mu_hat_t-1| - sigma_hat_t-1)`. Adopted as specified — internally
+   consistent with this repo's own existing convention, no further design work needed here, only
+   empirical validation (§5).
+5. **Honesty check on the v3 synthesis itself**: §3's combination (Huber-in-log-space + Jensen
+   correction + CUSUM-triggered adaptive rate) is this spec's own synthesis of four independently
+   well-grounded techniques (Huber 1964; Gelper/Fried/Croux 2010; Andersen-Bollerslev-Diebold-Labys/
+   Ebens 2001; Page 1954), not itself a single published, directly-on-point paper — flagged
+   explicitly so this isn't mis-read as more literature-canonical than it is (same honesty convention
+   already used elsewhere in this repo, e.g. the `FeatureScaler` shrinkage-floor spec's own
+   "principled synthesis, not a direct implementation" framing).
 
 ## 7. Explicitly out of scope
 
@@ -294,14 +378,26 @@ coverage a single validation pass might miss, but is not required by capital ris
   43-76 — near-Gaussianity of log-realized-volatility, the grounding for computing the v2 filter in
   log-space rather than linear True-Range space (§3.1a); found via independent literature search, not
   present in Gemini's response.
-- Kaufman, P. (1995), *Smarter Trading*, and Kaufman, P. (1998), *Trading Systems and Methods* — the
-  Efficiency-Ratio-adaptive smoothing-constant formula (Kaufman's Adaptive Moving Average), reused
-  directly for §3.2's adaptive learning rate; already confirmed as the correct attribution for this
-  repo's own existing `ContextManager::efficiency` indicator in a prior literature-grounding pass
-  (`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`).
+- Kaufman, P. (1995), *Smarter Trading*, and Kaufman, P. (1998), *Trading Systems and Methods* —
+  the Efficiency-Ratio-adaptive smoothing-constant formula (Kaufman's Adaptive Moving Average).
+  **Considered and REJECTED for §3.2** (round 2, `CLAUDE_BRIEF_135_REPLY`) — Kaufman's ER measures
+  directional persistence, not volatility/scale, and gating ATR's own reactivity on it is a category
+  error (the same class already caught in this repo's Impulse System redesign, "Inertia = Hurst").
+  Kept here for the historical record and because `ContextManager::efficiency` remains a correctly-
+  attributed existing indicator in this repo for its own original purpose — just not the right input
+  for this filter.
+- Page, E.S. (1954), "Continuous Inspection Schemes," *Biometrika* 41(1/2):100-115 — CUSUM, the
+  scale-innovation-driven trigger replacing the rejected Kaufman-ER approach (§3.2); chosen for
+  internal consistency with the sequential/quickest-detection framework (Wald 1945 SPRT; Shiryaev
+  disorder problem) this repo's own TRAP-detection doctrine (`CLAUDE.md`) already uses for the
+  identical class of problem (distinguish a genuine persistent shift from noise, react as fast as
+  possible without whipsawing).
 - `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item
   5 — the founding finding this spec implements.
 - `docs/superpowers/specs/2026-09-04-indicator-gang-statistical-reformulation-initiative.md` §6.3 —
   the narrower `ATRProximityEnum`/`EmaProximity` candidate this spec supersedes in scope.
-- `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_134`/`CLAUDE_BRIEF_134_REPLY` — the independent critique
-  this v2 design responds to (§2).
+- `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_134`/`CLAUDE_BRIEF_134_REPLY` — the first-round
+  independent critique that superseded v1 (§2).
+- `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_135`/`CLAUDE_BRIEF_135_REPLY` — the second-round review
+  that found the Kaufman-ER category error, confirmed the citations, and specified the `scale_t`
+  recursion and Jensen's-inequality correction (§2a).
