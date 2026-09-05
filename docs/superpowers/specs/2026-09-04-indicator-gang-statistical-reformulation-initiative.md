@@ -558,6 +558,32 @@ consumers with a single change — no separate integration risk or drift-between
 between the divergence detector and Impulse's momentum term, since there was never a second,
 independent MACD computation to keep in sync.
 
+**Two consequences of this fact for how this initiative should actually sequence itself (operator
+question, 2026-09-04), not just an architectural footnote**:
+
+1. **Sequencing: case study #2's own MACD replacement is upstream of a real case-study-#3 redesign,
+   not a parallel, independently-schedulable track.** §5.5/5.6's fusion-logic design implicitly
+   assumes whatever statistical character the CURRENT EMA-based `macdDiff` has (its own noise/lag/
+   smoothness profile). If MACD's construction is ever actually replaced (wavelet detail
+   coefficients: zero phase-lag, sharper transitions, different noise character than EMA output),
+   that changes the very thing §5.5/5.6's fusion rule was designed around — meaning a genuinely
+   final Impulse redesign can't be locked in independently of case study #2's own resolution.
+   §5.5/5.6 stays a valid design-stage sketch, but committing to it ahead of MACD's own fate risks
+   re-deriving the fusion logic a second time once the input signal's character actually changes.
+2. **A genuinely new risk, not previously flagged, surfaced by "same array, two consumers" cutting
+   both ways.** `DetectElderMACDDivergence`'s own peak/trough state machine (`isLocalMin` checks,
+   `MIN_RALLY_ATR_MULTIPLE`, lookback windows) was presumably tuned/validated against the CURRENT
+   signal's specific statistical character (EMA-smooth, laggy). Swapping the underlying array to a
+   MODWT detail-coefficient stream requires zero code change to the wiring itself (same subgraph
+   reference, same consumers) — but the divergence detector's own tuned constants could silently
+   stop matching reality once the signal's character changes underneath them, since those constants
+   were never re-validated against a zero-lag, sharper-transition input. The "one fix, three
+   consumers" leverage (Screen 1 trend direction via `MacdEnum`, the divergence detector, and
+   Impulse's momentum axis) is real, but it also means a single unvalidated replacement risks
+   silently breaking all three at once rather than one at a time — any eventual MACD replacement
+   needs re-validation against the divergence detector's own existing tuned parameters specifically,
+   not just against Impulse's new needs.
+
 
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
