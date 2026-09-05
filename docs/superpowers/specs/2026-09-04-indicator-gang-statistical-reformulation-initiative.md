@@ -624,10 +624,13 @@ eventual implementation plan needs to account for explicitly.
    in scope of the sibling `2026-09-04-technical-analysis-gang-statistical-reformulation-
    initiative.md`'s oscillator-divergence case study, or does it need its own entry there once this
    doc's formula-level work is further along? Cross-reference, don't duplicate.
-4. Other indicators not yet triaged for this initiative: Stochastic (5,3,3)/(14,3,3), RSI, the 3/10
-   oscillator's own fast/slow construction (already partially covered by the sibling initiative's
-   case study #1, but from the *pattern* angle, not the indicator-formula angle) — none
-   investigated yet.
+4. **PARTIALLY RESOLVED 2026-09-05** — see §6, new candidate survey: Stochastic %K/%D and the
+   ATR-as-shared-scale-reference pattern (`ATRProximityEnum`/`EmaProximity`) are now
+   literature-grounded CANDIDATEs; RSI explicitly ruled out as low-value/redundant; NH-NL breadth
+   thresholds flagged as a different-category (offline EVT calibration, not a formula rewrite)
+   task. The 3/10 oscillator's own fast/slow construction remains untriaged from the
+   indicator-formula angle (still only covered by the sibling initiative's pattern-detection
+   angle).
 5. **RESOLVED 2026-09-04 (CLAUDE_BRIEF_129/129_REPLY)**: Gemini confirmed Peters (1994)'s
    MA-crossover/Hurst framing conceptually (not mechanically — Peters uses R/S/Hurst, not EMAs),
    confirmed Gençay/Selçuk/Whitcher (2001) as "the gold standard" wavelet-MRA reference, and added
@@ -648,10 +651,102 @@ eventual implementation plan needs to account for explicitly.
    wavelet replacement) has been empirically validated against this system's real tick data. Same
    discipline as Force Index — literature grounding is not sufficient on its own to implement.
 
+## 6. Candidate survey (CLAUDE_BRIEF_133/133_REPLY, 2026-09-05) — Stochastic %K/%D, RSI, shared
+ATR-as-scale-reference, NH-NL thresholds
+
+Operator asked for a broader survey of `include/Indicator.h` for further Gang-statistical
+candidates. Sent as a consolidated, self-contained brief (4 candidates) to Gemini; the operator
+separately, independently, ran the same brief through a fresh Gemini instance with no repo access
+(`CLAUDE_BRIEF_133_REPLY`, starting at `lbrnet/logs/rc_gemini.log` line 6400) — both replies converged
+on the same ranking. Literature-grounding only, nothing implemented, no code touched.
+
+### 6.1 Stochastic Oscillator (%K/%D) — CANDIDATE, ranked #2
+
+Real formula: `%K = 100 * (Close - LowestLow_N) / (HighestHigh_N - LowestLow_N)` (N=14 standard,
+N=7 for Raschke's "Anti" pattern, `src/StudyHelperFunctions.cpp`). This is a rolling min-max
+normalization — structurally the same "one extreme point sets the reference for the whole window"
+fragility already fixed this session for `burstiness_index`/MACD/Impulse, except here it's baked
+into the construction itself: one extreme high or low bar sets `HighestHigh_N - LowestLow_N` for
+the ENTIRE N-bar window, silently compressing/distorting every other bar's %K reading until that
+extreme rolls out. **Gemini's proposed fix**: replace min-max with a rolling empirical CDF /
+percentile rank (`%K_robust = (1/N) * Σ 𝟙(C_t ≥ C_{t-i}) * 100`) — distribution-free, invariant to
+single-outlier magnitude by construction (order-statistics theory, David & Nagaraja). A lighter
+alternative: a GPD/EVT-winsorized min-max (reusing this session's own established winsorization-
+bound convention) that caps outlier leverage while preserving distance magnitude, rather than a
+full rank transform. Not yet empirically validated against real tick data.
+
+### 6.2 RSI (Wilder's Relative Strength Index) — explicitly NOT a candidate, ruled out
+
+Real formula: `RSI = 100 - 100/(1+RS)`, `RS = WildersAvg(gains,N)/WildersAvg(losses,N)` — Wilder's
+smoothing is itself a specific EMA variant (`α=1/N`), so RSI shares the exact "linear, mean-based,
+fat-tail-vulnerable" fragility already confirmed and being addressed for MACD (CLAUDE_BRIEF_129).
+**Both Gemini instances independently ranked this lowest-priority and recommended against pursuing
+it**: RSI is a bounded, non-linear transform of short-term gain/loss momentum, and this system's
+existing/already-scoped toolkit (MACD's band-pass concept once fixed; Hurst/DFA persistence)
+already covers the same ground — a "Gang RSI" would add feature dimensionality without new
+information, not a genuine gap like Force Index or MACD were.
+
+### 6.3 Shared ATR-as-scale-reference (`ATRProximityEnum` / `EmaProximity`) — CANDIDATE, ranked #1
+highest priority
+
+Both consumers measure "distance from price to a reference (channel bound / the 13-EMA) in units
+of shared `ATR(10, Wilder)`" — the SAME shared Wilder ATR indicator already found and fixed as a
+fragile scale reference for `liq_fragility` specifically (`CLAUDE_BRIEF_124/124_REPLY`, replaced
+with a dedicated median-based range/sqrt-volume reference for that one consumer only, explicitly
+without touching the shared ATR indicator other consumers still use). **Both Gemini instances
+confirmed this generalizes as a real, NAMED statistical principle, not just a `liq_fragility`
+quirk**: "scale masking under heavy-tailed normalization" (Huber & Ronchetti, *Robust Statistics*;
+Rousseeuw & Croux 1993) — a volatility spike inflates the shared EMA-based ATR denominator, that
+inflation persists across the EMA's whole half-life, and every subsequent price-distance reading
+is artificially deflated toward "tight proximity" during exactly the period (structural market
+stress) where that reading matters most — the opposite of what a risk-aware distance metric should
+do. **Proposed fix, same pattern as `liq_fragility`**: a dedicated median/MAD-based True Range
+scale reference (`Median_N(TR)` or `1.4826 * MAD_N(TR)`) for these two consumers specifically,
+without touching the shared ATR indicator itself (same non-disruptive, consumer-scoped precedent
+already established). Ranked highest priority by both Gemini instances specifically because it's a
+generalizable, already-half-proven principle (one fix already shipped for `liq_fragility`), not a
+new hypothesis.
+
+### 6.4 NH-NL (New High − New Low) breadth signal thresholds — different category, not a formula
+rewrite
+
+Elder's own hand-specified round-number thresholds (daily ±100, weekly +2500/-4000/-1500) — the
+underlying MEASURE is a real exogenous market-breadth count, not a formula needing reformulation,
+but the THRESHOLDS are the same "picked once from a book, never re-derived" category this session
+already found and fixed via GPD/percentile recalibration for several observation-vector
+winsorization bounds. **Both Gemini instances confirmed this is valid but a genuinely different
+category of work** — an offline EVT/GPD Peaks-Over-Threshold calibration exercise on real historical
+NH-NL data (after first normalizing to a scale-invariant ratio, `(NH-NL)/N_total`, since raw counts
+aren't stationary across changing universe size), not a C++ indicator formula overhaul. Ranked
+medium priority — real, well-grounded, but lower urgency and a different type of task than the
+other three candidates.
+
+### 6.5 Priority ranking (both Gemini instances converged independently)
+
+1. **ATR-as-scale-reference (§6.3)** — highest priority, generalizes an already-proven fix.
+2. **Stochastic %K/%D (§6.1)** — high priority, same fragility class as everything else fixed this
+   session, clean literature-grounded replacement (percentile rank / eCDF).
+3. **NH-NL thresholds (§6.4)** — medium priority, valid but a different-category offline
+   calibration task, not a real-time C++ formula rewrite.
+4. **RSI (§6.2)** — lowest priority, explicitly ruled out as structurally redundant with
+   already-scoped work.
+
+**Status: literature-grounding only, nothing implemented.** Same discipline as every other
+candidate in this doc — real-data validation required before any of §6.1/§6.3 is built.
+
 ## 5. References
 
 - Elder, A. (1993), *Trading for a Living* — Force Index's original definition and divergence rule,
   and MACD-Histogram divergence (case study #2).
+- Huber, P.J. & Ronchetti, E.M. (2009), *Robust Statistics*, 2nd ed. — general grounding for
+  "scale masking" under heavy-tailed normalization (§6.3).
+- Rousseeuw, P.J. & Croux, C. (1993), "Alternatives to the Median Absolute Deviation," *JASA* —
+  already this repo's standing citation for median/MAD-based robust scale estimators (§6.3).
+- David, H.A. & Nagaraja, H.N., *Order Statistics* — distribution-free percentile-rank
+  normalization as a min-max replacement (§6.1).
+- Balkema, A.A. & de Haan, L. (1974); López de Prado, M. (2018) — EVT/GPD Peaks-Over-Threshold
+  calibration for breadth-index thresholds (§6.4), same methodology already used for this
+  system's own observation-vector winsorization bounds.
 - Hasbrouck, J. (1991), "Measuring the Information Content of Stock Trades," *Journal of Finance*.
 - Kyle, A.S. (1985), "Continuous Auctions and Insider Trading," *Econometrica*.
 - Kyle, A.S. & Obizhaeva, A.A. (2016), "Market Microstructure Invariance," *Econometrica* — already
