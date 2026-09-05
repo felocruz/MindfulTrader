@@ -544,6 +544,20 @@ wavelet decomposition already scoped for MACD, then derive both Impulse axes fro
 separate design problem. Nothing implemented; this remains design-stage, one step short of a real
 spec+plan (per the operator's own stated next step for this whole case study).
 
+**Confirmed architectural fact (operator, 2026-09-04), strengthening the MODWT-unification point
+above**: case study #2's MACD-Histogram divergence detector and case study #3's Impulse momentum
+axis are not just conceptually related — within each screen, they read the LITERAL SAME
+`Subgraph_MACDDiff` array (`sc.Subgraph[2]` from `scsf_Screen1_MACD`/`scsf_Screen2_MACD`), verified
+directly: `TripleScreen1.cpp`'s `macdDiff = MACDDiffSubgraphArray[sc.Index] -
+MACDDiffSubgraphArray[sc.Index-1]` (feeding `GetImpulse()`) and
+`DetectElderMACDDivergence(sc, sc.Index, sc.High, sc.Low, Subgraph_MACDDiff, ...)` both consume the
+same subgraph object from the same MACD study instance per screen (TS1 and TS2 each run their own
+single shared instance, not two independently-computed MACDs). This means replacing MACD once
+(case study #2's Phase 2 MODWT replacement) automatically and simultaneously upgrades both
+consumers with a single change — no separate integration risk or drift-between-consumers concern
+between the divergence detector and Impulse's momentum term, since there was never a second,
+independent MACD computation to keep in sync.
+
 
 
 1. **RESOLVED (conceptually) 2026-09-04, empirical test not yet run**: does this system's real
