@@ -1,5 +1,18 @@
 # Robust (Gang-Grounded) ATR Reformulation — Spec
 
+**SCOPE NARROWED, 2026-09-05 (operator directive — decisive institutional replacement, not
+hedging): this spec no longer governs the Triple-Barrier exit engine's stop/target width or
+vertical time barrier.** Those are now governed by
+`docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`, which
+replaces ATR OUTRIGHT (not a robustified variant, not a parallel fallback) with a jump-robust
+realized-volatility estimator computed natively on the activity/imbalance clock. **This spec's
+remaining scope is the 4 peripheral, non-barrier ATR consumers only**: `ATRProximityEnum`/
+`EmaProximity` regime classification, Trade Grade Keltner-Channel scoring, VWAP distance
+normalization, and Elder Breakout distance-beyond-band classification (§4 items 5-8 below) — none
+of these set money-at-risk stop/target width, so a robustified-in-place ATR remains the right,
+narrower fix for them specifically. Everything below referring to Triple-Barrier/stop-width/§4
+items 1-4 is superseded; retained for historical record only.
+
 **Status: SPEC v3 — design proposed, NOT implemented. Opened 2026-09-05, following directly from
 `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 5
 ("Wilder ATR as a systemic single point of failure") and its cross-reference from
