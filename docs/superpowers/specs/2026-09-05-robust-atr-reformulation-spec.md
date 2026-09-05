@@ -11,7 +11,9 @@ measures directional persistence, not volatility/scale, and gating ATR's own rea
 category error (the same class of mistake already caught once before in this repo's Impulse System
 redesign work, "Inertia = Hurst"). v3 (§2a, §3) replaces it with a scale-innovation-driven trigger,
 adds a Jensen's-inequality correction (with an explicit target-quantity decision flagged, not silently
-resolved), and validates all prior citations.**
+resolved), and validates all prior citations. §3.4 adds Data-Oriented Design / hot-path performance
+requirements (operator directive, 2026-09-05) — the filter runs on every live tick, so its O(1),
+zero-allocation state and bar-close gating are load-bearing design constraints, not an afterthought.**
 
 **Risk framing (operator directive, 2026-09-05): this system is not in production yet — no live
 capital is at risk, so the stakes here are lower than the "changes the executable risk contract"
@@ -251,6 +253,69 @@ reuses a methodology already proven in this exact codebase rather than importing
 also reflects a hard lesson already paid for this session (the `amihud_illiquidity` `ζ_u`
 subsampling-correction bug): prefer an empirically-fit, real-data-derived constant over a
 theoretical distributional-assumption formula when the two could disagree.
+
+### 3.4 Hot-path performance (Data-Oriented Design) — operator directive, 2026-09-05
+
+This filter runs inside the live ACSIL update path (`TripleScreen1.cpp`/`TripleScreen3.cpp`, called
+on every tick per `AutoLoop=1`) — this repo's own standing hot-path rule (`CLAUDE.md`: "no heap
+allocations in recurring ACSIL update paths," all three screens are equally hot) applies in full.
+The v3 design is not just statistically preferable to any fixed-window order-statistic approach
+(§2a item 2's window-exit-discontinuity argument) — **it is also the objectively better engineering
+choice on pure performance/memory grounds, for the same underlying reason**:
+
+1. **O(1) state, zero window buffer, zero allocation — a genuine DOD win over the REJECTED v1
+   design, not just a statistical one.** A fixed-window rolling median (v1's original proposal)
+   would have required either a maintained `N`-length ring buffer of recent True Range values plus a
+   full `O(N log N)` re-sort every bar, or a specialized streaming-quantile structure (t-digest, GK01,
+   etc. — this repo's own `RobustMoments.h`/Moors-kurtosis work already benchmarked and rejected
+   t-digest as unnecessary machinery at this system's window sizes, `16d8f07`). The v3 recursive
+   filter needs **none of that**: per-instance state is exactly three floats (`mu_hat`, `sigma_hat`,
+   `cusum_S`), updated in place, no buffer, no resort, no dynamic memory at all. Two instances exist
+   in this system (TS1 `ATR(14)`, TS3 `ATR(10)`) — the total footprint is ~24 bytes, trivially
+   cache-resident alongside whatever other per-screen hot state already exists.
+2. **Gate the recursive update to bar-close, not every tick — the single highest-leverage
+   performance decision here, more important than any micro-optimization of the arithmetic itself.**
+   True Range's own definition (`max(High-Low, |High-PrevClose|, |Low-PrevClose|)`) is well-defined
+   using the CURRENT bar's High/Low even while that bar is still forming, which is why Sierra
+   Chart's built-in `sc.ATR()` recomputes continuously intrabar. The v3 filter should NOT mirror that
+   — it should reuse the exact bar-close-gating idiom this repo already established for its other
+   rolling-window statistics (`UpdateObservationVectorSubgraphs()`'s own guard,
+   `StudyHelperFunctions.cpp:2908-2911`: `if (!sc.IsFullRecalculation && lastObsUpdateIndex ==
+   sc.Index) return;` — explicitly documented in that same function as intentional, since only
+   `micro_asymmetry` needs every-tick reactivity, "unlike the rest of this function's outputs").
+   Every consumer in §4 reads ATR at a discrete decision point (entry time; the Triple-Barrier
+   engine's barriers are immutable once set, per this repo's own governing rule) or on a per-bar
+   cadence (Trade Grade, `ATRProximityEnum`) — none of them need an intrabar-forming-bar preview of
+   this specific filter. Gating to bar-close eliminates the `log()`/`exp()`/Huber-clip/CUSUM
+   arithmetic firing dozens-to-hundreds of times per bar (once per tick) down to exactly once per bar
+   close — at that cadence (15/60/240-minute bars) the actual compute cost is immaterial regardless
+   of how it's implemented; the real risk this section exists to head off is accidentally wiring the
+   update to fire per-tick and paying transcendental-function cost needlessly on every single tick,
+   all session long, for no consumer that actually needs it.
+3. **Write the output into the existing packed-array (SoA) path, not a new virtual `Indicator<T>`
+   subclass.** Per this repo's own stated architectural direction (`docs/superpowers/specs/
+   2026-08-04-indicator-manager-dod-soa-design.md`, `CLAUDE.md`'s "permanent hybrid architecture"
+   note), the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) are the canonical,
+   devirtualized read path for every hot-path consumer (`CheckTrigger`, `PopulateIndicatorState`,
+   `GetTrainingEventT`, `EventSerializer`) — plain `IndicatorKey`-enum-indexed array lookup, never a
+   virtual call or a string/map hash. The robust-ATR filter's OUTPUT value should be written there
+   directly, matching every other hot-path-read indicator; its three-float internal recursive state
+   is write-side-only bookkeeping (mirrors the same split already established for every other
+   `Indicator<T>`-derived leaf class: `IndicatorStore` computes, the packed array is read).
+4. **Branchless/minimal-branch arithmetic throughout — no new control-flow surprises.** The Huber
+   clip (`psi_k`) is a two-comparison `std::clamp`; the CUSUM update is a single `std::max(0, ...)`;
+   neither introduces virtual dispatch, exceptions, or unpredictable branching into the hot path.
+5. **Reuse this repo's own established NaN/degenerate-input guard pattern, proactively — a real bug
+   class this exact codebase has already been bitten by twice.** A recursive filter with no window
+   to "reset" from is more exposed to a single degenerate tick (e.g. a zero-range or non-finite `TR`)
+   permanently poisoning `mu_hat`/`sigma_hat` going forward, unlike a windowed estimator where a bad
+   value eventually ages out. Guard every update with `std::isfinite()` and carry forward the last
+   valid state on failure — the exact pattern `fast_hurst_exponent` already uses (a static-local
+   carry-forward guard), and the exact fix already required once this session for the activity-clock
+   skewness/kurtosis call site that lacked it (`tools/RECALIBRATION_LEDGER.md`'s 2026-09-04 finding:
+   a missing `std::isnan` guard let a degenerate window silently write NaN into a live risk-gate
+   input). Do not repeat that omission here — build the guard in from the start, not as a
+   post-incident fix.
 
 ## 4. Consumers requiring re-validation (inventory, from the item-5 finding)
 
