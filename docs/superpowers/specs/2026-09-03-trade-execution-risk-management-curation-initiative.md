@@ -32,6 +32,27 @@ scope reduction: the lbrnet-side threshold-sync script was explicitly descoped, 
 was not performed this session — see that spec's own Unit A status marker). This doc is the new
 living home going forward.
 
+## 0a. Parked for future research (2026-09-05, not now — do not act on these without a fresh decision)
+
+While scoping the ATR→bipower-variation replacement (§2 item 5,
+`docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`), a much
+larger reframing came up: is a distance-multiple stop/target the right FORM at all, vs. genuinely
+separate institutional disciplines — (1) meta-labeling for position sizing (AFML Ch. 3.6, already a
+direction this repo's own risk-gate stack partially reflects), (2) trend-scanning for winner exits
+(López de Prado, *Machine Learning for Asset Managers* Ch. 5 — already ranked Rank-1 in this repo's
+own 2026-07-15 Gemini-adjudicated ruling, never implemented), and (3) regime-conditioned optimal
+stopping for loser invalidation (Bertram 2010's OU free-boundary approach for mean-reverting regimes
+specifically — with a real, not-yet-verified connection to this system's own already-computed
+`mean_rev_z` lag-1 autocorrelation as a possible θ/reversion-speed estimate). RL-learned exits were
+considered and explicitly rejected already (same 2026-07-15 ruling — overfitting/parity risk on a
+single-instrument, low-sample book), so not a candidate here.
+
+**Explicitly parked, not decided against — just not now.** Real, substantive directions, worth
+returning to, but each is its own real research project (OU parameter estimation alone has known
+finite-sample bias issues), not a same-session task. Current priority: ship the bipower-variation/
+MedRV ATR replacement (§2 item 5) first — a real, scoped, already-specced fix — before opening any of
+these three up.
+
 ## 1. Status vocabulary
 
 Same as the observation-vector ledger, for consistency: **IN** (settled, stays as-is) · **IN-WEAK**
