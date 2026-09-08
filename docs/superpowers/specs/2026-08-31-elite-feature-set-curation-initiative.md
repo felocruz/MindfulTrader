@@ -1,11 +1,14 @@
 # Elite Feature Set Curation for the Student-t HMM Observation Vector — Institutional Methodology
 
-**Status, updated 2026-08-31 (later same day): Phase 0 done bar 3 ambiguous decisions +
-`fast_mean_rev_z`'s fate (see §4 Phase 0 for the closed-out detail). Phase 1 not yet started. A new
-cross-cutting finding (§5) closes off one entire line of "did live-reactivity help" investigation as
-circular given the current model's training-data contamination — see §5's new bullet before
-attempting anything like it again. Supersedes the pairwise, ad hoc treatment of individual dim
-redundancy questions — from here forward, redundancy/relevance is a whole-vector question, not a
+**Status, updated 2026-09-07: Phase 0 done bar 3 ambiguous decisions + `fast_mean_rev_z`'s fate (see
+§4 Phase 0). Phase 1 (whole-vector redundancy audit) DONE for the calendar-clock vector — no
+redundancy found (§4 Phase 1). Phase 2 (Feature Saliency EM) has a dedicated implementation spec,
+not yet built. A side thread (§4, after Phase 2) opened the same day: every dim's real math, plus
+the Mahalanobis significant-change gate, is now confirmed pure C++ and reusable outside Sierra
+Chart. A cross-cutting finding (§5) closes off one entire line of "did live-reactivity help"
+investigation as circular given the current model's training-data contamination — see §5's bullet
+before attempting anything like it again. Supersedes the pairwise, ad hoc treatment of individual
+dim redundancy questions — from here forward, redundancy/relevance is a whole-vector question, not a
 one-off pairwise fix.**
 
 ## 0. Origin and mandate
@@ -153,16 +156,16 @@ relationships isn't just cleaner, it's the only way to get a trustworthy Phase 1
   literal `stddev/mean` of inter-arrival times), `vol_convexity` (`StudyHelperFunctions.cpp:3231-3241`,
   literal `stddev/mean` of True Range), `mean_rev_z` (`StudyHelperFunctions.cpp:3133-3155`, an explicit
   textbook z-score — the most literal instance of the pattern in the vector).
-- **Ambiguous, needs a decision not a mechanical fix — STILL OPEN**: `hurst_exponent`/`fast_hurst_exponent` (DFA's
-  RMS/q=2 fluctuation function assumes finite second moment; a q=1 MFDFA variant would be more
-  fat-tail-consistent, but standard DFA methodology itself isn't wrong, just a real tradeoff to weigh);
-  `amihud_illiquidity` (arithmetic mean is Amihud's own canonical 2002 definition, not an accident —
-  overriding a named literature construct needs its own justification, not a mechanical swap);
-  `relative_range`/`liq_fragility` (own formulas are clean, but both consume an externally-computed
-  ATR, itself a rolling mean, as their scale reference).
-- **Separate defect, not a construct issue — STILL OPEN**: `fast_mean_rev_z` is completely unwired —
-  declared, never computed, silently sitting at its schema default. Needs its own decision (wire it,
-  presumably via the already-built but never-plumbed-in `ActivityClockMeanReversion.h`, or drop it).
+- **Ambiguous cases**: `hurst_exponent`/`fast_hurst_exponent` (kept q=2 DFA, resolved 2026-09-02,
+  row 7); `amihud_illiquidity` (reformulated to sqrt-law + geometric mean, resolved 2026-09-03, row
+  13); `liq_fragility` (reformulated off ATR to a dedicated median-range reference, 2026-09-03, row
+  14). **`relative_range` remains OPEN, NOT resolved** -- a 2026-09-06 attempt at the identical
+  `liq_fragility` fix was implemented then reverted the same day once the robust-ATR spec's own
+  empirical finding (production ATR is already intra-bar-reactive, contamination effect weaker than
+  assumed) called the motivating premise into question; see row 3 for the full account.
+- **Separate defect, RESOLVED**: `fast_mean_rev_z` was completely unwired. Decision (2026-09-04, row
+  19): DROP, not wire -- real-data forward-return/hit-rate test found no predictive power over
+  `mean_rev_z` (statistically indistinguishable from a coin flip).
 - **Confirmed already robust**: `log_scale_ratio`, `log_scale_expansion_ratio` (bipower variation —
   jump-robust, note: not literally median/MAD, a real nuance), `skewness_idx` (Bowley), `fast_taleb_
   kurtosis` (Moors octile), `tail_index` (Hill), `lempel_ziv`, `micro_asymmetry`, `fisher_info`,
@@ -217,7 +220,7 @@ cases (`hurst_exponent`/`fast_hurst_exponent`, `amihud_illiquidity`, `relative_r
 still need a decision, not a mechanical fix; `fast_mean_rev_z`'s wire-it-or-drop-it decision is still
 open. Phase 0 is otherwise closed.
 
-### Phase 1 — Model-independent redundancy audit, whole vector (`MindfulTrader`, C++, available once Phase 0 lands)
+### Phase 1 — Model-independent redundancy audit, whole vector (`MindfulTrader`, C++, PARTIAL RESULT 2026-09-07)
 
 Extend the pattern already built and validated for the volatility trio
 (`tools/observation_vector/volatility_dim_stats.h`, `tools/observation_vector/volatility_dim_redundancy_eval.cpp`,
@@ -231,7 +234,118 @@ confined within an axis. **Sequencing note**: run this per-dim only after that d
 running it earlier on a still-Gaussian-moment dim reproduces the unreliable-correlation problem Phase
 0's own ordering exists to avoid.
 
+**Rock-solid DOD implementation, 2026-09-07** (`tools/observation_vector/streaming_correlation_matrix.h`
++ `tools/observation_vector/whole_vector_redundancy_eval.cpp`), built specifically to avoid a repeat
+of the 2026-09-03 OOM incident (4 concurrent `observation_vector_recalibration.cpp` passes exhausted
+RAM): a single streaming pass (`StreamTicksFullParquet`) feeding a generic O(D²)-memory online
+multivariate Pearson correlation accumulator (Welford 1962 / West, D.H.D. 1979, "Updating Mean and
+Variance Estimates: An Improved Method," CACM 22(9):532-535) — no per-tick observation is ever
+retained, in any dim, at any point (17/17 native tests pass,
+`tools/observation_vector/test_streaming_correlation_matrix.cpp`, including a stress test proving
+this beats the naive sum-of-squares formula `CorrTracker` itself uses under catastrophic
+cancellation). Snapshot cadence: once per TS3 (15-min) bar close, with carry-forward for
+slower-refreshing dims (matches FeatureScaler's own conceptual model).
+
+**Real incident during this work, self-inflicted, worth recording as its own lesson (see
+`/memories/repo/cpp_tools_conventions.md`)**: the first ~32-minute run's `Print()` helper used bare
+`std::printf` instead of routing through `ToolProgressLogger`, and its entire correlation-matrix
+result was lost when the terminal session closed before being read. Fixed (`Print()` now takes a
+`ToolProgressLogger&` and logs every line) and re-run.
+
+**Scope correction, same day (operator directive): removed `fast_hurst_exponent`, `skewness_idx`,
+`fast_taleb_kurtosis`, `recurrence_rate` from this audit entirely** — all four read the SAME
+`ImbalanceBarEngine` activity-clock returns buffer (confirmed via `TripleScreen2.cpp`'s own comment
+for `recurrence_rate`: moved off TS2 to that buffer 2026-08-28), so they are NOT genuinely
+calendar-clock-native dims — mixing them into this CALENDAR-clock redundancy audit conflates two
+observation vectors the two-HMM design (`docs/superpowers/specs/2026-09-06-imbalance-triple-screen-
+architecture-spec.md` §1.4) already decided must stay independent. Removing them also deleted this
+tool's own `ImbalanceBarEngine`/`RecurrenceRateEngine` dependency entirely — simpler and faster, not
+just more correctly scoped. These 4 dims' own redundancy question belongs in a SEPARATE audit against
+`ImbalanceObservationData`'s own (currently 4-field) vector, not here.
+
+**Result, n=76,411 TS3-bar-close snapshots, PARTIAL, CORRECTED SCOPE (6 of ~12 genuinely
+calendar-clock-native real dims)** — included: `log_scale_ratio`, `burstiness_index`,
+`log_scale_expansion_ratio`, `amihud_illiquidity`, `liq_fragility`, `mean_rev_z` (full
+inclusion/exclusion rationale in the tool's own header comment). **Max |r| = 0.0901**
+(`log_scale_ratio` × `amihud_illiquidity`) — every one of the 15 pairs is |r| < 0.10, essentially
+ZERO pairwise redundancy among these 6 dims, well below the ~0.8 double-counted-evidence threshold
+this same session found for `log_scale_ratio`/`log_scale_expansion_ratio` earlier (§0). Extracted
+directly from the original 10-dim run's already-computed matrix (`tools/output/
+whole_vector_redundancy_eval_20260907_191934.txt`) by dropping the 4 removed dims' rows/columns —
+Pearson correlation between two fixed series is unaffected by which OTHER dims share the same
+matrix, so no re-run was needed to get this corrected-scope number (a re-run was started anyway,
+then recognized as unnecessary and killed before completion — no fresh archive exists or is needed).
+The tool itself was still fixed in code (§ above) so any FUTURE run is correctly scoped from the
+start, without requiring this same manual extraction step again.
+
+**Not yet done, real follow-on**: `relative_range` (needs a ported ATR), `lempel_ziv`/`tail_index`
+(clock/window choice not yet re-verified against a live call site), `hurst_exponent`/`fisher_info`/
+`fractal_dim` (each needs its own additional window plumbing) — adding these completes Phase 1's
+whole-vector scope; `micro_asymmetry` (per-tick cadence) and `fast_mean_rev_z` (decided dead) are
+structurally excluded, not deferred.
+
+**5 remaining dims fixed and wired, 2026-09-07 (operator directive: "fix them, then wire them")**
+— every formula verified against its real, live production call site before porting, per this
+session's own standing discipline:
+- `relative_range` (TS2): `cfc::ComputeRelativeRange(high,low,atr,lastValid)`, ATR = **SMA(True
+  Range, 14)** — confirmed via `TripleScreen2.cpp:245` (`sc.ATR(..., 14, MOVAVGTYPE_SIMPLE)` — a
+  real, easy-to-miss detail: SIMPLE moving average, NOT Wilder's, unlike TS1's own ATR(14) used for
+  `RiskManager` sizing).
+- `lempel_ziv`: `InformationEngine::GetLempelZivComplexity()` (LZ76, `WINDOW_SIZE_LZ=64`
+  median-binarized returns), fed tick-level on genuine price CHANGES only (matches
+  `ContextManager.cpp`'s own `UpdateMarketPhysics()` gate).
+- `hurst_exponent` (TS1): `DfaHurstExponent(returns,100,8)`. **Documented simplification, not a
+  silent one**: production's real window is ADAPTIVE (`macro_window_n`, market-speed/coherence-
+  driven with a 5-bar hysteresis confirm via `CalculateAdaptiveObservationWindow`/
+  `AdaptiveWindowParams::UpdateWindows()`) — simplified here to the same FIXED 100-bar window
+  `fast_hurst_exponent` already uses. Porting the full hysteresis state machine was judged not
+  worth the added complexity/bug-surface for a redundancy audit that only needs the correlation
+  STRUCTURE, not exact value parity.
+- `fisher_info` (TS1): `cfc::ComputeFisherInformation(min,max,current,lastValid)` over a fixed
+  100-bar close window — same adaptive-window simplification as `hurst_exponent`, same reason
+  (production's real window, `fisher_window_n`, is also adaptive).
+- `fractal_dim` (TS2): `SevcikFractalDimension.h`, 400-bar window (confirmed via
+  `TripleScreen2.cpp`'s own `kFractalDimHmmWindow=400` comment, Politis-White-derived) over TS2
+  closes — the last 401 CLOSED-bar closes approximate production's own asymmetric live-vs-closed
+  401-point window (the just-closed bar stands in for the "live" slot), a boundary-only
+  simplification.
+
+All 5 computed at bar-close cadence (matching this tool's own existing convention for
+`log_scale_ratio`/`log_scale_expansion_ratio`), not production's genuine per-tick intra-bar
+reactivity for `hurst_exponent`/`fisher_info` specifically. Compiles clean, smoke-tested (20s run,
+no crash, RSS bounded) before committing to the full pass.
+
+**FINAL RESULT, 2026-09-07, n=76,411 TS3-bar-close snapshots, FULL SCOPE (11 of ~12 genuinely
+calendar-clock-native real dims)** — completes Phase 1's whole-vector scope. Max RSS 2558MB (well
+within the 4096MB budget), no `CheckMemoryBudget()` trip. **Max |r| = 0.3414** (`mean_rev_z` ×
+`relative_range`) — the strongest pair in the entire vector, still nowhere near the ~0.8
+double-counted-evidence threshold this session found for `log_scale_ratio`/`log_scale_expansion_ratio`
+(§0). Next-strongest pairs: `fisher_info`×`fractal_dim` = -0.2838, `log_scale_expansion_ratio`×
+`relative_range` = +0.2671, `amihud_illiquidity`×`fisher_info` = -0.2519,
+`liq_fragility`×`relative_range` = -0.2393 — all real, interpretable (e.g. `relative_range`
+correlating with the two volatility-expansion/liquidity dims makes structural sense — range
+normalization and volatility/liquidity share a common driver) but none rising to redundancy by this
+initiative's own governing standard (§2). Every one of the 55 pairs is |r| < 0.35. **Conclusion: no
+redundancy problem found across the full genuinely-calendar-clock-native observation vector.** Full
+matrix + sorted pairs: `tools/output/whole_vector_redundancy_eval_20260907_201445.txt`,
+`tools/RECALIBRATION_LEDGER.md`.
+
+**Phase 1 status: DONE for the calendar-clock vector.** Real, deliberate remaining gaps: `tail_index`
+(clock/window choice never re-verified against a live call site, not attempted); `micro_asymmetry`
+(structurally excluded, per-tick cadence incompatible with this tool's bar-close snapshot model);
+the 4 activity-clock dims (`fast_hurst_exponent`/`skewness_idx`/`fast_taleb_kurtosis`/
+`recurrence_rate`) need their own separate audit against `ImbalanceObservationData`, deliberately
+postponed per operator directive to focus on `ObservationData`. Next per the initiative's own phased
+order: Phase 2 (Feature Saliency fitting).
+
 ### Phase 2 — Feature Saliency fitting (`MindfulTrader`, C++, standalone native tool, unblocked)
+
+**Dedicated implementation spec written 2026-09-07**:
+`docs/superpowers/specs/2026-09-07-feature-saliency-em-fitter-spec.md` — full E-step/M-step math
+derivation, architecture, validation plan, and honestly-flagged open questions (MML pruning
+constant not yet derived; Student-t extension deferred to its own Phase 2b pending a targeted
+derivation of how its latent scale-mixture weight combines with the saliency responsibility). This
+section (below) remains the design-decision summary; read the dedicated spec before implementing.
 
 **Named method, not a placeholder**: Vaithyanathan & Dom (1999) → Law, Figueiredo & Jain (2004, IEEE
 TPAMI 26(9):1154-1166, the actual EM+MML mixture formalization) → Fons et al. (2020)'s HMM extension —
@@ -280,6 +394,31 @@ per its own explicit design requirement that its features be independent of the 
 a candidate feature for the soft/gate classifier specifically (`lbrnet`'s
 `2026-08-24-two-classifier-risk-sizing-architecture-spec.md` §2) — not decided, not benchmarked, not
 trained against. Recorded there rather than duplicated in full here; this is the pointer.
+
+### Side thread — offline `.context` generator feasibility, opened 2026-09-07
+
+Not a new phase of this initiative, but directly enabled by it: Phase 1's tool proved the whole
+calendar-clock vector's real math is already reachable without Sierra Chart. Follow-up question —
+could a standalone, non-Sierra-Chart tool reconstruct TS1/TS2/TS3 from raw tick data, compute the
+real 18D vector via the exact production formulas, and replicate the real Mahalanobis
+significant-change gate (not a simplified bar-close-cadence substitute) to write a genuine
+`.context` file? Traced `ContextManager::BuildObservationVector()`/`CheckAndTriggerHMM()` in full:
+`ComputeTriggerDecisionMetrics` (the Mahalanobis gate itself) and `FeatureScaler::UpdateAndNormalize`
+were confirmed **already pure C++**, operating only on `std::array<float,18>` + internal rolling
+history — no `sc.*` dependency at all. Of the 18 dims, only `mean_rev_z` and `liq_fragility` still had
+their real math inlined directly against `sc.*` arrays (every other dim already delegated to a pure
+header: `BipowerVariation.h`, `CarryForwardCalculators.h`, `SevcikFractalDimension.h`,
+`DfaHurstExponent.h`, `OrderFlowAsymmetryEngine.h`, `EventVelocityEngine.h`, `RobustMoments.h`,
+`RecurrenceRateEngine.h`). Extracted both same-day: `include/MeanReversionCalculator.h`
+(`mrc::ComputeMeanReversionZ`) and `include/LiquidityFragilityEngine.h`
+(`lfe::ComputeLiquidityFragility`), each verified bit-faithful against an independent Python port of
+the original formula (native test suites `tests/cpp/test_mean_reversion_calculator.cpp`/
+`test_liquidity_fragility_engine.cpp`, 9/9 checks pass) before being wired back into
+`StudyHelperFunctions.cpp`'s production wrappers, which now do nothing but the ACSIL array-gather and
+persistent-state carry-forward. `./build_dll.sh --no-clean` clean, `test_feature_scaler.cpp`
+regression-clean. **Result: every one of the 18 dims' real math, plus the Mahalanobis gate itself, is
+now provably pure and independently reusable — the generator itself is not yet built, no dedicated
+spec written yet.**
 
 ## 5. Known blockers, explicit — corrected 2026-08-31 per `CLAUDE_BRIEF_120`
 
@@ -352,8 +491,6 @@ dimension didn't exist in the trained vector at all):
 | `liq_fragility` | Invalid (formula wrong) | ATR/volume-SMA composite | Dedicated median-based elasticity ratio, committed `a76ec00` 2026-09-03 |
 | `vol_convexity` | Structural (dim removed) | Present as the model's 19th dim | Removed from schema entirely (19D→18D), 2026-08-31 |
 | `fast_taleb_kurtosis` | Missing (never selected) | Not in training vector at all — first kurtosis dim ever added, never in `HMM_KEEP_DIMS` | Still not selected/retrained on, as of 2026-09-03 |
-| `fast_hurst_exponent` | Missing (never selected) | Not in training vector at all | Still not selected/retrained on, as of 2026-09-03 |
-| `fast_mean_rev_z` | Missing (never wired) | Schema field exists but is never computed — sits at its default | Still unwired, as of 2026-09-03 |
 | `skewness_idx` | Source changed (value discontinuity) | TS3 time-bar cadence (stale, once-per-15-min) | Replaced with activity-clock (tick-native) source, `7c51f33`, 2026-08-27 |
 
 **Conclusion, stated plainly**: at least 5 of 18 currently-shipped dims have a formula the deployed
@@ -365,13 +502,20 @@ retrain on the corrected/elite vector first, full stop.
 
 ## 6. Immediate next action
 
-Phase 0 (Gaussian-moment audit) is closed out bar 3 ambiguous decisions (`hurst_exponent`/
-`fast_hurst_exponent`, `amihud_illiquidity`, `relative_range`/`liq_fragility`) and `fast_mean_rev_z`'s
-wire-or-drop decision — none of the four require further investigation, only a decision. `burstiness_
-index`, `vol_convexity` (removed), `mean_rev_z` are all fixed and build-verified. Phase 1 (whole-vector
-correlation audit) is unblocked and ready to scope now. Separately, §5's new circularity finding means
-the Amihud/liq_fragility live-reactivity question needs its own explicit path choice (defer to retrain,
-or build a model-independent lead-time tool) before any further work on that specific question.
+**Stale as of 2026-09-06 -- corrected**: Phase 0 (Gaussian-moment audit) is closed bar ONE item, not
+the original four -- three were resolved between 2026-09-02 and 2026-09-04 (see §7's own per-row
+entries: `hurst_exponent` row 7, `amihud_illiquidity` row 13, `liq_fragility` row 14,
+`fast_mean_rev_z` row 19). **`relative_range` (row 3) remains genuinely open** -- a same-fix attempt
+(median-range reference, mirroring `liq_fragility`) was implemented and reverted same day, 2026-09-06,
+once the robust-ATR spec's finding (production ATR already intra-bar-reactive) undercut the premise;
+still kept on ATR(14), no real-data validation run either way. Every OTHER dim's `FeatureScaler.h`
+winsorization bound is GPD-recalibrated against real tick data as of 2026-09-04
+(`tools/RECALIBRATION_LEDGER.md`) -- `relative_range`'s bound was never touched (correctly, since its
+formula reverted to the original).
+**Real next action: Phase 1 (whole-vector correlation audit) is unblocked and has NOT been started.**
+Separately, §5's circularity finding (any HMM-state-dependent measurement is invalid against the
+current contaminated model) still stands and blocks nothing about Phase 1 itself (Phase 1 is a
+model-independent redundancy audit, not an HMM-state measurement).
 
 **Updated 2026-09-02**: the real-tick-data blocker on row #2 (`burstiness_index`) is closed —
 `tools/scid_processing/scid_to_ticks_parquet.cpp` shipped and `lbrnet/data/raw/mes_ticks.parquet`
@@ -421,23 +565,18 @@ actual schema field) · **CANDIDATE-DEFERRED** (proposed, explicitly pushed to a
 |---|---|---|---|---|---|
 | 1 | `log_scale_ratio` | IN, DECIDED (queued for next retrain) | Live (TS1) | **Assessed through the Vision lens, 2026-09-03**: same construct as row 4 (`log(short_BV/long_BV)`, Barndorff-Nielsen & Shephard bipower variation), just TS1/macro vs. TS2/tactical window. Correlation with row 4 rose 0.7638→0.8085 once both were de-noised (Spearman 1904 attenuation-correction logic) — confirms one shared latent signal, not independent information; under this HMM's hard diagonal covariance, keeping both is real double-counted evidence (Bouveyron & Brunet-Saumard 2014), not hypothetical. **Decision: keep this one (TS1/macro) as the vector's sole representative** — matches Elder's Triple Screen philosophy that Screen 1 sets the regime context the HMM is meant to track. Not actioned against the current contaminated model (per Vision section, `PRODUCTION_TRIAGE.md`) — queued for the next clean retrain alongside every other §5a contamination-manifest item, not a standalone lbrnet change | 2026-09-03 |
 | 2 | `burstiness_index` | **IN, FIXED** | Event-driven (`raschkeBurst`) | Full history: (a) redirect to `raschkeBurst` landed 2026-08-29; (b) Phase 0 reformulated to robust CV `MAD/median × 1.4404199`; (c) real-tick-data validation (2026-09-02) found this STILL broken at production tick density (rate-at-bound(6.0)=73.77%); (d) first attempted fix (Goh-Barabási (2008) bounded transform on the same IAT-ratio) **FAILED real-data re-validation** (rate unchanged at 73.78%, mean\|z\| roughly doubled) — diagnosed with Gemini (`rc_gemini.log` `CLAUDE_BRIEF_121`/`122`) as a point-mass-degeneracy problem no post-hoc bounding transform can fix; (e) **REAL FIX, 2026-09-02**: reformulated entirely to a robust Index of Dispersion for Counts (Daley & Vere-Jones 2003) over K=10 self-scaling time sub-bins, consistency constant `1.58113883`=√10/2 (Poisson(10)'s exact sigma/MAD, verified analytically + 500K-trial Monte Carlo), same Goh-Barabási bounding device retained on the new ratio. **Full real-data re-validation, all 471.9M rows: mean\|z\|=1.1356, max\|z\|=49.28, rate-at-bound(6.0)=1.9605%** — normal, sane clip rate, existing `STATE_WINSOR_SIGMA=6.0` needs no recalibration. `test_event_velocity_engine.cpp` passing, `./build_dll.sh` clean | 2026-09-02 |
-| 3 | `relative_range` | IN | Live (TS2) | #1 discriminator (0.6373), volatility-level axis, unchanged | 2026-08-29 |
+| 3 | `relative_range` | IN | Live (TS2) | #1 discriminator (0.6373), volatility-level axis, **kept as ATR(14)-based -- reformulation attempted and REVERTED, 2026-09-06**. Gemini's `CLAUDE_BRIEF_126` (2026-09-02/03) recommended replacing the shared ATR(14) denominator with a dedicated median-range reference (same fix as `liq_fragility`, row 14), on Kim & White (2004) robustness grounds. Implemented 2026-09-06 (`CalculateRelativeRange`, `StudyHelperFunctions.{h,cpp}`, wired into `TripleScreen2.cpp`), then reverted the same day once `docs/superpowers/specs/2026-09-05-robust-atr-reformulation-spec.md` §9's empirical finding came to light: production ATR is already intra-bar-reactive, so the fat-tail-contamination effect motivating the original fix is weaker than assumed. **No real-data validation was ever run for this dim specifically** (unlike `liq_fragility`'s own 2,211-bar validation) before either the implementation or the revert -- this is a genuinely open, undecided question, not settled in either direction | 2026-09-06 |
 | 4 | `log_scale_expansion_ratio` | **OUT-HMM (decided, queued for next retrain)** | TS2, live-vs-bar-gated unchecked | **Assessed through the Vision lens, 2026-09-03**: same redundancy finding as row 1 (0.8085 correlation, genuine shared signal per attenuation-correction). **Decision: drop from `lbrnet`'s `HMM_KEEP_DIMS`** at the next clean retrain (matches `tail_index`/`micro_asymmetry`'s existing OUT-HMM precedent — C++ computation and non-HMM consumers unaffected, only HMM training selection changes). **Not wasted**: its TS2/tactical (faster-reacting) reading is a real, currently-missing candidate for a new trade-execution/risk-management gate — see `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 4. Per the Vision's own standing rule, that new gate must be built stationarity-checked/percentile-based (Amihud-gate precedent), not a raw fixed threshold — the old, non-institutional pattern this whole initiative exists to move away from | 2026-09-03 |
 | 5 | `vol_convexity` | **REMOVED FROM SCHEMA** | N/A | Executed 2026-08-31 (19D→18D) — full cleanup across all call sites, `FeatureScaler.h`'s five positional arrays, and `test_feature_scaler.cpp`; not reformulated, independently weak on two separate measures, correctly not worth further investment (§4 Phase 0) | 2026-08-31 |
 | 6 | `lempel_ziv` | IN, not for fat-tail use | Event-native | Complexity axis rep, unchanged, already confirmed robust construct (Phase 0 audit) | 2026-08-23 |
 | 7 | `hurst_exponent` | **IN, DECIDED** | Live (TS1), diluted weight | **RESOLVED 2026-09-02**: the ambiguous DFA q=2 vs MFDFA q=1 question was tested empirically, not assumed — `tools/observation_vector/dfa_vs_mfdfa_q1_montecarlo.py` extends the existing Kristoufek (2010) Monte Carlo methodology (exact Davies-Harte fGn simulation, production's exact N=100/minScale=8 window) with a paired q=1-vs-q=2 comparison, both on clean fGn and on fGn contaminated with realistic Student-t(3) fat-tail spikes. **Result contradicts the literature's general claim**: under contamination, q=2's bias flips sign across true-H (+0.19 at H=0.3 to -0.14 at H=0.7) while q=1's bias is uniformly positive and *worse* in magnitude at low H (+0.34 vs q2's +0.19 at H=0.3) — verified robust across 3 contamination severities and 2 seeds. **Decision: keep q=2 (standard DFA), do not adopt MFDFA q=1** — it doesn't survive direct empirical testing on this codebase's own exact algorithm. The real, separately-documented problem is window size (N=100 gives std≈0.13-0.19 regardless of q, "under-powered" per Weron/Kristoufek) — that's the actual lever, see row 10 | 2026-09-02 |
 | 8 | `micro_asymmetry` | OUT-HMM | TS3, unchecked | Weakest overall (0.0001), already dropped from HMM selection, unchanged | 2026-08-25 |
 | 9 | `fisher_info` | IN-WEAK | Live (TS1) | Second-worst (0.0011), already confirmed robust construct (Phase 0 audit), unchanged | 2026-08-29 |
-| 10 | `fast_hurst_exponent` | IN-UNMEASURED | Activity-clock | Shipped but cross-state ratio never measured, alone or crossed with `relative_range`; unchanged | 2026-08-29 |
 | 11 | `tail_index` | OUT-HMM | Event-native | Structurally redundant with the model's own native ν_k; already confirmed robust construct (Phase 0 audit), unchanged | 2026-08-25 |
-| 12 | `skewness_idx` | IN-CONTINGENT | Activity-clock | Asymmetry axis rep, contingently redundant against a future skewed-Student-t emission; already confirmed robust construct (Bowley, Phase 0 audit), unchanged | 2026-08-27 |
 | 13 | `amihud_illiquidity` | **IN, REFORMULATED** | Live-reactive, guarded `kLiveBarMinVolume=50.0` | **RESOLVED 2026-09-03**: reformulated to sqrt-law volume scaling (Kyle & Obizhaeva 2016 *Market Microstructure Invariance*; Lillo, Farmer & Mantegna 2003 — real-data-fitted impact exponent γ=0.512 on 2,138 real adjacent MES bar pairs, matching the theoretical 0.5) + geometric-mean aggregation (Hasbrouck 2009 — real-data leave-one-out test: 0.55% shift vs 5.0%/8.6% for median/raw-mean, an order of magnitude more outlier-robust). An activity-clock (dollar-volume-bar) alternative was tested and REJECTED — empirically worse (CV=1.175/skew=7.51 vs calendar-time sqrt-law's CV=0.918/skew=4.33), unlike the other dims where activity-clock treatment helped (bars span highly variable real time, concentrating undiluted return exposure). Committed `a6d0630`; kept in raw positive-ratio units so percentile-based gates (`amihud_percentile`) keep working unchanged (percentile rank is invariant under this monotonic reformulation). Full literature thread: `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_123`. **Winsor-bound follow-up RESOLVED 2026-09-04, second pass, same day as a first attempt**: the first attempt (3036.0f) rested on a real bug — its "~5,000x pathological extrapolation" reasoning computed ζ_u as nTail/N_true_ticks, uncorrected for this dim's own 1-in-50 tick subsampling, undercounting the true per-tick exceedance probability by exactly that 50x factor. The correctly subsampling-unbiased ζ_u=nTail/nSample_retained=0.01 shows u=p99 is a genuine 1-in-100 event here — the same ordinary resolution as dims 3/8/10/13/16, not a uniquely pathological case. The direct "p=1/N return level" convention already used for those dims applies here too (the tool's own internal computation was correct all along; only the header's manual side-derivation was wrong). `DIM_WINSOR_SIGMA_OVERRIDE[11]` corrected to **191703.9** (tool's own report: N=467,376,145, return level=191,703.8870). `AMIHUD_ABSOLUTE_FLOOR` (the separate 1e-16 divide-by-zero floor, not the winsor bound) was re-checked and remains fine — it's negligibly small by design and was never tied to the old linear-ratio scale's magnitude. Separately (§5, unaffected by either fix): cross-state discrimination re-measurement against the *current* `models/hmm_model.pkl` remains circular — still deferred to a post-retrain re-measurement | 2026-09-04 |
 | 14 | `liq_fragility` | **IN, REFORMULATED** | Live-reactive, same guard as row 13 | **RESOLVED 2026-09-02/03**: the Phase 0 ambiguity (own formula clean but consumed an externally-computed ATR/volume-SMA as its scale reference) is closed — reformulated to a dedicated median-based elasticity ratio (Foucault, Kadan & Kandel 2005 resilience concept; Morris & Shin 2004 liquidity-black-holes signature; Rousseeuw & Croux 1993 for the 50%-breakdown median/MAD-style scale estimators), no longer depends on ATR/volume-SMA at all — computes its own 30-bar median-range/median-sqrt-volume scale reference internally. Committed `a76ec00`. Real Python sample (2,211 bars) validated no collapse (`ScaleRef_W` min=0.042), `F_raw` median=1.0031 matching the theoretical neutral point, no blowups (max=6.63); correlation with the reformulated `amihud_illiquidity` on real data = 0.024 (confirms genuinely distinct axes). **Winsor-bound follow-up RESOLVED 2026-09-04**: full tick-level validation (471.9M ticks) has since completed. `FeatureScaler.h`'s `LOGZ_WINSOR_SIGMA_OVERRIDE[12]` (21.26f) was stale on two independent grounds — computed from a partial 38.5M-tick sample, and against the pre-`a76ec00` still-ATR-coupled formula. Fresh GPD refit against the current formula on the full 467,376,145-tick stream: u=p99=5.1727, n_tail=93,475, xi=+0.3147 (Frechet/unbounded), sigma=2.7671; same ζ_u-correction reasoning as row 13 confirms this is an ordinary ~100x-resolution case, direct p=1/N applies (tool's report: return level=1100.7906). Recalibrated to **1100.8** | 2026-09-04 |
-| 15 | `fast_taleb_kurtosis` | IN-UNMEASURED, **top-priority action** | Activity-clock | First-ever kurtosis dim; must be selected into `lbrnet`'s `HMM_KEEP_DIMS` and retrained — unchanged, still the single highest-priority action across both this doc and the brainstorm doc | 2026-08-29 |
-| 16 | `recurrence_rate` | IN, orthogonal to this doc's goal | Activity-clock | Already confirmed robust construct (Phase 0 audit), unchanged | 2026-08-28 |
 | 17 | `fractal_dim` | IN | Time-bar (TS2), by design | Already confirmed robust construct (Phase 0 audit), unchanged | 2026-08-28 |
-| 18 | `mean_rev_z` | IN-WEAK, **reformulated, committed** | Live (TS3) | **Phase 0 CONFIRMED Gaussian-moment** (literal textbook z-score, the most literal instance of the pattern in the vector) **and REFORMULATED 2026-08-31** to median/MAD (Kim & White 2004): both the price-stretch z-score and the lag-1 autocorrelation term now center on the median, build-verified, **committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted for days. `FeatureScaler.h` dim16 winsor override disabled pending re-audit against the new formula's real distribution. Its prior "empirically null" verdict (`mean_rev_z_variant_comparison.py`) was measured against the **old** mean/std formula — not yet retested against this new one | 2026-09-02 |
-| 19 | `fast_mean_rev_z` | **OUT, tested and rejected 2026-09-04** | Activity-clock | **Phase 0 confirmed 2026-08-31** (stronger than "wiring paused"): completely unwired — declared, never computed, silently sitting at its schema default. **2026-09-02**: while still unwired, its formula was reformulated to median/MAD (matching row 18's sibling fix), committed `b0ab21a`. **RESOLVED 2026-09-04**: the wire-or-drop decision was blocked on cross-state HMM discrimination being unmeasurable (model-staleness circularity), but the forward-return/hit-rate test (`tools/observation_vector/mean_rev_z_variant_comparison.py`, `Scoring.cpp:305`'s real `score>2.0` gate, 60-min horizon) is NOT blocked by that circularity and was re-run after fixing a real staleness bug in the tool itself — its C++ driver was still silently using the OLD mean/std formula even after the header's own 2026-09-02 median/MAD reformulation, invalidating its prior null verdict. Re-ported faithfully against the current real formula (verified byte-for-byte against `StudyHelperFunctions.cpp:3033`/`include/ActivityClockMeanReversion.h`) and re-run on real data: **both variants remain statistically indistinguishable from a coin flip** — `mean_rev_z` (time-bar) n=12,716, hit_rate=0.4988, p=0.790; `fast_mean_rev_z` (activity-clock) n=1,575,967, hit_rate=0.4994, p=0.137, 95% CI [0.4986,0.5002]. The activity-clock sample is large enough (CI width ~0.0016) that a genuine small edge would very likely have been detected. **Decision: do not wire `fast_mean_rev_z` into production** on the basis of raw predictive power — this is now a fresh, non-stale confirmation of the null result, not a repeat of the old formula-mismatched one. Row 18 (`mean_rev_z`)'s own live status is a separate question (already wired, already IN-WEAK) — this finding is about whether to ADD the activity-clock twin, not about removing the existing dim | 2026-09-04 |
+| 18 | `mean_rev_z` | IN-WEAK, **reformulated, committed** | Live (TS3) | **Phase 0 CONFIRMED Gaussian-moment** (literal textbook z-score, the most literal instance of the pattern in the vector) **and REFORMULATED 2026-08-31** to median/MAD (Kim & White 2004): both the price-stretch z-score and the lag-1 autocorrelation term now center on the median, build-verified, **committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted for days. **Both follow-ups below RESOLVED 2026-09-04 (this row was stale)**: `FeatureScaler.h`'s `DIM_WINSOR_SIGMA_OVERRIDE[16]` recalibrated to 7.8 (real GPD fit, n=76,164); its prior "empirically null" verdict WAS retested against the new formula (`mean_rev_z_variant_comparison.py`, real data) and remains null (hit_rate=0.4988, p=0.790, n=12,716) -- see row 19's own fuller account of the same retest | 2026-09-04 |
 | 20 | Drift/location (return z-score) | **OUT, tested and rejected** | N/A | Offline prototype (`tools/observation_vector/drift_location_eval.cpp`) found hit_rate below 0.5 at every horizon; rejected before any schema/C++ commitment. Unchanged | 2026-08-30 |
 | 21 | Jump/bipower-variation ratio | **CANDIDATE-VALIDATED** | N/A | Offline prototype (`tools/observation_vector/jump_ratio_eval.cpp`) survives — real, substantial, opposite-of-naive-hypothesis effect. Not yet promoted to a schema field; promotion decision now sits behind this doc's own Phase 1 (redundancy audit), not yet run | 2026-08-30 |
 | 22 | Hurst × volatility-level cross-term | CANDIDATE | N/A | Feature-engineering only, no new data; unchanged | 2026-08-29 |

@@ -33,8 +33,25 @@
   calibration, cross-checked via independent Gemini review — e.g. `amihud_illiquidity`'s
   winsorization bound recalibrated 2706→3036 this session) but methodology rigor is not a validated
   trading edge; don't let it read as "closer to done" than the Vision section's honest gaps allow.
+- **Imbalance Triple Screen migration initiative + Force Index Track 2 (`Y_imb`) closure, 2026-09-06**:
+  foundational activity-clock migration architecture doc opened
+  (`docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md`, 4 open design
+  questions, nothing implemented) alongside 3 sibling gang-statistical reformulation docs (risk-
+  gating, labeling/augmentation, observation-vector) split from the same brainstorm. `Y_imb`
+  (Force Index Track 2, a new activity-clock construct) was real-data-tested against 471.9M real
+  MES ticks and RESOLVED: literature-grounded (Almgren & Chriss 2001; Bouchaud/Eisler/Cont-Kukanov-
+  Stoikov impact-decay literature) as real-but-transient price impact, not alpha — closed out as an
+  observation-vector candidate, retargeted to the risk-gating doc's §2.4 as a liquidity-gate
+  candidate instead; see `CLAUDE.md`'s own pointer for the full account.
+- **Elite Feature Set Curation Phase 1 (whole-vector redundancy audit) DONE for the calendar-clock
+  vector, 2026-09-07**: no redundancy found across all 11 audited dims (max |r|=0.34, 471.9M real
+  MES ticks). Phase 2 (Feature Saliency EM) got a dedicated spec the same day. New thread opened,
+  not yet spec'd: an offline, non-Sierra-Chart `.context`-file generator is now provably feasible —
+  the Mahalanobis significant-change gate was confirmed already pure C++, and the two remaining
+  SC-coupled dim calculators (`mean_rev_z`, `liq_fragility`) were extracted into pure, natively
+  unit-tested headers this session; see `CLAUDE.md`'s own pointer for the full account.
 
-**Last Updated**: 2026-09-04
+**Last Updated**: 2026-09-07
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).

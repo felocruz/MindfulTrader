@@ -1,11 +1,29 @@
 # Session Scratchpad — Where We Left Off
 
-**PICK UP HERE, 2026-09-03 — observation-vector dim fixes continue (`hurst_exponent` resolved,
-`amihud_illiquidity` reformulated). NEXT MAJOR INITIATIVE queued right below — do not let it slide
-once the observation-vector/ContextManager thread closes out.**
+**PICK UP HERE, 2026-09-07 — Elite Feature Set Curation initiative: Phase 1 (whole-vector
+redundancy audit) DONE for the calendar-clock vector (no redundancy found, max |r|=0.34, 11 dims,
+471.9M real MES ticks). Phase 2 (Feature Saliency EM) has a dedicated implementation spec
+(`docs/superpowers/specs/2026-09-07-feature-saliency-em-fitter-spec.md`), not yet built. Full
+detail: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §4.**
 
-**⚠️ NEXT MAJOR INITIATIVE, queued by the operator 2026-09-03 — pick up the MOMENT the observation
-vector + ContextManager work is done:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
+**New thread opened same day, not yet spec'd: offline, non-Sierra-Chart `.context`-file generator.**
+Idea: reconstruct TS1/TS2/TS3 from raw tick data, compute the real 18D `ObservationData` vector via
+the exact production formulas, replicate the real Mahalanobis significant-change gate (not a
+simplified bar-close-cadence substitute), write a genuine `.context` file — no Sierra Chart replay
+needed. Traced `ContextManager::BuildObservationVector()`/`CheckAndTriggerHMM()` in full:
+`ComputeTriggerDecisionMetrics` (the Mahalanobis gate) and `FeatureScaler::UpdateAndNormalize` are
+already pure C++, no `sc.*` dependency. Of the 18 dims, only `mean_rev_z`/`liq_fragility` still had
+their math inlined against `sc.*` — extracted both into pure, natively-unit-tested headers today
+(`include/MeanReversionCalculator.h`, `include/LiquidityFragilityEngine.h`), verified bit-faithful,
+wired into `StudyHelperFunctions.cpp`, `./build_dll.sh --no-clean` clean, no `FeatureScaler`
+regression. **Every dim + the gate itself is now provably reusable outside Sierra Chart — the
+generator itself is not yet built, no spec written yet. Next action if resuming this thread: decide
+whether to write that spec, or return to Phase 2 (Feature Saliency EM) first.**
+
+---
+
+**⚠️ NEXT MAJOR INITIATIVE, queued by the operator 2026-09-03 — still not started, pick up once
+the above threads settle:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
 risk context `RiskManager`/`ExecutionGate`/`PositionManager` actually gate on) must stop being blind
 to the HMM's own signal. `PredatorContext` already carries `.regime` (via `GetPredatorContext()`),
 but that's a higher-level fusion struct assembled *after* `RiskManager`'s own hard gates already fire

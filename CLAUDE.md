@@ -57,6 +57,32 @@ this session, `CLAUDE_BRIEF_125`/`_REPLY`) but methodology rigor is not the same
 validated trading edge — keep the Vision section's honest current-state gaps in view, don't let
 this work read as "therefore closer to done" than it is.
 
+**Imbalance Triple Screen migration initiative + Force Index Track 2 (`Y_imb`) closure, opened/
+resolved 2026-09-06**: foundational architecture doc opened
+(`docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md` — new
+`ImbalanceScreen1/2/3.cpp`, multi-frame `ImbalanceBarEngine`, new `ImbalanceMarketObservation`/
+`ImbalanceTrainingEvent` schema tables, 4 open design questions, nothing implemented) alongside 3
+sibling gang-statistical reformulation docs split from the same external brainstorm: risk-gating
+(`2026-09-06-risk-gating-gang-statistical-reformulation-initiative.md`), labeling/augmentation
+(`2026-09-06-labeling-data-augmentation-gang-statistical-reformulation-initiative.md`), and
+observation-vector (`2026-09-06-observation-vector-gang-statistical-reformulation-initiative.md`,
+holds the 5 dims already on the activity clock, split out of the 2026-08-31 elite-feature-set doc).
+Also spawned a two-track Force Index reformulation: Track 1
+(`2026-09-06-force-index-hardening-spec.md`, calendar-clock hardening) was ABANDONED OUTRIGHT
+2026-09-07 (operator directive: not worth further token spend after real-data validation showed
+`√V` was harm reduction, not a fix, and a deeper institutional re-think surfaced more remaining
+fragility than was worth chasing) — its spec, validation tool, and all build artifacts were
+deleted, not just closed; do not resurrect without a fresh operator ask. Track 2
+(`2026-09-06-imbalance-work-rate-spec.md`, a genuinely new activity-clock construct
+`Y_imb = ΔP/θ`) is **RESOLVED**: real-data-tested against 471.9M real MES ticks,
+found real (survives duration-gap and skip-1-bar artifact controls) but decaying to noise by 5
+bars; independent Gemini literature review (Almgren & Chriss 2001; Bouchaud/Eisler/Cont-Kukanov-
+Stoikov impact-decay literature) classified it as the well-known TRANSIENT component of price
+impact, not alpha — closed out as an observation-vector candidate, retargeted to the risk-gating
+doc's new §2.4 as an activity-clock Kyle's-Lambda liquidity-gate candidate instead.
+`ImbalanceBarEngine` itself was hardened in the process (per-bar imbalance-magnitude retention,
+NaN guard, production-named `SetImbalanceThreshold()`, 16/16 native tests pass).
+
 **Row 1 / activity-clock observation-vector thread, current state as of 2026-08-31 — read
 `PRODUCTION_TRIAGE.md` row 1 for the full account, this is the condensed pointer**:
 - **Shipped and committed**: `fast_taleb_kurtosis` (`ff22e48`/`ea8058b`) as `ObservationData`'s 17th
@@ -143,6 +169,23 @@ this work read as "therefore closer to done" than it is.
   re-validation, all 471.9M ticks: mean|z|=1.14, max|z|=49.28, rate-at-bound(6.0)=1.96% — sane,
   normal clip rate, no further bound recalibration needed. Committed, native tests pass,
   `./build_dll.sh` clean. Full detail: initiative doc §7 row 2.
+- **Elite Feature Set Curation initiative, Phase 1 (whole-vector redundancy audit) DONE for the
+  calendar-clock vector, 2026-09-07**: `tools/observation_vector/whole_vector_redundancy_eval.cpp`
+  ran the full 11-dim correlation matrix against all 471.9M real MES ticks (76,411 TS3 bar-close
+  snapshots) — max |r|=0.34, no redundancy found across the vector (full result:
+  `tools/output/whole_vector_redundancy_eval_20260907_201445.txt`). Phase 2 (Feature Saliency EM
+  fitting) got its own dedicated implementation spec the same day:
+  `docs/superpowers/specs/2026-09-07-feature-saliency-em-fitter-spec.md`. **New thread opened same
+  day, not yet spec'd**: an offline, non-Sierra-Chart `.context`-file generator (reconstructs
+  TS1/TS2/TS3 from raw tick data, computes the real 18D vector, replicates the real Mahalanobis
+  significant-change gate — no simplified substitute cadence) is now provably feasible:
+  `ContextManager::ComputeTriggerDecisionMetrics`/`FeatureScaler` were confirmed ALREADY pure C++
+  (no `sc.*` dependency at all), and the two remaining SC-coupled dim calculators (`mean_rev_z`,
+  `liq_fragility`) were extracted into pure, natively-unit-tested headers
+  (`include/MeanReversionCalculator.h`, `include/LiquidityFragilityEngine.h`) this session, verified
+  bit-faithful against the production formulas and wired back into `StudyHelperFunctions.cpp`
+  (`./build_dll.sh --no-clean` clean, 9/9 new native checks pass, no `FeatureScaler` regression).
+  Every one of the 18 dims' real math is now pure/testable; the generator itself is not yet built.
 
 ## Project Overview
 
