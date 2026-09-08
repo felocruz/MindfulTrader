@@ -13,20 +13,23 @@ of these set money-at-risk stop/target width, so a robustified-in-place ATR rema
 narrower fix for them specifically. Everything below referring to Triple-Barrier/stop-width/§4
 items 1-4 is superseded; retained for historical record only.
 
-**Status: SPEC v3 — design proposed, NOT implemented. Opened 2026-09-05, following directly from
+**Status: RESOLVED, 2026-09-06 -- v3 construction empirically tested and RETIRED, not implemented
+in production. See §9 for the full empirical record and final decision -- plain Wilder ATR is
+adequate for this spec's (narrowed) scope, no further reformulation planned.** (Prior status,
+kept for history: SPEC v3 -- design proposed, NOT implemented. Opened 2026-09-05, following directly from
 `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 5
 ("Wilder ATR as a systemic single point of failure") and its cross-reference from
 `docs/superpowers/specs/2026-09-04-indicator-gang-statistical-reformulation-initiative.md` §6.3.
 v1's plain-median design was critiqued by an independent Gemini instance (`CLAUDE_BRIEF_134`/`_REPLY`),
 producing v2 (Huber-in-log-space + Kaufman ER-adaptive rate). v2 was itself sent back for review
-(`CLAUDE_BRIEF_135`/`_REPLY`) and one real design flaw was found in it — Kaufman's Efficiency Ratio
+(`CLAUDE_BRIEF_135`/`_REPLY`) and one real design flaw was found in it -- Kaufman's Efficiency Ratio
 measures directional persistence, not volatility/scale, and gating ATR's own reactivity on it is a
 category error (the same class of mistake already caught once before in this repo's Impulse System
 redesign work, "Inertia = Hurst"). v3 (§2a, §3) replaces it with a scale-innovation-driven trigger,
 adds a Jensen's-inequality correction (with an explicit target-quantity decision flagged, not silently
 resolved), and validates all prior citations. §3.4 adds Data-Oriented Design / hot-path performance
-requirements (operator directive, 2026-09-05) — the filter runs on every live tick, so its O(1),
-zero-allocation state and bar-close gating are load-bearing design constraints, not an afterthought.**
+requirements (operator directive, 2026-09-05) -- the filter runs on every live tick, so its O(1),
+zero-allocation state and bar-close gating are load-bearing design constraints, not an afterthought.)**
 
 **Risk framing (operator directive, 2026-09-05): this system is not in production yet — no live
 capital is at risk, so the stakes here are lower than the "changes the executable risk contract"
@@ -479,3 +482,72 @@ by capital risk).
 - `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_135`/`CLAUDE_BRIEF_135_REPLY` — the second-round review
   that found the Kaufman-ER category error, confirmed the citations, and specified the `scale_t`
   recursion and Jensen's-inequality correction (§2a).
+
+## 9. Empirical validation results and final decision (2026-09-05/06) — supersedes §3's un-implemented v3 design
+
+**This section records real empirical work that happened across two sessions and was never written
+into this doc until now (a real gap, not hypothetical) -- caught only because it was asked about
+after a context reset. Recording it here so it can't be lost again.**
+
+### 9.1 Baseline reassessment: production ATR is already intra-bar-reactive
+
+Before implementing v3, a direct code read (`src/TripleScreen3.cpp`, confirmed also for TS1/TS2)
+found `sc.ATR()` is called every tick (`AutoLoop=1`, no bar-close gate) against `sc.BaseDataIn`,
+whose current-bar slot is itself live-updating all bar long -- standard ACSIL behavior. This
+undercuts part of this spec's original motivation (§0/§1 implicitly assumed ATR only updates at
+bar-close) -- production ATR was never that stale to begin with.
+
+### 9.2 Intra-bar reactivity trace: WilderATR vs bipower variation, real event
+
+A real ~85-point MES drop (6590.5 -> 6505.75) traced tick-by-tick through both an intra-bar-treated
+Wilder ATR and bipower variation (the activity-clock candidate from the sibling Triple-Barrier
+initiative): `WilderIntra` reacted to the move a full imbalance-bar cycle *before* BV caught up.
+Given the same intra-bar treatment already used elsewhere in this codebase, plain Wilder ATR is not
+the slow, lagging estimator this spec's founding framing assumed.
+
+### 9.3 "Stays elevated" re-examined against a fair baseline
+
+The single largest real True Range event in the dataset (TR=363.25 vs. a ~5.4 baseline) was traced
+40 bars forward. WilderATR was still ~2.9x the dataset's global median 40 bars (10 hours) later --
+looked like the exact contamination defect this spec exists to fix. But the bar's own PRE-event
+baseline was already ~42, nearly double the dataset's own p99 -- this event landed in an
+already-elevated-volatility regime, not a quiet one. The "stays artificially elevated" framing does
+not survive this fairer comparison; the elevated reading reflects real, persisting elevated
+volatility, not a smoothing artifact.
+
+### 9.4 v3 `RobustAtrFilter`: built, tested against 471.9M real MES ticks, four distinct bugs found
+across iterations, retired
+
+`tools/observation_vector/atr_robustness_comparison.cpp` (deleted 2026-09-06, git history preserves
+it) implemented §3's full v3 design and ran it against the real tick dataset. Four distinct, real
+bugs were found and fixed in sequence, each fix uncovering a new failure mode rather than resolving
+the underlying fragility: (1) CUSUM saturation (reference offset below the natural
+\|standardized-innovation\| baseline -- fast-track fired on ~100% of bars); (2) frozen-peak
+misattribution (recovery reference frozen at the pre-spike level, so genuine recovery could never be
+detected); (3) a sigma/Jensen interaction (symmetric scale updates during recovery inflated `sigma`,
+which the Jensen back-transform then exponentially amplified); (4) **final, unfixed bug**: `mu`'s own
+step size (`alphaForThisBar * psi * sigmaForStd`) is coupled to the same `sigma` that can
+independently collapse to its floor under a sustained run of net-negative deviations -- once
+collapsed, `mu` freezes permanently regardless of how often fast-track fires (observed frozen at an
+exact value for the rest of a real 40-bar trace).
+
+**Independent Gemini audit (2026-09-06, read-only, scoped to only this one file/struct)** confirmed
+the diagnosis and ruled this is a known failure mode in simultaneous recursive M-estimators (joint
+location/scale estimation) -- when scale collapses, location's effective step size vanishes too,
+with strict decoupling (an independent scale reference) as the only real literature-precedented fix.
+Verdict, quoted directly: "you will alter the filter's dynamics again, practically guaranteeing a 5th
+pathological edge case... you have thoroughly exhausted the complexity budget on this custom filter;
+discard it and implement a proven, standard estimator."
+
+### 9.5 Final decision: retire the v3 construction; plain Wilder ATR is adequate for this spec's
+(narrowed) scope
+
+**`RobustAtrFilter`/the CUSUM+Huber+Jensen construction is retired, not fixed a fifth time.** For
+this spec's own narrowed scope (§0: the 4 peripheral, non-barrier ATR consumers only --
+`ATRProximityEnum`/`EmaProximity`, Trade Grade Keltner scoring, VWAP distance, Elder Breakout
+distance), **plain Wilder ATR — already confirmed intra-bar-reactive (§9.1/9.2) — is adequate. No
+further reformulation is planned for these 4 consumers.** This does not reopen or contradict the
+separate, already-decided Triple-Barrier core replacement (bipower-variation/MedRV,
+`docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`) -- that
+remains a full outright replacement, unaffected by this section's verdict on the 4 peripheral
+consumers.
