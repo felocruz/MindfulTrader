@@ -1,12 +1,26 @@
 # Session Scratchpad — Where We Left Off
 
-**PICK UP HERE, 2026-09-07 — Elite Feature Set Curation initiative: Phase 1 (whole-vector
-redundancy audit) DONE for the calendar-clock vector (no redundancy found, max |r|=0.34, 11 dims,
-471.9M real MES ticks). Phase 2 (Feature Saliency EM) has a dedicated implementation spec
+**PICK UP HERE, 2026-09-08 — offline `.context` generator now has a real spec:
+`docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md`. Recreated from scratch after
+a VS Code crash lost the original design-in-progress (never saved to a file) — the supporting code
+(`include/TickBarAggregator.h`, `include/EasternTimeOffset.h`, `include/ObservationTriggerGate.h` +
+native tests) survived uncommitted and is build/test-verified. Spec confirms every one of the 18
+`ObservationData` dims' real math + the Mahalanobis gate + `FeatureScaler` + the `.context` writer
+(`LBRFileManager` — confirmed genuinely ACSIL-free, callable directly) is pure/reusable; the
+generator tool itself is still not built. Folder name recalled as "something like
+`tools/training_data_preparation`" — not independently recoverable, needs operator confirmation
+before any file lands there. Next action: confirm folder name, then start on the spec's §4 next
+steps (trace `SCStudies.cpp`'s real per-tick order, resolve the 5 open design questions in §3).**
+
+**Older thread below, superseded as "current status" by the pointer above but kept for history —
+Elite Feature Set Curation initiative: Phase 1 (whole-vector redundancy audit) DONE for the
+calendar-clock vector (no redundancy found, max |r|=0.34, 11 dims, 471.9M real MES ticks). Phase 2
+(Feature Saliency EM) has a dedicated implementation spec
 (`docs/superpowers/specs/2026-09-07-feature-saliency-em-fitter-spec.md`), not yet built. Full
 detail: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §4.**
 
-**New thread opened same day, not yet spec'd: offline, non-Sierra-Chart `.context`-file generator.**
+**Side thread that seeded the above, not yet spec'd (at the time this was written): offline,
+non-Sierra-Chart `.context`-file generator.**
 Idea: reconstruct TS1/TS2/TS3 from raw tick data, compute the real 18D `ObservationData` vector via
 the exact production formulas, replicate the real Mahalanobis significant-change gate (not a
 simplified bar-close-cadence substitute), write a genuine `.context` file — no Sierra Chart replay
