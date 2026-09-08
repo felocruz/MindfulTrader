@@ -66,20 +66,62 @@ Mapped this session by grepping each Triple Screen file's `obs->mutate_*` call s
 | `lempel_ziv` | `ContextManager` directly (tick-level `InformationEngine`) | `ContextManager::BuildObservationVector()` |
 | `tail_index` | `ContextManager` directly (tick-level `TailRiskEngine`) | `ContextManager::BuildObservationVector()` |
 | `skewness_idx`, `fast_taleb_kurtosis`, `fast_hurst_exponent`, `recurrence_rate` | `ContextManager` directly, from `ActivityClockManager`'s imbalance-bar return buffer | `src/ContextManager.cpp:~430-475` (`RobustMoments.h`/`DfaHurstExponent.h`/`RecurrenceRateEngine.h`) |
-| `fast_mean_rev_z` | Presumed `ContextManager` direct, `ActivityClockMeanReversion.h` | **Not independently re-confirmed this session — verify before relying on it** |
+| `fast_mean_rev_z` | **CONFIRMED 2026-09-08: NOT WIRED IN PRODUCTION** | `OBS_FAST_MEAN_REV_Z` (dim 17) is declared (`ContextManager.h:333`) but never assigned anywhere — grepped every `.cpp`/`.h` for the symbol, only the declaration and its `static_assert` exist. `BuildObservationVector()` leaves it at the array's zero-initialized default, always. `ActivityClockMeanReversion.h` is real, pure, and already reformulated to median/MAD (per `SCRATCHPAD.md`), but genuinely unused in the live path pending its own still-open wire-or-drop decision. **The generator must replicate this — leave dim 17 at 0.0, not compute a real value from the unwired header — or its output silently diverges from real production `.context` files for this one dim.** |
 
 **Net finding**: every one of the 18 dims' real math already delegates to a pure header or a pure
 tick-level engine class. The **only** non-pure part of the production path is (a) each Triple
 Screen `.cpp`'s ACSIL array-gather (`sc.Close`/`sc.High`/`sc.Volume`/`sc.GetPersistentFloat`) and
-(b) whatever raw-tick-to-bar/engine-feed plumbing currently lives inside `SCStudies.cpp`'s
-per-tick dispatch. Neither needs porting — this tool replaces both with its own tick source
+(b) whatever raw-tick-to-bar/engine-feed plumbing currently lives inside the study that drives
+`ContextManager` per tick (see below — corrected from an earlier draft of this section that
+named the wrong study). Neither needs porting — this tool replaces both with its own tick source
 (`mes_ticks.parquet`) and its own in-memory state (no `sc.GetPersistentFloat` carry-forward slots
 needed; a plain local variable per dim suffices for a single-pass offline tool).
 
-**Not yet done, real gap**: no one has traced `SCStudies.cpp`'s actual per-tick call sequence
-(which engines get fed with which raw fields, in what order, before `BuildObservationVector()` is
-called) end-to-end this session. §4 depends on this being right — flagged as the first concrete
-follow-up, not assumed solved by the table above.
+**Scope note — do not confuse with `ImbalanceContextManager`.** This entire spec is about the
+calendar-clock `ContextManager`/`ObservationData` (18D) pipeline. A separate, already-built and
+committed sibling exists for the activity-clock Imbalance Triple Screen migration —
+`include/ImbalanceContextManager.h` (singleton, assembles the 4-dim `ImbalanceObservationData`
+from `ImbalanceClockManager`'s TS1/TS2/TS3 return buffers), committed in `02f5b91`, designed in
+`2026-09-06-imbalance-triple-screen-architecture-spec.md` §1.4. That component is out of scope
+here — this tool does not need it, and nothing in §1-§3 above refers to it despite the similar
+name.
+
+**CORRECTED 2026-09-08 (operator correction) — the real `.context`-producing study is
+`EventDataCollectorStudy.cpp`, NOT `SCStudies.cpp`.** `SCStudies.cpp` is the live-inference path,
+and per its own comments (`EventDataCollectorStudy.cpp`'s Lock C note below) is **not yet deployed
+— this system is not in production yet.** `EventDataCollectorStudy.cpp` is the Sierra-Chart-replay
+study actually used today to produce training data. Its real per-tick order, traced this session:
+`IndicatorManager::Instance().UpdateBarContext(sc)` → `ActivityClockManager::Instance().Update(sc)`
+(feeds the imbalance-bar buffer that `skewness_idx`/`fast_taleb_kurtosis`/`fast_hurst_exponent`/
+`recurrence_rate` read) → `ContextManager::Instance().UpdateMarketPhysics(logReturn)`, called ONLY
+when `sc.Close[sc.Index]` differs from the last-seen price (feeds `TailRiskEngine`/
+`InformationEngine`, i.e. `tail_index`/`lempel_ziv`) → `ContextManager::Instance()
+.UpdatePriceStructure(sc, ...)` (feeds `StructureEngine`) → `ContextManager::Instance()
+.CheckAndTriggerHMM(now_us, /*isDataCollection=*/true, syntheticVelocity, ...)`.
+`TripleScreen1.cpp`/`TripleScreen2.cpp`/`TripleScreen3.cpp` remain separate `scsf_` studies on
+their own chart timeframes, mutating `m_observationData` independently of this call sequence, per
+this repo's own "all charts hot on every tick" rule (`CLAUDE.md`).
+
+**Real, important distinction found while tracing this: `.context` and `.alpha` are gated
+completely differently, and only one of them matters for this tool.** `.context` writing happens
+entirely INSIDE `CheckAndTriggerHMM()` (gated only by that function's own TS1/TS2 freshness checks
++ the Mahalanobis significant-change trigger — see next paragraph). `.alpha` (the `TrainingEvent`
+stream) is a SEPARATE write, later in `EventDataCollectorStudy.cpp`, gated behind its own 5-lock
+sequence (Lock A: observation-saturation readiness; Lock B: indicator warm-up; Lock C: regime-
+certainty Schmidt trigger — explicitly **telemetry-only during data collection**, per the source's
+own comment: *"LockC is NOT enforced here because the data-collector must capture ALL market
+regimes... will be enforced by the live-inference path (SCStudies.cpp) when deployed"*; Lock D/E:
+TS1/TS2 freshness circuit-breakers). **This tool's mandate (§0) is `.context` only — none of Lock
+A-E apply to it.** Don't over-build by replicating the `.alpha`-only lock sequence.
+
+**Real gate the generator DOES need to replicate**: `CheckAndTriggerHMM()` hard-skips (returns
+early, no emission at all) if `AreTs1DimsReady()`/`AreTs2StructuralDimsReady()` report stale/
+missing TS1 or TS2 commits (each screen calls `MarkTs1MacroDimsFresh()`/
+`MarkTs2StructuralDimsFresh()` on every successful write; `CheckAndTriggerHMM` checks `now_us`
+against those timestamps with a max-staleness bound before proceeding). A generator assembling
+dims from three independently-cadenced `TickBarAggregator` instances (240m/60m/15m) must reproduce
+this same staleness gate, not just concatenate whatever values happen to exist at a given tick —
+otherwise it would emit observations real production would have suppressed as stale.
 
 ## 3. Proposed tool architecture (CANDIDATE — not yet built, not yet reviewed)
 
@@ -146,9 +188,13 @@ TickBarAggregator × 3  (TS1=240m, TS2=60m, TS3=15m; session-anchored via Easter
 ## 4. Next steps (not started)
 
 1. Confirm the `tools/` subfolder name (§0) with the operator before creating any file there.
-2. Trace `SCStudies.cpp`'s real per-tick dispatch order end-to-end (§2's flagged gap) to confirm
-   §3's proposed pipeline ordering is actually correct, not just plausible.
-3. Independently re-confirm `fast_mean_rev_z`'s source header/purity (§2's one unconfirmed row).
+2. ~~Trace `SCStudies.cpp`'s real per-tick dispatch order end-to-end~~ — **CORRECTED AND RESOLVED
+   2026-09-08 (operator correction): the real study is `EventDataCollectorStudy.cpp`, not
+   `SCStudies.cpp`** (the latter is the live-inference path, itself not yet deployed — this system
+   is not in production yet). Full per-tick trace + the `.context`-vs-`.alpha` gating distinction
+   now recorded in §2.
+3. Independently re-confirm `fast_mean_rev_z`'s source header/purity — **RESOLVED 2026-09-08: NOT
+   wired in production at all** (§2).
 4. Resolve §3's 5 open design questions — at minimum, pick a default answer for each and record
    the rationale here, even if provisional.
 5. Design `RiskGateContext` reconstruction (§3 item 3) — likely needs its own short sub-spec given
@@ -159,6 +205,9 @@ TickBarAggregator × 3  (TS1=240m, TS2=60m, TS3=15m; session-anchored via Easter
    `2026-09-06-imbalance-triple-screen-architecture-spec.md` §1.1a).
 7. Decide the validation methodology (§3 item 5) before generating any training data intended for
    real use.
+8. Verify Sierra-Chart cross-chart write-ordering (`sc.CalculationPrecedence`) for the
+   calendar-clock TS1/TS2/TS3 screens, matching the already-documented Imbalance-side precedent
+   (`2026-09-06-imbalance-triple-screen-architecture-spec.md` §1.2b) — not yet done for this side.
 
 ## 5. Cross-references
 
