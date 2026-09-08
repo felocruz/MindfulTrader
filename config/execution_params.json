@@ -63,7 +63,7 @@
   "featurescaler_winsorization": {
     "_owner": "manual/MindfulTrader",
     "_generated_by": "manual/MindfulTrader (docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md Unit C; values carried forward verbatim from include/FeatureScaler.h compiled defaults, zero behavior change on first load)",
-    "_updated": "2026-08-28 -- CORRECTED: this file had gone stale relative to the 17D (fast_taleb_kurtosis, 7c51f33/ff22e48) and 18D (fast_hurst_exponent, 2026-08-28) schema extensions -- indices 9+ were still the pre-fast_taleb_kurtosis 16D numbering (index 9 mapped to tail_index instead of fast_hurst_exponent, and fast_taleb_kurtosis had no entry at all). Renumbered to match include/FeatureScaler.h's current 18-entry arrays exactly; new dims (9, 14) get compiled-default placeholder values (all zero), not calibrated ones.",
+    "_updated": "2026-08-30 -- index 13 (liq_fragility)'s logz_winsor_sigma_override re-derived (2524.5 -> 21.26) after discovering the verification tool never actually exercised shrinkage_scale_min; see its own note below. Prior entry: 2026-08-29 -- indices 12 (amihud_illiquidity) and 13 (liq_fragility) recalibrated after both dims were made live-reactive (brainstorm doc §1.11). Prior entry: 2026-08-28 -- CORRECTED: this file had gone stale relative to the 17D (fast_taleb_kurtosis, 7c51f33/ff22e48) and 18D (fast_hurst_exponent, 2026-08-28) schema extensions -- indices 9+ were still the pre-fast_taleb_kurtosis 16D numbering (index 9 mapped to tail_index instead of fast_hurst_exponent, and fast_taleb_kurtosis had no entry at all). Renumbered to match include/FeatureScaler.h's current 18-entry arrays exactly; new dims (9, 14) get compiled-default placeholder values (all zero), not calibrated ones.",
     "state_winsor_sigma": 6,
     "dims": [
       {
@@ -165,18 +165,18 @@
       {
         "index": 12,
         "name": "amihud_illiquidity",
-        "dim_winsor_sigma_override": 0,
+        "dim_winsor_sigma_override": 2706.0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "audited, 0.000% production clip rate, no action needed; has its own dedicated AMIHUD_ABSOLUTE_FLOOR fix instead of shrinkage"
+        "note": "RECALIBRATED 2026-08-29 (live-reactivity, brainstorm doc §1.11), refit against kLiveBarMinVolume=50 (empirically tuned, see StudyHelperFunctions.cpp) for internal consistency: GPD-derived on real tick-level replica (tools/amihud_liqfragility_recalibration.cpp, u=p99=32.68, n_tail=7709, xi=+0.2920), Frechet, p=1/N return level (N=38,540,567 ticks). OLD 0 (generic 6.0-sigma default) was clipping 8.5254% of live readings. Shrinkage RE-AUDITED 2026-08-29: correlation(localMAD,|z|)=-0.0340 (weak, not a collapse signature) -- this dim already has its own dedicated AMIHUD_ABSOLUTE_FLOOR mechanism doing the job; stays disabled, audited clean not skipped"
       },
       {
         "index": 13,
         "name": "liq_fragility",
         "dim_winsor_sigma_override": 0,
-        "logz_winsor_sigma_override": 12,
-        "shrinkage_scale_min": 0,
-        "note": "LOGZ dim, GPD-derived, clean trace, real margin above the theoretical wall; shrinkage disabled -- resolved-healthy, no evidence of need"
+        "logz_winsor_sigma_override": 21.26,
+        "shrinkage_scale_min": 0.0035,
+        "note": "RE-DERIVED 2026-08-30: the 2524.5 figure recorded 2026-08-29 was computed from a broken audit tool (liqFragZ manually recomputed the plain z formula, bypassing ComputeShrinkageZ(), so it never actually reflected shrinkage_scale_min being enabled). Fixed the tool to read the real shrinkage-blended z (FeatureScaler.h now exposes it via lastRawZ[13] unconditionally); rerunning at guard=50 showed shrinkage enabling collapses the tail entirely: max|z| 503.22 -> 20.59, corr(localMAD,|z|) -0.2058 -> +0.0016 (collapse signature genuinely gone). Refit GPD on the corrected z (u=p99=8.297, n_tail=7709, xi=-0.1452, Weibull/bounded), p=1/N return level (N=38,540,567 ticks) = 21.2565. shrinkage_scale_min=0.0035 unchanged and now verified to actually be taking effect (previous audit run never exercised it)"
       },
       {
         "index": 14,
