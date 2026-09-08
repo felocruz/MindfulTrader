@@ -37,6 +37,7 @@ bool LBRFileManager::Open(const std::string& path, const std::string& symbol) {
     // Clear any prior stream error flags before reopening.
     m_alphaStream.clear();
     m_contextStream.clear();
+    m_imbalanceContextStream.clear();
 
     // Open alpha stream (all training events)
     m_alphaStream.open(path + ".alpha", std::ios::binary | std::ios::out | std::ios::trunc);
@@ -53,18 +54,31 @@ bool LBRFileManager::Open(const std::string& path, const std::string& symbol) {
         return false;
     }
 
+    // Open imbalance-context stream (architecture spec §1.6: one Open() producing
+    // all streams together keeps them trivially aligned to the same run/symbol).
+    m_imbalanceContextStream.open(path + ".imbalance.context", std::ios::binary | std::ios::out | std::ios::trunc);
+    if (!m_imbalanceContextStream.is_open()) {
+        Logger::getInstance().log("ERROR: LBRFileManager::Open failed to open imbalance-context stream: " + path + ".imbalance.context");
+        m_alphaStream.close();
+        m_contextStream.close();
+        return false;
+    }
+
     // Write magic headers to both streams
     WriteMagicHeader(m_alphaStream);
     WriteMagicHeader(m_contextStream);
+    WriteMagicHeader(m_imbalanceContextStream);
 
     // Write file metadata
     WriteFileMetadata(m_alphaStream, symbol, "ALPHA_v2.5_TRAINING_EVENT");
     WriteFileMetadata(m_contextStream, symbol, "CONTEXT_v2.5_MO_SS");
+    WriteFileMetadata(m_imbalanceContextStream, symbol, "IMBALANCE_CONTEXT_v1.0_MO");
 
     m_isOpen = true;
     m_globalSequenceId = 0;
     m_alphaRecordsSinceFlush = 0;
     m_contextRecordsSinceFlush = 0;
+    m_imbalanceContextRecordsSinceFlush = 0;
     Logger::getInstance().log("LBRFileManager::Open successful: " + path);
 
     return true;
@@ -76,7 +90,7 @@ void LBRFileManager::Close() {
 }
 
 void LBRFileManager::CloseUnlocked() {
-    if (!m_isOpen && !m_alphaStream.is_open() && !m_contextStream.is_open()) {
+    if (!m_isOpen && !m_alphaStream.is_open() && !m_contextStream.is_open() && !m_imbalanceContextStream.is_open()) {
         return;
     }
 
@@ -90,9 +104,15 @@ void LBRFileManager::CloseUnlocked() {
         m_contextStream.close();
     }
 
+    if (m_imbalanceContextStream.is_open()) {
+        m_imbalanceContextStream.flush();
+        m_imbalanceContextStream.close();
+    }
+
     m_isOpen = false;
     m_alphaRecordsSinceFlush = 0;
     m_contextRecordsSinceFlush = 0;
+    m_imbalanceContextRecordsSinceFlush = 0;
     Logger::getInstance().log("LBRFileManager::Close: Streams closed successfully");
 }
 
@@ -223,6 +243,65 @@ void LBRFileManager::LogContextUnlocked(
     if (m_contextRecordsSinceFlush >= kFlushEveryRecords) {
         m_contextStream.flush();
         m_contextRecordsSinceFlush = 0;
+    }
+}
+
+void LBRFileManager::LogImbalanceContext(
+    const MTS::Schema::ImbalanceObservationData& obs,
+    uint64_t timestamp_us,
+    const MTS::Schema::ImbalanceRiskGateContextT* risk_gate_context) {
+    const uint64_t sequence_id = ReserveSequenceId();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    LogImbalanceContextUnlocked(obs, timestamp_us, sequence_id, risk_gate_context);
+}
+
+void LBRFileManager::LogImbalanceContextUnlocked(
+    const MTS::Schema::ImbalanceObservationData& obs,
+    uint64_t timestamp_us,
+    uint64_t sequence_id,
+    const MTS::Schema::ImbalanceRiskGateContextT* risk_gate_context) {
+    if (!m_isOpen || !m_imbalanceContextStream.is_open()) {
+        return;
+    }
+
+    // Single-record stream (no ImbalanceSystemState pairing yet, unlike .context's
+    // MO+SS pairs) -- one CreateImbalanceMarketObservation per write.
+    m_fbb.Clear();
+
+    // Built before the MarketObservation table starts, per the FlatBuffers nested-table
+    // rule -- same convention as LogContextUnlocked's own rgc_offset.
+    ::flatbuffers::Offset<MTS::Schema::ImbalanceRiskGateContext> rgc_offset = 0;
+    if (risk_gate_context != nullptr) {
+        rgc_offset = MTS::Schema::CreateImbalanceRiskGateContext(m_fbb, risk_gate_context);
+    }
+
+    auto mo_loc = MTS::Schema::CreateImbalanceMarketObservation(
+        m_fbb,
+        static_cast<int64_t>(timestamp_us),
+        sequence_id,
+        &obs,
+        rgc_offset
+    );
+    m_fbb.Finish(mo_loc);
+
+    const uint32_t size = static_cast<uint32_t>(m_fbb.GetSize());
+    const uint8_t* ptr = m_fbb.GetBufferPointer();
+    const size_t total = sizeof(uint32_t) + size;
+
+    if (total <= 512) {
+        uint8_t staged[512];
+        std::memcpy(staged, &size, sizeof(uint32_t));
+        std::memcpy(staged + sizeof(uint32_t), ptr, size);
+        m_imbalanceContextStream.write(reinterpret_cast<const char*>(staged), total);
+    } else {
+        m_imbalanceContextStream.write(reinterpret_cast<const char*>(&size), sizeof(size));
+        m_imbalanceContextStream.write(reinterpret_cast<const char*>(ptr), size);
+    }
+
+    ++m_imbalanceContextRecordsSinceFlush;
+    if (m_imbalanceContextRecordsSinceFlush >= kFlushEveryRecords) {
+        m_imbalanceContextStream.flush();
+        m_imbalanceContextRecordsSinceFlush = 0;
     }
 }
 

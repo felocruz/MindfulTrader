@@ -40,6 +40,18 @@ public:
         uint64_t sequence_id,
         const MTS::Schema::RiskGateContextT* risk_gate_context = nullptr
     );
+    // Log an Imbalance Triple Screen context snapshot to the .imbalance.context
+    // stream, opened alongside .context/.alpha by the same Open() call
+    // (architecture spec §1.6: one Open() producing all streams together keeps
+    // them trivially aligned to the same collection run/symbol by construction).
+    // Single-record stream, not MO+SS paired -- no ImbalanceSystemState yet.
+    // Optional risk_gate_context (§1.5a), same convention as LogContext: nullptr
+    // leaves the field unset.
+    void LogImbalanceContext(
+        const MTS::Schema::ImbalanceObservationData& obs,
+        uint64_t timestamp_us,
+        const MTS::Schema::ImbalanceRiskGateContextT* risk_gate_context = nullptr
+    );
     // Sequence-locked stitcher: write MarketObservation + SystemState + TrainingEvent under one shared sequence_id.
     // Optional risk_gate_context, same convention as LogContext/LogContextWithSequence: nullptr
     // leaves the field unset.
@@ -61,6 +73,12 @@ private:
     // Close helper that assumes m_mutex is already held.
     void CloseUnlocked();
     void LogAlphaUnlocked(MTS::Training::TrainingEventT& event, uint64_t sequence_id);
+    void LogImbalanceContextUnlocked(
+        const MTS::Schema::ImbalanceObservationData& obs,
+        uint64_t timestamp_us,
+        uint64_t sequence_id,
+        const MTS::Schema::ImbalanceRiskGateContextT* risk_gate_context = nullptr
+    );
     void LogContextUnlocked(
         const MTS::Schema::ObservationData& obs,
         const MTS::Schema::AsymmetryContext& ctx,
@@ -77,6 +95,7 @@ private:
 
     std::ofstream m_alphaStream;
     std::ofstream m_contextStream;
+    std::ofstream m_imbalanceContextStream;
     flatbuffers::FlatBufferBuilder m_fbb{2048};
     std::mutex m_mutex;
     bool m_isOpen = false;
@@ -84,6 +103,7 @@ private:
     static constexpr uint32_t kFlushEveryRecords = 512;
     uint32_t m_alphaRecordsSinceFlush = 0;
     uint32_t m_contextRecordsSinceFlush = 0;
+    uint32_t m_imbalanceContextRecordsSinceFlush = 0;
 
     // Global atomic sequence ID for all log entries
     std::atomic<uint64_t> m_globalSequenceId{0};

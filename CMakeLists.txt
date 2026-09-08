@@ -89,6 +89,10 @@ set(SOURCE_FILES
     src/TripleScreen1.cpp
     src/TripleScreen2.cpp
     src/TripleScreen3.cpp
+    src/ImbalanceScreen1.cpp
+    src/ImbalanceScreen2.cpp
+    src/ImbalanceScreen3.cpp
+    src/ImbalanceEventDataCollectorStudy.cpp
 )
 
 # Header files (for IDE support and explicit tracking)

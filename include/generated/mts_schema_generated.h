@@ -40,6 +40,16 @@ struct MarketObservation;
 struct MarketObservationBuilder;
 struct MarketObservationT;
 
+struct ImbalanceObservationData;
+
+struct ImbalanceRiskGateContext;
+struct ImbalanceRiskGateContextBuilder;
+struct ImbalanceRiskGateContextT;
+
+struct ImbalanceMarketObservation;
+struct ImbalanceMarketObservationBuilder;
+struct ImbalanceMarketObservationT;
+
 struct SystemState;
 struct SystemStateBuilder;
 struct SystemStateT;
@@ -2445,6 +2455,53 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS 
 };
 FLATBUFFERS_STRUCT_END(AsymmetryContext, 32);
 
+FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) ImbalanceObservationData FLATBUFFERS_FINAL_CLASS {
+ private:
+  float hurst_exponent_;
+  float recurrence_rate_;
+  float skewness_idx_;
+  float taleb_kurtosis_;
+
+ public:
+  ImbalanceObservationData()
+      : hurst_exponent_(0),
+        recurrence_rate_(0),
+        skewness_idx_(0),
+        taleb_kurtosis_(0) {
+  }
+  ImbalanceObservationData(float _hurst_exponent, float _recurrence_rate, float _skewness_idx, float _taleb_kurtosis)
+      : hurst_exponent_(::flatbuffers::EndianScalar(_hurst_exponent)),
+        recurrence_rate_(::flatbuffers::EndianScalar(_recurrence_rate)),
+        skewness_idx_(::flatbuffers::EndianScalar(_skewness_idx)),
+        taleb_kurtosis_(::flatbuffers::EndianScalar(_taleb_kurtosis)) {
+  }
+  float hurst_exponent() const {
+    return ::flatbuffers::EndianScalar(hurst_exponent_);
+  }
+  void mutate_hurst_exponent(float _hurst_exponent) {
+    ::flatbuffers::WriteScalar(&hurst_exponent_, _hurst_exponent);
+  }
+  float recurrence_rate() const {
+    return ::flatbuffers::EndianScalar(recurrence_rate_);
+  }
+  void mutate_recurrence_rate(float _recurrence_rate) {
+    ::flatbuffers::WriteScalar(&recurrence_rate_, _recurrence_rate);
+  }
+  float skewness_idx() const {
+    return ::flatbuffers::EndianScalar(skewness_idx_);
+  }
+  void mutate_skewness_idx(float _skewness_idx) {
+    ::flatbuffers::WriteScalar(&skewness_idx_, _skewness_idx);
+  }
+  float taleb_kurtosis() const {
+    return ::flatbuffers::EndianScalar(taleb_kurtosis_);
+  }
+  void mutate_taleb_kurtosis(float _taleb_kurtosis) {
+    ::flatbuffers::WriteScalar(&taleb_kurtosis_, _taleb_kurtosis);
+  }
+};
+FLATBUFFERS_STRUCT_END(ImbalanceObservationData, 16);
+
 struct EventT : public ::flatbuffers::NativeTable {
   typedef Event TableType;
   uint64_t sequence_id = 0;
@@ -3589,6 +3646,247 @@ inline ::flatbuffers::Offset<MarketObservation> CreateMarketObservation(
 }
 
 ::flatbuffers::Offset<MarketObservation> CreateMarketObservation(::flatbuffers::FlatBufferBuilder &_fbb, const MarketObservationT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ImbalanceRiskGateContextT : public ::flatbuffers::NativeTable {
+  typedef ImbalanceRiskGateContext TableType;
+  float shannon_flow_entropy = 0.0f;
+  float shannon_efficiency = 0.5f;
+  float hurst_exponent = 0.5f;
+  float skewness_idx = 0.0f;
+  float taleb_kurtosis = 1.23f;
+  bool is_valid = false;
+  int64_t snapshot_timestamp_us = 0;
+};
+
+struct ImbalanceRiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ImbalanceRiskGateContextT NativeTableType;
+  typedef ImbalanceRiskGateContextBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SHANNON_FLOW_ENTROPY = 4,
+    VT_SHANNON_EFFICIENCY = 6,
+    VT_HURST_EXPONENT = 8,
+    VT_SKEWNESS_IDX = 10,
+    VT_TALEB_KURTOSIS = 12,
+    VT_IS_VALID = 14,
+    VT_SNAPSHOT_TIMESTAMP_US = 16
+  };
+  float shannon_flow_entropy() const {
+    return GetField<float>(VT_SHANNON_FLOW_ENTROPY, 0.0f);
+  }
+  bool mutate_shannon_flow_entropy(float _shannon_flow_entropy = 0.0f) {
+    return SetField<float>(VT_SHANNON_FLOW_ENTROPY, _shannon_flow_entropy, 0.0f);
+  }
+  float shannon_efficiency() const {
+    return GetField<float>(VT_SHANNON_EFFICIENCY, 0.5f);
+  }
+  bool mutate_shannon_efficiency(float _shannon_efficiency = 0.5f) {
+    return SetField<float>(VT_SHANNON_EFFICIENCY, _shannon_efficiency, 0.5f);
+  }
+  float hurst_exponent() const {
+    return GetField<float>(VT_HURST_EXPONENT, 0.5f);
+  }
+  bool mutate_hurst_exponent(float _hurst_exponent = 0.5f) {
+    return SetField<float>(VT_HURST_EXPONENT, _hurst_exponent, 0.5f);
+  }
+  float skewness_idx() const {
+    return GetField<float>(VT_SKEWNESS_IDX, 0.0f);
+  }
+  bool mutate_skewness_idx(float _skewness_idx = 0.0f) {
+    return SetField<float>(VT_SKEWNESS_IDX, _skewness_idx, 0.0f);
+  }
+  float taleb_kurtosis() const {
+    return GetField<float>(VT_TALEB_KURTOSIS, 1.23f);
+  }
+  bool mutate_taleb_kurtosis(float _taleb_kurtosis = 1.23f) {
+    return SetField<float>(VT_TALEB_KURTOSIS, _taleb_kurtosis, 1.23f);
+  }
+  bool is_valid() const {
+    return GetField<uint8_t>(VT_IS_VALID, 0) != 0;
+  }
+  bool mutate_is_valid(bool _is_valid = 0) {
+    return SetField<uint8_t>(VT_IS_VALID, static_cast<uint8_t>(_is_valid), 0);
+  }
+  int64_t snapshot_timestamp_us() const {
+    return GetField<int64_t>(VT_SNAPSHOT_TIMESTAMP_US, 0);
+  }
+  bool mutate_snapshot_timestamp_us(int64_t _snapshot_timestamp_us = 0) {
+    return SetField<int64_t>(VT_SNAPSHOT_TIMESTAMP_US, _snapshot_timestamp_us, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<float>(verifier, VT_SHANNON_FLOW_ENTROPY, 4) &&
+           VerifyField<float>(verifier, VT_SHANNON_EFFICIENCY, 4) &&
+           VerifyField<float>(verifier, VT_HURST_EXPONENT, 4) &&
+           VerifyField<float>(verifier, VT_SKEWNESS_IDX, 4) &&
+           VerifyField<float>(verifier, VT_TALEB_KURTOSIS, 4) &&
+           VerifyField<uint8_t>(verifier, VT_IS_VALID, 1) &&
+           VerifyField<int64_t>(verifier, VT_SNAPSHOT_TIMESTAMP_US, 8) &&
+           verifier.EndTable();
+  }
+  ImbalanceRiskGateContextT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ImbalanceRiskGateContextT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ImbalanceRiskGateContext> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceRiskGateContextT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ImbalanceRiskGateContextBuilder {
+  typedef ImbalanceRiskGateContext Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_shannon_flow_entropy(float shannon_flow_entropy) {
+    fbb_.AddElement<float>(ImbalanceRiskGateContext::VT_SHANNON_FLOW_ENTROPY, shannon_flow_entropy, 0.0f);
+  }
+  void add_shannon_efficiency(float shannon_efficiency) {
+    fbb_.AddElement<float>(ImbalanceRiskGateContext::VT_SHANNON_EFFICIENCY, shannon_efficiency, 0.5f);
+  }
+  void add_hurst_exponent(float hurst_exponent) {
+    fbb_.AddElement<float>(ImbalanceRiskGateContext::VT_HURST_EXPONENT, hurst_exponent, 0.5f);
+  }
+  void add_skewness_idx(float skewness_idx) {
+    fbb_.AddElement<float>(ImbalanceRiskGateContext::VT_SKEWNESS_IDX, skewness_idx, 0.0f);
+  }
+  void add_taleb_kurtosis(float taleb_kurtosis) {
+    fbb_.AddElement<float>(ImbalanceRiskGateContext::VT_TALEB_KURTOSIS, taleb_kurtosis, 1.23f);
+  }
+  void add_is_valid(bool is_valid) {
+    fbb_.AddElement<uint8_t>(ImbalanceRiskGateContext::VT_IS_VALID, static_cast<uint8_t>(is_valid), 0);
+  }
+  void add_snapshot_timestamp_us(int64_t snapshot_timestamp_us) {
+    fbb_.AddElement<int64_t>(ImbalanceRiskGateContext::VT_SNAPSHOT_TIMESTAMP_US, snapshot_timestamp_us, 0);
+  }
+  explicit ImbalanceRiskGateContextBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ImbalanceRiskGateContext> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ImbalanceRiskGateContext>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ImbalanceRiskGateContext> CreateImbalanceRiskGateContext(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    float shannon_flow_entropy = 0.0f,
+    float shannon_efficiency = 0.5f,
+    float hurst_exponent = 0.5f,
+    float skewness_idx = 0.0f,
+    float taleb_kurtosis = 1.23f,
+    bool is_valid = false,
+    int64_t snapshot_timestamp_us = 0) {
+  ImbalanceRiskGateContextBuilder builder_(_fbb);
+  builder_.add_snapshot_timestamp_us(snapshot_timestamp_us);
+  builder_.add_taleb_kurtosis(taleb_kurtosis);
+  builder_.add_skewness_idx(skewness_idx);
+  builder_.add_hurst_exponent(hurst_exponent);
+  builder_.add_shannon_efficiency(shannon_efficiency);
+  builder_.add_shannon_flow_entropy(shannon_flow_entropy);
+  builder_.add_is_valid(is_valid);
+  return builder_.Finish();
+}
+
+::flatbuffers::Offset<ImbalanceRiskGateContext> CreateImbalanceRiskGateContext(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceRiskGateContextT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+
+struct ImbalanceMarketObservationT : public ::flatbuffers::NativeTable {
+  typedef ImbalanceMarketObservation TableType;
+  int64_t timestamp_us = 0;
+  uint64_t sequence_id = 0;
+  std::unique_ptr<MTS::Schema::ImbalanceObservationData> observation{};
+  std::unique_ptr<MTS::Schema::ImbalanceRiskGateContextT> risk_gate_context{};
+  ImbalanceMarketObservationT() = default;
+  ImbalanceMarketObservationT(const ImbalanceMarketObservationT &o);
+  ImbalanceMarketObservationT(ImbalanceMarketObservationT&&) FLATBUFFERS_NOEXCEPT = default;
+  ImbalanceMarketObservationT &operator=(ImbalanceMarketObservationT o) FLATBUFFERS_NOEXCEPT;
+};
+
+struct ImbalanceMarketObservation FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef ImbalanceMarketObservationT NativeTableType;
+  typedef ImbalanceMarketObservationBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_TIMESTAMP_US = 4,
+    VT_SEQUENCE_ID = 6,
+    VT_OBSERVATION = 8,
+    VT_RISK_GATE_CONTEXT = 10
+  };
+  int64_t timestamp_us() const {
+    return GetField<int64_t>(VT_TIMESTAMP_US, 0);
+  }
+  bool mutate_timestamp_us(int64_t _timestamp_us = 0) {
+    return SetField<int64_t>(VT_TIMESTAMP_US, _timestamp_us, 0);
+  }
+  uint64_t sequence_id() const {
+    return GetField<uint64_t>(VT_SEQUENCE_ID, 0);
+  }
+  bool mutate_sequence_id(uint64_t _sequence_id = 0) {
+    return SetField<uint64_t>(VT_SEQUENCE_ID, _sequence_id, 0);
+  }
+  const MTS::Schema::ImbalanceObservationData *observation() const {
+    return GetStruct<const MTS::Schema::ImbalanceObservationData *>(VT_OBSERVATION);
+  }
+  MTS::Schema::ImbalanceObservationData *mutable_observation() {
+    return GetStruct<MTS::Schema::ImbalanceObservationData *>(VT_OBSERVATION);
+  }
+  const MTS::Schema::ImbalanceRiskGateContext *risk_gate_context() const {
+    return GetPointer<const MTS::Schema::ImbalanceRiskGateContext *>(VT_RISK_GATE_CONTEXT);
+  }
+  MTS::Schema::ImbalanceRiskGateContext *mutable_risk_gate_context() {
+    return GetPointer<MTS::Schema::ImbalanceRiskGateContext *>(VT_RISK_GATE_CONTEXT);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyField<int64_t>(verifier, VT_TIMESTAMP_US, 8) &&
+           VerifyField<uint64_t>(verifier, VT_SEQUENCE_ID, 8) &&
+           VerifyField<MTS::Schema::ImbalanceObservationData>(verifier, VT_OBSERVATION, 4) &&
+           VerifyOffset(verifier, VT_RISK_GATE_CONTEXT) &&
+           verifier.VerifyTable(risk_gate_context()) &&
+           verifier.EndTable();
+  }
+  ImbalanceMarketObservationT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(ImbalanceMarketObservationT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<ImbalanceMarketObservation> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceMarketObservationT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+};
+
+struct ImbalanceMarketObservationBuilder {
+  typedef ImbalanceMarketObservation Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_timestamp_us(int64_t timestamp_us) {
+    fbb_.AddElement<int64_t>(ImbalanceMarketObservation::VT_TIMESTAMP_US, timestamp_us, 0);
+  }
+  void add_sequence_id(uint64_t sequence_id) {
+    fbb_.AddElement<uint64_t>(ImbalanceMarketObservation::VT_SEQUENCE_ID, sequence_id, 0);
+  }
+  void add_observation(const MTS::Schema::ImbalanceObservationData *observation) {
+    fbb_.AddStruct(ImbalanceMarketObservation::VT_OBSERVATION, observation);
+  }
+  void add_risk_gate_context(::flatbuffers::Offset<MTS::Schema::ImbalanceRiskGateContext> risk_gate_context) {
+    fbb_.AddOffset(ImbalanceMarketObservation::VT_RISK_GATE_CONTEXT, risk_gate_context);
+  }
+  explicit ImbalanceMarketObservationBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<ImbalanceMarketObservation> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<ImbalanceMarketObservation>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<ImbalanceMarketObservation> CreateImbalanceMarketObservation(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    int64_t timestamp_us = 0,
+    uint64_t sequence_id = 0,
+    const MTS::Schema::ImbalanceObservationData *observation = nullptr,
+    ::flatbuffers::Offset<MTS::Schema::ImbalanceRiskGateContext> risk_gate_context = 0) {
+  ImbalanceMarketObservationBuilder builder_(_fbb);
+  builder_.add_sequence_id(sequence_id);
+  builder_.add_timestamp_us(timestamp_us);
+  builder_.add_risk_gate_context(risk_gate_context);
+  builder_.add_observation(observation);
+  return builder_.Finish();
+}
+
+::flatbuffers::Offset<ImbalanceMarketObservation> CreateImbalanceMarketObservation(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceMarketObservationT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct SystemStateT : public ::flatbuffers::NativeTable {
   typedef SystemState TableType;
@@ -10435,6 +10733,100 @@ inline ::flatbuffers::Offset<MarketObservation> CreateMarketObservation(::flatbu
       _observation,
       _asymmetry_context,
       _daily_bias_enum,
+      _risk_gate_context);
+}
+
+inline ImbalanceRiskGateContextT *ImbalanceRiskGateContext::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ImbalanceRiskGateContextT>(new ImbalanceRiskGateContextT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ImbalanceRiskGateContext::UnPackTo(ImbalanceRiskGateContextT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = shannon_flow_entropy(); _o->shannon_flow_entropy = _e; }
+  { auto _e = shannon_efficiency(); _o->shannon_efficiency = _e; }
+  { auto _e = hurst_exponent(); _o->hurst_exponent = _e; }
+  { auto _e = skewness_idx(); _o->skewness_idx = _e; }
+  { auto _e = taleb_kurtosis(); _o->taleb_kurtosis = _e; }
+  { auto _e = is_valid(); _o->is_valid = _e; }
+  { auto _e = snapshot_timestamp_us(); _o->snapshot_timestamp_us = _e; }
+}
+
+inline ::flatbuffers::Offset<ImbalanceRiskGateContext> ImbalanceRiskGateContext::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceRiskGateContextT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateImbalanceRiskGateContext(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ImbalanceRiskGateContext> CreateImbalanceRiskGateContext(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceRiskGateContextT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ImbalanceRiskGateContextT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _shannon_flow_entropy = _o->shannon_flow_entropy;
+  auto _shannon_efficiency = _o->shannon_efficiency;
+  auto _hurst_exponent = _o->hurst_exponent;
+  auto _skewness_idx = _o->skewness_idx;
+  auto _taleb_kurtosis = _o->taleb_kurtosis;
+  auto _is_valid = _o->is_valid;
+  auto _snapshot_timestamp_us = _o->snapshot_timestamp_us;
+  return MTS::Schema::CreateImbalanceRiskGateContext(
+      _fbb,
+      _shannon_flow_entropy,
+      _shannon_efficiency,
+      _hurst_exponent,
+      _skewness_idx,
+      _taleb_kurtosis,
+      _is_valid,
+      _snapshot_timestamp_us);
+}
+
+inline ImbalanceMarketObservationT::ImbalanceMarketObservationT(const ImbalanceMarketObservationT &o)
+      : timestamp_us(o.timestamp_us),
+        sequence_id(o.sequence_id),
+        observation((o.observation) ? new MTS::Schema::ImbalanceObservationData(*o.observation) : nullptr),
+        risk_gate_context((o.risk_gate_context) ? new MTS::Schema::ImbalanceRiskGateContextT(*o.risk_gate_context) : nullptr) {
+}
+
+inline ImbalanceMarketObservationT &ImbalanceMarketObservationT::operator=(ImbalanceMarketObservationT o) FLATBUFFERS_NOEXCEPT {
+  std::swap(timestamp_us, o.timestamp_us);
+  std::swap(sequence_id, o.sequence_id);
+  std::swap(observation, o.observation);
+  std::swap(risk_gate_context, o.risk_gate_context);
+  return *this;
+}
+
+inline ImbalanceMarketObservationT *ImbalanceMarketObservation::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<ImbalanceMarketObservationT>(new ImbalanceMarketObservationT());
+  UnPackTo(_o.get(), _resolver);
+  return _o.release();
+}
+
+inline void ImbalanceMarketObservation::UnPackTo(ImbalanceMarketObservationT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+  (void)_o;
+  (void)_resolver;
+  { auto _e = timestamp_us(); _o->timestamp_us = _e; }
+  { auto _e = sequence_id(); _o->sequence_id = _e; }
+  { auto _e = observation(); if (_e) _o->observation = std::unique_ptr<MTS::Schema::ImbalanceObservationData>(new MTS::Schema::ImbalanceObservationData(*_e)); }
+  { auto _e = risk_gate_context(); if (_e) { if(_o->risk_gate_context) { _e->UnPackTo(_o->risk_gate_context.get(), _resolver); } else { _o->risk_gate_context = std::unique_ptr<MTS::Schema::ImbalanceRiskGateContextT>(_e->UnPack(_resolver)); } } else if (_o->risk_gate_context) { _o->risk_gate_context.reset(); } }
+}
+
+inline ::flatbuffers::Offset<ImbalanceMarketObservation> ImbalanceMarketObservation::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceMarketObservationT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateImbalanceMarketObservation(_fbb, _o, _rehasher);
+}
+
+inline ::flatbuffers::Offset<ImbalanceMarketObservation> CreateImbalanceMarketObservation(::flatbuffers::FlatBufferBuilder &_fbb, const ImbalanceMarketObservationT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  (void)_rehasher;
+  (void)_o;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const ImbalanceMarketObservationT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  auto _timestamp_us = _o->timestamp_us;
+  auto _sequence_id = _o->sequence_id;
+  auto _observation = _o->observation ? _o->observation.get() : nullptr;
+  auto _risk_gate_context = _o->risk_gate_context ? CreateImbalanceRiskGateContext(_fbb, _o->risk_gate_context.get(), _rehasher) : 0;
+  return MTS::Schema::CreateImbalanceMarketObservation(
+      _fbb,
+      _timestamp_us,
+      _sequence_id,
+      _observation,
       _risk_gate_context);
 }
 

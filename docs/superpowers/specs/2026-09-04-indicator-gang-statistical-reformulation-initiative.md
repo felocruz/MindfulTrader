@@ -743,6 +743,71 @@ other three candidates.
 **Status: literature-grounding only, nothing implemented.** Same discipline as every other
 candidate in this doc — real-data validation required before any of §6.1/§6.3 is built.
 
+## 7. External brainstorm cross-pollination (2026-09-06, operator/Gemini session, `MTS_Fractal_Evolution.txt`)
+
+**Epistemic status: this section summarizes ideas from a separate, informal operator-Gemini
+brainstorm conducted outside this repo's own verify-before-trusting discipline (no in-thread
+citation checks, no repo access, no code). Treat every claim below as CANDIDATE/speculative input
+to the case studies above, not as a settled finding — same posture this doc already applies to any
+single Gemini reply pending independent verification.**
+
+1. **Case study #1 (Force Index, §1) — a second candidate formula to test alongside `ΔP x √V`.**
+   The brainstorm proposes a "Work Rate" `W_τ = θ_τ · Y_imb(τ)` (signed imbalance × imbalance
+   yield, i.e. price efficiency of the imbalance) as an activity-clock-native alternative to
+   Elder's `ΔP x V`. Genuinely different construction from §1.2's `ΔP x √V` candidate (this one
+   uses imbalance and yield directly, not volume at all) — worth including as a second arm in the
+   same not-yet-run offline validation tool (§4 open question 1), not a replacement for it.
+   **UPDATE 2026-09-06 — formalized, tested, and RESOLVED**: split into its own spec
+   (`docs/superpowers/specs/2026-09-06-imbalance-work-rate-spec.md`), where `W_τ` was found to be
+   algebraically degenerate (`= ΔP_τ` exactly) and corrected to `Y_imb(τ)` alone. Real-data-tested
+   against 471.9M real MES ticks: real (survives artifact controls) but decays to noise by 5 bars —
+   literature-grounded (Almgren & Chriss 2001; Bouchaud/Eisler/Cont-Kukanov-Stoikov impact-decay
+   literature) as transient price impact, not alpha. Closed out as an observation-vector candidate,
+   retargeted to `docs/superpowers/specs/2026-09-06-risk-gating-gang-statistical-reformulation-
+   initiative.md` §2.4 as a liquidity-gate candidate instead — do not re-test as a Force Index
+   alternative without new evidence; §1.2's `ΔP x √V` candidate is unaffected by this closure.
+2. **Case study #2 (MACD, §2) — an activity-clock reframing, complementary to (not a replacement
+   for) the wavelet-MODWT plan.** Proposes computing MACD directly on imbalance-clock steps `τ`
+   instead of bar index `t`: `MACD(τ) = EMA_fast(P,τ) - EMA_slow(P,τ)`, i.e. Phase Velocity
+   `v_phase`, with the histogram as `d/dτ MACD(τ)` (Kinetic Acceleration). Also proposes a concrete
+   joint divergence criterion: `P(τ2) > P(τ1)` while `v_phase(τ2) < v_phase(τ1)` AND
+   `dH_norm/dτ > 0` — bearish MACD divergence confirmed only when entropy is ALSO inflating, not
+   price/momentum disagreement alone. This is a candidate refinement of the existing
+   `MACDDivergenceEnum` detector (§2.1), not the MODWT replacement itself — could be tested as an
+   interim Phase 1 step (§2.2's own two-phase framing) ahead of a full wavelet rebuild.
+3. **Fills an explicitly flagged gap: the 3/10 oscillator (untriaged per §4 open question 4).**
+   Proposes `ΔH_τ = Drift(3τ) - Drift(10τ)` — a fast/slow Hurst-drift discrepancy on the imbalance
+   clock, replacing Raschke's `SMA_3(P) - SMA_10(P)` — framed as isolating short-horizon persistence
+   free of bid-ask bounce noise. This is the first concrete candidate this initiative has had for
+   the 3/10 oscillator specifically; worth adding as its own case study (§2's sibling) rather than
+   leaving it untriaged, though it needs the same literature-grounding pass (no citation for this
+   exact construction was verified in the brainstorm) before promotion to CANDIDATE status.
+4. **Case study #3 (Impulse System, §5) — an alternative fusion-rule candidate, worth weighing
+   against §5.5/5.6's Hurst+MODWT design, not assumed superior.** Proposes a "Phase Coherence
+   State" driven by entropy-rate-of-change rather than a Hurst-level threshold: `dP/dτ>0 AND
+   dH_norm/dτ<0` → GREEN; `dP/dτ<0 AND dH_norm/dτ<0` → RED; `dH_norm/dτ>0` (regardless of price
+   slope) → BLUE/trap. Notably, this sidesteps §5.6's real flaw #1 (the mean-reverting-regime sign
+   error in `sign(drift)*f(H)`) differently — by gating on entropy TREND rather than Hurst LEVEL —
+   but has not been checked against §5.6's other three flaws (magnitude/SNR loss, non-stationary
+   bands, evidentiary-weight loss in fusion), and duplicates rather than resolves the "which fusion
+   rule" open question. Record as a fourth candidate alongside §5.5/5.6's proposals, not a decision.
+5. **Broader, not case-study-specific: a concrete parameterization for "put indicators on the
+   activity clock."** The brainstorm's Triple Screen discussion proposes preserving Elder's
+   original 5:1 timeframe ratio as a 5:1 IMBALANCE-BUCKET ratio (macro/intermediate/micro scales at
+   `N×25`/`N×5`/`N` imbalance units) instead of calendar-time multiples. Relevant to every
+   case-study's own "should this move to the `ImbalanceBarEngine` clock" open question (§2.2, §5.5)
+   — gives a concrete "how many buckets" answer where the case studies above only say "activity
+   clock" generically. Not validated against this system's real imbalance-bar data.
+
+**Not carried forward, out of scope for this doc**: the brainstorm's `Δ_HS`/`D_KL` divergence
+indices and full 5-state phase-space machine (risk/regime-gating constructs, not indicator
+reformulations) are recorded instead in the new twin doc
+`docs/superpowers/specs/2026-09-06-risk-gating-gang-statistical-reformulation-initiative.md` —
+that doc also flags a real naming collision between the brainstorm's proposed state machine and
+this repo's own existing, approved `PredatorContext`/Predator Decision Contract architecture. Note
+its §3 explicitly names this doc's own §7 item 4 (Phase Coherence State) as likely duplicating its
+§2.2 — reconcile the two before building either.
+
 ## 5. References
 
 - Elder, A. (1993), *Trading for a Living* — Force Index's original definition and divergence rule,
