@@ -29,77 +29,11 @@ uint64_t GetSteadyNowUs() {
         std::chrono::steady_clock::now().time_since_epoch()).count());
 }
 
-constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsLowerBounds = {
-    -6.0f,   // OBS_LOG_SCALE_RATIO
-   -6.0f,   // OBS_BURSTINESS_INDEX (half-window variance ratio)
-    0.0f,   // OBS_REL_RANGE
-   -6.0f,   // OBS_LOG_SCALE_EXPANSION_RATIO (realized variance ratio)
-    0.0f,   // OBS_LEMPEL_ZIV
-    0.0f,   // OBS_HURST_EXPONENT
-   -1.0f,   // OBS_MICRO_ASYMMETRY
-   -6.0f,   // OBS_FISHER_INFO
-    0.0f,   // OBS_FAST_HURST_EXPONENT — mirrors OBS_HURST_EXPONENT's floor (same [0.0,1.5] contract,
-            // DfaHurstExponent.h's own clamp); NOT empirically calibrated on real activity-clock
-            // data yet, same placeholder posture as OBS_FAST_TALEB_KURTOSIS.
-    0.5f,   // OBS_TAIL_INDEX
-   -2.5f,   // OBS_SKEWNESS — BowleySkewness over ActivityClockManager's imbalance-bar returns
-            // since 2026-08-27 (was TS3 time-bar cadence); same formula/bounds, faster clock
-    0.0f,   // OBS_AMIHUD_ILLIQUIDITY
-    0.0f,   // OBS_LIQ_FRAGILITY
-    0.5f,   // OBS_FAST_TALEB_KURTOSIS — mirrors OBS_TAIL_INDEX's floor (same quadrant, same
-            // Moors-family octile statistic); NOT empirically calibrated on real activity-clock
-            // data yet (no historical imbalance-bar returns exist to percentile-match against —
-            // see plan open question 3). Placeholder, revisit once backfill data exists.
-    0.0f,   // OBS_RECURRENCE_RATE
-    1.0f,   // OBS_FRACTAL_DIM
-    0.0f,   // OBS_MEAN_REV_Z
-    0.0f    // OBS_FAST_MEAN_REV_Z — mirrors OBS_MEAN_REV_Z's floor (same [0,5] contract); NOT
-            // empirically calibrated on real activity-clock data yet, same placeholder posture
-            // as OBS_FAST_TALEB_KURTOSIS/OBS_FAST_HURST_EXPONENT.
-};
-
-constexpr std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> kObsUpperBounds = {
-    6.0f,    // OBS_LOG_SCALE_RATIO
-    6.0f,    // OBS_BURSTINESS_INDEX (half-window variance ratio)
-    25.0f,   // OBS_REL_RANGE
-    6.0f,    // OBS_LOG_SCALE_EXPANSION_RATIO (realized variance ratio)
-    1.0f,    // OBS_LEMPEL_ZIV
-    1.5f,    // OBS_HURST_EXPONENT
-    1.0f,    // OBS_MICRO_ASYMMETRY
-    6.0f,    // OBS_FISHER_INFO
-    1.5f,    // OBS_FAST_HURST_EXPONENT — mirrors OBS_HURST_EXPONENT's ceiling (placeholder, see
-             // matching kObsLowerBounds comment)
-    8.0f,    // OBS_TAIL_INDEX
-    2.5f,    // OBS_SKEWNESS
-    100.0f,  // OBS_AMIHUD_ILLIQUIDITY
-    1.0f,    // OBS_LIQ_FRAGILITY
-    8.0f,    // OBS_FAST_TALEB_KURTOSIS — mirrors OBS_TAIL_INDEX's ceiling (placeholder, see
-             // matching kObsLowerBounds comment)
-    1.0f,    // OBS_RECURRENCE_RATE
-    2.0f,    // OBS_FRACTAL_DIM
-    5.0f,    // OBS_MEAN_REV_Z
-    5.0f     // OBS_FAST_MEAN_REV_Z — mirrors OBS_MEAN_REV_Z's ceiling (placeholder, see matching
-             // kObsLowerBounds comment)
-};
-
 inline bool ShouldSampleLog(uint64_t count, uint64_t firstN, uint64_t everyN) {
     if (count <= firstN) {
         return true;
     }
     return everyN > 0 && (count % everyN) == 0;
-}
-
-inline bool IsEnergyObservationDim(size_t dim) {
-    switch (dim) {
-        case ContextManager::OBS_LOG_SCALE_RATIO:
-        case ContextManager::OBS_REL_RANGE:
-        case ContextManager::OBS_TAIL_INDEX:
-        case ContextManager::OBS_LIQ_FRAGILITY:
-        case ContextManager::OBS_FAST_TALEB_KURTOSIS:
-            return true;
-        default:
-            return false;
-    }
 }
 
 inline bool ShouldTriggerHMM(
@@ -119,20 +53,7 @@ inline std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> SanitizeObserv
     const std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE>& input,
     uint64_t& non_finite_count,
     uint64_t& clamped_count) {
-    auto out = input;
-    for (size_t i = 0; i < ContextManager::OBSERVATION_VECTOR_SIZE; ++i) {
-        if (!std::isfinite(out[i])) {
-            out[i] = 0.0f;
-            ++non_finite_count;
-        }
-
-        const float clamped = std::clamp(out[i], kObsLowerBounds[i], kObsUpperBounds[i]);
-        if (clamped != out[i]) {
-            out[i] = clamped;
-            ++clamped_count;
-        }
-    }
-    return out;
+    return otg::SanitizeObservationVector(input, non_finite_count, clamped_count);
 }
 
 template <size_t N>
@@ -309,66 +230,6 @@ float ContextManager::GetLastEventVelocityPerSec() const {
     return m_lastEventVelocityPerSec;
 }
 
-// Utility: Get adaptive noise floor based on market velocity
-float ContextManager::GetAdaptiveNoiseFloor(float event_velocity) const {
-    if (event_velocity < VELOCITY_LOW) {
-        // Low velocity (< 3 events/sec): Conservative during lunch dead zone or overnight
-        // Require 1.5× baseline confirmation to filter false signals
-        return NOISE_FLOOR * NOISE_FLOOR_LOW_VELOCITY_MULT;
-    } else if (event_velocity > VELOCITY_HIGH) {
-        // High velocity (> 8 events/sec): Reactive during active trading sessions
-        // Allow 0.85× baseline to capture fast-moving regimes
-        return NOISE_FLOOR * NOISE_FLOOR_HIGH_VELOCITY_MULT;
-    } else {
-        // Normal velocity (3-8 events/sec): Linear interpolation
-        // Smoothly blend from conservative to reactive across the range
-        float t = (event_velocity - VELOCITY_LOW) / (VELOCITY_HIGH - VELOCITY_LOW);  // Normalize to [0,1]
-        float scale = NOISE_FLOOR_LOW_VELOCITY_MULT - (t * (NOISE_FLOOR_LOW_VELOCITY_MULT - NOISE_FLOOR_HIGH_VELOCITY_MULT));
-        return NOISE_FLOOR * scale;
-    }
-}
-
-float ContextManager::GetAdaptiveMahalanobisEpsilon(
-    float event_velocity,
-    float path_efficiency_snr,
-    float realized_kurtosis) const {
-    // Base epsilon tuned for 16D diagonal Mahalanobis distance under stable observations.
-    constexpr float base_epsilon = 4.0f;
-
-    // Velocity term: lower epsilon in fast markets to capture real regime transitions quickly.
-    float velocity_multiplier = 1.0f;
-    if (event_velocity < VELOCITY_LOW) {
-        velocity_multiplier = 1.15f;
-    } else if (event_velocity > VELOCITY_HIGH) {
-        velocity_multiplier = 0.85f;
-    } else {
-        const float t = (event_velocity - VELOCITY_LOW) / (VELOCITY_HIGH - VELOCITY_LOW);
-        velocity_multiplier = 1.15f - (0.30f * t);
-    }
-
-    // Noise term: low path efficiency (high noise) should be harder to trigger.
-    const float entropy_clamped = std::clamp(path_efficiency_snr, 0.0f, 1.0f);
-    const float entropy_multiplier = 1.0f + (0.35f * entropy_clamped);
-
-    // Fragility term: elevate threshold in fat-tail stress unless movement is truly structural.
-    // Migrated to the Moors octile-kurtosis scale 2026-08-13 (final-review pass). This site was
-    // missed by Task 7's migration sweep because its grep keyed on `talebKurtosis`/`chaseKurtosis`
-    // and this parameter is named `realized_kurtosis`. Left on the old scale the term was inert:
-    // Moors kurtosis is clamped to [0,5] and realistically <= ~3, so `k - 3.0` was almost always
-    // 0 and the multiplier was permanently 1.0. Anchors use Task 7's own published percentile
-    // mapping on the 57,256-sample paired CSV, so trigger frequency is preserved:
-    //   ramp start   old 3.0 (Gaussian neutral)      -> P38.7 -> 1.3809
-    //   saturation   old 8.0 (fat-tail gate)         -> P80.1 -> 1.7592
-    // Slope re-derived so the cap is still reached exactly at saturation:
-    //   old 0.05 = 0.25 / (8.0 - 3.0); new 0.6609 = 0.25 / (1.7592 - 1.3809).
-    constexpr float KURT_FRAGILITY_RAMP_START = 1.3809f;
-    constexpr float KURT_FRAGILITY_SLOPE = 0.6609f;
-    const float kurtosis_excess = std::max(realized_kurtosis - KURT_FRAGILITY_RAMP_START, 0.0f);
-    const float kurtosis_multiplier = 1.0f + std::min(kurtosis_excess * KURT_FRAGILITY_SLOPE, 0.25f);
-
-    return base_epsilon * velocity_multiplier * entropy_multiplier * kurtosis_multiplier;
-}
-
 // Get diagnostics from most recent HMM trigger decision
 std::optional<HMMTriggerDiagnostics> ContextManager::GetLastTriggerDiagnostics() const {
     return m_lastTriggerDiagnostics;
@@ -414,12 +275,12 @@ bool ContextManager::AreTs1DimsReady(uint64_t now_us, uint64_t max_age_us, bool 
     }
 
     const bool inContract =
-        dim0 >= kObsLowerBounds[OBS_LOG_SCALE_RATIO] &&
-        dim0 <= kObsUpperBounds[OBS_LOG_SCALE_RATIO] &&
-        dim6 >= kObsLowerBounds[OBS_HURST_EXPONENT] &&
-        dim6 <= kObsUpperBounds[OBS_HURST_EXPONENT] &&
-        dim8 >= kObsLowerBounds[OBS_FISHER_INFO] &&
-        dim8 <= kObsUpperBounds[OBS_FISHER_INFO];
+        dim0 >= otg::kLowerBounds[OBS_LOG_SCALE_RATIO] &&
+        dim0 <= otg::kUpperBounds[OBS_LOG_SCALE_RATIO] &&
+        dim6 >= otg::kLowerBounds[OBS_HURST_EXPONENT] &&
+        dim6 <= otg::kUpperBounds[OBS_HURST_EXPONENT] &&
+        dim8 >= otg::kLowerBounds[OBS_FISHER_INFO] &&
+        dim8 <= otg::kUpperBounds[OBS_FISHER_INFO];
     if (!inContract) {
         return false;
     }
@@ -875,7 +736,7 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
     } else {
         for (size_t i = 0; i < OBSERVATION_VECTOR_SIZE; ++i) {
             const float delta = std::abs(currentObs[i] - m_prevCollectionObservation[i]);
-            const float change_eps = IsEnergyObservationDim(i)
+            const float change_eps = otg::IsEnergyObservationDim(i)
                 ? OBS_CHANGE_EPS
                 : (OBS_CHANGE_EPS * OBS_GEOMETRY_CHANGE_MULT);
             const bool changed = delta > change_eps;
@@ -1077,19 +938,6 @@ void ContextManager::PushAmihudSample(float rawAmihud, bool isRTH) {
     m_localRiskContext.amihudPercentile = static_cast<float>(leq) / static_cast<float>(n);
 }
 
-float ContextManager::ComputeL1DistanceFromBaseline(
-    const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs) const {
-    if (!m_hmmInitialized) {
-        return 0.0f;
-    }
-
-    float l1_accumulation = 0.0f;
-    for (size_t i = 0; i < OBSERVATION_VECTOR_SIZE; ++i) {
-        l1_accumulation += std::abs(currentObs[i] - m_hmmObservation[i]);
-    }
-    return l1_accumulation;
-}
-
 bool ContextManager::EmitLiveContext(
     const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
     uint64_t sequence_id,
@@ -1117,90 +965,13 @@ bool ContextManager::EmitLiveContext(
     }
 }
 
-ContextManager::TriggerDecisionMetrics ContextManager::ComputeTriggerDecisionMetrics(
-    const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
-    float event_velocity) const {
-    TriggerDecisionMetrics metrics;
-
-    // Lockstep invariant: all 16 per-dim buffers are always pushed/popped
-    // together (single call site, CheckAndTriggerHMM below), so any one of
-    // them is a valid stand-in for "how many samples do we have."
-    if (m_observationHistory[0].size() < OBS_SATURATION_MIN_SAMPLES) {
-        return metrics;
-    }
-
-    float distance_sq = 0.0f;
-    float energy_sq = 0.0f;
-    float geometry_sq = 0.0f;
-    float max_energy_abs_z = 0.0f;
-    const float epsilon_floor = OBS_SATURATION_VAR_EPS;
-    const int n = static_cast<int>(m_observationHistory[0].size());
-    const int mid = n / 2;
-
-    for (size_t dim = 0; dim < OBSERVATION_VECTOR_SIZE; ++dim) {
-        // Extract this dimension's own contiguous buffer into stack scratch
-        // (SoA -- no transposed AoS stride).
-        std::array<float, OBS_SATURATION_MIN_SAMPLES + 1> scratch;
-        for (int k = 0; k < n; ++k) {
-            scratch[static_cast<size_t>(k)] = m_observationHistory[dim][static_cast<size_t>(k)];
-        }
-
-        // Robust median
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        const float median = scratch[static_cast<size_t>(mid)];
-
-        // Robust MAD
-        for (int k = 0; k < n; ++k) {
-            scratch[static_cast<size_t>(k)] = std::abs(
-                m_observationHistory[dim][static_cast<size_t>(k)] - median);
-        }
-        std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-        const float madScale = scratch[static_cast<size_t>(mid)] * 1.4826f;
-
-        const float safe_variance = std::max(madScale * madScale, epsilon_floor);
-        const float centered = currentObs[dim] - median;
-        const float z = centered / std::sqrt(safe_variance);
-        const float contribution = z * z;
-
-        distance_sq += contribution;
-        if (IsEnergyObservationDim(dim)) {
-            energy_sq += contribution;
-            max_energy_abs_z = std::max(max_energy_abs_z, std::abs(z));
-        } else {
-            geometry_sq += contribution;
-        }
-    }
-
-    metrics.mahalanobis_distance = std::sqrt(std::max(distance_sq, 0.0f));
-    metrics.energy_mahalanobis = std::sqrt(std::max(energy_sq, 0.0f));
-    metrics.geometry_mahalanobis = std::sqrt(std::max(geometry_sq, 0.0f));
-    metrics.energy_contribution_share =
-        (distance_sq > OBS_SATURATION_VAR_EPS) ? (energy_sq / distance_sq) : 0.0f;
-    metrics.energy_fast_track = (max_energy_abs_z >= ENERGY_FAST_TRACK_Z);
-
-    metrics.mahalanobis_epsilon = GetAdaptiveMahalanobisEpsilon(
-        event_velocity,
-        currentObs[OBS_LEMPEL_ZIV],
-        currentObs[OBS_TAIL_INDEX]
-    );
-
-    const bool energy_significant =
-        metrics.energy_mahalanobis >= (metrics.mahalanobis_epsilon * ENERGY_TRIGGER_MULT);
-    const bool geometry_significant =
-        metrics.geometry_mahalanobis >= (metrics.mahalanobis_epsilon * GEOMETRY_TRIGGER_MULT);
-
-    metrics.significant_change =
-        metrics.energy_fast_track || energy_significant || geometry_significant;
-    return metrics;
-}
-
 HMMTriggerDiagnostics ContextManager::BuildTriggerDiagnostics(
     uint64_t now_us,
     bool isDataCollection,
     float event_velocity,
     float l1_accumulation,
     float adaptive_noise_floor,
-    const TriggerDecisionMetrics& trigger_metrics) const {
+    const otg::TriggerDecisionMetrics& trigger_metrics) const {
     HMMTriggerDiagnostics diag;
     diag.l1_norm = l1_accumulation;
     diag.noise_floor_used = adaptive_noise_floor;
@@ -1431,31 +1202,26 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // Maintain rolling window for Mahalanobis distance calculation.
     // Saturation is determined solely by FeatureScaler warmup (500 samples),
     // which is the single authority for data-readiness.
-    for (size_t dim = 0; dim < OBSERVATION_VECTOR_SIZE; ++dim) {
-        m_observationHistory[dim].push_back(currentObs[dim]);
-        if (m_observationHistory[dim].size() > OBS_SATURATION_MIN_SAMPLES) {
-            m_observationHistory[dim].pop_front();
-        }
-    }
+    m_triggerGate.PushObservation(currentObs);
 
     // ========================================================================
     // PHASE 3: Calculate L1-norm Distance (Change Detection)
     // ========================================================================
-    const float l1_accumulation = ComputeL1DistanceFromBaseline(currentObs);
+    const float l1_accumulation = m_triggerGate.ComputeL1DistanceFromBaseline(currentObs);
 
     // ========================================================================
     // PHASE 4: Get Adaptive Noise Floor (Velocity-Dependent Threshold)
     // ========================================================================
-    float adaptive_noise_floor = GetAdaptiveNoiseFloor(event_velocity);
+    float adaptive_noise_floor = otg::ObservationTriggerGate::GetAdaptiveNoiseFloor(event_velocity);
 
     // ========================================================================
     // PHASE 5: Evaluate Trigger Conditions
     // ========================================================================
-    const TriggerDecisionMetrics trigger_metrics =
-        ComputeTriggerDecisionMetrics(currentObs, event_velocity);
+    const otg::TriggerDecisionMetrics trigger_metrics =
+        m_triggerGate.ComputeTriggerDecisionMetrics(currentObs, event_velocity);
 
     const bool should_trigger = ShouldTriggerHMM(
-        m_hmmInitialized,
+        m_triggerGate.HasBaseline(),
         trigger_metrics.significant_change,
         isDataCollection,
         any_observation_changed);
@@ -1493,8 +1259,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // ========================================================================
     // PHASE 8: Update State & Store Diagnostics
     // ========================================================================
-    m_hmmObservation = currentObs;
-    m_hmmInitialized = true;
+    m_triggerGate.SetBaseline(currentObs);
     m_lastHMMUpdateTimeUS = now_us;
     m_lastTriggerDiagnostics = diag;
 }
@@ -1537,12 +1302,10 @@ void ContextManager::Reset(uint64_t reset_reference_time_us) {
     m_dailyCache = {};
     m_observationData = MTS::Schema::ObservationData();
     m_asymmetryContext = MTS::Schema::AsymmetryContext();
-    m_hmmInitialized = false;
     m_eventTimestampsUS.clear();
     m_velocityState = eve::VelocityState{};
-    for (auto& buf : m_observationHistory) buf.clear();
+    m_triggerGate.Reset();
     m_lastSequenceId = 0;
-    m_hmmObservation.fill(0.0f);
     m_prevCollectionObservation.fill(0.0f);
     m_hasPrevCollectionObservation = false;
     m_staleRunLength.fill(0);

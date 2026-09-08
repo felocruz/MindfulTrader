@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <type_traits>
 
 namespace MTS {
@@ -209,76 +210,37 @@ inline flatbuffers::Offset<MTS::Schema::MTS_Envelope> BuildEnvelope(
 
 inline MTS::Schema::ObservationData MakeObservationData(
     const ObservationArray& values) {
-    return MTS::Schema::ObservationData(
-        values[kObsLogScaleRatio],
-        values[kObsBurstinessIndex],
-        values[kObsRelativeRange],
-        values[kObsLogScaleExpansionRatio],
-        values[kObsLempelZiv],
-        values[kObsHurstExponent],
-        values[kObsMicroAsymmetry],
-        values[kObsFisherInfo],
-        values[kObsFastHurstExponent],
-        values[kObsTailIndex],
-        values[kObsSkewnessIdx],
-        values[kObsAmihudIlliquidity],
-        values[kObsLiqFragility],
-        values[kObsFastTalebKurtosis],
-        values[kObsRecurrenceRate],
-        values[kObsFractalDim],
-        values[kObsMeanRevZ],
-        values[kObsFastMeanRevZ]);
+    MTS::Schema::ObservationData obs;
+    std::memcpy(&obs, values.data(), sizeof(obs));
+    return obs;
 }
 
 inline ObservationArray ToObservationArray(
     const MTS::Schema::ObservationData& observation) {
-    return {
-        observation.log_scale_ratio(),
-        observation.burstiness_index(),
-        observation.relative_range(),
-        observation.log_scale_expansion_ratio(),
-        observation.lempel_ziv(),
-        observation.hurst_exponent(),
-        observation.micro_asymmetry(),
-        observation.fisher_info(),
-        observation.fast_hurst_exponent(),
-        observation.tail_index(),
-        observation.skewness_idx(),
-        observation.amihud_illiquidity(),
-        observation.liq_fragility(),
-        observation.fast_taleb_kurtosis(),
-        observation.recurrence_rate(),
-        observation.fractal_dim(),
-        observation.mean_rev_z(),
-        observation.fast_mean_rev_z(),
-    };
+    ObservationArray out;
+    std::memcpy(out.data(), &observation, sizeof(observation));
+    return out;
 }
 
+// ObservationData/AsymmetryContext are FlatBuffers structs: standard-layout,
+// exactly kObservationDim/kAsymmetryDim * sizeof(float) bytes (asserted
+// below), same field order as ObservationArray/AsymmetryArray -- a single
+// memcpy is bit-identical to (and faster than) per-field accessor copies,
+// and removes one of the three hand-maintained field-order duplication
+// points (the .fbs declaration, the kObsXxx/kAsymXxx indices above, and
+// this function's own former explicit per-field listing).
 inline MTS::Schema::AsymmetryContext MakeAsymmetryContext(
     const AsymmetryArray& values) {
-    return MTS::Schema::AsymmetryContext(
-        values[kAsymShannonEntropy],
-        values[kAsymShannonEfficiency],
-        values[kAsymTalebKurtosis],
-        values[kAsymTalebSkewness],
-        values[kAsymTalebCliff],
-        values[kAsymParetoRot],
-        values[kAsymRaschkeBurst],
-        values[kAsymSessionQualityScore]);
+    MTS::Schema::AsymmetryContext ctx;
+    std::memcpy(&ctx, values.data(), sizeof(ctx));
+    return ctx;
 }
 
 inline AsymmetryArray ToAsymmetryArray(
     const MTS::Schema::AsymmetryContext& asymmetry) {
-    return {
-        asymmetry.shannon_entropy(),
-        asymmetry.shannon_efficiency(),
-        asymmetry.taleb_kurtosis(),
-        asymmetry.taleb_skewness(),
-        asymmetry.taleb_cliff(),
-        asymmetry.pareto_rot(),
-        asymmetry.raschke_burst(),
-        asymmetry.session_quality_score(),
-    };
+    AsymmetryArray out;
+    std::memcpy(out.data(), &asymmetry, sizeof(asymmetry));
+    return out;
 }
 
 static_assert(std::is_standard_layout<MTS::Schema::ObservationData>::value,
@@ -286,9 +248,11 @@ static_assert(std::is_standard_layout<MTS::Schema::ObservationData>::value,
 static_assert(std::is_standard_layout<MTS::Schema::AsymmetryContext>::value,
               "AsymmetryContext must remain a standard-layout FlatBuffers struct");
 static_assert(sizeof(MTS::Schema::ObservationData) == (kObservationDim * sizeof(float)),
-              "ObservationData schema drift: expected 19 float fields");
+              "ObservationData schema drift: field count no longer matches kObservationDim "
+              "(MakeObservationData/ToObservationArray's memcpy requires an exact size match)");
 static_assert(sizeof(MTS::Schema::AsymmetryContext) == (kAsymmetryDim * sizeof(float)),
-              "AsymmetryContext schema drift: expected 8 float fields");
+              "AsymmetryContext schema drift: field count no longer matches kAsymmetryDim "
+              "(MakeAsymmetryContext/ToAsymmetryArray's memcpy requires an exact size match)");
 
 }  // namespace Contract
 }  // namespace Schema

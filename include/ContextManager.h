@@ -18,6 +18,7 @@
 #include "FreshnessGateEngine.h"
 #include "FeatureScaler.h"
 #include "RingBuffer.h"
+#include "ObservationTriggerGate.h"
 
 // Shannon flow entropy is measured in BITS (range 0 .. log2(NUM_BINS)). Several gates
 // were authored with thresholds that read like normalized [0,1] ratios of H/Hmax but
@@ -266,25 +267,15 @@ public:
 
 public:
     // Institutional-grade constants
-    static constexpr float NOISE_FLOOR = 0.005f;                    ///< Base L1-norm threshold
-    static constexpr float NOISE_FLOOR_LOW_VELOCITY_MULT = 1.5f;    ///< Conservative multiplier (<3 evt/s)
-    static constexpr float NOISE_FLOOR_HIGH_VELOCITY_MULT = 0.85f;  ///< Reactive multiplier (>8 evt/s)
-    static constexpr float VELOCITY_LOW = 3.0f;                     ///< Low velocity threshold (evt/sec)
-    static constexpr float VELOCITY_HIGH = 8.0f;                    ///< High velocity threshold (evt/sec)
     static constexpr int EVENT_VELOCITY_WINDOW_SEC = 2;              ///< 2-second window for event counting
     static constexpr size_t EVENT_VELOCITY_MAX = 100;                ///< Max events to track in deque
     static constexpr float ANCHOR_CLAMP_MIN = -50.0f;                ///< Min clamp for anchor values (points)
     static constexpr float ANCHOR_CLAMP_MAX = 50.0f;                 ///< Max clamp for anchor values (points)
-    static constexpr size_t OBS_SATURATION_MIN_SAMPLES = 40;         ///< Event-driven warm-up: minimum observations for covariance stability
-    static constexpr float OBS_SATURATION_VAR_EPS = 1e-6f;           ///< Minimum per-dimension variance to treat stream as non-degenerate
     static constexpr float OBS_CHANGE_EPS = 1e-5f;                   ///< Absolute delta threshold to classify a dimension as changed
     static constexpr float OBS_GEOMETRY_CHANGE_MULT = 3.0f;          ///< Geometry dims require stricter change threshold in collection mode
     static constexpr uint64_t OBS_STALENESS_LOG_INTERVAL = 5000;      ///< Emit staleness telemetry every N collection observations
     static constexpr uint64_t OBS_STALENESS_ALERT_RUN = 120;          ///< Consecutive unchanged observations to flag as stale
     static constexpr uint64_t OBS_FRESHNESS_DIGEST_INTERVAL = 10000;  ///< Emit owner-group freshness digest every N collection observations
-    static constexpr float ENERGY_FAST_TRACK_Z = 3.0f;                ///< Fast-track trigger z-threshold for energy channels
-    static constexpr float ENERGY_TRIGGER_MULT = 0.90f;               ///< Energy channels trigger with lower Mahalanobis multiplier
-    static constexpr float GEOMETRY_TRIGGER_MULT = 1.30f;             ///< Geometry channels require higher Mahalanobis multiplier
 
     /**
     * Observation vector indices for HMM inference (Elite v3.1: 16D Statistical Mechanics Spine).
@@ -477,9 +468,7 @@ private:
     float m_prevVolatility = 0.0f;       ///< Previous volatility for regime change detection
     static constexpr float REGIME_CHANGE_THRESHOLD = 0.15f;  ///< Efficiency/volatility % change to reset tenure
 
-    std::array<float, OBSERVATION_VECTOR_SIZE> m_hmmObservation = {};
     MTS::Schema::AsymmetryContext m_asymmetryContext;
-    bool m_hmmInitialized = false;
     uint64_t m_lastSequenceId = 0;
     uint64_t m_lastHMMUpdateTimeUS = 0;
     float m_lastEventVelocityPerSec = 0.0f;
@@ -490,17 +479,13 @@ private:
     // (push_back-then-conditionally-pop_front transiently overshoots by one).
     RingBuffer<uint64_t, EVENT_VELOCITY_MAX + 1> m_eventTimestampsUS;       // Event-arrival timestamps (us); shared by CalculateEventVelocity() and CalculateBurstinessIndex()
     eve::VelocityState m_velocityState;              // EMA-based event velocity (Task 1, phase1-hardening plan)
-    // Structure-of-arrays: one fixed-capacity ring buffer per dimension,
-    // mirroring FeatureScaler's own stateBuffers/logBuffers layout
-    // (docs/superpowers/specs/2026-08-07-contextmanager-ring-buffer-dod-design.md
-    // §3.4, Round 2) -- was a single std::deque<std::array<float,16>> (AoS),
-    // read every tick via a transposed per-dim stride in
-    // ComputeTriggerDecisionMetrics(); this closes both the deque's ongoing
-    // chunk churn and the transposed-access inefficiency. All 16 buffers are
-    // always pushed/popped together (single call site, once per tick), so
-    // they never fall out of sync -- size() on any one of them is a valid
-    // stand-in for "how many samples do we have."
-    std::array<RingBuffer<float, OBS_SATURATION_MIN_SAMPLES + 1>, OBSERVATION_VECTOR_SIZE> m_observationHistory;
+    // Mahalanobis significant-change gate (rolling per-dim history + L1
+    // baseline) -- extracted to include/ObservationTriggerGate.h so the exact
+    // same code is reusable by a non-Sierra-Chart offline tool, not
+    // duplicated (docs/superpowers/specs/2026-08-07-contextmanager-ring-
+    // buffer-dod-design.md §3.4 for the original SoA/RingBuffer design this
+    // class replicates).
+    otg::ObservationTriggerGate m_triggerGate;
     std::optional<HMMTriggerDiagnostics> m_lastTriggerDiagnostics;  ///< Diagnostics from most recent trigger
     std::array<float, OBSERVATION_VECTOR_SIZE> m_prevCollectionObservation = {};
     bool m_hasPrevCollectionObservation = false;
@@ -546,39 +531,6 @@ private:
     /// @return Dimensionless CV ratio (StdDev/Mean of IATs)
     float CalculateBurstinessIndex(uint64_t now_us);
 
-    /// Apply velocity-based adaptive noise floor threshold for robust HMM triggering
-
-    /// Adapts threshold based on market activity:
-    /// - Low velocity (< 3 evt/s): 1.5x baseline (conservative during lunch/overnight)
-    /// - Normal velocity (3-8 evt/s): Linear interpolation between extremes
-    /// - High velocity (> 8 evt/s): 0.85x baseline (reactive during active sessions)
-    /// @param event_velocity Events per second
-    /// @return Adaptive noise floor threshold
-    float GetAdaptiveNoiseFloor(float event_velocity) const;
-
-    /// Adaptive Mahalanobis epsilon to filter noise and retain structural physics shifts.
-    /// Raises threshold in high-noise/fragile states; lowers in coherent high-velocity moves.
-    float GetAdaptiveMahalanobisEpsilon(float event_velocity, float path_efficiency_snr, float realized_kurtosis) const;
-
-    struct TriggerDecisionMetrics {
-        float mahalanobis_distance = 0.0f;
-        float mahalanobis_epsilon = 0.0f;
-        float energy_mahalanobis = 0.0f;
-        float geometry_mahalanobis = 0.0f;
-        float energy_contribution_share = 0.0f;
-        bool energy_fast_track = false;
-        bool significant_change = false;
-    };
-
-    /// Compute Mahalanobis trigger metrics for current observation snapshot.
-    TriggerDecisionMetrics ComputeTriggerDecisionMetrics(
-        const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
-        float event_velocity) const;
-
-    /// Compute L1 distance from last emitted HMM observation baseline.
-    float ComputeL1DistanceFromBaseline(
-        const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs) const;
-
     /// Build base trigger diagnostics payload before emission result is known.
     HMMTriggerDiagnostics BuildTriggerDiagnostics(
         uint64_t now_us,
@@ -586,7 +538,7 @@ private:
         float event_velocity,
         float l1_accumulation,
         float adaptive_noise_floor,
-        const TriggerDecisionMetrics& trigger_metrics) const;
+        const otg::TriggerDecisionMetrics& trigger_metrics) const;
 
     /// Validate observation vector at ContextManager emission boundary.
     /// Returns false if any value is non-finite and records sampled diagnostics.

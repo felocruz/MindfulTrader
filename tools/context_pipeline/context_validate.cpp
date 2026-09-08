@@ -29,14 +29,8 @@ struct Accumulator {
 void AppendPair(const PairedRecord& rec, void* user_data) {
     auto* acc = static_cast<Accumulator*>(user_data);
     const auto* obs = rec.observation.observation;
-    const std::array<float, MTS::Schema::Contract::kObservationDim> values = {
-        obs->log_scale_ratio(), obs->burstiness_index(), obs->relative_range(),
-        obs->log_scale_expansion_ratio(), obs->vol_convexity(), obs->lempel_ziv(),
-        obs->hurst_exponent(), obs->micro_asymmetry(), obs->fisher_info(),
-        obs->fast_hurst_exponent(), obs->tail_index(), obs->skewness_idx(),
-        obs->amihud_illiquidity(), obs->liq_fragility(), obs->fast_taleb_kurtosis(),
-        obs->recurrence_rate(), obs->fractal_dim(), obs->mean_rev_z(), obs->fast_mean_rev_z(),
-    };
+    const std::array<float, MTS::Schema::Contract::kObservationDim> values =
+        MTS::Schema::Contract::ToObservationArray(*obs);
     for (std::size_t i = 0; i < values.size(); ++i) {
         acc->columns[i].push_back(values[i]);
     }
