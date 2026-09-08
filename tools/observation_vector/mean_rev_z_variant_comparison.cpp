@@ -230,7 +230,7 @@ int main(int argc, char** argv) {
     // --- Activity-clock variant (imbalance bars from 1s aggregate ticks) ---
     {
         ImbalanceBarEngine engine;
-        engine.SetImbalanceThresholdForTesting(imbalanceThreshold);
+        engine.SetImbalanceThreshold(imbalanceThreshold);
         std::deque<float> returnBuffer;  // rolling last-100 returns, chronological (oldest first)
         std::size_t completedBefore = 0;
         std::size_t signalCount = 0;
