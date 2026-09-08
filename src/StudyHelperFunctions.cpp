@@ -11,6 +11,8 @@
 #include "SevcikFractalDimension.h"
 #include "DfaHurstExponent.h"
 #include "BipowerVariation.h"
+#include "MeanReversionCalculator.h"
+#include "LiquidityFragilityEngine.h"
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2626,73 +2628,29 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) 
     /// amihud_illiquidity (Kyle & Obizhaeva 2016; Lillo, Farmer & Mantegna
     /// 2003) applies here too.
     ///
-    /// New construction: F_raw = eta_t / ScaleRef_W, where
-    ///   eta_t      = barRange_t / sqrt(liveVolume_t)        (live, still-forming bar)
-    ///   ScaleRef_W = median(barRange) / median(sqrt(volume)) over the last
-    ///                W=30 CLOSED bars (both medians over the SAME window --
-    ///                a ratio of medians, not a median of ratios -- immune to
-    ///                fat-tailed outliers, 50% breakdown point, Rousseeuw &
-    ///                Croux 1993). Dedicated to this dim -- does NOT touch or
-    ///                depend on the shared ATR indicator other consumers use.
-    /// F_raw==1.0 is the theoretically neutral point (real-data median 1.0031,
-    /// verified against 2,211 real MES 15-min bars, 2026-09-03) -- normal
-    /// elasticity. F_raw>1 = range expanding faster than volume explains
-    /// (fragile/evaporating book); F_raw<1 = deep absorption.
-    ///
-    /// Mapped through sigmoid(2*ln(F_raw)) -- the SAME bounded [0,1] shape this
-    /// dim's own prior formula already used for its range signal -- so every
-    /// existing consumer of this dim's absolute-threshold contract
-    /// (RiskManager's hard veto spreadStress>0.85, Scoring's penalty>0.70)
-    /// stays valid without its own recalibration. Real-data distribution under
-    /// this mapping (2,211 bars): p1=0.175, median=0.502, p99=0.855, max=0.977
-    /// -- uses the full [0,1] range, not compressed into a narrow band the way
-    /// the old formula's own "0.0-0.35 normal" doc comment described.
-    constexpr int kWindow = 30;
-    constexpr float kLiveBarMinVolume = 50.0f;
-    constexpr float kEps = 1e-6f;
-
-    if (sc.Index < kWindow) {
+    /// New construction: F_raw = eta_t / ScaleRef_W (formula/derivation now
+    /// lives in LiquidityFragilityEngine.h, extracted so it can be natively
+    /// unit-tested and reused by a non-Sierra-Chart .context-generating tool --
+    /// this wrapper owns only the ACSIL bar-array pull and cold-start policy).
+    if (sc.Index < lfe::kWindow) {
         return std::clamp(prev_fragility, 0.0f, 1.0f);  // true cold start, no prior value exists yet
     }
 
     // Dedicated median-based scale reference over the last kWindow CLOSED bars
-    // (never the live, still-forming one) -- same nth_element(mid=n/2)
-    // convention as this repo's other robust statistics (FeatureScaler.h's
-    // RobustLocation()).
-    std::array<float, kWindow> rangeWindow{};
-    std::array<float, kWindow> sqrtVolWindow{};
-    for (int i = 0; i < kWindow; ++i) {
-        const int idx = sc.Index - kWindow + i;
+    // (never the live, still-forming one).
+    std::array<float, lfe::kWindow> rangeWindow{};
+    std::array<float, lfe::kWindow> sqrtVolWindow{};
+    for (int i = 0; i < lfe::kWindow; ++i) {
+        const int idx = sc.Index - lfe::kWindow + i;
         rangeWindow[static_cast<size_t>(i)] = sc.High[idx] - sc.Low[idx];
         sqrtVolWindow[static_cast<size_t>(i)] = std::sqrt(std::max(static_cast<float>(sc.Volume[idx]), 0.0f));
     }
-    constexpr int kMid = kWindow / 2;
-    std::array<float, kWindow> rangeScratch = rangeWindow;
-    std::nth_element(rangeScratch.begin(), rangeScratch.begin() + kMid, rangeScratch.end());
-    const float medRange = rangeScratch[kMid];
-    std::array<float, kWindow> volScratch = sqrtVolWindow;
-    std::nth_element(volScratch.begin(), volScratch.begin() + kMid, volScratch.end());
-    const float medSqrtVol = volScratch[kMid];
-    const float scaleRef = medRange / (medSqrtVol + kEps);
 
-    // Live-reactivity guard (unchanged rationale from the prior formula):
-    // too early in a fresh bar, volume-so-far is near zero, which would
-    // otherwise manufacture a spurious eta_t artifact.
     const float liveVolumeSoFar = static_cast<float>(sc.Volume[sc.Index]);
-    if (liveVolumeSoFar < kLiveBarMinVolume || scaleRef < kEps) {
-        return std::clamp(prev_fragility, 0.0f, 1.0f);
-    }
+    const float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
 
-    float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
-    if (barRange < 0.00001f) barRange = 0.00001f;  // avoid div-by-zero on doji
-
-    const float eta = barRange / (std::sqrt(liveVolumeSoFar) + kEps);
-    const float fRaw = eta / scaleRef;
-    const float logF = std::log(std::max(fRaw, 1e-6f));
-    const float fragilityRaw = 1.0f / (1.0f + std::exp(-2.0f * logF));
-
-    const float alpha = (fragilityRaw > prev_fragility) ? 0.30f : 0.15f;
-    return std::clamp(alpha * fragilityRaw + (1.0f - alpha) * prev_fragility, 0.0f, 1.0f);
+    return lfe::ComputeLiquidityFragility(rangeWindow.data(), sqrtVolWindow.data(),
+                                           barRange, liveVolumeSoFar, prev_fragility);
 }
 
 // NOTE: micro_asymmetry (dim 7) is NOT computed here -- see the declaration's
@@ -3042,88 +3000,23 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // 2) Suppress score in momentum regimes using lag-1 return autocorrelation,
     //    centered on the median return rather than the mean for the same reason.
 
-    // kMaxLookback matches the [10,40] adaptive observation window contract
-    // this function's one caller (TripleScreen3.cpp) always passes today
-    // (CalculateAdaptiveObservationWindow's own std::clamp(..., 10, 40)) --
-    // defensive upper bound so a fixed-capacity scratch buffer below can
-    // never be written out of range if a future caller passes something larger.
-    constexpr int kMaxLookback = 40;
-    constexpr double kMadConsistency = 1.4826;
-    const int n = std::clamp(lookback_n, 5, kMaxLookback);
+    // Pure math lives in MeanReversionCalculator.h (natively tested there,
+    // reusable by a non-Sierra-Chart .context-generating tool); this wrapper
+    // owns only the ACSIL price pull and persistent-state carry-forward.
+    // n bound matches the [10,40] adaptive observation window contract this
+    // function's one caller (TripleScreen3.cpp) always passes today
+    // (CalculateAdaptiveObservationWindow's own std::clamp(..., 10, 40)).
+    const int n = std::clamp(lookback_n, 5, mrc::kMaxLookback);
     if (sc.Index < (n + 1)) return 0.0f; // True cold-start, no prior value exists yet
 
-    constexpr double kPriceEps = 1e-6;
+    std::array<float, mrc::kMaxLookback> prices{};  // n <= kMaxLookback, always in range
     const int start_idx = sc.Index - n + 1;
-
-    // Price z-score from log-price window (median/MAD, not mean/std).
-    std::array<double, kMaxLookback> log_prices{};  // n <= kMaxLookback, always in range
     for (int i = 0; i < n; ++i) {
-        const double p = std::max(static_cast<double>(sc.BaseData[SC_LAST][start_idx + i]), kPriceEps);
-        log_prices[static_cast<size_t>(i)] = std::log(p);
+        prices[static_cast<size_t>(i)] = sc.BaseData[SC_LAST][start_idx + i];
     }
-
-    std::array<double, kMaxLookback> scratch{};
-    std::copy_n(log_prices.begin(), n, scratch.begin());
-    const int priceMid = n / 2;
-    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
-    const double median_log_p = scratch[priceMid];
-
-    for (int i = 0; i < n; ++i) scratch[static_cast<size_t>(i)] = std::abs(log_prices[static_cast<size_t>(i)] - median_log_p);
-    std::nth_element(scratch.begin(), scratch.begin() + priceMid, scratch.begin() + n);
-    const double mad_log_p = scratch[priceMid];
-    const double scale_log_p = mad_log_p * kMadConsistency;
 
     float& lastValidMeanRevZ = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MEAN_REV_Z_LAST_VALID_VALUE);
-    // Degenerate (flat price window) carries the last valid value forward
-    // instead of a fabricated exact-zero "no stretch" reading -- same
-    // sentinel-collapse fix already applied to dims 1/2/3/7/8/11/12.
-    if (scale_log_p < 1e-6) {
-        return lastValidMeanRevZ;
-    }
-
-    const double current_log_p = std::log(std::max(static_cast<double>(sc.BaseData[SC_LAST][sc.Index]), kPriceEps));
-    const double abs_z_price = std::abs((current_log_p - median_log_p) / scale_log_p);
-
-    // Lag-1 autocorrelation on log-returns: positive rho => momentum, negative => reversion.
-    const int m = n - 1;
-    if (m < 3) {
-        // Genuinely computed (not degenerate) -- too few samples for the
-        // autocorrelation term, so it's skipped, not faked. Still updates the
-        // carry-forward state so a later degenerate call has a real value to
-        // fall back on.
-        const float score = std::clamp(static_cast<float>(abs_z_price), 0.0f, 5.0f);
-        lastValidMeanRevZ = score;
-        return score;
-    }
-
-    std::array<double, kMaxLookback> returns{};  // m <= n-1 < kMaxLookback, always in range
-    for (int i = 0; i < m; ++i) {
-        const int idx = start_idx + i + 1;
-        const double p = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx]), kPriceEps);
-        const double p_prev = std::max(static_cast<double>(sc.BaseData[SC_LAST][idx - 1]), kPriceEps);
-        returns[static_cast<size_t>(i)] = std::log(p / p_prev);
-    }
-
-    std::array<double, kMaxLookback> returnScratch{};
-    std::copy_n(returns.begin(), m, returnScratch.begin());
-    const int retMid = m / 2;
-    std::nth_element(returnScratch.begin(), returnScratch.begin() + retMid, returnScratch.begin() + m);
-    const double median_r = returnScratch[retMid];
-
-    double num = 0.0;
-    double den = 0.0;
-    for (int t = 1; t < m; ++t) {
-        const double r_t = returns[static_cast<size_t>(t)] - median_r;
-        const double r_prev = returns[static_cast<size_t>(t - 1)] - median_r;
-        num += r_t * r_prev;
-        den += r_prev * r_prev;
-    }
-
-    const double rho = (den > 1e-12) ? (num / den) : 0.0;
-    const double elasticity_gate = std::clamp(1.0 - std::max(rho, 0.0), 0.0, 1.0);
-    const double score = abs_z_price * elasticity_gate;
-
-    const float meanRevZ = std::clamp(static_cast<float>(score), 0.0f, 5.0f);
+    const float meanRevZ = mrc::ComputeMeanReversionZ(prices.data(), n, lastValidMeanRevZ);
     lastValidMeanRevZ = meanRevZ;
     return meanRevZ;
 }
