@@ -51,8 +51,16 @@
   the Mahalanobis significant-change gate was confirmed already pure C++, and the two remaining
   SC-coupled dim calculators (`mean_rev_z`, `liq_fragility`) were extracted into pure, natively
   unit-tested headers this session; see `../CLAUDE.md`'s own pointer for the full account.
+- **Offline `.context` generator (`tools/market_data_replay/`) SHIPPED, 2026-09-08** — the thread
+  above is now functionally complete (Tasks 1-11 done, 75/75 native checks pass, validated against
+  the real 471.9M-tick `mes_ticks.parquet`). Also landed a real fix in `ContextManager.cpp`
+  (`ShouldTriggerHMM()` unified to one Mahalanobis-only branch shared by live-trading and data
+  collection) and recorded a real finding (`regime_tenure` counts ticks, not bars, despite its own
+  doc comments) for future investigation. Task 12 (byte-validation against a genuine SC-collected
+  file) is BLOCKED — no current-schema (v240) comparison file exists yet. See `../CLAUDE.md`'s own
+  pointer for the full account.
 
-**Last Updated**: 2026-09-07
+**Last Updated**: 2026-09-08
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).

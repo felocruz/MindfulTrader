@@ -158,6 +158,31 @@ bit-faithful against the production formulas and wired back into `StudyHelperFun
 (`./build_dll.sh --no-clean` clean, 9/9 new native checks pass, no `FeatureScaler` regression).
 Every one of the 18 dims' real math is now pure/testable; the generator itself is not yet built.
 
+**Offline `.context` generator (`tools/market_data_replay/`) SHIPPED, 2026-09-08** — the thread
+opened 2026-09-07 above is now functionally complete.
+`docs/superpowers/plans/2026-09-08-market-data-replay-implementation.md` Tasks 1-11 done (75/75
+native checks pass): `MarketDataReplayEngine.h` reconstructs all 18 observation dims from raw
+tick data (TS1/TS2/TS3 `TickBarAggregator`s + activity-clock `ImbalanceBarEngine` + the real
+`FeatureScaler`/`ObservationTriggerGate`), a CLI driver (`MarketDataReplay.cpp`) + standalone
+`ContextFileWriter.h` (byte-faithful `.context` writer -- `LBRFileManager.cpp` itself can't link
+into a standalone Linux tool, confirmed via direct compile attempt: transitively pulls in
+`windows.h`), validated against the real 471.9M-tick `mes_ticks.parquet` (335,147 aligned MO+SS
+pairs, zero sequence mismatches). Two real findings/fixes surfaced along the way, both already
+landed in this repo: (1) **`ContextManager.cpp`'s `ShouldTriggerHMM()` quality-over-quantity
+correction** — data collection previously emitted on ANY dim moving by ~1e-5 (near-continuous,
+highly autocorrelated output), now shares the SAME Mahalanobis significant-change standard as
+live trading (this system's own cited Rydén/Teräsvirta/Åsbrink 1998 HMM precedent argues for
+lower-frequency, information-rich sampling, not near-continuous ticks) —
+`docs/superpowers/specs/2026-09-08-context-emission-gate-quality-over-quantity-spec.md`. (2) a
+real, NOT-yet-fixed finding: `regime_tenure` is documented ("bars in current regime state" /
+"TS2 bar-closes in current regime") but the actual counter increments/resets on every TICK, not
+bar close (`SetWaveContext()`'s real body has no bar-close guard) —
+`docs/superpowers/specs/2026-09-08-real-dll-findings-from-offline-generator-spec.md`. **Task 12
+(byte-validation against a genuine SC-collected file) is BLOCKED** — the only `.context` file on
+disk (`lbrnet/data/raw/event_data.context`) is schema_version 230, current schema is 240;
+`context_reader.h`'s own hard-refuse gate correctly blocks reading it. Needs a fresh SC-collected
+file before that task can proceed.
+
 ## Project Overview
 
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) for a Sierra Chart algorithmic trading system. It implements the **Elder-Raschke Confluence System** — Elder's Triple Screen three-timeframe hierarchy with Raschke entry patterns on Screen 3, conditioned by a regime-aware layer (Student-t HMM, Hurst/DFA, Shannon entropy, Taleb kurtosis) — publishing FlatBuffer events over ZMQ to downstream Python consumers (`lbrnet` for ML training, `MTS` for GUI).

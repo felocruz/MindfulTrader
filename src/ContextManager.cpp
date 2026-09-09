@@ -36,17 +36,19 @@ inline bool ShouldSampleLog(uint64_t count, uint64_t firstN, uint64_t everyN) {
     return everyN > 0 && (count % everyN) == 0;
 }
 
-inline bool ShouldTriggerHMM(
-    bool hmm_initialized,
-    bool significant_change,
-    bool is_data_collection,
-    bool any_observation_changed) {
-    if (!is_data_collection) {
-        return !hmm_initialized || significant_change;
-    }
-    // Collection narrative contract:
-    // emit first sample and when any dimension changes.
-    return !hmm_initialized || any_observation_changed;
+// Quality-over-quantity correction, 2026-09-08 (docs/superpowers/specs/2026-09-08-context-
+// emission-gate-quality-over-quantity-spec.md): both live-trading and data-collection now share
+// the same Mahalanobis significant-change standard. Previously, data collection emitted on ANY
+// dim moving by more than a ~1e-5 epsilon (`any_observation_changed`) -- on a continuously-
+// varying real tick feed this fires on nearly every tick, producing a near-continuous, highly
+// autocorrelated dataset that starves a Student-t HMM of the genuine tail/regime-change variation
+// its own emission/transition parameters need (see the spec's literature grounding, incl. this
+// codebase's own cited Rydén/Teräsvirta/Åsbrink 1998 precedent for lower-frequency regime
+// sampling). `is_data_collection`/`any_observation_changed` are no longer consulted here --
+// `UpdateCollectionObservationTelemetry()`'s own staleness/change telemetry is unaffected, it
+// still runs and still logs, only its return value no longer governs emission.
+inline bool ShouldTriggerHMM(bool hmm_initialized, bool significant_change) {
+    return !hmm_initialized || significant_change;
 }
 
 inline std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> SanitizeObservationVector(
@@ -1191,9 +1193,13 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // ========================================================================
     // PHASE 2B.1: Institutional Observation Staleness Telemetry
     // ========================================================================
-    bool any_observation_changed = false;
+    // Return value no longer feeds ShouldTriggerHMM (2026-09-08 quality-over-quantity
+    // correction, docs/superpowers/specs/2026-09-08-context-emission-gate-quality-over-
+    // quantity-spec.md) -- this call's side effects (m_staleRunLength/m_changeCount, the
+    // periodic ObservationStaleness ALERT/freshness-digest logging) remain genuinely useful
+    // operational telemetry independent of the emission decision, so the call stays.
     if (isDataCollection) {
-        any_observation_changed = UpdateCollectionObservationTelemetry(rawObs, currentObs);
+        UpdateCollectionObservationTelemetry(rawObs, currentObs);
     }
 
     // ========================================================================
@@ -1222,9 +1228,7 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
 
     const bool should_trigger = ShouldTriggerHMM(
         m_triggerGate.HasBaseline(),
-        trigger_metrics.significant_change,
-        isDataCollection,
-        any_observation_changed);
+        trigger_metrics.significant_change);
 
     // ========================================================================
     // PHASE 6: Populate Diagnostics (Institutional Observability)

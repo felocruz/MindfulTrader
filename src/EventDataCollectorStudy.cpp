@@ -532,11 +532,13 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
             }
 
             // 4. Trigger ContextManager Logic
-            // This handles Scenario A: Always logging context for data collection
-            // And Scenario B: Logging specific HMM training events on Mahalanobis shift
-            // Synthetic velocity is injected so velocity-sensitive trigger logic and
-            // log_event_velocity remain replay-safe (timestamp velocity flatlines in replay).
-            // ObservationData dim1 is burstiness, not raw event velocity.
+            // .context emission now shares ONE Mahalanobis significant-change standard with the
+            // live-trading path (2026-09-08 quality-over-quantity correction, docs/superpowers/
+            // specs/2026-09-08-context-emission-gate-quality-over-quantity-spec.md) -- no longer
+            // "always logging" on any per-dim epsilon move; ShouldTriggerHMM() collapsed to a
+            // single branch. Synthetic velocity is still injected so velocity-sensitive trigger
+            // logic and log_event_velocity remain replay-safe (timestamp velocity flatlines in
+            // replay). ObservationData dim1 is burstiness, not raw event velocity.
             ContextManager::Instance().CheckAndTriggerHMM(now_us, true, syntheticVelocity,
                                                             IsPostWeekendReopenGracePeriod(sc));
 
