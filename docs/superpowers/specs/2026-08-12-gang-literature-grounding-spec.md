@@ -42,7 +42,7 @@ Each pillar has a status table. **Status** values:
 | Entropy bin count | `InformationEngine.h:28` | fixed `NUM_BINS=10`, sigma-multiple boundaries (denser near center, out to ±5σ) | Event-driven | None named, but internal design note cites this session's own prior hardening work | The asymmetric, widening-toward-the-tails bin scheme is well-motivated *for fat tails specifically* (equal-width bins would waste resolution on rarely-hit extremes) even though it isn't drawn from a named canonical binning rule (Freedman–Diaconis / Scott's rule are the standard citable alternatives, both assume roughly-continuous density estimation rather than this discrete sigma-bucket scheme). **2026-08-13 consensus check:** **Knuth (2006)** Bayesian block/bin optimization is explicitly positioned in the literature (astropy/astroML) as superior to Scott's/FD *specifically because* those two assume near-Gaussian density and are suboptimal for more complicated (fat-tailed) distributions — FD and Scott are near-identical to each other, so citing either is redundant; Knuth is the more differentiated citable contrast for this scheme. | **plausible-engineering-choice** |
 | Entropy short window (P) | `InformationEngine.h:29` | fixed `WINDOW_SIZE_P=50` | Event-driven | None | With 10 bins and N=50, average 5 samples/bin — right at the edge of what's usable for a histogram-based plug-in entropy estimator. This has a **named, well-known fix that appears not to be applied**: Miller (1955), *Note on the bias of information estimates*, gives the classic correction `bias ≈ (m-1)/(2N·ln2)` bits for the plug-in Shannon entropy estimator (Miller–Madow correction). At m=10, N=50, that's a non-trivial bias term worth actually computing and subtracting rather than leaving implicit. **2026-08-13 consensus check:** confirmed still current — Miller-Madow is not a stale relic; R's `entropy` (`method="MM"`) and `infotheo` (`method="mm"`) ship it as the default/first alternative to the naive plug-in estimator today. **Grassberger (2003)**'s digamma-based correction is the field's next-tier upgrade (still O(bins), one `psi()`/`std::lgamma`-derivative call per bin — compatible with a C++ hot path if that cost is affordable) if more accuracy is ever wanted; NSB/Bayesian estimators are explicitly heavier/iterative and out of scope for this hot path. | **under-powered** *(concrete literature-backed fix available, reconfirmed as current consensus 2026-08-13)* |
 | Entropy long window (Q) | `InformationEngine.h:30` | fixed `WINDOW_SIZE_Q=500` | Event-driven | None | 500 samples over 10 bins is comfortably past the small-sample entropy-bias regime — this baseline window is fine. | **validated** |
-| Lempel-Ziv window | `InformationEngine.h:31` | fixed `WINDOW_SIZE_LZ=64` (bits, median-split binarized) | Event-driven | **Kaspar & Schuster (1987)**, cited correctly in situ for the LZ76 algorithm itself | The algorithm citation is correct and real. 64 symbols is short by general LZ-complexity-estimation standards (longer sequences give lower-variance complexity-per-symbol estimates), but LZ-complexity was originally designed to work on modest-length symbolic sequences, and this is a real-time regime feature, not a complexity classification — same "rolling feature, not a test" caveat as the variance-ratio dim. **2026-08-13 consensus check:** median-split binarization is confirmed as the conventional default in the EEG/physiological-signal literature finance borrows this technique from, and is comparatively outlier-robust vs. mean-split. That same literature has moved past pure binary median-split for fidelity reasons (single-threshold binarization biases toward low-frequency components, low sensitivity to small-amplitude changes) — finance-specific LZC work more often uses multi-symbol (tertile-style) quantization. No hard consensus minimum-length number found for a *rolling per-symbol* estimate, so N=64 stays defensible; multi-symbol quantization is the next upgrade, not window length. **Addendum, 2026-08-29**: `lbrnet/knowledge/global/training/hmm_feature_selection.md` §8's tail-dependence audit found `lempel_ziv` scored exactly 0.000 tail-enrichment in both the production and bullet-off labels — "the cleanest tail-irrelevance signal" in that investigation. Keep for its own complexity/predictability axis value (moderate general cross-state discrimination, 0.0356) — do not lean on it for any fat-tail-adjacent purpose. Full detail: `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §9, row 6. | **plausible-engineering-choice** |
+| Lempel-Ziv window | `InformationEngine.h:31` | fixed `WINDOW_SIZE_LZ=64` (bits, median-split binarized) | Event-driven | **Kaspar & Schuster (1987)**, cited correctly in situ for the LZ76 algorithm itself | The algorithm citation is correct and real. 64 symbols is short by general LZ-complexity-estimation standards (longer sequences give lower-variance complexity-per-symbol estimates), but LZ-complexity was originally designed to work on modest-length symbolic sequences, and this is a real-time regime feature, not a complexity classification — same "rolling feature, not a test" caveat as the variance-ratio dim. **2026-08-13 consensus check:** median-split binarization is confirmed as the conventional default in the EEG/physiological-signal literature finance borrows this technique from, and is comparatively outlier-robust vs. mean-split. That same literature has moved past pure binary median-split for fidelity reasons (single-threshold binarization biases toward low-frequency components, low sensitivity to small-amplitude changes) — finance-specific LZC work more often uses multi-symbol (tertile-style) quantization. No hard consensus minimum-length number found for a *rolling per-symbol* estimate, so N=64 stays defensible; multi-symbol quantization is the next upgrade, not window length. **Addendum, 2026-08-29**: `lbrnet/knowledge/global/training/hmm_feature_selection.md` §8's tail-dependence audit found `lempel_ziv` scored exactly 0.000 tail-enrichment in both the production and bullet-off labels — "the cleanest tail-irrelevance signal" in that investigation. Keep for its own complexity/predictability axis value (moderate general cross-state discrimination, 0.0356) — do not lean on it for any fat-tail-adjacent purpose. Full detail: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7, row 6. | **plausible-engineering-choice** |
 | KL-divergence smoothing floor | `InformationEngine.h:332-333` | `max(hist, 0.1)` | Event-driven | None | Additive smoothing to keep KL divergence finite is standard practice (related to Laplace/add-k smoothing, Krichevsky–Trofimov add-½ being the classic information-theoretic choice). The *specific* constant `0.1` is in the right family but isn't tied to a named convention like KT's add-½. **2026-08-13 consensus check:** for this exact "compare two histograms for regime shift" use case, applied practice leans toward plain **Laplace/add-k smoothing with a small arbitrary epsilon**, not toward named KT add-½ — KT add-½ is the theoretically distinguished (minimax, Jeffreys-prior) choice from the universal-coding/sequential-prediction literature (Krichevsky & Trofimov 1981) but is rarely invoked by name in applied drift-monitoring code; Good-Turing is built for large-vocabulary NLP problems, overkill for a 10-bin histogram. **Revised framing: `0.1` should be documented as "Laplace-style small-constant smoothing," not aspirationally tied to KT add-½** — no single dominant named convention exists here, and Laplace-style is what's actually seen most often in practice. | **plausible-engineering-choice** |
 | "Spectral Entropy" / Elder's Efficiency Ratio window | `StudyHelperFunctions.cpp:2333` | `entropy_window = clamp(lookback_n, 10, 40)` | TS3, 15-min | Docstring credits "Elder's Efficiency Ratio" | **Naming issue, not a window issue**: this formula (`efficiency_ratio²`) is most precisely Kaufman's Efficiency Ratio (Perry Kaufman, *Trading Systems and Methods*, 1998 — the same ER used in Kaufman's Adaptive Moving Average), not primarily Elder's. It also isn't an entropy measure in the Shannon sense at all — it's a directional-efficiency ratio. Flagged in Findings. | **see Findings** |
 
@@ -173,7 +173,58 @@ grounding-level honesty above, not overclaimed).
 
 ---
 
+## Market regime state taxonomy and orthogonal-axis decomposition (migrated from the 2026-08-29
+brainstorm doc §1/§1.9, that doc removed 2026-09-09 — predates and is not specific to either the
+calendar-clock `ContextManager` or the newer `ImbalanceContextManager` work; applies to both)
+
+**Purpose**: before assuming any particular latent structure is the only one worth hunting for, ask
+what the regime-switching literature has actually found markets decompose into. A menu of what's
+been found real and recurring — not a target state count, not a claim this system must reproduce
+all of it.
+
+| State (literature) | Source | Core signature |
+|---|---|---|
+| Bull | Hamilton (1989), *Econometrica* 57(2) | High return, low vol |
+| Bear/Crisis | Hamilton (1989) | Low/negative return, high vol |
+| Normal (middle) | 3-state extension of Hamilton | Near-zero return, moderate vol |
+| Crash | Guidolin & Timmermann (2007), *J. Economic Dynamics and Control* | Sharp negative return, highest vol |
+| Slow Growth | Guidolin & Timmermann (2007) | Modest return, below-avg vol |
+| Recovery | Guidolin & Timmermann (2007) | Post-crash transitional dynamics, distinct from steady-state Bull |
+| High-vol bear + correlation spike | Ang & Bekaert (2002, 2004), *Review of Financial Studies* | Vol + cross-market correlation shift (not representable in a single-instrument system) |
+| Trending-High-Vol (practitioner quadrant, trend × vol) | Practitioner framework | Trend axis × vol axis intersection — arguably the same phenomenon as fat-tail/Talebian below, described by a different literature |
+| Liquidity crisis | Brunnermeier & Pedersen (2009), *Review of Financial Studies* | Funding/liquidity spiral (mechanistically distinct from generic high volatility) |
+| Contagion/self-exciting clustering | Aït-Sahalia, Cacho-Diaz & Laeven (2015), *J. Financial Economics* | Elevated, decaying jump hazard — jump arrivals raise the intensity of further jumps |
+| Fat-tail / Talebian | This project's working target | Extreme, discontinuous-jump-dominated, low Student-t ν |
+
+**Orthogonal-axis decomposition** — a different, complementary question: what genuinely orthogonal
+statistical axes can a return-generating process vary along, independent of named states. The
+classical core is the four moments; everything past that is a dynamics/microstructure axis layered
+on top.
+
+| Axis | Classical or dynamics axis? | Representative dim(s) |
+|---|---|---|
+| Location/drift (regime-dependent mean return) | Classical (1st moment) | None — tested as a candidate (return z-score) and rejected, see the elite-feature-set curation doc row 20 |
+| Scale/dispersion (volatility level) | Classical (2nd moment) | `relative_range`, `log_scale_ratio`, `log_scale_expansion_ratio` |
+| Asymmetry (skewness) | Classical (3rd moment) | `skewness_idx` |
+| Tail weight (kurtosis) | Classical (4th moment) | `fast_taleb_kurtosis` |
+| Persistence (trend vs. mean-reversion) | Dynamics | `hurst_exponent`/`fast_hurst_exponent`, `mean_rev_z`/`fast_mean_rev_z`, `recurrence_rate` |
+| Jump/discontinuity share (fraction of realized variance from jumps) | Dynamics | None wired — jump/bipower-variation ratio candidate-validated, see the elite-feature-set curation doc row 21 |
+| Temporal clustering/contagion (self-exciting extremes) | Dynamics | `burstiness_index` (informal); Hawkes intensity deferred, see curation doc row 23 |
+| Liquidity/fragility | Dynamics/microstructure | `amihud_illiquidity`, `liq_fragility` |
+| Complexity/predictability | Dynamics/microstructure | `lempel_ziv` |
+| Order-flow toxicity/informed trading | Dynamics/microstructure | `micro_asymmetry` |
+
+**Governing principle**: an axis with zero representation is a real gap worth prototyping; an axis
+with a weak/null representative is an estimator problem, not an axis problem (don't drop the axis,
+look for a better estimator); an axis with 3+ dims is a redundancy question worth checking pairwise.
+Per-dim IN/OUT status decisions live in `docs/superpowers/specs/2026-08-31-elite-feature-set-
+curation-initiative.md` §7, not here — this section is the axis-taxonomy reference those decisions
+draw on, not itself a decision ledger.
+
+---
+
 ## Findings, not literature questions
+
 
 These are naming/labeling/dead-code issues the inventory surfaced. They don't have a "right value" — they have a right fix, tracked here so they aren't lost, but implementation is separate from this spec's parameter-tuning scope.
 
@@ -186,7 +237,7 @@ These are naming/labeling/dead-code issues the inventory surfaced. They don't ha
 7. **`CalculatePathEfficiencySNR`'s docstring credits Elder** for a formula more precisely attributable to **Kaufman (1998)**'s Efficiency Ratio, and it's not a Shannon-entropy measure despite the "Spectral Entropy" name in its own docstring.
 8. **Skewness's "Wyckoff-aligned" label** (`StudyHelperFunctions.cpp:2748`) doesn't have a clear methodological link to Wyckoff's actual framework — likely just a naming flourish worth dropping rather than a citation worth preserving.
 9. **The "Taleb Cliff" feature and the deleted `ChandelierStopManager` execution engine are unrelated code, despite sharing "Chandelier" math.** `ChandelierStopManager` (`.h`/`.cpp`) was the live order-management class — ATR trailing stops on open positions — and was **fully deleted** in commit `9ee5326` (2026-07-15) as part of the Chandelier→Triple-Barrier exit-doctrine cutover (`docs/ADR/triple_barrier_cutover_phase1_plan.md`, `triple_barrier_exit_engine_spec.md`). Verified gone from the current tree: no `.h`/`.cpp`/`CMakeLists.txt` entry remains, only stale comments. The "Taleb Cliff" observation-vector feature (`ContextManager.cpp:693-725`, `elderChandelierATR`) is a *separate*, still fully-live calculation that independently reuses the same LeBeau parameters (22-period, 3×ATR) as a **risk/regime signal** (distance-to-theoretical-stop, feeding `RiskManager`/`Scoring`/`RejectionLedger`) — it never placed an order and was untouched by the cutover. Don't read "Chandelier was deleted" as "the Taleb Cliff dim is dead" — they're independent.
-10. **`burstiness_index`'s wire field uses a cruder bar-cadence proxy while a genuine, already-computed event-arrival-timestamp CV-burstiness measure sits unused.** `raschkeBurst` (`ContextManager::CalculateBurstinessIndex()`) is real inter-arrival-time-based burstiness, already computed on the HMM-trigger cadence — but it never reaches the observation vector's `burstiness_index` field. Same shape as the `fast_taleb_kurtosis` origin story (Finding-worthy, not a literature-grounding question): a real signal exists, wired to the wrong place. Found in `PRODUCTION_TRIAGE.md` row 1's 2026-08-26 investigation, surfaced into `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §5.5/§9 2026-08-29. **Wiring fixed 2026-08-29** (redirected to `raschkeBurst`, dead-code `CalculateBurstiness` deleted). **Formula itself also fixed, separately, 2026-08-31**: `raschkeBurst`'s own underlying computation (`EventVelocityEngine.h`'s `CalculateBurstinessIndex`) was a literal `stddev/mean` plain coefficient of variation — a Gaussian-moment construct on fat-tailed inter-arrival-time data, per Kim & White (2004) — reformulated to a robust CV (`MAD/median × 1.4404199`, a newly-derived Poisson-neutrality consistency constant, not the standard 1.4826), as part of the Elite Feature Set Curation initiative's Phase 0 audit (`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §4). Both the wiring and the formula are now fixed; nothing further outstanding on this finding.
+10. **`burstiness_index`'s wire field uses a cruder bar-cadence proxy while a genuine, already-computed event-arrival-timestamp CV-burstiness measure sits unused.** `raschkeBurst` (`ContextManager::CalculateBurstinessIndex()`) is real inter-arrival-time-based burstiness, already computed on the HMM-trigger cadence — but it never reaches the observation vector's `burstiness_index` field. Same shape as the `fast_taleb_kurtosis` origin story (Finding-worthy, not a literature-grounding question): a real signal exists, wired to the wrong place. Found in `PRODUCTION_TRIAGE.md` row 1's 2026-08-26 investigation. **Wiring fixed 2026-08-29** (redirected to `raschkeBurst`, dead-code `CalculateBurstiness` deleted). **Formula itself also fixed, separately, 2026-08-31**: `raschkeBurst`'s own underlying computation (`EventVelocityEngine.h`'s `CalculateBurstinessIndex`) was a literal `stddev/mean` plain coefficient of variation — a Gaussian-moment construct on fat-tailed inter-arrival-time data, per Kim & White (2004) — reformulated to a robust CV (`MAD/median × 1.4404199`, a newly-derived Poisson-neutrality consistency constant, not the standard 1.4826), as part of the Elite Feature Set Curation initiative's Phase 0 audit (`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §4). Both the wiring and the formula are now fixed; nothing further outstanding on this finding.
 
 ---
 
@@ -214,16 +265,19 @@ These are naming/labeling/dead-code issues the inventory surfaced. They don't ha
   don't trust the derivation notes" discipline the 2026-08-14 entry below already established. Not
   yet its own dedicated row (mechanical indexing bug, not a literature-grounding question), same
   categorization as that entry's own `DIM_WINSOR_SIGMA_OVERRIDE[0]`/`[9]` finding.
-- **2026-08-29** — **New orchestrating document for the whole observation-vector thread**:
-  `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` (EVOLVING,
-  cross-cutting axis-coverage/redundancy assessment, not per-parameter literature grounding like
-  this doc). This Gang doc remains the living per-parameter literature-grounding/validation-status
-  reference — the brainstorm doc cites it as a source and mirrors specific findings back here
-  (this entry) rather than duplicating or overriding it. Two findings mirrored in this pass: the
-  `lempel_ziv` row's tail-irrelevance addendum (0.000 tail-enrichment, `hmm_feature_selection.md`
-  §8) and new Finding 10 (`burstiness_index` wired to a cruder proxy than the already-computed
-  `raschkeBurst`). See the brainstorm doc's own §7 for the reverse cross-reference and §9 for a
-  full 25-row per-dim decision ledger this doc's individual rows don't attempt to replicate.
+- **2026-08-29** — **New orchestrating document for the whole observation-vector thread**: a
+  cross-cutting axis-coverage/redundancy brainstorm doc (EVOLVING at the time), not per-parameter
+  literature grounding like this doc. This Gang doc remained the living per-parameter
+  literature-grounding/validation-status reference — the brainstorm doc cited it as a source and
+  mirrored specific findings back here rather than duplicating or overriding it. Two findings
+  mirrored in this pass: the `lempel_ziv` row's tail-irrelevance addendum (0.000 tail-enrichment,
+  `hmm_feature_selection.md` §8) and new Finding 10 (`burstiness_index` wired to a cruder proxy than
+  the already-computed `raschkeBurst`). **2026-09-09**: that brainstorm doc has since been removed
+  (superseded, its per-dim ledger long since moved to `docs/superpowers/specs/2026-08-31-elite-
+  feature-set-curation-initiative.md` §7); its still-relevant, not-yet-migrated content (market-state
+  taxonomy, lead-time evaluation criterion, a standing bootstrap-methodology debt) was migrated to
+  this doc's own new "Market regime state taxonomy" section above and to the curation initiative
+  doc's §8/§9, rather than left to disappear with the deleted file.
 
 - **2026-08-12** — Initial pass. Full inventory (all four pillars) via codebase-wide agent sweep; literature assessment for every row above; 8 naming/dead-code findings split out. No empirical validation yet — flagged rows are the priority list for that follow-up (Hurst/DFA sample-size adequacy on our own MES bars; Hill-estimator bootstrap k-selection per Danielsson et al.; kurtosis/skewness robust-estimator comparison per Kim & White).
 - **2026-08-12** — Correction: the "Taleb Cliff" row's citation to `ContextManager.cpp:706-718` was off by a few lines (correct range `693-725`); added Finding 9 clarifying that this live feature is unrelated to the deleted `ChandelierStopManager` execution class (verified deleted, commit `9ee5326`) — same underlying Chandelier math, two independent fates.

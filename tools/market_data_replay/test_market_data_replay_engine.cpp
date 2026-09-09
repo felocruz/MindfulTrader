@@ -130,8 +130,11 @@ int main() {
             t += 1'000'000LL;
         }
         check("price_actually_varied_in_this_fixture", sawSignificantReturn);
-        check("tail_index_moved_off_zero_default_after_warmup",
-              engine.GetObservation().tail_index() != 0.0f);
+        // tail_index is non-candidate (dim-selection spec §3, 2026-09-09) --
+        // its GetHillAlpha() computation is skipped entirely, so it stays at
+        // ObservationData's zero-initialized default forever, by design.
+        check("tail_index_stays_at_zero_default_non_candidate_dim",
+              engine.GetObservation().tail_index() == 0.0f);
         check("lempel_ziv_moved_off_zero_default", engine.GetObservation().lempel_ziv() != 0.0f);
     }
 
@@ -231,8 +234,8 @@ int main() {
             engine.OnTick(t, 100.0 + 0.05 * static_cast<double>((i % 7) - 3), 1, 1, 1);
             t += kTs2PeriodUs;
         }
-        check("ts2_log_scale_expansion_ratio_moved_off_zero_default",
-              engine.GetObservation().log_scale_expansion_ratio() != 0.0f);
+        check("ts2_log_scale_expansion_ratio_stays_at_zero_default_non_candidate_dim",
+              engine.GetObservation().log_scale_expansion_ratio() == 0.0f);
         check("ts2_fractal_dim_still_at_cold_start_default",
               engine.GetObservation().fractal_dim() == 1.5f);
 
@@ -294,13 +297,12 @@ int main() {
         int64_t t = kBar1OpenUs;
         constexpr int64_t kTs3PeriodUs = 900LL * 1'000'000LL;  // 15 min
 
-        // micro_asymmetry needs no warm-up at all -- computed from the LIVE
-        // bar's own cumulative ask/bid volume-so-far, exact on the very first
-        // tick of a fresh bar (reset, not accumulated, since it's the first
-        // tick in its bucket).
+        // micro_asymmetry is non-candidate (dim-selection spec §3,
+        // 2026-09-09) -- its computation is skipped entirely, so it stays at
+        // ObservationData's zero-initialized default forever, by design.
         engine.OnTick(t, 100.0, 100, /*askVolume=*/80, /*bidVolume=*/20);
-        check("ts3_micro_asymmetry_exact_on_first_tick",
-              std::fabs(engine.GetObservation().micro_asymmetry() - 0.6f) < 1e-6f);
+        check("ts3_micro_asymmetry_stays_at_zero_default_non_candidate_dim",
+              engine.GetObservation().micro_asymmetry() == 0.0f);
         t += kTs3PeriodUs;
 
         // amihud_illiquidity/liq_fragility/mean_rev_z all stay at their
@@ -392,20 +394,25 @@ int main() {
             t += kTickPeriodUs;
         }
         const auto& obs2 = engine.GetObservation();
-        check("activity_clock_fast_taleb_kurtosis_moved_off_neutral_default_after_warmup",
-              obs2.fast_taleb_kurtosis() != 1.23f);
+        // All 4 activity-clock dims are non-candidate (dim-selection spec §3,
+        // 2026-09-09) -- ComputeActivityClockDims()'s downstream calculators
+        // (MoorsKurtosis/BowleySkewness/DfaHurstExponent/RQA rebuild) are
+        // skipped entirely, so all 4 stay at their construction-time defaults
+        // forever, by design.
+        check("activity_clock_fast_taleb_kurtosis_stays_at_neutral_default_non_candidate_dim",
+              obs2.fast_taleb_kurtosis() == 1.23f);
         check("activity_clock_fast_taleb_kurtosis_within_valid_contract_range",
               obs2.fast_taleb_kurtosis() >= 0.5f && obs2.fast_taleb_kurtosis() <= 8.0f);
-        check("activity_clock_skewness_idx_moved_off_zero_default_after_warmup",
-              obs2.skewness_idx() != 0.0f);
+        check("activity_clock_skewness_idx_stays_at_zero_default_non_candidate_dim",
+              obs2.skewness_idx() == 0.0f);
         check("activity_clock_skewness_idx_within_valid_contract_range",
               obs2.skewness_idx() >= -2.5f && obs2.skewness_idx() <= 2.5f);
-        check("activity_clock_fast_hurst_exponent_moved_off_neutral_default_after_warmup",
-              obs2.fast_hurst_exponent() != 0.5f);
+        check("activity_clock_fast_hurst_exponent_stays_at_neutral_default_non_candidate_dim",
+              obs2.fast_hurst_exponent() == 0.5f);
         check("activity_clock_fast_hurst_exponent_within_valid_contract_range",
               obs2.fast_hurst_exponent() >= 0.0f && obs2.fast_hurst_exponent() <= 1.5f);
-        check("activity_clock_recurrence_rate_moved_off_zero_default_after_warmup",
-              obs2.recurrence_rate() != 0.0f);
+        check("activity_clock_recurrence_rate_stays_at_zero_default_non_candidate_dim",
+              obs2.recurrence_rate() == 0.0f);
         check("activity_clock_recurrence_rate_within_valid_contract_range",
               obs2.recurrence_rate() >= 0.0f && obs2.recurrence_rate() <= 1.0f);
     }
@@ -483,8 +490,11 @@ int main() {
         check("task6b_log_scale_ratio_reacts_mid_bar", obsAfter.log_scale_ratio() != logScaleRatioBefore);
         check("task6b_relative_range_reacts_mid_bar", obsAfter.relative_range() != relRangeBefore);
         check("task6b_fractal_dim_reacts_mid_bar", obsAfter.fractal_dim() != fractalDimBefore);
-        check("task6b_log_scale_expansion_ratio_reacts_mid_bar",
-              obsAfter.log_scale_expansion_ratio() != logScaleExpBefore);
+        // log_scale_expansion_ratio is non-candidate (dim-selection spec §3,
+        // 2026-09-09) -- its computation is skipped entirely, so it no longer
+        // reacts mid-bar (or at all); asserts it stays exactly unchanged.
+        check("task6b_log_scale_expansion_ratio_stays_unchanged_non_candidate_dim",
+              obsAfter.log_scale_expansion_ratio() == logScaleExpBefore);
         check("task6b_bars_since_last_update_reacts_mid_bar",
               engine.GetBarsSinceLastUpdate() != tenureBefore);
         check("task6b_mean_rev_z_reacts_mid_bar", obsAfter.mean_rev_z() != meanRevZBefore);

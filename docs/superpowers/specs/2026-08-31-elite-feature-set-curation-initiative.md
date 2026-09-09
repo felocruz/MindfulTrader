@@ -227,9 +227,10 @@ Extend the pattern already built and validated for the volatility trio
 `include/BipowerVariation.h`) to every dim in the current ~19D vector: pure, `sc`-free ports of each
 calculator operating on real historical MES tick data, pairwise Pearson correlation across all pairs
 (not just within one conceptual axis — cross-axis redundancy is unverified, not assumed absent).
-Organize by the existing axis groupings in
-`docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` (Scale/dispersion,
-Asymmetry, Tail weight, Persistence, etc.) as a starting structure, but do not assume redundancy is
+Organize by the axis groupings in
+`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s "Market regime state
+taxonomy and orthogonal-axis decomposition" section (Scale/dispersion, Asymmetry, Tail weight,
+Persistence, etc.) as a starting structure, but do not assume redundancy is
 confined within an axis. **Sequencing note**: run this per-dim only after that dim clears Phase 0 —
 running it earlier on a still-Gaussian-moment dim reproduces the unreliable-correlation problem Phase
 0's own ordering exists to avoid.
@@ -545,12 +546,13 @@ construction was the defect, not the bound.
 
 ## 7. Per-dim decision ledger (carried over from the 2026-08-29 brainstorm doc, canonical here going forward)
 
-**Origin note**: this ledger was originally built and maintained as §9 of
-`docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md`. Moved here
-2026-08-31 because this initiative now owns whole-vector redundancy/relevance decisions (§0); the
-brainstorm doc's own copy is left in place for history but points here for the current state — don't
-update both independently, this is the copy of record. Field count is now **18** (`vol_convexity`
-removed, §4 Phase 0), not 19.
+**Origin note**: this ledger was originally built and maintained as §9 of the now-deleted
+2026-08-29 brainstorm doc. Moved here 2026-08-31 because this initiative now owns whole-vector
+redundancy/relevance decisions (§0); the origin doc was removed 2026-09-09 (its still-relevant
+content migrated: axis taxonomy → `2026-08-12-gang-literature-grounding-spec.md`, lead-time
+criterion and bootstrap methodology debt → §8/§9 below). This ledger is the sole current source of
+truth for per-dim status — a dim's absence from it means it has no current curation-initiative
+decision, not that one should be inferred or imported from elsewhere.
 
 Status vocabulary (unchanged from the brainstorm doc): **IN** (settled, stays as-is) · **IN-WEAK**
 (stays, weak, no better alternative identified) · **IN-CONTINGENT** (stays now, flagged future
@@ -583,3 +585,40 @@ actual schema field) · **CANDIDATE-DEFERRED** (proposed, explicitly pushed to a
 | 23 | Self-exciting jump clustering (Hawkes intensity) | CANDIDATE-DEFERRED | N/A | Deferred to post-workstation window; unchanged | 2026-08-29 |
 | 24 | Realized semi-variance decomposition | CANDIDATE-DEFERRED | N/A | Logged, no priority assigned yet; unchanged | 2026-08-29 |
 | 25 | Recovery time-since-last-extreme-event construct | CANDIDATE-DEFERRED | N/A | Not yet designed, not just unprototyped; unchanged | 2026-08-29 |
+
+## 8. Governing evaluation criterion: lead-time, not just membership (migrated from the
+2026-08-29 brainstorm doc §1.10, that doc removed 2026-09-09)
+
+This system has two real-money consumers of any fat-tail-relevant candidate, and both share a
+timing requirement worth stating explicitly for every future candidate evaluated by this doc:
+- **Offense — Atratus** (a separate options-trading app): buying cheap out-of-the-money options
+  ahead of a tail event captures convexity. A confirmation that arrives after the market has
+  already repriced the option is worthless to this consumer.
+- **Defense — this system's own risk gates** (the TRAP-detection framework, `CLAUDE.md`'s "Trap
+  Detection" section): exiting before catastrophic loss has the identical timing requirement from
+  the other side. A flag that arrives after the drawdown has already happened is a post-mortem, not
+  a risk control.
+
+**The resulting criterion**: does a candidate detect *approach to* a fat-tail state, or only
+*membership in* one, once it's already underway? A dim can show good cross-state discrimination in
+an offline audit while being nearly useless to either consumer, if it only separates cleanly in the
+middle of the event rather than ahead of it. `ν_k` (the model's native tail-heaviness parameter) is
+structurally a steady-state descriptor by this criterion — necessary for classification, not
+sufficient for either consumer's timing need. Apply this lens to any new tail-relevant candidate
+this doc evaluates going forward, not just cross-state-ratio/redundancy.
+
+## 9. Known methodology debt: i.i.d. bootstrap on overlapping forward-return signals (migrated
+from the 2026-08-29 brainstorm doc §10.9, that doc removed 2026-09-09)
+
+`tools/observation_vector/drift_location_eval.cpp` and `tools/observation_vector/jump_ratio_eval.cpp`
+(rows 20/21 above) both resample individual per-tick forward-return signals as if independent, but
+consecutive signals share most of their underlying tick data once the forward horizon (30-240
+minutes) is much larger than the per-tick sampling interval — this overstates effective sample size
+and understates every reported CI/p-value. Not yet quantified precisely or fixed for either tool.
+Neither existing verdict changes (both effects are far enough from a naively-calibrated zero to
+survive even a much wider correctly-calibrated CI), but a future *marginal* candidate tested on the
+same apparatus should not be trusted without fixing this first. A real fix should reuse this
+codebase's own already-measured Politis-White circular block-length (≈404.82, from the
+`fractal_dim` window-widening work, `72ab967`) rather than re-derive one — e.g. a block bootstrap
+applied uniformly across this whole candidate-validation tool family, not patched into one
+candidate's test ad hoc.

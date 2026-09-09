@@ -699,3 +699,130 @@ or a short Python script using `context_reader.h`-equivalent parsing).
   literal `memcmp` (spec §3's open question 5 cross-compiler ULP caveat).
 - [ ] **Step 4:** Document the result (pass/fail per dim) in the spec's own status line before this
   tool is trusted for real Feature Saliency EM training data.
+
+---
+
+### Post-implementation finding: real-data trigger-rate investigation and gate fix (2026-09-09)
+
+**A full run against the real 471.9M-tick `mes_ticks.parquet`** (output:
+`lbrnet/data/raw/mes_offline_replay.context`) was launched after Task 11 and monitored to
+120,000,000/471,900,000 ticks over several hours before being stopped: the observed
+significant-change rate (69% of records at the 100M-tick checkpoint) was far higher than Task 8's
+own synthetic-fixture estimate (~12%), and the projected final file size (~63GB) prompted a closer
+look before continuing. Partial output was deleted, not kept.
+
+**Diagnostic tool** (`tools/market_data_replay/investigate_trigger_calibration.cpp`, ad hoc, not
+part of the CLI/build) confirmed the high rate on a real 20M-tick sample: 74.3% of decision-eligible
+ticks triggered, 49.1% via `energy_fast_track` (z ≥ 3.0), with `energy_mahalanobis` mean=102.2
+(max=74062.9) — values far too large for a properly-scaled Mahalanobis z-score, consistent with
+MAD-collapse degeneracy in the energy channel at real tick density (the same failure class as the
+earlier `burstiness_index` point-mass bug).
+
+**Root cause identified**: `ObservationTriggerGate::ComputeTriggerDecisionMetrics()` (shared with
+the live `ContextManager.cpp` significant-change gate) computes the Mahalanobis distance over all
+18 schema dims, including several the `2026-08-31-elite-feature-set-curation-initiative.md` §7
+ledger has already decided are `OUT-HMM` (`log_scale_expansion_ratio`, `micro_asymmetry`,
+`tail_index`) or DROP (`fast_mean_rev_z`), plus dims the ledger doesn't mention at all
+(`fast_hurst_exponent`, `skewness_idx`, `fast_taleb_kurtosis`, `recurrence_rate`) — none of which
+carry an explicit `IN*` status.
+
+**Fix attempted, then reverted**: `include/ObservationTriggerGate.h` was changed to restrict the
+significant-change computation to exactly the 10 ledger `IN*` dims — but this header is *shared*
+with live `ContextManager.cpp`, so the fix silently changed live emission behavior too, which is out
+of scope until Feature Saliency EM/HMM training actually concludes which dims belong in the final
+vector. **Reverted via `git checkout -- include/ObservationTriggerGate.h`** (confirmed clean, no
+diff) — the shared header and live `ContextManager.cpp` are untouched, exactly as committed.
+
+**Correct scope, per operator directive 2026-09-09**: this is now its own phase, spec'd separately
+at `docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md` — a tool-local
+(`tools/market_data_replay/` only) candidate dim list + a tool-local trigger gate copy, direct
+Parquet output (no `.context` intermediate), and an explicit closing contract for when the live
+code is allowed to change (only once dim selection concludes). See that spec, not this note, for
+the current design and task list going forward.
+
+**Not yet done**: re-running the full 471.9M-tick pass once the tool-local gate (dim-selection spec
+§3) exists — the earlier run was stopped before any working fix landed, and no fix currently exists
+in this plan's own scope (`MarketDataReplayEngine`/CLI) yet.
+
+---
+
+### Task 13: Tool-local candidate dim list and trigger gate (dim-selection spec §3)
+
+**Files:** New `tools/market_data_replay/CandidateObservationDims.h`,
+`tools/market_data_replay/CandidateTriggerGate.h`. Modify `MarketDataReplayEngine.h`.
+
+**Spec:** `docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md` §3.
+
+- [x] Define the current candidate dim list (starting point: the 10 ledger `IN*` dims) as a single,
+  named source of truth other tool-local code derives its dimensionality from.
+  (`tools/market_data_replay/CandidateObservationDims.h`, `kCandidateDims`.)
+- [x] Port `ObservationTriggerGate`'s median/MAD Mahalanobis logic into a tool-local copy sized to
+  the candidate dim count — not shared with `include/ObservationTriggerGate.h`.
+  (`tools/market_data_replay/CandidateTriggerGate.h`; 9/9 native checks pass,
+  `tools/market_data_replay/test_candidate_trigger_gate.cpp`.)
+- [x] `MarketDataReplayEngine` skips calling the compute path entirely for non-candidate dims (not
+  just discarding the result) — the real speedup a full 471.9M-tick run benefits from. **Done,
+  2026-09-09**: `ComputeActivityClockDims()`'s 4 dims (`skewness_idx`/`fast_taleb_kurtosis`/
+  `fast_hurst_exponent`/`recurrence_rate`, all non-candidate) — `MoorsKurtosis`/`BowleySkewness`/
+  `DfaHurstExponent`/RQA rebuild all skipped entirely, keeping only `OnTickWithPrice()` (needed for
+  `AllDimsReady()`'s bar-count gate). `tail_index`'s `GetHillAlpha()` skipped (kept
+  `AddObservation()` for the sample-count gate). `log_scale_expansion_ratio`'s bipower-variation
+  calc skipped (kept the shared `prices` array + regime-tenure logic, which `bars_since_last_update`
+  genuinely needs regardless). `micro_asymmetry` skipped entirely (trivial O(1), for completeness).
+  Verified behavior-neutral: re-ran the 6M-tick smoke test, identical output (838,418 records,
+  13.97% rate) to before the skip, and measurably faster (296s → 171s, ~1.7x on this range).
+  8 existing tests updated (not deleted) to assert the new deliberate frozen-at-default behavior for
+  each non-candidate dim, rather than "moved off default" — 75/75 pass.
+- [x] `MarketDataReplayEngine` wired to use `CandidateTriggerGate` (extracting just the 10 candidate
+  dims from its existing 18D `m_obs`) instead of the shared `otg::ObservationTriggerGate`.
+  `FeatureScaler` still scales all 18 dims (its calibration arrays are sized for that, unchanged);
+  only the emission decision itself is now candidate-scoped. Verified: `tools/market_data_replay/
+  test_market_data_replay_engine.cpp` (75/75, unchanged), CLI driver rebuilds clean. The now-obsolete
+  `investigate_trigger_calibration.cpp` (diagnosed the old shared-gate's MAD-collapse degeneracy,
+  no longer applicable to this simpler tool-local gate) was deleted rather than left broken.
+- [x] Native test coverage for the new gate (mirroring `tests/cpp/test_observation_trigger_gate.cpp`'s
+  own coverage, sized to the candidate dim count). 9/9 pass.
+
+### Task 14: Direct-to-Parquet output (dim-selection spec §3)
+
+**Files:** Modify `tools/market_data_replay/MarketDataReplay.cpp`. Adapt (not import)
+`tools/context_pipeline/context_to_parquet.cpp`'s columnar-builder + chunked-write pattern.
+
+- [x] Replace `ContextFileWriter`/the `.context` binary format with a flat N-column (N = candidate
+  dim count) Parquet writer, using the existing `parquet::arrow::FileWriter` pattern already proven
+  in this repo (Arrow/Parquet 22.0.0, `mts` mamba env, no new library work). Output columns:
+  10 candidate dims (raw, unscaled — matches `context_to_parquet.cpp`'s own convention) +
+  `sequence_id`/`timestamp_us`/`bars_since_last_update`, per operator direction ("add everything
+  needed for Feature Saliency EM/HMM training").
+- [x] Rebuild, smoke-test against a bounded tick sample before committing to a full run. Added a
+  `--max-ticks N` CLI flag (permanent, generally useful for future bounded runs, not a throwaway).
+  Smoke test: 6,000,000 real ticks → 838,418 records (13.97% significant-change rate — sane,
+  consistent with the ~12% synthetic-fixture estimate from Task 8, a strong signal the candidate-
+  scoped gate fixed the earlier 69-74% blowup). Verified valid/readable via `pyarrow.parquet.
+  read_table` (correct 13-column schema, correct row count).
+
+### Task 15: Live-code refactor once dim selection concludes (dim-selection spec §4) — BLOCKED,
+not startable until Feature Saliency EM/HMM training actually concludes which dims belong
+
+**Files:** `../schema/mts_schema.fbs`, `include/ObservationTriggerGate.h`, `src/ContextManager.cpp`,
+`src/EventDataCollectorStudy.cpp`, `src/TripleScreen1/2/3.cpp`, `include/FeatureScaler.h`.
+
+**Spec:** `docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md` §4 — full
+checklist and the per-dropped-dim non-observation-vector-consumer audit requirement lives there,
+not duplicated here.
+
+- [ ] Prune `ObservationData` (`../schema/mts_schema.fbs`) to the final selected dims; regenerate
+  via `regenerate_schema.sh` (never hand-edit generated headers).
+- [ ] Update `include/ObservationTriggerGate.h` to match `CandidateTriggerGate.h`'s final dim set.
+- [ ] Per-dropped-dim audit for non-observation-vector consumers (`PositionManager.cpp`,
+  `RiskManager.cpp`, `Scoring.cpp`, `TradeDecisionEngine.h`) — do this **before** removing any
+  computation, not after. Known cases already flagged, re-verify at refactor time: `tail_index` →
+  `PositionManager.cpp` position sizing; `fast_taleb_kurtosis` → `RiskManager`'s kurtosis
+  emergency-halt gate/`Scoring.cpp`/`PositionManager`'s chase logic.
+- [ ] Update `src/ContextManager.cpp`/`src/EventDataCollectorStudy.cpp`/`src/TripleScreen*.cpp` to
+  stop computing any dropped dim with no surviving consumer.
+- [ ] Re-derive `FeatureScaler.h`'s positional arrays for the new, smaller layout — the exact
+  index-shift-bug risk class this repo has already hit twice; budget real care, not a mechanical
+  resize.
+- [ ] Full clean rebuild (`./build_dll.sh`, not `--no-clean`) + native test suite pass.
+

@@ -1100,3 +1100,14 @@ designed. Remaining real follow-on: revisit the reviewed pseudocode's `std::vect
 question — already moot, the shipped implementation uses `RingBuffer` per this repo's own DOD
 convention, not `std::vector`.
 
+## 5. Candidate idea, not yet designed (migrated from the 2026-08-29 brainstorm doc §5.5, that
+doc removed 2026-09-09)
+
+**`CalculateMarketSpeed()`'s True-Range tempo proxy** (feeds the already-live `AdaptiveWindowParams`
+adaptive-windowing mechanism, calendar-clock side) could plausibly be replaced or augmented by
+`ImbalanceBarEngine`/`ImbalanceClockManager`'s own bar-formation rate — the rate at which
+imbalance bars complete is itself a direct, real-time activity measure, potentially better than a
+True-Range-based tempo proxy. Not yet designed (needs its own pass — how the rate is normalized,
+which screen/window feeds it, whether it's additive or a replacement), logged here so it isn't
+lost with the source doc's removal.
+

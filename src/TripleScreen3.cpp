@@ -700,8 +700,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         Subgraph_SkewnessIdx, Subgraph_AtrTemp3);
 
     // amihud_illiquidity/liq_fragility (dims 11/12): live/every-tick, not
-    // gated to once per bar (2026-08-29, §1.11 of docs/superpowers/specs/
-    // 2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md) -- both are
+    // gated to once per bar (2026-08-29) -- both are
     // causally leading indicators that bar-gating was making lag a full bar.
     constexpr int kAmihudLiqFragilityWarmupBars = 100;
     if (sc.Index < kAmihudLiqFragilityWarmupBars) {

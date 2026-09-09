@@ -13,6 +13,8 @@
 #include "generated/mts_schema_generated.h"
 #include "generated/mts_schema_contract_generated.h"
 #include "BipowerVariation.h"
+#include "CandidateObservationDims.h"
+#include "CandidateTriggerGate.h"
 #include "CarryForwardCalculators.h"
 #include "DfaHurstExponent.h"
 #include "EventVelocityEngine.h"
@@ -147,19 +149,9 @@ public:
             m_ts3LiveBidVolume += bidVolume;
         }
 
-        // micro_asymmetry: must update every tick using the CURRENT bar's
-        // cumulative ask/bid volume-so-far (StudyHelperFunctions.cpp's own
-        // "must be updated every tick, not gated to once per bar" comment) --
-        // not this tick's own incremental ask/bid volume, which is a
-        // different quantity (production reads sc.AskVolume/BidVolume, which
-        // are running per-bar totals, not per-tick deltas).
-        {
-            const float microAsym = ofae::ComputeMicroAsymmetry(
-                static_cast<float>(m_ts3LiveAskVolume), static_cast<float>(m_ts3LiveBidVolume),
-                m_lastValidMicroAsymmetry);
-            m_lastValidMicroAsymmetry = microAsym;
-            m_obs.mutate_micro_asymmetry(microAsym);
-        }
+        // micro_asymmetry is non-candidate (dim-selection spec §3) -- skipped
+        // entirely (trivial O(1) cost, skipped anyway for completeness/
+        // consistency with the other 7 non-candidate dims).
 
         ComputeTs3LiveDims();
 
@@ -192,15 +184,13 @@ public:
             if (m_hasLastPrice && m_lastPrice > 0.0) {
                 const double logReturn = std::log(price / m_lastPrice);
                 m_infoEngine.AddObservation(logReturn);
+                // AddObservation kept unconditionally -- AllDimsReady()'s
+                // GetSampleCount()>=50 gate depends on it. tail_index itself
+                // is non-candidate (dim-selection spec §3); GetHillAlpha()'s
+                // own computation is skipped entirely, the real compute-skip
+                // speedup, not just its mutate call.
                 m_tailRiskEngine.AddObservation(logReturn);
                 m_obs.mutate_lempel_ziv(static_cast<float>(m_infoEngine.GetLempelZivComplexity()));
-                // Matches ContextManager.cpp:410's own >=50-sample floor --
-                // below it, tail_index carries its last valid value forward
-                // (here: stays at ObservationData's zero-initialized default
-                // until warmed up).
-                if (m_tailRiskEngine.GetSampleCount() >= 50) {
-                    m_obs.mutate_tail_index(static_cast<float>(m_tailRiskEngine.GetHillAlpha()));
-                }
             }
             m_lastPrice = price;
             m_hasLastPrice = true;
@@ -227,6 +217,13 @@ public:
     int GetTs1BarsClosed() const { return m_ts1BarsClosed; }
     int GetTs2BarsClosed() const { return m_ts2BarsClosed; }
     int GetTs3BarsClosed() const { return m_ts3BarsClosed; }
+
+    // Diagnostic accessor (calibration investigation, 2026-09-09) -- mirrors
+    // ContextManager::GetLastTriggerDiagnostics()'s own precedent. Only valid
+    // after a call to OnTick() that reached the trigger-decision step (i.e.
+    // AllDimsReady()+FeatureScaler both warmed up); default-constructed
+    // (significant_change=false) otherwise.
+    const mdr::CandidateTriggerMetrics& GetLastTriggerMetrics() const { return m_lastTriggerMetrics; }
 
 private:
     // Matches EventDataCollectorStudy.cpp's CME_ES_SESSION_START_SECS.
@@ -449,29 +446,10 @@ private:
             prices[static_cast<size_t>(kTs2ObsWindowN)] = static_cast<float>(m_ts2LiveClose);
             const size_t sz = static_cast<size_t>(kTs2ObsWindowN) + 1;
 
-            auto windowBv = [&prices, sz](int windowN) -> double {
-                double logReturns[kTs2ObsWindowN];
-                int count = 0;
-                for (int i = 0; i < windowN; ++i) {
-                    const size_t idx = sz - static_cast<size_t>(windowN) + static_cast<size_t>(i);
-                    if (idx == 0) continue;
-                    const float price = prices[idx];
-                    const float prevPrice = prices[idx - 1];
-                    if (price > 0.0f && prevPrice > 0.0f) {
-                        logReturns[count++] = std::log(static_cast<double>(price) / prevPrice);
-                    }
-                }
-                return ComputeBipowerVariation(logReturns, count);
-            };
-            constexpr int kHalfN = kTs2ObsWindowN / 2;
-            const double bvFull = windowBv(kTs2ObsWindowN);
-            const double bvRecent = windowBv(kHalfN);
-            const double bvFullRate = bvFull / kTs2ObsWindowN;
-            const double bvRecentRate = bvRecent / kHalfN;
-            const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(
-                bvRecentRate, bvFullRate, m_lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
-            m_lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
-            m_obs.mutate_log_scale_expansion_ratio(logScaleExpansionRatio);
+            // log_scale_expansion_ratio is non-candidate (dim-selection spec
+            // §3) -- its bipower-variation computation (windowBv/
+            // ComputeBurstinessIndex, the real cost here) is skipped entirely.
+            // `prices`/`sz` stay (regime tenure below needs them regardless).
 
             double sumRet = 0.0;
             double retLogReturns[kTs2ObsWindowN];
@@ -673,42 +651,20 @@ private:
     // read from ImbalanceContextManager/ImbalanceClockManager, a genuinely
     // separate, not-yet-cut-over system.
     void ComputeActivityClockDims(float price, int64_t askVolume, int64_t bidVolume) {
+        // Dim-selection spec (docs/superpowers/specs/2026-09-09-market-data-
+        // replay-dim-selection-spec.md §3): OnTickWithPrice() itself is kept
+        // unconditionally -- AllDimsReady()'s GetCompletedBarCount()>=100 gate
+        // depends on it regardless of which dims are candidates. The 4 dims
+        // this function used to compute here (skewness_idx, fast_taleb_
+        // kurtosis, fast_hurst_exponent, recurrence_rate) are all non-
+        // candidate -- MoorsKurtosis/BowleySkewness/DfaHurstExponent/RQA
+        // rebuild are skipped entirely (not just their mutate calls), the
+        // real compute-skip speedup, per operator directive 2026-09-09. Not a
+        // computation REMOVAL (spec §2) -- this file is the offline tool, not
+        // ContextManager.cpp; the real calculators are untouched.
         m_imbalanceEngine.OnTickWithPrice(m_imbalanceTickIndex++,
                                            static_cast<float>(askVolume),
                                            static_cast<float>(bidVolume), price);
-
-        float rawReturns[ImbalanceBarEngine::kImbalanceBarBufferCapacity];
-        const std::size_t count = m_imbalanceEngine.GetImbalanceBarReturns(100, rawReturns);
-        if (count >= 100) {
-            std::array<float, 100> returnsArray;
-            std::copy(rawReturns, rawReturns + 100, returnsArray.begin());
-
-            const float moorsKurtosisRaw = MoorsKurtosis(returnsArray);
-            if (std::isfinite(moorsKurtosisRaw)) m_lastValidFastTalebKurtosis = moorsKurtosisRaw;
-            m_obs.mutate_fast_taleb_kurtosis(m_lastValidFastTalebKurtosis);
-
-            const float bowleySkewnessRaw = BowleySkewness(returnsArray);
-            if (std::isfinite(bowleySkewnessRaw)) m_lastValidSkewnessIdx = bowleySkewnessRaw;
-            m_obs.mutate_skewness_idx(m_lastValidSkewnessIdx);
-
-            const float fastHurstRaw = DfaHurstExponent(returnsArray.data(), 100, 8);
-            if (std::isfinite(fastHurstRaw)) m_lastValidFastHurst = fastHurstRaw;
-            m_obs.mutate_fast_hurst_exponent(m_lastValidFastHurst);
-
-            const std::size_t completedBarCount = m_imbalanceEngine.GetCompletedBarCount();
-            if (completedBarCount != m_lastRecurrenceBarCount) {
-                const float epsilon = static_cast<float>(
-                    SelectEpsilonForTargetRecurrenceRate(returnsArray.data(), 100, 0.05));
-                m_recurrenceEngine.RebuildClosedBarWindow(returnsArray.data(), 99, epsilon);
-                m_cachedRecurrenceRate = m_recurrenceEngine.ComputeRate(returnsArray[99], epsilon);
-                m_lastRecurrenceBarCount = completedBarCount;
-            }
-            m_obs.mutate_recurrence_rate(m_cachedRecurrenceRate);
-        }
-        // else: not warmed up yet -- all 4 stay at their construction-time
-        // defaults (1.23f/0.0f/0.5f/0.0f, FlatBuffers zero-init + Task 6's
-        // own constructor seed below), matching ContextManager.cpp's own
-        // warm-up branch exactly.
     }
 
     // Task 10 (spec §3a open Q2): every dim's OWN warm-up requirement must be
@@ -761,27 +717,33 @@ private:
             if (!std::isfinite(v)) return false;
         }
 
-        m_triggerGate.PushObservation(currentObs);
-
-        // Matches CalculateEventVelocity(now_us)'s real formula
-        // (ContextManager.cpp:550-566) -- EMA of inter-arrival time,
-        // tauUs = EVENT_VELOCITY_WINDOW_SEC(2) * 1e6 (ContextManager.h's own
-        // constant, replicated directly since ContextManager.h itself isn't
-        // includable here, spec §3b).
-        constexpr double kEventVelocityWindowSec = 2.0;
-        constexpr double kTauUs = kEventVelocityWindowSec * 1'000'000.0;
-        const float eventVelocity = eve::UpdateAndGetVelocity(
-            m_velocityState, static_cast<uint64_t>(timestampUs), kTauUs);
-
-        const otg::TriggerDecisionMetrics triggerMetrics =
-            m_triggerGate.ComputeTriggerDecisionMetrics(currentObs, eventVelocity);
-
-        const bool shouldTrigger = !m_triggerGate.HasBaseline() || triggerMetrics.significant_change;
-        if (shouldTrigger) {
-            m_triggerGate.SetBaseline(currentObs);
-        }
-        return shouldTrigger;
+    // Task 13 (docs/superpowers/specs/2026-09-09-market-data-replay-dim-
+    // selection-spec.md §3): the significant-change decision now runs over
+    // ONLY the current candidate dims (CandidateObservationDims.h), extracted
+    // from the full 18D scaled vector -- FeatureScaler itself still scales all
+    // 18 (its positional calibration arrays are sized for that, out of scope
+    // to change here), but the emission decision is candidate-scoped, matching
+    // the elite-feature-set curation ledger. Deliberately NOT the shared
+    // include/ObservationTriggerGate.h -- that header, and live ContextManager
+    // .cpp, stay untouched until dim selection concludes (spec §2/§4).
+    std::array<float, mdr::kCandidateDimCount> candidateObs{};
+    for (std::size_t i = 0; i < mdr::kCandidateDimCount; ++i) {
+        candidateObs[i] = currentObs[mdr::kCandidateDims[i]];
     }
+
+    m_candidateTriggerGate.PushObservation(candidateObs);
+
+    const mdr::CandidateTriggerMetrics triggerMetrics =
+        m_candidateTriggerGate.ComputeTriggerDecisionMetrics(candidateObs);
+    m_lastTriggerMetrics = triggerMetrics;
+
+    const bool shouldTrigger =
+        !m_candidateTriggerGate.HasBaseline() || triggerMetrics.significant_change;
+    if (shouldTrigger) {
+        m_candidateTriggerGate.SetBaseline(candidateObs);
+    }
+    return shouldTrigger;
+}
 
     tba::TickBarAggregator m_ts1;
     tba::TickBarAggregator m_ts2;
@@ -858,15 +820,17 @@ private:
     std::size_t m_lastRecurrenceBarCount = 0;
     float m_cachedRecurrenceRate = 0.0f;
 
-    // Task 8: the real (post-2026-09-08 correction) collection-mode gate --
-    // FeatureScaler + the same Mahalanobis ObservationTriggerGate the
-    // live-trading path uses, per ContextManager.cpp's now-unified
-    // ShouldTriggerHMM().
+    // Task 8/13: FeatureScaler still scales all 18 dims (its calibration
+    // arrays are sized for that); the emission decision itself (Task 13) runs
+    // over only the current candidate dims via m_candidateTriggerGate.
     FeatureScaler m_featureScaler;
-    otg::ObservationTriggerGate m_triggerGate;
-    eve::VelocityState m_velocityState;
+    mdr::CandidateTriggerGate m_candidateTriggerGate;
 
     // Task 11 (spec §3f): backwards-timestamp hard-error guard.
     int64_t m_lastTimestampUs = 0;
     bool m_hasLastTimestamp = false;
+
+    // Diagnostic-only (calibration investigation, 2026-09-09) -- not read by
+    // any production logic, only GetLastTriggerMetrics().
+    mdr::CandidateTriggerMetrics m_lastTriggerMetrics{};
 };

@@ -1,16 +1,14 @@
-// MarketDataReplay.cpp -- CLI driver for the offline .context generator
-// (docs/superpowers/plans/2026-09-08-market-data-replay-implementation.md,
-// Task 9; docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md
-// §3d). Streams the full multi-contract mes_ticks.parquet through
-// MarketDataReplayEngine and writes .context records via LBRFileManager,
-// exactly the same real gate ContextManager::CheckAndTriggerHMM() uses
-// (docs/superpowers/specs/2026-09-08-context-emission-gate-quality-over-
-// quantity-spec.md).
+// MarketDataReplay.cpp -- CLI driver for the dim-selection experimentation
+// pipeline (docs/superpowers/specs/2026-09-09-market-data-replay-dim-
+// selection-spec.md). Streams the full multi-contract mes_ticks.parquet
+// through MarketDataReplayEngine and writes a flat Parquet file (candidate
+// observation dims + sequence_id/timestamp_us/bars_since_last_update) direct
+// from C++ -- no .context intermediate, per the dim-selection spec §3.
 //
 // Usage:
 //   tools/bin/market_data_replay \
 //     --ticks-parquet /home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ticks.parquet \
-//     --output <symbol>.context \
+//     --output <path>.parquet \
 //     [--max-rss-mb 3072]
 //
 // Build: mamba run -n mts g++ -O2 -std=c++17 -Iinclude \
@@ -24,18 +22,103 @@
 // that includes it.)
 
 #include "MarketDataReplayEngine.h"
+#include "CandidateObservationDims.h"
 #include "../observation_vector/market_data_io.h"
 #include "../ToolProgressLogger.h"
-#include "ContextFileWriter.h"
+
+#include <arrow/api.h>
+#include <arrow/io/file.h>
+#include <parquet/arrow/writer.h>
 
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
+
+namespace {
+
+constexpr std::size_t kChunkRows = 2'000'000;  // matches context_to_parquet.cpp's own convention
+
+// Flat, columnar accumulation buffer -- one std::vector<float> per candidate
+// dim, plus sequence_id/timestamp_us/bars_since_last_update. Reused across
+// chunks (cleared, not reallocated) to avoid per-chunk heap churn (DOD).
+struct ChunkBuffers {
+    std::array<std::vector<float>, mdr::kCandidateDimCount> candidate_cols;
+    std::vector<std::uint64_t> sequence_id;
+    std::vector<std::int64_t> timestamp_us;
+    std::vector<float> bars_since_last_update;
+
+    void Reserve(std::size_t n) {
+        for (auto& col : candidate_cols) col.reserve(n);
+        sequence_id.reserve(n);
+        timestamp_us.reserve(n);
+        bars_since_last_update.reserve(n);
+    }
+    void Clear() {
+        for (auto& col : candidate_cols) col.clear();
+        sequence_id.clear();
+        timestamp_us.clear();
+        bars_since_last_update.clear();
+    }
+    std::size_t Rows() const { return sequence_id.size(); }
+};
+
+arrow::Status BuildArrowSchema(std::shared_ptr<arrow::Schema>* out) {
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    for (std::size_t dim : mdr::kCandidateDims) {
+        fields.push_back(arrow::field(
+            MTS::Schema::Contract::kObservationFieldNames[dim], arrow::float32()));
+    }
+    fields.push_back(arrow::field("sequence_id", arrow::uint64()));
+    fields.push_back(arrow::field("timestamp_us", arrow::int64()));
+    fields.push_back(arrow::field("bars_since_last_update", arrow::float32()));
+    *out = arrow::schema(fields);
+    return arrow::Status::OK();
+}
+
+arrow::Status BuildRecordBatch(
+    const ChunkBuffers& buf, const std::shared_ptr<arrow::Schema>& schema,
+    std::shared_ptr<arrow::RecordBatch>* out) {
+    std::vector<std::shared_ptr<arrow::Array>> columns;
+    for (const auto& col : buf.candidate_cols) {
+        arrow::FloatBuilder builder;
+        ARROW_RETURN_NOT_OK(builder.AppendValues(col));
+        std::shared_ptr<arrow::Array> arr;
+        ARROW_RETURN_NOT_OK(builder.Finish(&arr));
+        columns.push_back(arr);
+    }
+    {
+        arrow::UInt64Builder builder;
+        ARROW_RETURN_NOT_OK(builder.AppendValues(buf.sequence_id));
+        std::shared_ptr<arrow::Array> arr;
+        ARROW_RETURN_NOT_OK(builder.Finish(&arr));
+        columns.push_back(arr);
+    }
+    {
+        arrow::Int64Builder builder;
+        ARROW_RETURN_NOT_OK(builder.AppendValues(buf.timestamp_us));
+        std::shared_ptr<arrow::Array> arr;
+        ARROW_RETURN_NOT_OK(builder.Finish(&arr));
+        columns.push_back(arr);
+    }
+    {
+        arrow::FloatBuilder builder;
+        ARROW_RETURN_NOT_OK(builder.AppendValues(buf.bars_since_last_update));
+        std::shared_ptr<arrow::Array> arr;
+        ARROW_RETURN_NOT_OK(builder.Finish(&arr));
+        columns.push_back(arr);
+    }
+    *out = arrow::RecordBatch::Make(schema, static_cast<std::int64_t>(buf.Rows()), columns);
+    return arrow::Status::OK();
+}
+
+}  // namespace
 
 int main(int argc, char** argv) {
     std::string ticksPath;
     std::string outputPath;
     std::size_t maxRssMB = 3072;
+    std::size_t maxTicks = 0;  // 0 = unlimited; bounds runs for smoke-testing
     for (int i = 1; i < argc; ++i) {
         if (std::strcmp(argv[i], "--ticks-parquet") == 0 && i + 1 < argc) {
             ticksPath = argv[++i];
@@ -43,26 +126,56 @@ int main(int argc, char** argv) {
             outputPath = argv[++i];
         } else if (std::strcmp(argv[i], "--max-rss-mb") == 0 && i + 1 < argc) {
             maxRssMB = static_cast<std::size_t>(std::strtoul(argv[++i], nullptr, 10));
+        } else if (std::strcmp(argv[i], "--max-ticks") == 0 && i + 1 < argc) {
+            maxTicks = static_cast<std::size_t>(std::strtoull(argv[++i], nullptr, 10));
         }
     }
     if (ticksPath.empty() || outputPath.empty()) {
         std::fprintf(stderr,
-                      "usage: %s --ticks-parquet PATH --output PATH.context [--max-rss-mb 3072]\n",
+                      "usage: %s --ticks-parquet PATH --output PATH.parquet [--max-rss-mb 3072] "
+                      "[--max-ticks N]\n",
                       argv[0]);
         return 1;
     }
 
     ToolProgressLogger progress("market_data_replay");
     progress.Log("streaming from " + ticksPath + " -> " + outputPath +
-                  " (max-rss-mb=" + std::to_string(maxRssMB) + ")");
-    progress.Log(".alpha/.imbalance.context will be near-empty by design -- this tool only "
-                 "populates .context (spec §3h)");
+                  " (max-rss-mb=" + std::to_string(maxRssMB) + ", " +
+                  std::to_string(mdr::kCandidateDimCount) + " candidate dims, direct-to-Parquet)");
 
-    ContextFileWriter contextWriter;
-    if (!contextWriter.Open(outputPath, "ES")) {
-        progress.Log("FATAL: ContextFileWriter::Open failed for " + outputPath);
+    std::shared_ptr<arrow::Schema> schema;
+    auto schemaStatus = BuildArrowSchema(&schema);
+    if (!schemaStatus.ok()) {
+        progress.Log("FATAL: BuildArrowSchema failed: " + schemaStatus.ToString());
         return 1;
     }
+    auto sinkResult = arrow::io::FileOutputStream::Open(outputPath);
+    if (!sinkResult.ok()) {
+        progress.Log("FATAL: cannot open output file: " + sinkResult.status().ToString());
+        return 1;
+    }
+    auto writerResult = parquet::arrow::FileWriter::Open(*schema, arrow::default_memory_pool(), *sinkResult);
+    if (!writerResult.ok()) {
+        progress.Log("FATAL: cannot open Parquet writer: " + writerResult.status().ToString());
+        return 1;
+    }
+    auto writer = std::move(*writerResult);
+
+    ChunkBuffers buffers;
+    buffers.Reserve(kChunkRows);
+
+    auto flushChunk = [&]() -> bool {
+        if (buffers.Rows() == 0) return true;
+        auto s1 = writer->NewBufferedRowGroup();
+        if (!s1.ok()) { progress.Log("FATAL: NewBufferedRowGroup: " + s1.ToString()); return false; }
+        std::shared_ptr<arrow::RecordBatch> batch;
+        auto s2 = BuildRecordBatch(buffers, schema, &batch);
+        if (!s2.ok()) { progress.Log("FATAL: BuildRecordBatch: " + s2.ToString()); return false; }
+        auto s3 = writer->WriteRecordBatch(*batch);
+        if (!s3.ok()) { progress.Log("FATAL: WriteRecordBatch: " + s3.ToString()); return false; }
+        buffers.Clear();
+        return true;
+    };
 
     MarketDataReplayEngine engine;
 
@@ -70,41 +183,49 @@ int main(int argc, char** argv) {
     constexpr std::size_t kInterimReportEveryNTicks = 50'000'000;
     std::size_t ticksProcessed = 0;
     std::size_t recordsWritten = 0;
+    std::uint64_t nextSequenceId = 0;
     bool sawFirstWarmup = false;
+    bool fatalError = false;
 
     try {
         StreamTicksFullParquet(
             ticksPath,
             [&](std::int64_t ts, double price, std::int64_t volume, std::int64_t askVol,
                 std::int64_t bidVol, bool isNewContract) {
+                if (fatalError) return;
+                if (maxTicks != 0 && ticksProcessed >= maxTicks) return;
                 ++ticksProcessed;
 
                 // Faithful-to-live-trading directive (spec §3a open Q1): a real
                 // continuous chart never resets its indicators at a contract
-                // roll, it just sees a single-tick price gap flow through the
-                // same continuous calculations -- do NOT reset engine state
-                // here, unlike whole_vector_redundancy_eval.cpp's own (correct
-                // for its different goal) per-contract reset.
+                // roll -- do NOT reset engine state here.
                 if (isNewContract) {
                     progress.Log("contract roll at tick " + std::to_string(ticksProcessed) +
                                  " (timestamp_us=" + std::to_string(ts) + ") -- engine state NOT reset");
                 }
 
-                if (price <= 0.0) return;  // spec §3f: skip degenerate ticks, don't corrupt windows
+                if (price <= 0.0) return;  // skip degenerate ticks, don't corrupt windows
 
                 const bool wasWarmedUp = sawFirstWarmup;
                 const bool significant = engine.OnTick(ts, price, volume, askVol, bidVol);
 
                 if (significant) {
-                    contextWriter.LogContext(
-                        engine.GetObservation(), MTS::Schema::AsymmetryContext{},
-                        static_cast<uint64_t>(ts), engine.GetBarsSinceLastUpdate(),
-                        /*risk_gate_context=*/nullptr);
+                    const auto& obs = engine.GetObservation();
+                    const auto rawObs = MTS::Schema::Contract::ToObservationArray(obs);
+                    for (std::size_t i = 0; i < mdr::kCandidateDimCount; ++i) {
+                        buffers.candidate_cols[i].push_back(rawObs[mdr::kCandidateDims[i]]);
+                    }
+                    buffers.sequence_id.push_back(nextSequenceId++);
+                    buffers.timestamp_us.push_back(ts);
+                    buffers.bars_since_last_update.push_back(engine.GetBarsSinceLastUpdate());
                     ++recordsWritten;
                     if (!wasWarmedUp) {
                         sawFirstWarmup = true;
-                        progress.Log("warm-up complete, first .context record written at tick " +
+                        progress.Log("warm-up complete, first record written at tick " +
                                      std::to_string(ticksProcessed));
+                    }
+                    if (buffers.Rows() >= kChunkRows) {
+                        if (!flushChunk()) fatalError = true;
                     }
                 }
 
@@ -118,15 +239,23 @@ int main(int argc, char** argv) {
             });
     } catch (const std::exception& e) {
         progress.Log(std::string("FATAL: ") + e.what());
-        contextWriter.Close();
+        flushChunk();
         return 1;
     }
 
-    engine.Flush();  // spec §3f: drops the final in-progress bar across all 3 timeframes if skipped
-    contextWriter.Close();
+    if (fatalError) return 1;
+
+    engine.Flush();  // drops the final in-progress bar across all 3 timeframes if skipped
+    if (!flushChunk()) return 1;
+
+    auto closeStatus = writer->Close();
+    if (!closeStatus.ok()) {
+        progress.Log("FATAL: writer Close failed: " + closeStatus.ToString());
+        return 1;
+    }
 
     progress.Log("=== SUMMARY: ticks processed=" + std::to_string(ticksProcessed) +
-                 " .context records written=" + std::to_string(recordsWritten) +
+                 " records written=" + std::to_string(recordsWritten) +
                  " significant-change rate=" +
                  std::to_string(ticksProcessed > 0
                                      ? static_cast<double>(recordsWritten) / static_cast<double>(ticksProcessed)
@@ -134,3 +263,4 @@ int main(int argc, char** argv) {
                  " ===");
     return 0;
 }
+

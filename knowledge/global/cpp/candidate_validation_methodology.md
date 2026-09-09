@@ -132,9 +132,9 @@ bool survives = (result.ci_lo > 0.0) || (result.ci_hi < 0.0);
 
 ## References
 
-- `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §10.7 (drift
-  /location tool), §10.8 (jump-ratio tool + the mean→median correction), §10.9 (the i.i.d./overlap
-  limitation), §5.0 (rejected result), §5.1 (survives result), §9 (per-dim decision ledger).
+- `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §8 (lead-time
+  evaluation criterion), §9 (the i.i.d./overlap bootstrap limitation), §7 (per-dim decision ledger,
+  rows 20/21 for the drift-location/jump-ratio tools' own results).
 - `lbrnet/tools/dim_acceptance_eval.py` — the original Python reference these C++ tools port from
   (Wilson CI, hit-rate, and mean-based bootstrap-gap formulas mirror it exactly; the median-based
   bootstrap-gap function is new, native-only infrastructure with no Python counterpart).

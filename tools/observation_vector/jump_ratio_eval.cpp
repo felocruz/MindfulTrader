@@ -1,7 +1,7 @@
 // tools/observation_vector/jump_ratio_eval.cpp
-// Offline, model-independent prototype validator for the §5.1 jump/bipower-
+// Offline, model-independent prototype validator for the jump/bipower-
 // variation ratio observation-vector candidate (docs/superpowers/specs/
-// 2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md). Magnitude test
+// 2026-08-31-elite-feature-set-curation-initiative.md §7 row 21). Magnitude test
 // (top/bottom decile bootstrap gap in |forward return|), not directional
 // hit-rate -- jump_ratio is non-negative by construction, so there's no sign
 // to test a forward return's sign against.

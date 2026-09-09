@@ -2,8 +2,7 @@
 // Pure, ACSIL-independent .context binary-format reader. Zero-copy: every read
 // is a pointer-cast over an mmap'd region, never a heap-allocated copy (DOD
 // discipline). Replaces lbrnet's Python observation_vector_bulk_reader.py --
-// ground truth for the wire format is src/LBRFileManager.cpp (the writer). See
-// docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md §10.
+// ground truth for the wire format is src/LBRFileManager.cpp (the writer).
 #pragma once
 
 #include "generated/mts_schema_generated.h"

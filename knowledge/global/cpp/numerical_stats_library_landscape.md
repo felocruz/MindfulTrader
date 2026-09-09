@@ -62,7 +62,7 @@ considered-and-rejected-by-existing-precedent, not silently dropped from conside
 - `lbrnet/logs/rc_gemini.log` (~line 3595, 2026-08-30) — the source research pass this chunk assesses.
 - [candidate_validation_methodology.md](candidate_validation_methodology.md) — the actual current
   offline-validation pattern this chunk's "current fit" column is evaluated against.
-- `docs/superpowers/specs/2026-08-29-hmm-fat-tail-observation-vector-brainstorm.md` §5.2, §9 row 23
+- `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7 row 23
   (Hawkes intensity, the concrete NLopt/Ceres trigger condition).
 - `docs/superpowers/plans/2026-08-30-bootstrap-dependence-correction.md` (the 2026-08-30 decision to
   keep Newey-West/block-length calibration in Python, the concrete FFTW/PocketFFT trigger condition).
