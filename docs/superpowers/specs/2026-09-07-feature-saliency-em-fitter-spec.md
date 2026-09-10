@@ -130,19 +130,66 @@ Feature saliency itself — **confirmed 100% closed-form, verified via `CLAUDE_B
 
 Mixture weights: `π_k = (1/N) Σ_i w_{i,k}` (standard).
 
-### 2.4 MML pruning — open item, NOT to be guessed at implementation time
+### 2.4 Saliency pruning — CONFIRMED REQUIRED, NOT optional; final design is a hard MDL/BIC gate (updated 2026-09-09)
 
-Under Minimum Message Length regularization, the saliency update becomes a soft-thresholding
-operator: `φ_j = max(0, (Σ_i,k w_{i,k}u_{i,k,j} - c/2) / N)`, where `c` is the number of free
-parameters saved by pruning feature j to exactly zero saliency (collapsing its per-state
-`θ_{k,j}` back to the single shared background `λ_j`). **`c`'s exact value was not derived or
-verified this session** — `CLAUDE_BRIEF_120_REPLY` confirmed the *form* of the closed-form update
-but did not confirm the specific parameter-count constant. Before implementing MML pruning: derive
-`c` directly from Law-Figueiredo-Jain (2004)'s own paper (plausibly `c ≈ 2K`, one mean + one
-variance per state made redundant, but this must be confirmed against the source, not assumed).
-Until then, Phase 2a can ship WITHOUT hard pruning — report raw `φ_j` per feature and let a human
-(or Phase 4's own mRMR combination step) apply a judgment threshold, same posture as Phase 1's own
-correlation-matrix output (report the numbers, don't auto-decide).
+**Superseded finding, recorded 2026-09-09**: this section originally deferred pruning as an open
+item ("ship raw `φ_j`, let a human threshold it"). Empirical testing during implementation (Task
+5's degenerate-input tests) proved that framing wrong: raw likelihood-only EM has NO mechanism
+that can ever push a genuinely irrelevant feature's `φ_j` toward 0 — the salient branch (K
+per-state parameter pairs) can never fit *worse* than the shared background branch (1 pair), so
+likelihood alone always weakly prefers `φ_j → 1` regardless of true relevance, at every sample
+size tested (N=40 to N=20,000 per cluster). Reporting raw `φ_j` for a human to threshold therefore
+doesn't degrade to a merely-noisy signal — it removes the signal entirely.
+
+**A first fix attempt (continuous MML soft-thresholding every M-step) was tried and ABANDONED,
+not just refined.** It subtracted a penalty from `φ_j` every M-step
+(`φ_j = max(0, sum_u - c/2) / max(eps, N - c/2)`, `c ≈ 2K-2`, per Figueiredo & Jain 2002's
+MML mixture-pruning convention). Two real bugs were found and fixed in this form (denominator
+shrinkage; switching the loop's convergence check to parameter-delta tracking since MML-penalized
+M-steps no longer guarantee raw log-likelihood ascent) — both fixes were genuine and verified, but
+a second independent Gemini CLI read-only literature consult then diagnosed the whole *approach*
+as structurally unfixable: a flat, `O(1)` continuous penalty can never overcome the `O(N)`
+responsibility-mass advantage a genuinely irrelevant feature's more-flexible K-Gaussian branch
+accrues merely by overfitting noise. A broad empirical sweep (N=40 to N=10,000 per cluster)
+confirmed this: `φ_j` for the irrelevant feature never approached 0 at ANY tested sample size, and
+behavior was erratic/non-monotonic in N. True MDL/BIC structural (L0) model selection needs a
+penalty that scales with `ln(N)`, evaluated as an explicit compare-before-prune decision — not
+continuous per-iteration shrinkage. Full narrative:
+`knowledge/global/cpp/feature_saliency_em_mml_pruning.md`.
+
+**Final, working design: a hard MDL/BIC compare-before-prune gate, applied ONCE after the EM loop
+converges** — not during it. The EM loop itself reverts to plain, unmodified textbook EM (no
+penalty entangled in its M-step), so §5's ORIGINAL raw-log-likelihood-ascent convergence check is
+valid again (the objective-function mismatch that motivated the parameter-delta detour no longer
+applies, since nothing but the raw M-step touches `φ_j` during the loop). Once converged, each
+feature `j` is evaluated via a standard BIC nested-model comparison:
+
+```
+LL_salient_j    = Σ_i log( Σ_k w_{i,k} · f(x_{i,j} | θ_{k,j}) )          (K (mean,var) pairs)
+LL_background_j = Σ_i log( q(x_{i,j} | GLOBAL, unweighted mean/var) )     (1 (mean,var) pair)
+
+if LL_salient_j - LL_background_j < (K-1)·ln(N):  φ_j := 0     (pruned to background-only)
+else:                                              φ_j keeps its raw M-step value
+```
+
+This is the standard BIC decision rule (`2·ΔLL > Δparams·ln(N)`, `Δparams=2K-2`, simplifying to
+the `(K-1)·ln(N)` threshold above), grounded in Wilks' theorem (Wilks 1938) and Schwarz's BIC
+(1978): under the null "feature j is truly background-only," the K-Gaussian fit's log-likelihood
+gain is chi-squared-distributed with `K-1` degrees of freedom (expectation `O(1)`, independent of
+`N`), while the `ln(N)` threshold grows without bound — guaranteeing the gate eventually
+overwhelms pure-noise overfitting at any sample size.
+
+**A second real bug was found and fixed while implementing this**: the "background" null-hypothesis
+density must be the **global, unweighted** per-feature mean/variance (computed once over all N
+observations at EM init time), NOT the EM-fitted `bgMean`/`bgVar` (which are themselves weighted
+by `(1-u_{i,k,j})` and degrade/narrow as `φ_j` rises during the EM phase — no longer a fair null
+hypothesis once entangled with the very quantity being tested).
+
+**Validated (2026-09-09)**: all 19/19 native tests pass, including both previously-failing Task 5
+checks. A broader robustness sweep (N=40 to N=10,000 per cluster × 4 seeds, 28 runs) shows 26/28
+(93%) correctly classify both the planted-salient and planted-irrelevant features. The 2 misses are
+a feature-label swap (a well-known EM local-optima/initialization-sensitivity artifact, mitigated
+in practice via multiple-restart/best-of-N fitting) — not a flaw in the gate's own math.
 
 ### 2.5 Explicitly NOT included in Phase 2a, and why
 
@@ -162,22 +209,20 @@ New standalone native tool, matching `include/BipowerVariation.h` / `tools/obser
 volatility_dim_redundancy_eval.cpp`'s established pattern (pure header + thin CLI driver, own native
 tests, never added to `CMakeLists.txt`/`build_dll.sh`):
 
-- `tools/observation_vector/feature_saliency_em.h` — the EM loop itself (E-step, M-step per §2.2/2.3),
+- `tools/observation_vector/FeatureSaliencyEM.h` — the EM loop itself (E-step, M-step per §2.2/2.3),
   operating on an in-memory `std::vector<std::array<double, D>>` (or a caller-provided flat buffer)
   of observations — deliberately NOT reading Parquet itself, so the fitting math stays independently
   unit-testable on synthetic data (mirrors this session's own `streaming_correlation_matrix.h`
   precedent: separate the numerical core from the I/O).
-- `tools/observation_vector/feature_saliency_eval.cpp` — CLI driver: streams the real tick data via
-  the SAME `market_data_io.h`/`StreamTicksFullParquet` this session's Phase 1 tool already uses,
-  reusing whichever of the 11 dims' compute logic Phase 1 already validated (extract the shared
-  per-dim compute helpers rather than re-deriving them a third time — this would be the "second real
-  use" moment for `whole_vector_redundancy_eval.cpp`'s own dim-compute code, per this repo's own
-  extraction convention), buffers the resulting per-bar-close snapshot vectors (bounded: this is a
-  FIT, not a streaming accumulator — unlike Phase 1, the EM loop genuinely needs random-access
-  passes over the full observation set, so SOME in-memory materialization is unavoidable here,
-  unlike Phase 1's O(D²)-only design; bound it explicitly via a `--max-observations`/subsampling
-  flag matching this tool family's own established `--max-rss-mb` safety-net convention, not left
-  unbounded).
+- `tools/observation_vector/FeatureSaliencyEval.cpp` — CLI driver: reads `mes_candidates.parquet`
+  directly (2026-09-09 update, §6 — the dim-selection pipeline's own already-materialized 10-dim
+  candidate table, via `parquet::arrow::FileReader`, the same read pattern already proven in
+  `tools/context_pipeline/context_to_parquet.cpp`'s reader side), buffers the resulting observation
+  vectors (bounded: this is a FIT, not a streaming accumulator — unlike Phase 1, the EM loop
+  genuinely needs random-access passes over the full observation set, so SOME in-memory
+  materialization is unavoidable here, unlike Phase 1's O(D²)-only design; bound it explicitly via
+  a `--max-observations`/subsampling flag matching this tool family's own established
+  `--max-rss-mb` safety-net convention, not left unbounded).
 - `tools/observation_vector/test_feature_saliency_em.cpp` — native tests (§4).
 
 ## 4. Building blocks (confirmed real, `CLAUDE_BRIEF_120_REPLY`)
@@ -206,12 +251,14 @@ parameters) — hand-rolling the EM loop is required in either language, confirm
   to C++ (straightforward: no Python-specific dependency). Saliency `φ_j` initialized to 1.0 for
   every feature (start assuming every candidate feature is salient; let the data pull genuinely
   irrelevant ones toward 0, not the reverse).
-- **Convergence**: relative log-likelihood plateau (`_check_convergence`'s own formula,
-  `student_t_hmm.py`), one-sided (only a non-negative relative delta counts as convergence,
-  matching the ascent-guaranteed EM theory this repo's own code comment already cites — McLachlan &
-  Krishnan; Wu 1983) — reuse this exact convergence CRITERION (not the code, which is
-  Python/numba-specific), since it's already a real, considered design decision documented in
-  production, not something to re-derive.
+- **Convergence (reverted to original design, 2026-09-09 — see §2.4's own note)**: relative
+  log-likelihood plateau (`_check_convergence`'s own formula, `student_t_hmm.py`), one-sided (only
+  a non-negative relative delta counts as convergence, matching the ascent-guaranteed EM theory —
+  McLachlan & Krishnan; Wu 1983). A brief detour (parameter-delta tracking) was introduced while a
+  continuous MML penalty was entangled in the loop's own M-step, then reverted once that approach
+  was abandoned for the final hard MDL/BIC gate (§2.4) — since the gate is now applied ONCE, after
+  the loop converges, the loop itself is plain unmodified EM again and this original criterion is
+  valid without qualification.
 
 ## 6. Validation plan — synthetic ground truth FIRST, real data second
 
@@ -235,6 +282,17 @@ primitive this session):
    extract the shared compute logic per §3), for a real K matching this system's own production
    target (K=4, per `PRODUCTION_TRIAGE.md` row 1's decided production target).
 
+**Data source update, 2026-09-09**: the dim-selection experimentation pipeline
+(`docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md`) now produces
+`mes_candidates.parquet` directly — a flat, already-materialized 10-candidate-dim table
+(`sequence_id`/`timestamp_us`/`bars_since_last_update` + the 10 ledger `IN*` dims), generated by
+`tools/market_data_replay/`'s own significant-change gate over the real 471.9M-tick dataset. This
+is now the preferred real-data input for step 3 above — no snapshot re-derivation needed, and its
+10-dim candidate set (not the 11-dim Phase 1 set) is the actual current dim-selection question this
+fitter needs to answer. Read it directly via Arrow/Parquet (same pattern as
+`tools/context_pipeline/context_to_parquet.cpp`'s reader side), one row per already-significant
+observation.
+
 ## 7. Known caveats / open questions (honest, not resolved here)
 
 - **Student-t vs. Gaussian saliency tension (RESEARCH_RESPONSE_005 §2, unresolved)**: Student-t's
@@ -243,8 +301,19 @@ primitive this session):
   emissions. Phase 2a's Gaussian result should be read as "does this feature discriminate states
   under a non-robust emission family" — not yet the final institutional answer; Phase 2b (once
   derived) is how this gets checked, not a redundant afterthought.
-- **MML's `c` constant (§2.4)**: not yet derived/verified — do not implement hard pruning against a
-  guessed value; report raw `φ_j` and defer the pruning threshold to human judgment or Phase 4.
+- **Saliency pruning mechanism (§2.4)**: RESOLVED 2026-09-09 -- pruning is confirmed REQUIRED
+  (not optional) and the final hard MDL/BIC compare-before-prune gate is validated: 19/19 native
+  tests pass, and a broader robustness sweep (28 runs across N=40-10,000/cluster × 4 seeds) shows
+  26/28 (93%) correct classification. The 2 misses are a feature-label swap -- a well-known EM
+  local-optima/initialization-sensitivity artifact (mitigated in practice via multiple-restart/
+  best-of-N fitting, not yet implemented here) -- not a flaw in the gate's own math. See
+  `knowledge/global/cpp/feature_saliency_em_mml_pruning.md` for the full narrative including the
+  abandoned continuous-MML first attempt.
+- **EM local-optima sensitivity (new, 2026-09-09)**: the current single-restart k-means++ init can
+  occasionally converge to a feature-label-swapped local optimum (2/28 in the robustness sweep
+  above) -- flagged as a real, known limitation, not yet mitigated. Consider multiple-restart
+  (best-of-N log-likelihood) fitting before Task 6/7/8's real-data runs if this proves material at
+  larger K/D.
 - **In-memory materialization**: unlike every other tool this session built (Phase 1's streaming
   O(D²) design, deliberately memory-bounded), a genuine EM fit needs random-access passes over the
   full observation set — this is NOT avoidable via streaming the way Phase 1's correlation matrix
@@ -269,6 +338,18 @@ primitive this session):
   convergence theory underlying the one-sided plateau check.
 - `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_120`/`CLAUDE_BRIEF_120_REPLY` — the C++ feasibility
   consult this spec's §0/§2/§4 are grounded in.
+- Schwarz, G. (1978), "Estimating the Dimension of a Model," Annals of Statistics -- BIC's own
+  `ln(N)`-scaled complexity penalty, the form the final hard-gate design (§2.4) uses.
+- Wilks, S.S. (1938), "The Large-Sample Distribution of the Likelihood Ratio for Testing Composite
+  Hypotheses," Annals of Mathematical Statistics -- the chi-squared expected-log-likelihood-gain
+  argument underlying the hard gate's threshold.
+- Gemini CLI, two independent read-only literature/code-review consults, 2026-09-09
+  (`gemini --approval-mode plan`, verified via `git status` afterward to have made no edits): first
+  consult diagnosed the objective-function-mismatch bug in an abandoned continuous-MML first
+  attempt and supplied its denominator-shrinkage correction; second consult diagnosed that whole
+  approach as structurally unfixable and recommended the final hard MDL/BIC gate (§2.4). Not a
+  primary literature source itself -- treat as a secondary, unverified-against-primary-sources
+  review.
 - `lbrnet/logs/rc_gemini.log` `RESEARCH_RESPONSE_005` — the unresolved Student-t-vs-Gaussian
   saliency-sensitivity tension (§7).
 - `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §3/§4 — the

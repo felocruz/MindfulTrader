@@ -569,7 +569,7 @@ the *classes* themselves are not callable and must not be included.
 ### 3c. Concrete file/class breakdown
 
 Under `tools/market_data_replay/` (confirmed name, §0), matching this repo's established
-pure-header-plus-thin-CLI-driver pattern (`tools/observation_vector/feature_saliency_em.h`'s own
+pure-header-plus-thin-CLI-driver pattern (`tools/observation_vector/FeatureSaliencyEM.h`'s own
 precedent, cited in its own spec §3: keep the numerical/orchestration core separate from I/O so it
 stays independently unit-testable):
 
@@ -595,7 +595,7 @@ stays independently unit-testable):
     `UpdateMarketPhysics`-equivalent on genuine price change, computes/scales the raw 18D array,
     runs the trigger gate, and returns whether this tick's observation is significant (caller then
     writes it out). Explicitly does NOT call `LBRFileManager` itself — keeps the numerical core
-    free of file I/O, matching the `feature_saliency_em.h` precedent above.
+    free of file I/O, matching the `FeatureSaliencyEM.h` precedent above.
   - Constructed with `AsymmetryContext` defaulted (`MTS::Schema::AsymmetryContext{}`) and no
     `RiskGateContext` member at all, per §0's priority pivot — not a stub to fill in later, a
     deliberate omission for this version.

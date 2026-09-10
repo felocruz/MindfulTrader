@@ -18,6 +18,19 @@ inside WSL.
 - Repos: `MindfulTrader`, `lbrnet`, `MTS` (GitHub, `felocruz` account), `schema` (local-only, may
   have no remote)
 
+## 0a. [Windows] Connect Wi-Fi / Bluetooth (do this first if the machine isn't online yet)
+
+**Wi-Fi:**
+1. Click the network icon in the bottom-right system tray.
+2. Select your network from the list, click **Connect**, enter the password.
+3. If no networks show up at all, the Wi-Fi adapter driver isn't installed yet — check **Device
+   Manager** → "Network adapters" for a missing/unknown wireless device, and install the driver
+   from the motherboard/adapter manufacturer's site before continuing.
+
+**Bluetooth** (only needed to pair a peripheral, e.g. mouse/keyboard):
+1. Settings → **Bluetooth & devices** → toggle Bluetooth on.
+2. **Add device** → **Bluetooth** → select your device from the list → follow the pairing prompt.
+
 ## 1. [Windows] Install WSL2 + Ubuntu 20.04
 
 Open PowerShell **as Administrator**:
