@@ -10,11 +10,15 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# vcpkg x64-windows artifacts (zmq/sodium), native-filesystem copy -- avoids the /mnt/c 9p mount
+# (docs/CROSS_COMPILE_SYSROOT_MIGRATION.md Phase A)
+set(VCPKG_SYSROOT "$ENV{HOME}/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows")
+
 # Add necessary include directories
 include_directories(
     include
     sierra_chart_dependencies
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include
+    ${VCPKG_SYSROOT}/include
     /usr/include/eigen3
 )
 
@@ -48,8 +52,8 @@ set(GENERATED_SOURCES
 
 # Link directories for libraries
 link_directories(
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/lib
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/debug/lib
+    ${VCPKG_SYSROOT}/lib
+    ${VCPKG_SYSROOT}/debug/lib
 )
 
 # Source files for the project
@@ -121,7 +125,7 @@ add_dependencies(MindfulTraderSchemaContract MindfulTraderSharedRootWriteAudit)
 target_include_directories(MindfulTraderSchemaContract PRIVATE
     include
     sierra_chart_dependencies
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/include
+    ${VCPKG_SYSROOT}/include
     /usr/include/eigen3
 )
 
@@ -155,8 +159,8 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} /INCREMENTAL:NO")
 # Link libraries
 target_link_libraries(MindfulTrader
     PRIVATE
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/lib/libzmq-mt-4_3_5.lib
-    /mnt/c/Users/rcruz/vcpkg/installed/x64-windows/lib/libsodium.lib
+    ${VCPKG_SYSROOT}/lib/libzmq-mt-4_3_5.lib
+    ${VCPKG_SYSROOT}/lib/libsodium.lib
     ws2_32
     iphlpapi
     gdi32
