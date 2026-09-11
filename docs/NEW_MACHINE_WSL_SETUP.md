@@ -33,6 +33,13 @@ inside WSL.
 
 ## 1. [Windows] Install WSL2 + Ubuntu 20.04
 
+**Install to the `C:` drive, not `D:`** -- this setup assumes WSL2's virtual disk (and everything
+under it: conda envs, repos, sysroots) lives on `C:`, matching this machine. `wsl --install` uses
+`C:` by default (it installs under the Windows user profile), so no special flag is normally
+needed -- just don't redirect it to `D:` via `--import`/custom-location options if the installer
+or any guide offers that. If Puget's `D:` drive is meant for something else (Sierra Chart data,
+bulk storage, etc.), keep that separate from the WSL install itself.
+
 Open PowerShell **as Administrator**:
 
 ```powershell
