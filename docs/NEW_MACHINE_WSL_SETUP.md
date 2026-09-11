@@ -15,8 +15,8 @@ inside WSL.
 - MSVC toolset: `14.44.35207`, Windows SDK: `10.0.26100.0` (Visual Studio 2022 Community, Windows side)
 - vcpkg: `/mnt/c/Users/<user>/vcpkg` (Windows side, mounted into WSL)
 - Sierra Chart data dir: `/mnt/c/SierraChart2/Data/` (Windows side)
-- Repos: `MindfulTrader`, `lbrnet`, `MTS` (GitHub, `felocruz` account), `schema` (local-only, may
-  have no remote)
+- Repos: `MindfulTrader`, `lbrnet`, `MTS`, `schema` (all GitHub, `felocruz` account; `schema` was
+  local-only with no remote until 2026-09-10, now pushed to `felocruz/schema`, private)
 
 ## 0a. [Windows] Connect Wi-Fi / Bluetooth (do this first if the machine isn't online yet)
 
@@ -134,8 +134,7 @@ cd ~/devel/VSCode
 git clone git@github.com:felocruz/MindfulTrader.git
 git clone git@github.com:felocruz/lbrnet.git
 git clone git@github.com:felocruz/MTS.git
-mkdir -p schema   # local-only repo on this machine; git init here if it needs its own history,
-                  # or copy it directly from the old machine if it has uncommitted/local-only state
+git clone git@github.com:felocruz/schema.git
 ```
 
 ## 9. [Windows] Visual Studio 2022 + Windows SDK (needed for the cross-compile toolchain)
