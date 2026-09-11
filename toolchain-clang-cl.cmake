@@ -5,12 +5,20 @@
 #
 
 # --- 0. WINDOWS PATH DEFINITIONS (CRITICAL: VERIFY THESE VALUES!) ---
-set(MSVC_VERSION "14.44.35207") 
-set(SDK_VERSION "10.0.26100.0")
+# Native-filesystem sysroot (docs/CROSS_COMPILE_SYSROOT_MIGRATION.md) -- produced by
+# `xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100 splat
+#  --output ${XWIN_SYSROOT} --preserve-ms-arch-notation --disable-symlinks --use-winsysroot-style`
+set(XWIN_SYSROOT "$ENV{HOME}/.local/sysroots/x86_64-pc-windows-msvc")
 
-# Root Paths defined in WSL format (Cleaned up whitespace)
-set(MSVC_ROOT_DIR "/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/${MSVC_VERSION}")
-set(WINDOWS_SDK_ROOT "/mnt/c/Program Files (x86)/Windows Kits/10") 
+# On-disk directory names as `xwin splat` names them (VS product version / 3-part SDK version) --
+# these differ from the real MSVC toolset (14.44.35207) / SDK (10.0.26100.0) version strings a
+# genuine VS installer would use for the same binaries; must match what's actually on disk here.
+set(MSVC_VERSION "14.44.17.14")
+set(SDK_VERSION "10.0.26100")
+
+# Root Paths (native filesystem, no /mnt/c dependency)
+set(MSVC_ROOT_DIR "${XWIN_SYSROOT}/VC/Tools/MSVC/${MSVC_VERSION}")
+set(WINDOWS_SDK_ROOT "${XWIN_SYSROOT}/Windows Kits/10")
 
 # Derived Paths (Still used for CMake's implicit internal settings, but NOT for /I flags)
 set(MSVC_INCLUDE_DIR "${MSVC_ROOT_DIR}/include")
@@ -63,7 +71,7 @@ set(MSVC_INCLUDES
     "${MSVC_INCLUDE_DIR}"
     "${SDK_INCLUDE_UCRT_DIR}"
     "${SDK_INCLUDE_UM_DIR}"
-    "${WINDOWS_SDK_ROOT}/Include/${SDK_VERSION}/shared" 
+    "${WINDOWS_SDK_ROOT}/Include/${SDK_VERSION}/shared"
 )
 set(CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES "${MSVC_INCLUDES}")
 set(CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "${MSVC_INCLUDES}")
@@ -87,32 +95,32 @@ set(CMAKE_C_IMPLICIT_LINK_LIBRARIES "")
 # --------------------------------------------------------------------------------------------------
 if(NOT CMAKE_IN_LOCAL_ONLY_MODE)
     set(COMPILER_FLAGS
-        "--target=${TRIPLE}" 
-        "/MD" 
-        "/O2" 
-        "/Ob2" 
-        "/DNDEBUG" 
-        "/std:c++17" 
-        "/Zc:__cplusplus" 
+        "--target=${TRIPLE}"
+        "/MD"
+        "/O2"
+        "/Ob2"
+        "/DNDEBUG"
+        "/std:c++17"
+        "/Zc:__cplusplus"
         "/EHsc"
-        
+
         # FIX: Separating flags from their paths and quoting the paths to handle spaces.
-        "/vctoolsdir" "\"${MSVC_ROOT_DIR}\"" 
-        "/winsdkdir" "\"${WINDOWS_SDK_ROOT}\"" 
+        "/vctoolsdir" "\"${MSVC_ROOT_DIR}\""
+        "/winsdkdir" "\"${WINDOWS_SDK_ROOT}\""
         "/winsdkversion:${SDK_VERSION}"
 
         # DEBUG: Enable verbose output to print include search paths
         "-v"
     )
-    
-    # We rely on the /vctoolsdir and /winsdkdir to resolve paths now, 
+
+    # We rely on the /vctoolsdir and /winsdkdir to resolve paths now,
     # so we explicitly remove the manual /I path logic.
-    
+
     string(REPLACE ";" " " FINAL_COMPILER_FLAGS "${COMPILER_FLAGS}")
-    
+
     set(CMAKE_C_FLAGS "${FINAL_COMPILER_FLAGS}" CACHE STRING "Compiler Flags for C" FORCE)
-    set(CMAKE_CXX_FLAGS "${FINAL_COMPILER_FLAGS}" CACHE STRING "Compiler Flags for CXX" FORCE) 
-endif() 
+    set(CMAKE_CXX_FLAGS "${FINAL_COMPILER_FLAGS}" CACHE STRING "Compiler Flags for CXX" FORCE)
+endif()
 
 
 # --------------------------------------------------------------------------------------------------
@@ -152,8 +160,8 @@ set(CMAKE_MODULE_LINKER_FLAGS "${FINAL_LINKER_FLAGS}" CACHE STRING "Module Linke
 # --- 7. CLEANUP LINKAGE VARIABLES ---
 set(CMAKE_CXX_LINK_FLAGS "" CACHE STRING "Linker Flags for CXX" FORCE)
 set(CMAKE_C_LINK_FLAGS "" CACHE STRING "Linker Flags for C" FORCE)
-set(CMAKE_EXE_LINKER_FLAGS "" CACHE STRING "Executable Linker Flags" FORCE) 
-set(CMAKE_EXE_LINKER_LIBS "" CACHE STRING "Executable Linker Libraries" FORCE) 
+set(CMAKE_EXE_LINKER_FLAGS "" CACHE STRING "Executable Linker Flags" FORCE)
+set(CMAKE_EXE_LINKER_LIBS "" CACHE STRING "Executable Linker Libraries" FORCE)
 set(CMAKE_SHARED_LIBRARY_LINK_EXCLUDE_TAGS "GNU;UNIX")
 
 

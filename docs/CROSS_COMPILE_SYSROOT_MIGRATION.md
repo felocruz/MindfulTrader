@@ -1,8 +1,13 @@
 ## Cross-Compile Sysroot Migration (`/mnt/c` → native `~/.local/sysroots/`)
 
-**Status: Phase A DONE and validated on this machine, 2026-09-10.** Opened after a Puget-machine
-`libzmq` build failure and a broader push to stop depending on `/mnt/c` for the Windows cross-compile
-toolchain. Phase B (CRT/SDK splat) is still brainstorm / not yet implemented.
+**Status: Phases A and B both DONE and validated on this machine, 2026-09-10** (zero `/mnt/c`
+references left in the build, confirmed live in Sierra Chart). Opened after a Puget-machine
+`libzmq` build failure and a broader push to stop depending on `/mnt/c` for the Windows
+cross-compile toolchain — made mandatory once it was confirmed Puget will have no Visual Studio
+install at all. **Remaining work is entirely Puget-side**: transferring/regenerating the sysroot
+there and validating its own build. See the `~/.local` inventory section near the end for what
+else (beyond this sysroot) needs to exist on Puget for this repo's workflow.
+
 
 **Phase B is now MANDATORY, not optional (confirmed 2026-09-10): Puget will not have Visual Studio
 installed at all.** There is no `/mnt/c/Program Files/Microsoft Visual Studio/...` to fall back to
@@ -150,9 +155,71 @@ the correct mechanism on *each* machine — but it only needs to run once per ma
 byte-identical result for a given MSVC/SDK version, so both machines end up consistent without
 depending on `/mnt/c` at all going forward.
 
-**Blocker on this machine:** `xwin`/`cargo`/`rustc` are not currently installed here (verified via
-`which`). Needed before this phase can execute: either install Rust + `cargo install xwin`, or fetch
-a prebuilt `xwin` release binary for `x86_64-unknown-linux-gnu` (no cargo required).
+### Phase B execution log (this machine, 2026-09-10)
+
+1. **Installed `xwin` 0.10.0** — no sudo, no Rust/cargo needed. Fetched the prebuilt
+   `xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz` release asset directly via `gh release download
+   0.10.0 --repo Jake-Shadle/xwin` (note: tag has no `v` prefix, `gh release download v0.10.0`
+   404s), verified its `.sha256` (bare-hash format, not `sha256sum -c`-compatible — compared
+   manually), extracted, copied the single static binary to `~/.local/bin/xwin` (already on
+   `PATH` per `docs/NEW_MACHINE_WSL_SETUP.md`'s pip `--user` convention).
+2. **`xwin --accept-license list`** confirmed the default "latest" manifest already resolves to
+   CRT `14.44.17.14` (the VS 2022 17.14 release containing MSVC toolset `14.44.35207`) and SDK
+   `10.0.26100` — matching this machine's pinned `toolchain-clang-cl.cmake` versions. Total
+   download only ~83 MiB (not the ~1GB originally feared).
+3. **First splat attempt used plain defaults** (`--preserve-ms-arch-notation` only, no
+   `--use-winsysroot-style`) — produced a **flat** `crt/{include,lib/x64}` +
+   `sdk/{include,lib}/{ucrt,um,shared,...}/x64` layout with **no SDK-version-numbered subdirectory**
+   (i.e. `sdk/include/ucrt`, not `sdk/include/10.0.26100/ucrt`). This is **incompatible** with
+   `toolchain-clang-cl.cmake`'s current `/winsdkdir` + `/winsdkversion:${SDK_VERSION}` flags, which
+   require that nested version folder (mirroring a real VS/SDK install) — `xwin`'s own `--help`
+   text for `--use-winsysroot-style` explicitly warns about this exact mismatch and recommends
+   switching to clang-cl's single `/winsysroot` flag instead for consumption of its default splat.
+4. **Second (correct) splat**, deleting the first attempt's `crt/`/`sdk/` first, then:
+   ```bash
+   xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100 \
+     splat --output ~/.local/sysroots/x86_64-pc-windows-msvc \
+     --preserve-ms-arch-notation --disable-symlinks --use-winsysroot-style
+   ```
+   (version pins placed *before* `splat` — `--crt-version`/`--sdk-version`/`--temp` are top-level
+   `xwin` options, not `splat` subcommand options; passing them after `splat` errors with
+   `unexpected argument`.) This produced the **real VS-mirroring nested layout**:
+   ```
+   ~/.local/sysroots/x86_64-pc-windows-msvc/
+   ├── VC/Tools/MSVC/14.44.17.14/{include, lib/x64}          # 110M
+   ├── Windows Kits/10/{Include,Lib}/10.0.26100/{ucrt,um,shared,winrt,cppwinrt}/  # 520M
+   └── vcpkg/x64-windows/...                                   # 15M, from Phase A, untouched
+   ```
+5. **Real version-naming mismatch, discovered and fixed:** `toolchain-clang-cl.cmake`'s
+   `MSVC_VERSION` (was `"14.44.35207"`, the real MSVC *toolset* version) and `SDK_VERSION` (was
+   `"10.0.26100.0"`, the real SDK's 4-part on-disk folder name incl. trailing `.0`) did **not**
+   match the directory names `xwin` actually created on disk (`VC/Tools/MSVC/14.44.17.14` — the VS
+   *product* version, not the toolset version; `Windows Kits/10/Include/10.0.26100` — 3-part, no
+   trailing `.0`). Both refer to the same underlying binaries/headers, just named differently by
+   `xwin`'s manifest vs. a real VS installer. **Fixed**: introduced `XWIN_SYSROOT` as the single
+   root variable, changed `MSVC_VERSION`/`SDK_VERSION`'s values to the actual on-disk names
+   (`14.44.17.14` / `10.0.26100`), and rebuilt `MSVC_ROOT_DIR`/`WINDOWS_SDK_ROOT` from
+   `${XWIN_SYSROOT}` — every downstream flag in the file derives from those two, so no other edits
+   were needed. `"Windows Kits"`'s space is already handled correctly (existing quoted-path
+   pattern in the file).
+6. **Second real bug, found via actual rebuild attempt:** first corrected splat used
+   `--disable-symlinks` (copying `xwin --help`'s own suggested flags for `--use-winsysroot-style`
+   verbatim) — build failed with `fatal error: 'windows.h' file not found`
+   (`sierra_chart_dependencies/scstructures.h`). Root cause: that flag combination is recommended
+   by `xwin` **for running clang-cl on Windows itself** (case-insensitive host filesystem) — we're
+   cross-compiling from **Linux** (case-sensitive ext4), which is exactly the scenario the default
+   casing-fix symlinks (`windows.h` → `Windows.h`) exist to solve. Re-splatted without
+   `--disable-symlinks` (keeping `--preserve-ms-arch-notation --use-winsysroot-style` only) —
+   confirmed the symlink now exists, rebuilt clean.
+7. **Fully validated**: `rm -rf build-windows && ./build_dll.sh` succeeded end to end (configure +
+   compile + link), producing `MindfulTrader.dll` at **exactly the same size** (1,798,656 bytes) as
+   the Phase A build — byte-level consistency. `build-windows/build.ninja` has **zero** `/mnt/c`
+   references (down from 48) and 95 references to the new sysroot. Confirmed still a valid
+   `PE32+ executable (DLL) (GUI) x86-64, for MS Windows` via `file`.
+
+**Blocker resolved:** `xwin`/`cargo`/`rustc` are no longer a blocker — `xwin` is installed at
+`~/.local/bin/xwin` per step 1 above. **Phase B is DONE on this machine** — only the Puget-side
+transfer/re-splat and its own validation remain.
 
 ## Proposed phases
 
@@ -167,23 +234,62 @@ a prebuilt `xwin` release binary for `x86_64-unknown-linux-gnu` (no cargo requir
    (tarball over LAN/USB/share — same spirit as `docs/NEW_MACHINE_WSL_SETUP.md` step 13's data-file
    transfer).
 
-**Phase B — CRT/SDK splat (MANDATORY for Puget — no VS install exists there to fall back on)**
-1. Install `xwin` (prebuilt binary preferred, avoids needing a Rust toolchain here).
-2. Run `xwin splat` targeting MSVC `14.44.35207` / SDK `10.0.26100.0` (this machine's current
-   `toolchain-clang-cl.cmake` values) into `~/.local/sysroots/x86_64-pc-windows-msvc/{crt,sdk}/`.
-   If `xwin` can't pin those exact versions, splat whatever it resolves and update
-   `toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` to match — on Puget there is no local
-   VS install to "verify against" per `docs/NEW_MACHINE_WSL_SETUP.md` step 11 (that step is now
-   obsolete for Puget, see status banner above), so whatever `xwin` resolves simply becomes the new
-   pinned version, on both machines.
-3. Update `toolchain-clang-cl.cmake`'s `MSVC_ROOT_DIR`/`WINDOWS_SDK_ROOT` to point at
-   `crt/`/`sdk/` under the new sysroot instead of `/mnt/c/Program Files...`.
-4. Rebuild, verify `build-windows/bin/MindfulTrader.dll` output is unchanged (same exports, same
-   size order of magnitude) before considering this done.
-5. Copy `{crt,sdk}/` to Puget alongside the Phase A `vcpkg/` subtree (GitHub Release asset, same
-   mechanism as Phase A step 6 — likely a much larger tarball, may need multiple release assets or
-   splitting), or re-run `xwin splat` natively on Puget instead (equally valid since the splat
-   output is deterministic per version, and avoids transferring a potentially large file at all).
+**Phase B — CRT/SDK splat (MANDATORY for Puget — no VS install exists there to fall back on) — DONE, see execution log above**
+1. ~~Install `xwin`~~ — done (`~/.local/bin/xwin`, no sudo).
+2. ~~Run `xwin splat`~~ — done. Correct invocation (two wrong attempts first, see execution log
+   steps 3+6): `xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100
+   splat --output <dir> --preserve-ms-arch-notation --use-winsysroot-style` (no
+   `--disable-symlinks` — needed on Linux hosts for header-casing symlinks), producing
+   `VC/Tools/MSVC/14.44.17.14/` + `Windows Kits/10/{Include,Lib}/10.0.26100/`.
+3. ~~Update `toolchain-clang-cl.cmake`~~ — done: added `XWIN_SYSROOT`, updated `MSVC_VERSION`/
+   `SDK_VERSION` to the real on-disk names, `MSVC_ROOT_DIR`/`WINDOWS_SDK_ROOT` now derive from
+   `XWIN_SYSROOT`.
+4. ~~Rebuild, verify output unchanged~~ — done: identical byte size (1,798,656) to the Phase A
+   build, zero `/mnt/c` references left in `build.ninja`, valid PE32+ DLL.
+5. **Remaining:** copy `{VC,Windows Kits}/` to Puget alongside the Phase A `vcpkg/` subtree (GitHub
+   Release asset, same mechanism as Phase A step 6 — this is ~630M uncompressed, likely needs
+   compression and may still exceed comfortable single-asset size, worth checking compressed size
+   before choosing), or re-run the exact pinned `xwin splat` command from step 2 natively on Puget
+   instead (equally valid since the splat output is deterministic per version, and avoids
+   transferring a large file at all — probably the better default choice given the size).
+
+**Validated live in Sierra Chart, this machine, 2026-09-10** — DLL built from the Phase B
+toolchain deployed via `./deploy_mindfultrader.sh` and confirmed running in Sierra Chart, same as
+Phase A. Both phases are now production-validated, not just clean-rebuild-validated.
+
+## `~/.local` inventory: what else Puget needs (beyond the sysroot above)
+
+Compiled by auditing this machine's actual `~/.local/{bin,lib,share,state,opt}` contents, since
+that's the directory this whole migration already lives under. Split into what's actually relevant
+to this repo's workflow vs. generic desktop-app cruft that isn't worth porting.
+
+**Relevant — should exist on Puget too:**
+
+| Item | What it is | Puget action |
+|---|---|---|
+| `~/.local/bin/xwin` | The `xwin` CLI (this doc's own Phase B tool) | Reinstall fresh via the same `gh release download 0.10.0 --repo Jake-Shadle/xwin` method (execution log step 1) — don't copy the binary, just re-fetch, it's a 2-minute no-sudo install |
+| `~/.local/bin/claude` (symlink) + `~/.local/share/claude/versions/*` | Claude Code CLI itself | Reinstall via Claude Code's own installer on Puget — don't copy; versions are managed by the installer, a stale copied symlink would point at a version directory that doesn't exist there |
+
+**Found, relevance unclear — confirm before doing anything:**
+
+| Item | What it is | Note |
+|---|---|---|
+| `~/.local/bin/agy` (210M stripped ELF binary) | Unknown — not referenced anywhere in this repo (`grep`'d, zero hits) | Don't assume it's needed for `MindfulTrader`; likely a personal/unrelated tool. Confirm with the operator before deciding whether Puget needs it. |
+| `~/.local/bin/weasyprint` + `~/.local/lib/python3.13/site-packages/{weasyprint,cssselect2,pydyf,pyphen,tinycss2,tinyhtml5,zopfli}` | PDF-generation Python package, `pip --user`-installed under bare `python3.13` (not the `mts`/`atratus` conda envs) | Its launcher script's shebang points at `~/anaconda3/envs/mts/bin/python3.13`, but the package itself lives in the *plain* user site-packages — an unusual split. Not referenced by any build/deploy script in this repo. Confirm whether any workspace tooling (report generation?) actually depends on it before porting. |
+
+**Real side-finding, not `~/.local`-scoped but affects reproducing this machine's setup accurately:**
+`cmake` on this machine is **not** the `pip install --user cmake` from `docs/NEW_MACHINE_WSL_SETUP.md`
+step 4 (which would land in `~/.local/bin`) — it's actually `/usr/bin/cmake` 4.3.4, installed via
+Kitware's official apt repo (`dpkg -S` confirms package `cmake` from `kitware3ubuntu20.04.1`, not a
+pip package). `NEW_MACHINE_WSL_SETUP.md`'s documented method would still work (Ubuntu 20.04's own
+apt `cmake` really is too old), but doesn't match what's *actually* installed here — worth fixing
+that doc's step 4 to document the Kitware-apt-repo method instead, so Puget ends up with a real
+system `cmake` matching this machine rather than a `pip`-shimmed one under `~/.local/bin`.
+
+**Not relevant — skip, will regenerate naturally once the corresponding GUI apps are installed/used:**
+`~/.local/share/{CMakeTools,GitKrakenCLI,JetBrains,gedit,gk,jupyter,meld,nautilus,tracker,
+applications,keyrings,python_keyring,mamba}`, `~/.local/state/{claude,crossnote,gh}` (session/auth
+state — Puget should run its own `gh auth login`, never inherit tokens), `~/.local/opt` (empty).
 
 ## Open questions
 
