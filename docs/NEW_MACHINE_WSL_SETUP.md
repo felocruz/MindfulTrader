@@ -6,7 +6,7 @@ toolchain for `MindfulTrader`'s Windows DLL, and the 4 sibling git repos. Run th
 sections marked **[Windows]** run in an elevated PowerShell on Windows itself, everything else runs
 inside WSL.
 
-## 0. Current machine facts (for reference, verified on this machine 2026-09-09)
+## 0. Current machine facts (outgoing Dell machine, for reference, verified on this machine 2026-09-09)
 
 - OS: Ubuntu 20.04.6 LTS (Focal Fossa), WSL2 kernel
 - Clang/LLVM: 22.0.0, from `apt.llvm.org`'s `focal` repo
@@ -30,6 +30,59 @@ inside WSL.
 **Bluetooth** (only needed to pair a peripheral, e.g. mouse/keyboard):
 1. Settings → **Bluetooth & devices** → toggle Bluetooth on.
 2. **Add device** → **Bluetooth** → select your device from the list → follow the pairing prompt.
+
+## 0b. Target machine hardware (Puget Workstation Ryzen X870E R121-L, ordered 2026-09-11)
+
+| Component | Spec |
+|---|---|
+| Platform | Puget Workstation Ryzen X870E R121-L |
+| Motherboard | ASUS ProArt X870E-Creator WiFi |
+| CPU | AMD Ryzen 9 9950X, 4.3GHz base, 16 cores / 32 threads, 170W |
+| RAM | 2× Crucial Pro DDR5-5600 UDIMM 48GB = **96GB total** |
+| GPU | ASUS GeForce RTX 5080 PRIME OC, 16GB VRAM |
+| Storage (primary) | Kingston KC3000 1TB Gen4 M.2 SSD |
+| Storage (secondary) | Kingston KC3000 2TB Gen4 M.2 SSD |
+| PSU | Super Flower LEADEX VII Gold 1300W |
+| Case | Fractal Design Define 7 |
+| CPU cooling | Noctua NL-LC1-24 240mm AIO |
+| Case fans | PWM-ramping upgrade kit |
+| Networking | Integrated Ethernet, WiFi, Bluetooth |
+| Sound | Onboard |
+
+**Headroom this unlocks vs. the outgoing Dell machine.** Several tools in this repo hardcode
+RAM-scarcity assumptions that were real constraints on the old box — confirmed by a real
+2026-09-03 OOM incident (4 concurrent `observation_vector_recalibration.cpp` passes over the same
+471.9M-row file exhausted RAM with no swap configured and took down the whole VS Code/WSL session).
+That tool's own comment sizes its default budget for "3-4 concurrent passes sharing a ~15GB box."
+At 96GB, that's roughly a 6× increase in usable RAM, plus 16 cores/32 threads (vs. whatever the
+Dell's core count was — not documented here) and a dedicated 16GB-VRAM GPU that didn't exist on the
+old machine at all.
+
+**Not yet acted on — flagged for a deliberate decision, not silently changed here.** A
+non-exhaustive list of RAM/CPU-driven defaults and design choices that assumed the old machine's
+constraints, worth revisiting once this machine is in service:
+- `--max-rss-mb` defaults sized for the old ~15GB ceiling: `observation_vector_recalibration.cpp`
+  (3072MB default), `MarketDataReplay.cpp` (3072MB default), and the same flag across
+  `activity_clock_bv_comparison.cpp`/`imbalance_clock_manager_ratio_eval.cpp`/
+  `imbalance_screen1_hurst_eval.cpp`/`imbalance_work_rate_eval.cpp`/`ImbalanceEntropyDivergenceEval.cpp`
+  (4096MB defaults)
+- `FeatureSaliencyEval.cpp`'s reservoir-sampling cap (`--max-observations 500000`, a deliberate
+  bound because "a genuine EM fit needs random-access passes over the full observation set" —
+  spec §7) — worth checking whether the full 274.9M-row set now fits in memory directly instead
+  of being subsampled
+- The Feature Saliency EM fitter's single-restart k-means++ initialization (its own spec flags
+  "consider multiple-restart (best-of-N log-likelihood) fitting" as a deferred mitigation for a
+  known local-optima issue — likely deferred for CPU-time reasons, not yet revisited)
+- Any tool whose docstring cites avoiding a past OOM incident as its own design rationale (e.g.
+  `whole_vector_redundancy_eval.cpp`: "built specifically to avoid an OOM incident this tool family
+  has already hit") — the bounded-memory discipline itself is good engineering independent of RAM
+  headroom, but the specific numeric caps were tuned to the old ceiling
+- The RTX 5080 (16GB VRAM) is new entirely — `lbrnet`'s model training has no documented
+  CUDA/GPU-accelerated path today; whether the Student-t HMM's EM fitting or any future Transformer
+  training could benefit is an open question, not yet evaluated
+
+None of the above are changed by this edit — recorded here so each gets a deliberate decision once
+Puget is in service, not silently inherited from a machine being retired.
 
 ## 1. [Windows] Install WSL2 + Ubuntu 20.04
 

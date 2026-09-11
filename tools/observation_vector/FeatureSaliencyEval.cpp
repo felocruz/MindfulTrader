@@ -208,7 +208,9 @@ int main(int argc, char** argv) {
         const std::size_t j = order[rank];
         const char* name = MTS::Schema::Contract::kObservationFieldNames[mdr::kCandidateDims[j]];
         char line[256];
-        std::snprintf(line, sizeof(line), "  %-24s phi=%.4f", name, result.params.phi[j]);
+        // %.8g (not %.4f) -- fixed 4-decimal truncation collapses small-magnitude
+        // dims like amihud_illiquidity to 0.0000, losing the value entirely.
+        std::snprintf(line, sizeof(line), "  %-24s phi=%.8g", name, result.params.phi[j]);
         progress.Log(line);
     }
 
@@ -218,7 +220,7 @@ int main(int argc, char** argv) {
         std::string line = std::string("  ") + name + ":";
         for (std::size_t s = 0; s < result.params.K(); ++s) {
             char stateBuf[80];
-            std::snprintf(stateBuf, sizeof(stateBuf), " state%zu[mu=%.4f,var=%.4f]",
+            std::snprintf(stateBuf, sizeof(stateBuf), " state%zu[mu=%.8g,var=%.8g]",
                           s, result.params.stateMean[s][j], result.params.stateVar[s][j]);
             line += stateBuf;
         }
