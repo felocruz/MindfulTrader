@@ -120,6 +120,39 @@ mamba create -n mts -y python=3.11 arrow-cpp=22 pyarrow=22 nlohmann_json
 `mamba run -n mts pkg-config --modversion arrow parquet` on the OLD machine before relying on a
 fresh solve.)
 
+## 6a. If adopting `uv` alongside mamba: strict separation rules (do not skip)
+
+Decided 2026-09-10 (see `lbrnet/logs/rc_gemini.log` line ~7625): `uv` (Astral's Rust-based Python
+package manager) is adopted **additively**, for pure-Python `pip`-section installs only — never as
+a conda/mamba replacement. Mixing conda and pip/uv installs in one environment is a well-known
+source of environment corruption (ABI mismatches, one manager silently upgrading a package the
+other thinks it owns) if done carelessly. Rules, not suggestions:
+
+1. **Order matters**: always let `mamba env create`/`mamba install` finish installing every conda
+   package FIRST. Only run `uv` afterward, never interleaved.
+2. **No overlap, ever**: a package is either conda-managed (in `environment.yml`'s top-level conda
+   deps) or `uv`-managed (in `environment.yml`'s `pip:` section) — never both. If `uv` would
+   install/upgrade something conda already provides (`numpy`, `scipy`, `pyarrow`, `tensorflow`,
+   `arrow-cpp`, anything with a compiled/ABI-sensitive conda-forge build), that's a bug in the
+   split, not a normal occurrence — fix the environment file, don't let it happen silently.
+3. **Always target the conda env's own interpreter explicitly**: `uv pip install --python
+   "$(mamba run -n mts which python)" <packages>` — never bare `uv pip install` (it may resolve a
+   different Python than intended) and never `uv venv`/`uv init` inside an active conda env (that
+   creates a second, conflicting virtual environment layer).
+4. **Re-verify after every `uv` install**: re-run the environment's own lock-integrity check
+   (`lbrnet`'s `sha256sum --check environment.lock.sha256` / `Atratus`'s `conda-lock` mechanism) —
+   these exist specifically to catch this class of drift immediately, not after the fact.
+5. **`--no-deps` where practical** (already the convention in `Atratus`'s own CI: `pip install -e .
+   --no-deps`) — prevents `uv` from silently pulling in a transitive dependency conda already
+   pins to a specific version.
+
+Concrete first candidate for this pattern: `lbrnet`'s own CI workflow
+(`.github/workflows/institutional-backtesting-gate.yml`) currently runs a slow, unpinned `mamba
+run -n mts pip install tensorflow jupyterlab opencv-python firebase-admin google-cloud-firestore
+google-cloud-storage protobuf grpcio` step on every run (because `setup-micromamba` never
+processes `environment.yml`'s own `pip:` section) — this is exactly the kind of pure-Python,
+already-isolated-from-conda install `uv` should replace for speed, not yet done as of this writing.
+
 ## 7. GitHub authentication
 
 ```bash
