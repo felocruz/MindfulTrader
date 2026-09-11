@@ -4,6 +4,13 @@
 `libzmq` build failure and a broader push to stop depending on `/mnt/c` for the Windows cross-compile
 toolchain. Phase B (CRT/SDK splat) is still brainstorm / not yet implemented.
 
+**Phase B is now MANDATORY, not optional (confirmed 2026-09-10): Puget will not have Visual Studio
+installed at all.** There is no `/mnt/c/Program Files/Microsoft Visual Studio/...` to fall back to
+on that machine — without an `xwin`-splatted CRT/SDK, `clang-cl` has no MSVC headers/libs to build
+against, period. This resolves open question #2 below: yes, `xwin` fully retires the Windows-side
+VS Installer requirement (`docs/NEW_MACHINE_WSL_SETUP.md` step 9) for Puget — that step must be
+skipped there, not just made redundant.
+
 ## Problem
 
 This repo cross-compiles `MindfulTrader.dll` from WSL using `clang-cl` targeting the MSVC ABI
@@ -110,8 +117,30 @@ header-only packages (`rapidjson`, `spdlog`, `fmt`, `catch2`/`gtest`, `yaml-cpp`
    `build-windows/bin/MindfulTrader.dll` produced (1.8M). Verified `build-windows/build.ninja` has
    48 references to the new sysroot path and zero remaining to `/mnt/c/Users/rcruz/vcpkg` — clean
    cutover, not a stale/mixed config.
-5. **Not yet done:** copying `~/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/` to Puget. Ready to
-   transfer (tarball over LAN/USB/share) whenever convenient.
+5. **Validated live**: deployed via `./deploy_mindfultrader.sh` and confirmed loading successfully
+   inside Sierra Chart itself, not just a clean rebuild.
+6. **Transfer to Puget, chosen method: GitHub Release asset** (both machines already have `gh`
+   auth + clone access, no direct network link between the two boxes exists, and no physical
+   media/USB needed). Executed:
+   - `tar -czvf ~/mindfultrader-vcpkg-sysroot-x64-windows.tar.gz -C ~/.local/sysroots/x86_64-pc-windows-msvc vcpkg/`
+     (3.6M compressed from 14M).
+   - `gh release create sysroot-vcpkg-x64-windows-20260910 ~/mindfultrader-vcpkg-sysroot-x64-windows.tar.gz --repo felocruz/MindfulTrader --title "..." --notes "..." --target master`
+   - Release: https://github.com/felocruz/MindfulTrader/releases/tag/sysroot-vcpkg-x64-windows-20260910
+
+   **On Puget, to complete the transfer:**
+   ```bash
+   mkdir -p ~/.local/sysroots/x86_64-pc-windows-msvc
+   cd ~/.local/sysroots/x86_64-pc-windows-msvc
+   gh release download sysroot-vcpkg-x64-windows-20260910 -R felocruz/MindfulTrader
+   tar -xzvf mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
+   rm mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
+   ```
+   This reconstructs `~/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows/{include,lib,debug/lib,bin,debug/bin}`
+   at the exact path `CMakeLists.txt`'s `VCPKG_SYSROOT` variable expects — `./build_dll.sh` should
+   build clean on Puget with no further `CMakeLists.txt` changes needed. **Not yet confirmed on
+   Puget** — once it builds there, delete the release (`gh release delete
+   sysroot-vcpkg-x64-windows-20260910 --repo felocruz/MindfulTrader`), it's a one-time transfer
+   artifact, not a real code release.
 
 ### Why CRT/SDK is a **splat**, not a copy
 
@@ -138,20 +167,23 @@ a prebuilt `xwin` release binary for `x86_64-unknown-linux-gnu` (no cargo requir
    (tarball over LAN/USB/share — same spirit as `docs/NEW_MACHINE_WSL_SETUP.md` step 13's data-file
    transfer).
 
-**Phase B — CRT/SDK splat (removes the last `/mnt/c` dependency, addresses build speed)**
+**Phase B — CRT/SDK splat (MANDATORY for Puget — no VS install exists there to fall back on)**
 1. Install `xwin` (prebuilt binary preferred, avoids needing a Rust toolchain here).
 2. Run `xwin splat` targeting MSVC `14.44.35207` / SDK `10.0.26100.0` (this machine's current
    `toolchain-clang-cl.cmake` values) into `~/.local/sysroots/x86_64-pc-windows-msvc/{crt,sdk}/`.
    If `xwin` can't pin those exact versions, splat whatever it resolves and update
-   `toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` to match — same versions must then be
-   re-verified against Puget's own VS/SDK install per `docs/NEW_MACHINE_WSL_SETUP.md` step 11.
+   `toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` to match — on Puget there is no local
+   VS install to "verify against" per `docs/NEW_MACHINE_WSL_SETUP.md` step 11 (that step is now
+   obsolete for Puget, see status banner above), so whatever `xwin` resolves simply becomes the new
+   pinned version, on both machines.
 3. Update `toolchain-clang-cl.cmake`'s `MSVC_ROOT_DIR`/`WINDOWS_SDK_ROOT` to point at
    `crt/`/`sdk/` under the new sysroot instead of `/mnt/c/Program Files...`.
 4. Rebuild, verify `build-windows/bin/MindfulTrader.dll` output is unchanged (same exports, same
    size order of magnitude) before considering this done.
-5. Copy `{crt,sdk}/` to Puget alongside the Phase A `vcpkg/` subtree, or re-run `xwin splat`
-   natively on Puget if the transfer is large — either is valid since the splat output is
-   deterministic per version.
+5. Copy `{crt,sdk}/` to Puget alongside the Phase A `vcpkg/` subtree (GitHub Release asset, same
+   mechanism as Phase A step 6 — likely a much larger tarball, may need multiple release assets or
+   splitting), or re-run `xwin splat` natively on Puget instead (equally valid since the splat
+   output is deterministic per version, and avoids transferring a potentially large file at all).
 
 ## Open questions
 
