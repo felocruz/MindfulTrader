@@ -54,9 +54,24 @@ RAM-scarcity assumptions that were real constraints on the old box — confirmed
 2026-09-03 OOM incident (4 concurrent `observation_vector_recalibration.cpp` passes over the same
 471.9M-row file exhausted RAM with no swap configured and took down the whole VS Code/WSL session).
 That tool's own comment sizes its default budget for "3-4 concurrent passes sharing a ~15GB box."
-At 96GB, that's roughly a 6× increase in usable RAM, plus 16 cores/32 threads (vs. whatever the
-Dell's core count was — not documented here) and a dedicated 16GB-VRAM GPU that didn't exist on the
-old machine at all.
+Measured directly on the old machine (`lscpu`/`free -h`, 2026-09-11): Intel Xeon E5-1603 v3 @
+2.80GHz, 4 cores / 4 threads (no SMT, 2014-era Haswell-EP), 15GiB RAM, 0B swap, no discrete GPU. At
+96GB/16-core-32-thread/RTX 5080, that's roughly **6.4× RAM, 4× cores, 8× threads**, plus a GPU that
+didn't exist on this box at all.
+
+**One caveat worth flagging now, not after it causes confusion**: more cores doesn't automatically
+speed up everything here. [FeatureSaliencyEM.h](../tools/observation_vector/FeatureSaliencyEM.h)'s
+E/M-step loops are plain single-threaded `for` loops (confirmed by the 22-minute wall-clock fit
+time for a 500k-observation reservoir on this machine, all on one core) — going to 32 threads
+won't shorten that specific fit unless the E-step is explicitly parallelized (it's embarrassingly
+parallel over observations, so this would be a cheap win if fit time becomes a bottleneck on
+Puget). The thread-count jump mainly helps things already using multiple cores today: parallel
+build jobs, concurrent tool passes that used to risk OOM one at a time.
+
+**Also worth doing on Puget, not just inheriting the old default**: configure real swap. The old
+machine's 2026-09-03 OOM incident happened with 0B swap configured — worth deciding deliberately
+whether Puget should have swap as a safety net even with 6× the RAM, rather than silently carrying
+forward "no swap" as an assumption nobody actually chose.
 
 **Not yet acted on — flagged for a deliberate decision, not silently changed here.** A
 non-exhaustive list of RAM/CPU-driven defaults and design choices that assumed the old machine's
