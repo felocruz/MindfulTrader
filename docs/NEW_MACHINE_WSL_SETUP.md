@@ -49,6 +49,21 @@ inside WSL.
 | Networking | Integrated Ethernet, WiFi, Bluetooth |
 | Sound | Onboard |
 
+**Validated via Puget's own factory benchmark run (CrystalDiskMark/Nbody CUDA/Cinebench 2026/
+V-Ray, 2026-09-11)** — recorded here as confirmation the hardware is healthy, not a performance
+target for this repo's own workloads:
+- Both NVMe drives hit textbook Gen4 numbers: ~6.1–7.4 GB/s sequential, ~1.0 GB/s / 235–260K IOPS
+  random (Q32) on both the 1TB and 2TB Kingston KC3000 — directly relevant here since
+  `mes_candidates.parquet` alone is 9.4GB and `data/raw/` totals ~49GB.
+- GPU host↔device bandwidth (Nbody CUDA): ~54–56 GB/s — confirms the RTX 5080 is seated and
+  communicating at expected PCIe bandwidth, the precondition for §0c's GPU bring-up checklist.
+- Cinebench 2026: single-thread 543 pts, multi-core 9,062 pts (~16.7× scaling across 16 cores/32
+  threads, near-ideal). The single-thread score alone is the more relevant number for this repo's
+  own single-threaded code (e.g. `FeatureSaliencyEM.h`'s E/M-step, see below) — a large jump over
+  the old Xeon E5-1603 v3 on raw clock/IPC, independent of ever parallelizing anything.
+- No anomalies (throttling, degraded lanes, driver instability) surfaced across the full suite
+  (storage, GPU rendering, CPU rendering, mixed CPU+GPU render engines).
+
 **Headroom this unlocks vs. the outgoing Dell machine.** Several tools in this repo hardcode
 RAM-scarcity assumptions that were real constraints on the old box — confirmed by a real
 2026-09-03 OOM incident (4 concurrent `observation_vector_recalibration.cpp` passes over the same
