@@ -15,8 +15,8 @@ inside WSL.
 - MSVC toolset: `14.44.35207`, Windows SDK: `10.0.26100.0` (Visual Studio 2022 Community, Windows side)
 - vcpkg: `/mnt/c/Users/<user>/vcpkg` (Windows side, mounted into WSL)
 - Sierra Chart data dir: `/mnt/c/SierraChart2/Data/` (Windows side)
-- Repos: `MindfulTrader`, `lbrnet`, `MTS`, `schema` (all GitHub, `felocruz` account; `schema` was
-  local-only with no remote until 2026-09-10, now pushed to `felocruz/schema`, private)
+- Repos: `MindfulTrader`, `lbrnet`, `MTS`, `schema`, `Atratus` (all GitHub, `felocruz` account;
+  `schema`/`Atratus` were local-only with no remote until 2026-09-10, now pushed, both private)
 
 ## 0a. [Windows] Connect Wi-Fi / Bluetooth (do this first if the machine isn't online yet)
 
@@ -135,57 +135,105 @@ git clone git@github.com:felocruz/MindfulTrader.git
 git clone git@github.com:felocruz/lbrnet.git
 git clone git@github.com:felocruz/MTS.git
 git clone git@github.com:felocruz/schema.git
+git clone git@github.com:felocruz/Atratus.git
 ```
 
-## 9. [Windows] Visual Studio 2022 + Windows SDK (needed for the cross-compile toolchain)
+## 9. Cross-compile sysroot (no Visual Studio install needed on this machine)
 
-Install Visual Studio 2022 Community with the **"Desktop development with C++"** workload (includes
-the MSVC toolset and a Windows SDK). Match versions if possible:
+As of 2026-09-10 the C++ toolchain no longer depends on a Windows-side Visual Studio install or
+`/mnt/c` at all -- everything lives natively under `~/.local/sysroots/x86_64-pc-windows-msvc/`.
+Full background/rationale: `docs/CROSS_COMPILE_SYSROOT_MIGRATION.md`.
 
-- MSVC toolset: `14.44.35207`
-- Windows SDK: `10.0.26100.0`
-
-Via the VS Installer, use "Individual components" to pin these exact versions if the new machine's
-default differs — `toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` variables must match
-whatever actually gets installed (see step 11).
-
-## 10. [Windows] Install vcpkg
-
-```powershell
-cd C:\Users\<your-username>
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg
-.\bootstrap-vcpkg.bat
+**vcpkg artifacts (zmq/sodium/nlohmann_json):**
+```bash
+mkdir -p ~/.local/sysroots/x86_64-pc-windows-msvc
+cd ~/.local/sysroots/x86_64-pc-windows-msvc
+gh release download sysroot-vcpkg-x64-windows-20260910 -R felocruz/MindfulTrader
+tar -xzvf mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
+rm mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
 ```
 
-## 11. Verify/update the toolchain file
+**MSVC CRT + Windows SDK (via `xwin`, no VS installer, no sudo):**
+```bash
+cd /tmp
+gh release download 0.10.0 --repo Jake-Shadle/xwin --pattern "xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz*"
+sha256sum xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz   # compare manually against the .sha256 file's bare hash
+tar -xzvf xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz
+cp xwin-0.10.0-x86_64-unknown-linux-musl/xwin ~/.local/bin/xwin
+chmod +x ~/.local/bin/xwin
+xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100 \
+  splat --output ~/.local/sysroots/x86_64-pc-windows-msvc \
+  --preserve-ms-arch-notation --use-winsysroot-style
+```
+(Do **not** add `--disable-symlinks` -- that flag is only correct when running clang-cl *on Windows
+itself*; cross-compiling from this Linux/WSL host needs the default casing-fix symlinks, e.g.
+`windows.h` -> `Windows.h`, or the build fails with `fatal error: 'windows.h' file not found`.)
 
-After steps 9-10, confirm the installed MSVC toolset and SDK versions match what
-`toolchain-clang-cl.cmake` expects:
+`toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` (`14.44.17.14`/`10.0.26100`) are `xwin`'s
+own on-disk directory-naming convention, not the real MSVC toolset/SDK version strings -- already
+wired up correctly in the committed toolchain file, nothing to edit here unless `xwin` resolves
+different versions on this machine (compare via `xwin --accept-license list` first).
+
+## 10. Verify the build
 
 ```bash
-ls "/mnt/c/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/"
-ls "/mnt/c/Program Files (x86)/Windows Kits/10/Include/"
+cd ~/devel/VSCode/MindfulTrader
+rm -rf build-windows && ./build_dll.sh
+file build-windows/bin/MindfulTrader.dll   # should report: PE32+ executable (DLL) (GUI) x86-64, for MS Windows
 ```
 
-If the version strings differ from `14.44.35207`/`10.0.26100.0`, edit
-`~/devel/VSCode/MindfulTrader/toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` at the top of
-the file to match the new machine's actual installed versions.
+## 11. (Superseded 2026-09-10, kept for historical reference only)
+
+The old approach -- installing Visual Studio + vcpkg on the Windows side, reading both through
+`/mnt/c` -- is no longer used. See step 9 above and `docs/CROSS_COMPILE_SYSROOT_MIGRATION.md` for
+why (the `/mnt/c` 9p mount was slow enough to cause real build friction, and Puget won't have a
+Visual Studio install at all).
 
 ## 12. [Windows] Install Sierra Chart
 
 Install Sierra Chart to `C:\SierraChart2\` (matching `deploy_mindfultrader.sh`'s hardcoded
 `DEST_FILE` path), or edit that script's `DEST_FILE` variable if you install it elsewhere.
 
+## 12a. Restore custom chartbooks (do this right after step 12, before first launch)
+
+The 10 custom `.Cht` files (`Elder_DayTrading`, `Elder_HourlyTrading`, `Elder_Swing`,
+`Elder_Swing_GOLD`, `Elder_Invest_FXAIX`, `Elder_TripleScreen`, `ES`, `Market_Minder`,
+`BacktestingHourlyTrading`, `TurtleSoup`) plus `ChartbookSharingSettings.config` are not in git --
+transferred as a GitHub release asset (2026-09-10):
+
+```bash
+cd "/mnt/c/SierraChart2/Data"
+gh release download sierrachart-chartbooks-20260910 -R felocruz/MindfulTrader
+tar -xzvf sierrachart-chartbooks-20260910.tar.gz
+rm sierrachart-chartbooks-20260910.tar.gz
+```
+
+Sierra Chart's own built-in stock-sample chartbooks (`ExampleChartbook`, `Rockwell`, `HindSight`,
+`McClellanOscillator`, `Pivot Points Study Example`, `High Accuracy Spread`,
+`DeltaNumberBarsOnP&F_5TickReversal`) reinstall automatically with Sierra Chart itself -- don't need
+transferring. Delete the `sierrachart-chartbooks-20260910` release from GitHub once confirmed synced
+(it's a one-time transfer artifact, not a real release).
+
 ## 13. Copy large data files separately (not via git)
 
-`lbrnet/data/raw/mes_ticks.parquet` and any `.context`/`.alpha` files are multi-GB and not tracked
-in git. Copy them directly (network share, external drive, or `scp`/`rsync` over the LAN) into the
-same relative path, e.g.:
+`lbrnet/data/` is **not tracked in git and is large** -- roughly 74GB even after excluding obvious
+baseline/temp cruft (verified 2026-09-10):
+
+- `data/scid/` -- 13 raw `.scid` tick files, ~18GB total (the source-of-truth originals)
+- `data/raw/` -- `.context`/`.alpha`/`.parquet` files, ~49GB (several multi-GB each, e.g.
+  `event_data.context` 14G, `event_data.alpha` 12G, `mes_candidates.parquet` 8.8G,
+  `mes_ticks.parquet` 2.7G)
+- `data/training/` -- more `.alpha`/`.parquet` pairs, several hundred MB each
+
+This is too large for GitHub releases or casual copying -- needs an external drive or a direct
+network link between the two machines. Before moving all of it, consider whether some of it is
+regenerable instead (the `.scid` files are the true originals; `tools/market_data_replay/` in
+`MindfulTrader` can reconstruct `.context`-equivalent output from raw ticks, so not every derived
+file may need to make the trip). Once you've decided what to bring:
 
 ```bash
 mkdir -p ~/devel/VSCode/lbrnet/data/raw
-# then copy mes_ticks.parquet (and any other needed data files) into that directory
+# then copy the needed files into that directory (and data/scid/, data/training/ as needed)
 ```
 
 ## 14. [Windows] Install VS Code + extensions
