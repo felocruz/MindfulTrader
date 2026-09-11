@@ -84,6 +84,33 @@ constraints, worth revisiting once this machine is in service:
 None of the above are changed by this edit — recorded here so each gets a deliberate decision once
 Puget is in service, not silently inherited from a machine being retired.
 
+## 0c. GPU bring-up checklist (RTX 5080, do this after WSL2 is installed — step 1)
+
+The RTX 5080 needs setup on both sides of the WSL2 boundary, in this order:
+
+1. **[Windows] Install/update the NVIDIA GeForce driver** (Studio or Game Ready, either works) —
+   this is the ONLY GPU driver needed anywhere in this setup. Reboot after install.
+2. **[Windows] Verify**: `nvidia-smi` in a plain PowerShell/CMD window should list the RTX 5080.
+3. **[WSL] Do NOT install a Linux NVIDIA driver** — no `sudo apt install nvidia-driver-XXX` or
+   similar inside WSL, ever. WSL2 passes the Windows host driver through via a `dxcore`/libcuda
+   stub built into the WSL2 kernel itself; a real Linux driver conflicts with that passthrough and
+   is a well-known way to break GPU access entirely.
+4. **[WSL] Verify**: run `wsl --update` on the Windows side first if this is an older WSL2 install,
+   then confirm `nvidia-smi` also works **inside** WSL — it should mirror step 2's output.
+5. **[WSL, `mts` env] Install GPU-enabled ML libraries explicitly** — CPU-only wheels are the
+   default unless requested: `pytorch-cuda` via the `pytorch`/`nvidia` conda channels, or
+   TensorFlow's `[and-cuda]` pip extra (not a bare `pip install tensorflow`, which is exactly
+   what `.github/workflows/institutional-backtesting-gate.yml` currently does — check whether that
+   resolves a GPU or CPU wheel once this machine exists, don't assume).
+6. **Real caveat — Blackwell (`sm_120`) is a very new architecture.** Whatever PyTorch/TensorFlow
+   version gets pinned must explicitly ship `sm_120` kernels — check that framework version's own
+   release notes before assuming an older pinned build works; a current stable (or nightly, if
+   Puget arrives soon after the GPU's own release window) build may be required.
+7. **Not solved by the above alone**: enabling GPU-capable libraries doesn't mean training code
+   actually dispatches to the GPU. No `device='cuda'`-style dispatch logic was found in `lbrnet`'s
+   training scripts as of this writing — that's `lbrnet`-side work (out of `MindfulTrader`'s own
+   scope, "no ML training logic belongs in `lbrnet`"), flagged here rather than assumed done.
+
 ## 1. [Windows] Install WSL2 + Ubuntu 20.04
 
 **Install to the `C:` drive, not `D:`** -- this setup assumes WSL2's virtual disk (and everything
