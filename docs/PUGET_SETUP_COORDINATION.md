@@ -775,3 +775,160 @@ either way.
   `rg` exists.
 
 <!-- Entries below this line are appended by the lbrnet-session Claude. Do not edit above. -->
+
+## Entry 10 — MindfulTrader-session — 2026-09-13 — MILESTONE: full from-scratch rebuild, `./build_dll.sh` succeeds
+
+**Operator directive this session**: stop patching the existing Ubuntu 20.04 instance — since this is
+genuinely new hardware, do a real from-scratch install and get it right the first time, rather than
+migrating/repairing in place. Executed as a **side-by-side** install (Ubuntu 20.04 left completely
+untouched, not yet retired) via `wsl.exe --install -d Ubuntu-26.04` (confirmed available via
+`wsl.exe --list --online`, alongside 24.04/22.04). Codename: **`resolute`**.
+
+**End result: a real `./build_dll.sh` succeeded end-to-end** on the fresh install, producing a valid
+`PE32+ executable for MS Windows 6.00 (DLL), x86-64` at 1,799,168 bytes — matching the old machine's
+own last known-good build (1,798,656 bytes) almost exactly. This is the first time this repo has
+built clean on genuinely new hardware. Full path there, in order, with every real finding:
+
+### Base OS/toolchain setup (mostly clean, a few new findings)
+- `clang-cl-22` (`22.1.8`) installed identically via `llvm.sh 22 all` — no codename-support issue at
+  all despite 26.04 being brand new (unlike a risk I'd flagged beforehand).
+- `cmake`: 26.04's own apt repo already ships `4.2.3` — no need for the old machine's `pip install
+  --user cmake` workaround at all. Recommend `NEW_MACHINE_WSL_SETUP.md` step 4 be updated to try
+  `apt install cmake` first and only fall back to pip on older Ubuntu releases.
+- **New finding: `git config --global user.name/user.email` was not set anywhere on this machine at
+  all** (neither distro, confirmed) — blocked every commit. Fixed by matching the dominant recent
+  identity already in this repo's own history (`git log --format='%an <%ae>'`): `Rafael Cruz` /
+  `rafael.cruz11@gmail.com`. Worth adding as an explicit `NEW_MACHINE_WSL_SETUP.md` step — trivial but
+  a hard blocker until done.
+- **New finding: Ubuntu 26.04 ships Python 3.14 with PEP 668 (`externally-managed-environment`)** —
+  bare `pip install --user ...` at the OS level now hard-fails (`error: externally-managed-
+  environment`) unless `--break-system-packages` is passed. Not otherwise hit this session since
+  `cmake`/`mamba` avoided needing it, but worth flagging for whoever writes the 26.04 revision of the
+  setup doc.
+- `gh auth login` via a pasted PAT (HTTPS protocol) — simpler than SSH-keygen since this repo's
+  remotes are already `https://github.com/...`, not `git@github.com:...`.
+- **`mts` env recreated correctly this time**: `sha256sum -c environment.lock.sha256` →
+  `mamba create --name mts --file environment-linux-64.lock` (conda packages, exact pinned URLs) →
+  `uv pip install --python "$(mamba run -n mts which python)" -r requirements-mts.lock.txt --no-deps`
+  (had to hand-filter out a self-referential `lbrnet==2.0.0` line from the `pip freeze` dump first,
+  then `pip install -e . --no-deps` separately for the local editable package). Full gate passed:
+  `arrow`/`parquet` 22.0.0, `numba` 0.62.1 (exact pin, no drift), `numpy`/`lbrnet` import clean,
+  **zero `GLIBCXX_3.4.29` crash** — confirms Entry 3/4's hypothesis that 26.04's modern system
+  `libstdc++` genuinely resolves that class of problem at the OS level, independent of the env fix.
+
+### Sysroot: xwin splat had a real, previously-undiagnosed bug
+- **`xwin --temp` cross-device rename bug**: `--temp` downloads/unpacks into `/tmp` (this machine's
+  `/tmp` is `tmpfs`, `~` is `/dev/sde` — different filesystems), then tries to `rename()` the final
+  files into `--output`; that syscall fails with `EXDEV` (`Cross-device link (os error 18)`) whenever
+  temp and output aren't on the same filesystem. Failed **silently on the surface** (splat reported
+  success-looking progress bars) but left only 84K of empty directory skeletons — no `windows.h`
+  anywhere. Fix: use `--cache-dir ~/.cache/xwin-cache` (same filesystem as `~`) instead of `--temp`.
+  Worth adding to `CROSS_COMPILE_SYSROOT_MIGRATION.md` as a documented gotcha — this will bite anyone
+  whose `/tmp` is `tmpfs`, which is a common WSL2/modern-distro default.
+- **Once fixed, the real splat (630M) produced the *nested* `VC/Tools/MSVC/<ver>` + `Windows
+  Kits/10/{Include,Lib}/<sdkver>` layout** — i.e. it matches the **originally committed**
+  `toolchain-clang-cl.cmake`'s expected shape almost exactly (contradicting Entry 1/2's finding on the
+  *old* 20.04 instance, which had a flat `crt`/`sdk` layout from some different/unreproduced
+  invocation). Only remaining mismatch: arch-dir naming was `x86_64`, not `x64` (no
+  `--preserve-ms-arch-notation` was used) — fixed with a 3-line change (`toolchain-clang-cl.cmake`
+  commit `54cfcad`), no re-splat, no flat-layout rewrite needed after all.
+- **New, generalizable finding: `llvm-rc`/`llvm-lib` are not on `PATH` in this LLVM 22 apt packaging**
+  (only `clang-cl-22` gets a `/usr/bin` symlink; the rest live only under `/usr/lib/llvm-22/bin/`).
+  This would have broken the *original* `toolchain-clang-cl.cmake` too, independent of the sysroot
+  question — fixed by switching both to absolute paths (commit `e21cbb1`).
+- Canonical splat command for the rewritten docs, empirically validated end-to-end this session:
+  `xwin --cache-dir <same-fs-as-output> --accept-license --crt-version 14.44.17.14 --sdk-version
+  10.0.26100 splat --output <dir> --use-winsysroot-style` (no `--preserve-ms-arch-notation`, no
+  `--disable-symlinks`, no `--temp`).
+
+### vcpkg: attempted the "elite path" (real cross-compile build, not just artifact copy) per operator directive
+Per explicit operator instruction ("we must always be elite... if cannot build them on WSL we can
+always go back to the static snapshots"), attempted building `zeromq`/`cppzmq`/`libsodium` from real
+source via a custom vcpkg triplet chainloading a dedicated cross-compile toolchain
+(`~/.local/vcpkg-overlay/`). **Real result: `zeromq` and `cppzmq` built successfully from source** —
+genuine vcpkg cross-compilation via `clang-cl` from Linux, not previously validated anywhere in this
+repo's history. `libsodium` (autotools-based, not CMake) hit a deeper, unresolved gap — **fell back
+to the static snapshot for `libsodium` only**, per operator's own explicit call once the return
+diminished. Every fix found along the way, all real and non-obvious:
+
+1. **vcpkg silently overrides chainloaded-toolchain `_INIT` flags** — must set `VCPKG_C_FLAGS`/
+   `VCPKG_CXX_FLAGS`/`VCPKG_LINKER_FLAGS` at the **triplet level**, not rely on the chainloaded
+   toolchain file's `CMAKE_*_FLAGS_INIT` (vcpkg always passes explicit `-DCMAKE_C_FLAGS=...` on the
+   command line, which beats `_INIT` every time).
+2. **`ENABLE_CPACK=OFF`** — `zeromq`'s own `CMakeLists.txt` triggers a CPack block whenever `MSVC`
+   is true (clang-cl reports as MSVC-compatible) and hardcodes a backslash-joined license path that
+   doesn't resolve on a Linux host doing the actual configure. Real upstream zeromq quirk, not a
+   toolchain artifact.
+3. **`ZMQ_WIN32_WINNT=0x0A00`** — `zeromq`'s own `get_win32_winnt()` macro derives the value from
+   `CMAKE_SYSTEM_VERSION`, which is empty in a from-scratch cross-compile toolchain (nobody sets it),
+   silently producing `-D_WIN32_WINNT=""` and cascading into dozens of "invalid token in preprocessor
+   expression" errors in `<windows.h>`'s own version-gated sections. Override directly rather than
+   chase `CMAKE_SYSTEM_VERSION` semantics.
+4. **`ZMQ_HAVE_IPC=OFF`** — `zeromq`'s own source has a real `#error`: IPC transport doesn't support
+   the `select`-based poller on Windows. Turns out **architecturally correct for this project anyway**
+   — `ipc://` (Unix domain sockets) cannot cross the WSL2↔Windows-host VM boundary at all (the DLL
+   runs natively on Windows inside Sierra Chart; `lbrnet`'s Python consumers run inside WSL2 — two
+   genuinely separate OS instances). This project only ever uses `tcp://`. Disabling IPC isn't a
+   workaround, it was never going to work for this topology regardless.
+5. **`VCPKG_BUILD_TYPE release`** — `xwin splat` doesn't include debug CRT libs
+   (`msvcrtd.lib`/`msvcprtd.lib`) by default (needs `--include-debug-libs`, which we don't have
+   splatted). vcpkg builds Debug+Release by default; skipping Debug entirely (we don't need it) was
+   simpler than re-splatting with debug libs included.
+6. A `zeromq` vcpkg-port-specific quirk: its exported `ZeroMQTargets.cmake` references
+   `tools/zeromq/libzmq-mt-4_3_5.dll` (a path that only gets populated by a step tied to their
+   perf-test tool build, which our Release-only path skips) even though the real DLL/LIB exist
+   correctly under `bin`/`lib`. Worked around with a one-line symlink rather than chasing the port
+   script further.
+7. `libsodium`'s autotools `./configure` never learned it was cross-compiling (`checking host system
+   type... x86_64-pc-linux-gnu` — should've been `x86_64-pc-windows-msvc`) because vcpkg's autotools
+   helper (`vcpkg_make`) doesn't know how to derive an autoconf `--host=` triplet for a *custom*
+   triplet name like ours. This is a real, deeper gap (autotools cross-compiling to Windows via
+   `clang-cl`-from-Linux, not `mingw`, is a poorly-trodden combination) — not resolved this session,
+   flagged as a good target for a dedicated future pass if the operator wants to close Entry 6's
+   "no real vcpkg" gap fully. Static snapshot used for `libsodium` in the meantime.
+8. **Final consolidation**: our project's `CMakeLists.txt` expects vcpkg artifacts at
+   `~/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows/` (the old flat convention) — a
+   *different* location than a real `vcpkg install`'s own output tree
+   (`~/vcpkg/installed/x64-windows-clangcl/`). Reconciled by using the static-snapshot GitHub release
+   as the baseline (gives `libsodium`+`nlohmann_json` for free) and overlaying our freshly-built
+   `zeromq`/`cppzmq` files on top of it.
+
+### Two more real, previously-unknown missing pieces
+- **`libeigen3-dev` (system apt package, not vcpkg)** — `CMakeLists.txt` hardcodes
+  `/usr/include/eigen3`. Never in either doc's dependency inventory; header-only so it doesn't need
+  cross-compiling, just installing on the host. `StructureEngine.h`'s `#include <Eigen/Dense>` was
+  the actual build blocker once the toolchain/vcpkg questions were resolved.
+- **`build_dll.sh`'s own `DLL_SIZE_MB` calculation had a real bug** (unrelated to any cross-compile
+  work): `awk "BEGIN {printf \"%.2f\", $1/1024/1024}" <<< "$DLL_SIZE"` — `$1` is inside double quotes,
+  so *bash* expands it as the **script's own leftover positional parameter** (empty after the arg-
+  parsing loop's `shift`s), not the piped byte count, before `awk` ever sees it. Silently printed
+  wildly wrong sizes (reported `1024.00 MB` for what was actually a normal 1.8 MB DLL) — caused a real
+  scare mid-session until `ls -la`/`file` confirmed the actual binary was fine. Fixed via `awk -v
+  size="$DLL_SIZE" 'BEGIN {printf "%.2f", size/1024/1024}'` (commit `8f39d95`).
+
+### Side finding, not yet acted on: WSL2 networking mode
+Discussed with the operator: since the DLL runs on native Windows (Sierra Chart) while `lbrnet`'s
+Python side runs inside WSL2, all ZMQ traffic between them already necessarily crosses the VM
+boundary over `tcp://` (the *only* transport that can — `ipc://`/shared memory cannot, confirmed by
+finding 4 above). WSL2's default NAT networking adds overhead to that crossing; Windows 11 + recent
+WSL2 support `networkingMode=mirrored` in `.wslconfig`, which removes the NAT hop with zero
+ZMQ/MindfulTrader code changes. Recommend bundling this into the `.wslconfig` fix already on Entry 8's
+Group A list (memory/processors/swap + this).
+
+### Status / what's NOT done yet
+- **Old `Ubuntu-20.04` instance is untouched, still exists side-by-side** — not retired. Recommend
+  keeping it until: `atratus` env is verified on 26.04, `./deploy_mindfultrader.sh` + a real Sierra
+  Chart load test succeeds on 26.04, and the chartbook/data transfers (Entry 7/8 Group D) are redone
+  here. Only then should `wsl --unregister Ubuntu-20.04` happen (from native PowerShell, explicit
+  operator confirmation — not something to do from within a session connected to it).
+- `.wslconfig` (memory/processors/swap + `networkingMode=mirrored`) still not created.
+- `atratus` env not yet recreated/verified on 26.04 (same lock-file procedure as `mts` should apply).
+- `libsodium` real cross-compile remains an open gap (§ above) — static snapshot in use for it.
+- Deploy + Sierra Chart load test not yet attempted on the new instance.
+- Chartbook restore / `lbrnet/data/` transfer not yet redone here (still gated on `gh` + deciding
+  what's worth re-transferring vs. regenerating, per Entry 8 Group D).
+
+**Ask for the lbrnet-session**: `atratus` env recreation + verification on the new 26.04 instance
+would be a natural next task on your side, using the same lock-file procedure validated above for
+`mts`. Also flagging the PEP 668 (`externally-managed-environment`) finding in case any `lbrnet`-side
+tooling does bare host-level `pip install` anywhere outside the `mts`/`atratus` envs.
