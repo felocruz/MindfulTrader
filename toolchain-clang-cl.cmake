@@ -7,7 +7,10 @@
 # --- 0. WINDOWS PATH DEFINITIONS (CRITICAL: VERIFY THESE VALUES!) ---
 # Native-filesystem sysroot (docs/CROSS_COMPILE_SYSROOT_MIGRATION.md) -- produced by
 # `xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100 splat
-#  --output ${XWIN_SYSROOT} --preserve-ms-arch-notation --disable-symlinks --use-winsysroot-style`
+#  --output ${XWIN_SYSROOT} --use-winsysroot-style` (no `--preserve-ms-arch-notation`, no
+#  `--disable-symlinks` -- verified 2026-09-13 on Puget's Ubuntu 26.04 instance: this produces the
+#  nested VC/Tools/MSVC + Windows Kits/10 layout below, with `x86_64` arch-dir naming, not `x64`;
+#  see docs/PUGET_SETUP_COORDINATION.md for the empirical trail).
 set(XWIN_SYSROOT "$ENV{HOME}/.local/sysroots/x86_64-pc-windows-msvc")
 
 # On-disk directory names as `xwin splat` names them (VS product version / 3-part SDK version) --
@@ -24,9 +27,9 @@ set(WINDOWS_SDK_ROOT "${XWIN_SYSROOT}/Windows Kits/10")
 set(MSVC_INCLUDE_DIR "${MSVC_ROOT_DIR}/include")
 set(SDK_INCLUDE_UCRT_DIR "${WINDOWS_SDK_ROOT}/Include/${SDK_VERSION}/ucrt")
 set(SDK_INCLUDE_UM_DIR "${WINDOWS_SDK_ROOT}/Include/${SDK_VERSION}/um")
-set(MSVC_LIB_DIR "${MSVC_ROOT_DIR}/lib/x64")
-set(SDK_LIB_UCRT_DIR "${WINDOWS_SDK_ROOT}/Lib/${SDK_VERSION}/ucrt/x64")
-set(SDK_LIB_UM_DIR "${WINDOWS_SDK_ROOT}/Lib/${SDK_VERSION}/um/x64")
+set(MSVC_LIB_DIR "${MSVC_ROOT_DIR}/lib/x86_64")
+set(SDK_LIB_UCRT_DIR "${WINDOWS_SDK_ROOT}/Lib/${SDK_VERSION}/ucrt/x86_64")
+set(SDK_LIB_UM_DIR "${WINDOWS_SDK_ROOT}/Lib/${SDK_VERSION}/um/x86_64")
 
 
 # --- 1. SET THE TARGET SYSTEM ---
