@@ -219,8 +219,10 @@ if [ "$BUILD" = true ]; then
             DLL_SIZE=$(wc -c < "$DLL_PATH")
             DLL_DATE=$(date -r "$DLL_PATH" "+%Y-%m-%d %H:%M:%S")
         fi
-        # Convert to MB using awk (no bc dependency)
-        DLL_SIZE_MB=$(awk "BEGIN {printf \"%.2f\", $1/1024/1024}" <<< "$DLL_SIZE")
+        # Convert to MB using awk (no bc dependency) -- use -v to avoid bash expanding
+        # a literal "$1" inside the double-quoted awk program (was clobbering the real
+        # value with the script's own leftover positional parameter, e.g. "--no-clean").
+        DLL_SIZE_MB=$(awk -v size="$DLL_SIZE" 'BEGIN {printf "%.2f", size/1024/1024}')
         
         echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${GREEN}  Build Successful! 🎉${NC}"
