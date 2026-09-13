@@ -39,9 +39,12 @@ set(TRIPLE "x86_64-pc-windows-msvc")
 
 
 # --- 2. CONFIGURE THE COMPILER ---
-set(CMAKE_C_COMPILER clang-cl-22)
-set(CMAKE_CXX_COMPILER clang-cl-22)
-set(CMAKE_RC_COMPILER llvm-rc)
+# Absolute paths, not bare names -- apt.llvm.org's LLVM 22 packaging only symlinks clang-cl-22
+# into /usr/bin; llvm-rc/llvm-lib live only under /usr/lib/llvm-22/bin with no PATH symlink at
+# all (confirmed 2026-09-13 on Puget's Ubuntu 26.04 instance -- see PUGET_SETUP_COORDINATION.md).
+set(CMAKE_C_COMPILER /usr/bin/clang-cl-22)
+set(CMAKE_CXX_COMPILER /usr/bin/clang-cl-22)
+set(CMAKE_RC_COMPILER /usr/lib/llvm-22/bin/llvm-rc)
 
 # Disable the GNU-style dependency flags that clash with clang-cl.
 set(CMAKE_C_IMPLICIT_DEPEND_FILTERS "")
@@ -58,7 +61,7 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 set(CMAKE_C_LINK_EXECUTABLE   "<CMAKE_C_COMPILER> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
 set(CMAKE_CXX_LINK_EXECUTABLE "<CMAKE_CXX_COMPILER> <LINK_FLAGS> <OBJECTS> -o <TARGET> <LINK_LIBRARIES>")
 
-set(CMAKE_AR llvm-lib)
+set(CMAKE_AR /usr/lib/llvm-22/bin/llvm-lib)
 set(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> /nologo /out:<TARGET> <OBJECTS>")
 set(CMAKE_CXX_ARCHIVE_CREATE "${CMAKE_C_ARCHIVE_CREATE}")
 set(CMAKE_C_ARCHIVE_CREATE_DEFAULTS "")
