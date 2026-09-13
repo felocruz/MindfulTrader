@@ -73,6 +73,9 @@ this phase, not mid-setup).
 **Gate:** `mamba env list` shows both `mts` and `atratus`; `mamba run -n mts pkg-config
 --modversion arrow parquet` matches the outgoing machine's `22.0.0` (needed for
 `tools/`'s Arrow/Parquet-linked utilities).
+**Puget status (2026-09-13): FAIL, see §9.** `pkg-config` finds no `arrow`/`parquet` package at
+all, and `import numpy`/`tensorflow` crash outright (`GLIBCXX_3.4.29' not found`). Do not treat
+the envs' mere existence as passing this gate.
 
 ### Phase 4 — GitHub auth + repo clone
 **Ref:** §7 (`ssh-keygen`, add public key to GitHub), §8 (clone all 5 sibling repos — `MindfulTrader`,
@@ -99,6 +102,10 @@ execution log" steps 1-7.
   not this Linux cross-compile host).
 **Gate:** `~/.local/sysroots/x86_64-pc-windows-msvc/` contains all three of `vcpkg/x64-windows/`,
 `VC/Tools/MSVC/14.44.17.14/`, and `Windows Kits/10/{Include,Lib}/10.0.26100/`.
+**Puget status (2026-09-13): this gate's own text is WRONG, see §9.** Puget's real
+`--use-winsysroot-style` splat produced a flat `crt/`+`sdk/` layout, never `VC/`/`Windows Kits/`
+— the gate should check for `crt/{include,lib/x86_64}` + `sdk/{include,lib}/{ucrt,um,shared}`
+instead. Do not re-splat trying to force the nested layout this gate currently describes.
 
 ### Phase 6 — Build verification (the hard gate for all future coding work)
 **Ref:** §10 / §15.
@@ -110,6 +117,9 @@ file build-windows/bin/MindfulTrader.dll   # expect: PE32+ executable (DLL) (GUI
 **Gate:** build succeeds end-to-end with **zero** edits to `CMakeLists.txt` or
 `toolchain-clang-cl.cmake` beyond what's already committed. Any edit required here is itself a
 real finding — report it, do not silently patch and move on.
+**Puget status (2026-09-13): FAIL, see §9.** Fails before even reaching the toolchain question —
+missing `ripgrep` breaks the WS-07 audit target at step 1/47. The toolchain-file mismatch (Phase
+5's real gate) is a second, independent failure once `rg` is installed.
 
 ### Phase 7 — Sierra Chart + chartbooks
 **Ref:** §12 (install to `C:\SierraChart2\`, matching `deploy_mindfultrader.sh`'s hardcoded
@@ -168,3 +178,28 @@ Carried over from `CROSS_COMPILE_SYSROOT_MIGRATION.md`, all confirmed 2026-09-10
 - Phase 5c's version-match check — confirm before trusting the pinned `xwin splat` command as-is.
 - Whether `uv` (§6a) is actually adopted for this machine's `mts`/`atratus` envs — decide before
   Phase 3, not mid-setup.
+
+## 9. Puget execution log (real, verified — 2026-09-13, cross-session with `lbrnet`)
+
+Puget is now actually in hand, with a WSL shell — the premise of §3's "this session cannot execute
+anything on Puget" no longer holds. Full detail, raw command output, and live back-and-forth:
+`docs/PUGET_SETUP_COORDINATION.md`. Summary grade per phase, superseding this spec's own gate text
+where marked wrong above:
+
+| Phase | Gate | Real status |
+|---|---|---|
+| 0 — Physical/Windows bring-up | Ubuntu launches, `nvidia-smi` (Windows) | **PASS** |
+| 1 — Base WSL env | `clang-cl`/`cmake`/`mamba` versions | **PASS**, with a caveat: default shell is `zsh`, not `bash` — Miniforge's `conda init bash` alone leaves `mamba` off `PATH` in a fresh terminal until the zsh hook is also added (`NEW_MACHINE_WSL_SETUP.md` §5) |
+| 2 — GPU passthrough | `nvidia-smi` inside WSL | **PASS** — RTX 5080, 16303MiB, visible inside WSL with zero extra driver install |
+| 3 — Conda environments | `pkg-config --modversion arrow parquet` matches `22.0.0` | **FAIL** — pkg-config finds neither package; `numpy`/`tensorflow` imports crash (`GLIBCXX_3.4.29' not found`); installed versions (`numba 0.67.0`, `numpy 2.5.3`, `pyarrow 25.0.0`) drift hard from `CLAUDE.md`'s pinned `numba==0.62.1`. Envs exist but are not fit for use as-is — recreate from `lbrnet/environment-linux-64.lock`, not a fresh solve. |
+| 4 — GitHub auth + clone | `ssh -T git@github.com`, 5 repos present | **PASS** (repos present; `gh` itself is a separate, currently-missing tool, not part of this phase's own git-over-ssh gate) |
+| 5 — Cross-compile sysroot | (gate text itself wrong, see §4 correction) | **PARTIAL** — vcpkg artifacts present and correct; CRT/SDK splat present but in the flat `crt`/`sdk` shape, not the nested shape this spec assumed |
+| 6 — Build verification | clean `./build_dll.sh`, zero extra edits | **FAIL** — blocked twice over: missing `ripgrep` (step 1/47), then the toolchain-file/sysroot-shape mismatch once that's fixed. An empirically-validated toolchain-file fix exists (`docs/PUGET_SETUP_COORDINATION.md` Entry 2 §2) but is **not yet applied** |
+| 7-10 | Sierra Chart, deploy, data transfer, VS Code | **Not yet attempted** — correctly blocked behind Phase 6 per this spec's own gating rule |
+
+**Net conclusion**: per this spec's own §2 rule ("capacity-headroom plan may not begin until
+Phase 6's gate is met"), that plan remains correctly blocked — not by new caution invented after
+the fact, but because Phase 3 and Phase 6 are both failing for real, independent reasons. Next
+actions before Phase 6 can be retried: (1) operator runs `sudo apt install ripgrep` +
+the `gh` apt-repo install (`NEW_MACHINE_WSL_SETUP.md` §2), (2) `mts`/`atratus` recreated from the
+lock file, (3) the reviewed toolchain-file fix applied, (4) `./build_dll.sh` re-attempted.

@@ -114,7 +114,29 @@ constraints, worth revisiting once this machine is in service:
 None of the above are changed by this edit — recorded here so each gets a deliberate decision once
 Puget is in service, not silently inherited from a machine being retired.
 
+**Confirmed gap, 2026-09-13: no `.wslconfig` exists on Puget at all.** WSL2 is running with its
+default ~50%-of-host heuristic — `free -h` inside WSL reports **45GiB**, not the 96GB host total,
+and `swapon --show` shows 12GB already configured (someone already decided on swap; confirm this
+was deliberate and 12GB is the intended size). Given this machine's entire point is RAM headroom
+over the old box, `%USERPROFILE%\.wslconfig` (Windows side) should be created explicitly rather
+than left to the default, e.g.:
+```ini
+[wsl2]
+memory=80GB
+processors=32
+swap=16GB
+```
+sized to leave real headroom for Windows itself (RTX 5080 driver, Sierra Chart, VS Code) rather
+than handing WSL2 the whole box. Requires `wsl --shutdown` (Windows side) to take effect — confirm
+`free -h` reports the new total afterward before trusting any RAM-headroom-dependent work above.
+
 ## 0c. GPU bring-up checklist (RTX 5080, do this after WSL2 is installed — step 1)
+
+**Confirmed on Puget, 2026-09-13: steps 1-4 already pass.** `nvidia-smi` works both in Windows and
+inside WSL (driver `610.57.01`, `CUDA UMD Version: 13.3`, RTX 5080 16303MiB) with zero extra Linux
+driver install — the passthrough path below is validated, not theoretical. Confirmed Windows 11
+Pro (build `10.0.26200.9445`), not Windows 10 — full detail in `docs/PUGET_SETUP_COORDINATION.md`
+Entry 4.
 
 The RTX 5080 needs setup on both sides of the WSL2 boundary, in this order:
 
@@ -132,10 +154,19 @@ The RTX 5080 needs setup on both sides of the WSL2 boundary, in this order:
    TensorFlow's `[and-cuda]` pip extra (not a bare `pip install tensorflow`, which is exactly
    what `.github/workflows/institutional-backtesting-gate.yml` currently does — check whether that
    resolves a GPU or CPU wheel once this machine exists, don't assume).
+   **Confirmed on Puget, 2026-09-13: still the bare CPU wheel** (`pip show tensorflow` on `mts`
+   shows zero `nvidia-*` deps). Every stated prerequisite for `tensorflow[and-cuda]` 2.21 is
+   already met here (driver `>=525.60.13` ✓ have `610.57.01`; Python 3.10–3.13 ✓ `mts` has 3.13)
+   — not yet switched over. Full assessment: `docs/PUGET_SETUP_COORDINATION.md` Entry 4.
 6. **Real caveat — Blackwell (`sm_120`) is a very new architecture.** Whatever PyTorch/TensorFlow
    version gets pinned must explicitly ship `sm_120` kernels — check that framework version's own
    release notes before assuming an older pinned build works; a current stable (or nightly, if
    Puget arrives soon after the GPU's own release window) build may be required.
+   **Still open on Puget, 2026-09-13**: TensorFlow's own install docs don't explicitly confirm
+   `sm_120` support in the 2.21 prebuilt wheel — needs an empirical
+   `tf.config.list_physical_devices('GPU')` check once the GPU-enabled extra is installed and the
+   `mts` env's GLIBCXX issue (`docs/PUGET_SETUP_COORDINATION.md` Entry 3) is fixed. Don't assume
+   either way until that's actually run.
 7. **Not solved by the above alone**: enabling GPU-capable libraries doesn't mean training code
    actually dispatches to the GPU. No `device='cuda'`-style dispatch logic was found in `lbrnet`'s
    training scripts as of this writing — that's `lbrnet`-side work (out of `MindfulTrader`'s own
@@ -165,7 +196,27 @@ marked **[Windows]**.
 ```bash
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y build-essential git curl wget unzip zip pkg-config \
-    software-properties-common gnupg lsb-release ca-certificates
+    software-properties-common gnupg lsb-release ca-certificates ripgrep
+```
+
+**`ripgrep` (`rg`) is a hard build prerequisite, not optional** — confirmed on Puget 2026-09-13
+(`docs/PUGET_SETUP_COORDINATION.md` Entry 2): `MindfulTrader/scripts/audit_shared_root_writes.sh`
+(the WS-07 CMake target, runs on every `./build_dll.sh`) calls `rg` directly, and the whole build
+fails at step 1/47 without it.
+
+**`gh` (GitHub CLI) needs its own apt repo on Ubuntu 20.04** — confirmed on Puget 2026-09-13
+(`apt-cache policy gh` returns no candidate at all from the default `main`/`universe` sources):
+
+```bash
+(type -p wget >/dev/null || (sudo apt update && sudo apt-get install wget -y)) \
+  && sudo mkdir -p -m 755 /etc/apt/keyrings \
+  && out=$(mktemp) && wget -nv -O$out https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+  && cat $out | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null \
+  && sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+  && sudo mkdir -p -m 755 /etc/apt/sources.list.d \
+  && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
+  && sudo apt update \
+  && sudo apt install gh -y
 ```
 
 ## 3. Install Clang/LLVM 22 (cross-compile toolchain)
@@ -186,6 +237,7 @@ sudo apt install -y ninja-build
 sudo apt install -y python3-pip
 python3 -m pip install --user cmake
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # confirmed default login shell is zsh, not bash
 export PATH="$HOME/.local/bin:$PATH"
 cmake --version   # should report 4.x
 ```
@@ -198,6 +250,18 @@ bash Miniforge3-$(uname)-$(uname -m).sh -b -p "$HOME/anaconda3"
 "$HOME/anaconda3/bin/conda" init bash
 source ~/.bashrc
 mamba --version
+```
+
+**Required on this machine: the default login shell is `zsh`, confirmed, not `bash`** —
+Miniforge's installer only wires `bash` via `conda init bash` above, so a fresh `zsh` terminal has
+no `mamba`/`conda` on `PATH` at all until this is also done (a bare `mamba run -n mts ...` fails
+with `command not found`; confirmed root cause on Puget 2026-09-13,
+`docs/PUGET_SETUP_COORDINATION.md` Entry 1). Do not skip this as merely optional/conditional:
+
+```bash
+echo 'eval "$(mamba shell hook --shell zsh)"' >> ~/.zshrc
+source ~/.zshrc
+mamba --version   # should now also work in this zsh shell -- the one that actually matters here
 ```
 
 ## 6. Recreate the `mts` and `atratus` conda environments
@@ -217,6 +281,27 @@ mamba env create -n mts -f mts-environment.yml
 mamba env create -n atratus -f atratus-environment.yml
 mamba env list   # confirm both exist
 ```
+
+**On Puget, both envs already exist but are NOT fit for use as-is** (confirmed 2026-09-13,
+`docs/PUGET_SETUP_COORDINATION.md` Entries 2-3) — this is a real failure, not a hypothetical to
+"validate later":
+
+- `mamba run -n mts pkg-config --modversion arrow parquet` finds **neither package** at all (not
+  just a version mismatch from this machine's `22.0.0`).
+- `mamba run -n mts python -c "import numpy"` **crashes**:
+  `ImportError: .../libstdc++.so.6: version 'GLIBCXX_3.4.29' not found`. Root cause: Ubuntu
+  20.04's system `libstdc++.so.6` only provides up to `GLIBCXX_3.4.28`; the `mts` env does carry
+  its own newer `libstdcxx-ng 16.2.0` but it isn't being resolved at runtime under `mamba run`
+  (`LD_LIBRARY_PATH` empty) — an activation/RPATH problem, not a missing package.
+- Installed versions have drifted hard from what's pinned: `numba 0.67.0` vs. `CLAUDE.md`'s
+  hard-required `numba==0.62.1`, plus `numpy 2.5.3`/`pyarrow 25.0.0`/`tensorflow 2.21.0` — none of
+  which match a lock-file-constrained install, consistent with the env having come from a fresh
+  solve rather than `lbrnet/environment-linux-64.lock`.
+
+**Do not build on top of this env as-is.** Recreate `mts` (and check `atratus` for the same drift)
+from `lbrnet/environment-linux-64.lock`/`requirements-mts.lock.txt` directly — not
+`mts-environment.yml`'s fresh-solve fallback below — then re-run the `pkg-config` +
+`import numpy`/`tensorflow` checks as the actual pass gate before trusting it.
 
 If either environment fails to solve exactly (cross-platform/version drift is possible even with
 `--no-builds`), fall back to installing the handful of packages this repo's own tools actually
@@ -289,6 +374,14 @@ git clone git@github.com:felocruz/Atratus.git
 ```
 
 ## 9. Cross-compile sysroot (no Visual Studio install needed on this machine)
+
+**Puget-specific caution (2026-09-13): do not follow this step's commands literally yet.** The
+`xwin splat` invocation below was validated on the old (now-retired) Dell machine only. Puget's
+actual on-disk sysroot uses a differently-shaped splat (`crt/`/`sdk/` flat layout, `x86_64` not
+`x64` arch dirs) that the committed `toolchain-clang-cl.cmake` doesn't yet match — a fix is
+empirically validated but not yet applied/build-verified. Live status, findings, and the pending
+fix: `docs/PUGET_SETUP_COORDINATION.md` (Entries 1-2). This section will be rewritten to match
+reality once that fix is confirmed against a real `./build_dll.sh` run, per the Doc Sync Contract.
 
 As of 2026-09-10 the C++ toolchain no longer depends on a Windows-side Visual Studio install or
 `/mnt/c` at all -- everything lives natively under `~/.local/sysroots/x86_64-pc-windows-msvc/`.

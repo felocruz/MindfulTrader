@@ -1,7 +1,17 @@
 ## Cross-Compile Sysroot Migration (`/mnt/c` → native `~/.local/sysroots/`)
 
-**Status: Phases A and B both DONE and validated on this machine, 2026-09-10** (zero `/mnt/c`
-references left in the build, confirmed live in Sierra Chart). Opened after a Puget-machine
+**Status: Phases A and B both DONE and validated on the old (now-retired) Dell machine, 2026-09-10.**
+**Puget-side status (2026-09-13, live): IN PROGRESS — see `docs/PUGET_SETUP_COORDINATION.md`
+Entries 1-2 for the current, verified state, not this file's older narrative below.** Puget's
+vcpkg artifacts transferred and confirmed working as-is; the CRT/SDK splat, however, landed in a
+differently-shaped layout than the old machine's (`crt`/`sdk` flat dirs, `x86_64` not `x64` arch
+subdirs) that the committed `toolchain-clang-cl.cmake` doesn't yet match. An empirically-validated
+fix (repoint the toolchain file at the flat layout directly, no re-splat needed) is written up in
+the coordination doc but **not yet applied or build-verified** — don't treat this file's Phase B
+section below as Puget's actual state until that lands and this file is rewritten to match (Doc
+Sync Contract).
+
+Opened after a Puget-machine
 `libzmq` build failure and a broader push to stop depending on `/mnt/c` for the Windows
 cross-compile toolchain — made mandatory once it was confirmed Puget will have no Visual Studio
 install at all. **Remaining work is entirely Puget-side**: transferring/regenerating the sysroot
@@ -293,14 +303,19 @@ state — Puget should run its own `gh auth login`, never inherit tokens), `~/.l
 
 ## Open questions
 
-1. Exact `<name>` under `~/.local/sysroots/` — assumed `x86_64-pc-windows-msvc` (matches
-   `toolchain-clang-cl.cmake`'s own `TRIPLE`), needs confirmation against whatever's already
-   in progress on Puget.
-2. Does Puget's VS/SDK install (if any survives this migration) still need to match
-   `14.44.35207`/`10.0.26100.0`, or does moving to `xwin` retire the Windows-side VS Installer
-   requirement (`docs/NEW_MACHINE_WSL_SETUP.md` step 9) entirely?
-3. `xwin` install method on this machine — prebuilt release binary vs. installing a Rust toolchain
-   just to `cargo install` one tool (leaning prebuilt binary, avoids an otherwise-unneeded Rust
-   dependency in a C++ repo).
+1. ~~Exact `<name>` under `~/.local/sysroots/`~~ — **RESOLVED, confirmed on Puget 2026-09-13**:
+   `x86_64-pc-windows-msvc`, matching `toolchain-clang-cl.cmake`'s own `TRIPLE`, is exactly what
+   exists on Puget's disk.
+2. ~~Does Puget's VS/SDK install (if any survives this migration) still need to match
+   `14.44.35207`/`10.0.26100.0`~~ — **RESOLVED**: confirmed Puget has no Visual Studio install at
+   all; `xwin` fully retires that requirement there, matching this file's own top-of-doc statement.
+3. ~~`xwin` install method on this machine~~ — **RESOLVED for Puget, differs from this machine**:
+   confirmed 2026-09-13 that Puget's `xwin` (`~/.cargo/bin/xwin`, v0.10.0) was installed via
+   `cargo install xwin` (bookkeeping in `~/.cargo/.crates.toml` confirms it), not the prebuilt
+   release-binary method used on this machine — no live Rust toolchain (`cargo`/`rustup`) persists
+   on Puget now, and none is needed since the resulting binary runs standalone. Not a blocker; see
+   `docs/PUGET_SETUP_COORDINATION.md` Entry 2 §2.5.
 4. Should `docs/NEW_MACHINE_WSL_SETUP.md` be rewritten to replace steps 9-11 (Windows-side VS +
    vcpkg + toolchain-file version verification) once this lands, per the Doc Sync Contract?
+   — **Agreed yes** (`docs/PUGET_SETUP_COORDINATION.md` Entry 2 ask 4); holding off until the
+   Puget-side toolchain fix is applied and a real `./build_dll.sh` succeeds there, not before.
