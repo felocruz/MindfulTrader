@@ -1,22 +1,54 @@
 ## Cross-Compile Sysroot Migration (`/mnt/c` → native `~/.local/sysroots/`)
 
-**Status: Phases A and B both DONE and validated on the old (now-retired) Dell machine, 2026-09-10.**
-**Puget-side status (2026-09-13, live): IN PROGRESS — see `docs/PUGET_SETUP_COORDINATION.md`
-Entries 1-2 for the current, verified state, not this file's older narrative below.** Puget's
-vcpkg artifacts transferred and confirmed working as-is; the CRT/SDK splat, however, landed in a
-differently-shaped layout than the old machine's (`crt`/`sdk` flat dirs, `x86_64` not `x64` arch
-subdirs) that the committed `toolchain-clang-cl.cmake` doesn't yet match. An empirically-validated
-fix (repoint the toolchain file at the flat layout directly, no re-splat needed) is written up in
-the coordination doc but **not yet applied or build-verified** — don't treat this file's Phase B
-section below as Puget's actual state until that lands and this file is rewritten to match (Doc
-Sync Contract).
+**Status: Phases A and B DONE and validated on both the old (now-retired) Dell machine (2026-09-10)
+and Puget (2026-09-13, on a genuinely from-scratch Ubuntu 26.04 LTS install — see
+`docs/PUGET_SETUP_COORDINATION.md` Entry 10 for the full account).** A real `./build_dll.sh`
+succeeded end-to-end on Puget, producing a valid PE32+ DLL matching the old machine's build size
+almost exactly (1,799,168 vs. 1,798,656 bytes).
+
+**Real gotchas found only on Puget's from-scratch install, not present on the old machine (both now
+fixed, both worth knowing if this is ever repeated on a third machine):**
+1. **`xwin --temp` cross-device rename bug.** `--temp` downloads/unpacks into a system temp dir
+   (Puget's `/tmp` is `tmpfs`, a different filesystem than `~`'s real disk); the final
+   temp→output move is a `rename()` syscall, which fails with `Cross-device link (os error 18)`
+   whenever the two aren't on the same filesystem. Fails **silently on the surface** — progress
+   bars complete normally — but leaves only empty directory skeletons (splat was ~84K instead of
+   the real ~630M). Fix: use `--cache-dir <dir-on-the-same-filesystem-as-output>` instead of
+   `--temp`. Likely to bite anyone else whose `/tmp` is `tmpfs`, which is common on modern distros.
+2. **`llvm-rc`/`llvm-lib` aren't on `PATH`** in `apt.llvm.org`'s LLVM 22 packaging — only
+   `clang-cl-22` gets a `/usr/bin` symlink; the rest live only under `/usr/lib/llvm-22/bin/`.
+   Fixed by switching `toolchain-clang-cl.cmake` to absolute paths for both.
+3. **Arch-dir naming was `x86_64`, not `x64`** — the real splat (once fixed per #1) did *not* use
+   `--preserve-ms-arch-notation`, unlike the old machine's own Phase B log below, so `xwin`'s
+   default MS→LLVM arch-name conversion applied. A 3-line fix to `toolchain-clang-cl.cmake`
+   (`lib/x64` → `lib/x86_64` throughout) — the nested `VC/Tools/MSVC/<ver>` + `Windows
+   Kits/10/{Include,Lib}/<sdkver>` directory *shape* itself matched the originally-committed
+   toolchain file correctly on Puget, unlike what Entries 1-2 initially found (see next paragraph).
+
+**Historical note, since this contradicted an earlier live-status paragraph in this file**: Entries
+1-2 in the coordination log (2026-09-13, earlier the same day) found Puget's *first* sysroot attempt
+had landed in a flat `crt`/`sdk` layout incompatible with the committed toolchain file, and drafted
+a fix repointing the toolchain at that flat shape. That flat splat turned out to itself be broken
+(the `--temp` cross-device bug above, from a different/earlier invocation) — once re-splatted
+correctly per this file's own canonical command, the result matched the nested layout below exactly,
+and only needed the small arch-dir fix, not the larger flat-layout rewrite that was drafted (and
+explicitly reverted) earlier that day. Kept here as a real account of how the diagnosis evolved,
+not smoothed over — worth remembering that an early diagnosis on a from-scratch machine can be
+superseded by a later, more careful attempt at the same step.
+
+**Canonical splat command, validated end-to-end on Puget 2026-09-13** (supersedes this file's older
+Phase B log below for the exact flags to use going forward — kept for historical reference):
+```bash
+xwin --cache-dir ~/.cache/xwin-cache --accept-license --crt-version 14.44.17.14 --sdk-version 10.0.26100 \
+  splat --output ~/.local/sysroots/x86_64-pc-windows-msvc --use-winsysroot-style
+```
+(no `--preserve-ms-arch-notation`, no `--disable-symlinks`, no `--temp`.)
 
 Opened after a Puget-machine
 `libzmq` build failure and a broader push to stop depending on `/mnt/c` for the Windows
 cross-compile toolchain — made mandatory once it was confirmed Puget will have no Visual Studio
-install at all. **Remaining work is entirely Puget-side**: transferring/regenerating the sysroot
-there and validating its own build. See the `~/.local` inventory section near the end for what
-else (beyond this sysroot) needs to exist on Puget for this repo's workflow.
+install at all. See the `~/.local` inventory section near the end for what else (beyond this
+sysroot) needs to exist on Puget for this repo's workflow.
 
 
 **Phase B is now MANDATORY, not optional (confirmed 2026-09-10): Puget will not have Visual Studio
@@ -240,9 +272,8 @@ transfer/re-splat and its own validation remain.
 3. ~~Update `CMakeLists.txt`'s three vcpkg reference points~~ — done via one `VCPKG_SYSROOT` variable.
 4. ~~Rebuild on this machine (`./build_dll.sh`) to confirm zero regression before touching anything
    else.~~ — succeeded.
-5. **Remaining:** copy the whole `~/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/` subtree to Puget
-   (tarball over LAN/USB/share — same spirit as `docs/NEW_MACHINE_WSL_SETUP.md` step 13's data-file
-   transfer).
+5. **DONE on Puget, 2026-09-13**: transferred via `gh release download sysroot-vcpkg-x64-windows-20260910`
+   (same command as `docs/NEW_MACHINE_WSL_SETUP.md` step 9), confirmed working as-is.
 
 **Phase B — CRT/SDK splat (MANDATORY for Puget — no VS install exists there to fall back on) — DONE, see execution log above**
 1. ~~Install `xwin`~~ — done (`~/.local/bin/xwin`, no sudo).
@@ -256,12 +287,31 @@ transfer/re-splat and its own validation remain.
    `XWIN_SYSROOT`.
 4. ~~Rebuild, verify output unchanged~~ — done: identical byte size (1,798,656) to the Phase A
    build, zero `/mnt/c` references left in `build.ninja`, valid PE32+ DLL.
-5. **Remaining:** copy `{VC,Windows Kits}/` to Puget alongside the Phase A `vcpkg/` subtree (GitHub
-   Release asset, same mechanism as Phase A step 6 — this is ~630M uncompressed, likely needs
-   compression and may still exceed comfortable single-asset size, worth checking compressed size
-   before choosing), or re-run the exact pinned `xwin splat` command from step 2 natively on Puget
-   instead (equally valid since the splat output is deterministic per version, and avoids
-   transferring a large file at all — probably the better default choice given the size).
+5. **DONE on Puget, 2026-09-13**: re-ran `xwin splat` natively on Puget rather than transferring the
+   archive (confirmed the better choice, per this item's own reasoning) — see this file's own
+   top-of-doc "canonical splat command" section for the exact invocation that worked there
+   (needed `--cache-dir` instead of `--temp` due to a real cross-device-rename bug, and produced
+   `x86_64`, not `x64`, arch-dir naming — both documented above). Real `./build_dll.sh` succeeded
+   end-to-end; full account in `docs/PUGET_SETUP_COORDINATION.md` Entry 10.
+
+**Phase C — vcpkg "elite path": real cross-compile builds instead of artifact copy (Puget, 2026-09-13,
+partial) — see `docs/PUGET_SETUP_COORDINATION.md` Entry 10 for the full account**
+Per operator directive ("we must always be elite"), attempted building `zeromq`/`cppzmq`/`libsodium`
+from real source via a custom vcpkg triplet (`x64-windows-clangcl`) chainloading a dedicated
+cross-compile toolchain, rather than only ever copying the old machine's prebuilt artifacts.
+**`zeromq` and `cppzmq` built successfully from source** — genuine vcpkg cross-compilation via
+`clang-cl` from Linux, several real upstream/vcpkg quirks found and fixed along the way (triplet-level
+`VCPKG_C_FLAGS`/`VCPKG_CXX_FLAGS`/`VCPKG_LINKER_FLAGS` needed since vcpkg overrides chainloaded
+toolchain `_INIT` flags; `ENABLE_CPACK=OFF`; `ZMQ_WIN32_WINNT=0x0A00`; `ZMQ_HAVE_IPC=OFF` — the last
+one also architecturally correct for this project, since `ipc://` cannot cross the WSL2↔Windows-host
+VM boundary the DLL and its Python consumers actually run across). `libsodium` (autotools, not CMake)
+hit a deeper, unresolved gap — vcpkg's autotools helper doesn't know how to derive an autoconf
+`--host=` triplet for a custom triplet name, so `./configure` never learned it was cross-compiling.
+**Not resolved**; static-snapshot artifact used for `libsodium` only, real builds kept for the other
+two. A real `vcpkg install` + manifest-mode adoption (closing the "no live vcpkg tool" gap this repo
+has had since the `/mnt/c` migration) remains a good target for a dedicated future session if the
+operator wants `libsodium` solved for real too — not urgent, nothing currently needs a new/updated
+vcpkg package.
 
 **Validated live in Sierra Chart, this machine, 2026-09-10** — DLL built from the Phase B
 toolchain deployed via `./deploy_mindfultrader.sh` and confirmed running in Sierra Chart, same as

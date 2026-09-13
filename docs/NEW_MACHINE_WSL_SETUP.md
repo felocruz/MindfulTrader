@@ -172,7 +172,7 @@ The RTX 5080 needs setup on both sides of the WSL2 boundary, in this order:
    training scripts as of this writing — that's `lbrnet`-side work (out of `MindfulTrader`'s own
    scope, "no ML training logic belongs in `lbrnet`"), flagged here rather than assumed done.
 
-## 1. [Windows] Install WSL2 + Ubuntu 20.04
+## 1. [Windows] Install WSL2 + Ubuntu
 
 **Install to the `C:` drive, not `D:`** -- this setup assumes WSL2's virtual disk (and everything
 under it: conda envs, repos, sysroots) lives on `C:`, matching this machine. `wsl --install` uses
@@ -181,13 +181,19 @@ needed -- just don't redirect it to `D:` via `--import`/custom-location options 
 or any guide offers that. If Puget's `D:` drive is meant for something else (Sierra Chart data,
 bulk storage, etc.), keep that separate from the WSL install itself.
 
+**Which Ubuntu release**: this repo's own from-scratch install was validated end-to-end on
+**Ubuntu 26.04 LTS** (codename `resolute`, confirmed available via `wsl --list --online`
+alongside 24.04/22.04) -- not 20.04, which is what the outgoing Dell machine happened to run.
+Used a real side-by-side install (`wsl --install -d Ubuntu-26.04`), not an in-place upgrade of an
+existing distro; confirmed this doesn't require any special handling beyond the distro name below.
+
 Open PowerShell **as Administrator**:
 
 ```powershell
-wsl --install -d Ubuntu-20.04
+wsl --install -d Ubuntu-26.04
 ```
 
-Reboot if prompted, then launch "Ubuntu 20.04" from the Start menu once to finish first-time setup
+Reboot if prompted, then launch "Ubuntu 26.04" from the Start menu once to finish first-time setup
 (create your Linux username/password). All remaining steps run **inside that WSL shell** unless
 marked **[Windows]**.
 
@@ -219,6 +225,19 @@ fails at step 1/47 without it.
   && sudo apt install gh -y
 ```
 
+**Set git commit identity** -- confirmed 2026-09-13 this is not set anywhere by default (blocks
+every `git commit`, not just this repo):
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your_email@example.com"
+```
+
+**Newer Ubuntu releases (26.04 confirmed) ship Python 3.14 with PEP 668
+(`externally-managed-environment`)** -- a bare host-level `pip install --user ...` now hard-fails
+unless `--break-system-packages` is passed. Doesn't affect the `mts`/`atratus` conda envs (those
+are unaffected, separate interpreters), but worth knowing before running any host-level pip
+command outside a conda env.
+
 ## 3. Install Clang/LLVM 22 (cross-compile toolchain)
 
 ```bash
@@ -233,11 +252,22 @@ clang-cl-22 --version
 
 ```bash
 sudo apt install -y ninja-build
-# Ubuntu 20.04's apt CMake is too old (this setup needs 4.x) -- install via pip instead:
+```
+
+**Try the distro's own apt `cmake` first** -- confirmed 2026-09-13 that Ubuntu 26.04's own repo
+already ships `cmake 4.2.3` (this setup needs 4.x), a real system package, no workaround needed:
+```bash
+sudo apt install -y cmake
+cmake --version   # should report 4.x
+```
+
+Only if the distro's own `cmake` is too old (true on Ubuntu 20.04's default repo) fall back to a
+pip-shimmed install instead:
+```bash
 sudo apt install -y python3-pip
 python3 -m pip install --user cmake
 echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc   # confirmed default login shell is zsh, not bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc
 export PATH="$HOME/.local/bin:$PATH"
 cmake --version   # should report 4.x
 ```
@@ -350,6 +380,17 @@ already-isolated-from-conda install `uv` should replace for speed, not yet done 
 
 ## 7. GitHub authentication
 
+**Simplest path (validated 2026-09-13), since this repo's own remotes are `https://github.com/...`,
+not `git@github.com:...`** -- authenticate `gh` directly with a personal access token, which also
+wires up git's own HTTPS credential helper automatically:
+
+```bash
+gh auth login
+# GitHub.com -> HTTPS -> paste a token (or "Login with a web browser") -> yes to git credential helper
+gh auth status   # confirm
+```
+
+**Alternative (SSH key)**, if you'd rather use `git@github.com:...` remotes:
 ```bash
 ssh-keygen -t ed25519 -C "your_email@example.com"
 cat ~/.ssh/id_ed25519.pub
@@ -366,22 +407,16 @@ ssh -T git@github.com
 ```bash
 mkdir -p ~/devel/VSCode
 cd ~/devel/VSCode
-git clone git@github.com:felocruz/MindfulTrader.git
-git clone git@github.com:felocruz/lbrnet.git
-git clone git@github.com:felocruz/MTS.git
-git clone git@github.com:felocruz/schema.git
-git clone git@github.com:felocruz/Atratus.git
+git clone https://github.com/felocruz/MindfulTrader.git
+git clone https://github.com/felocruz/lbrnet.git
+git clone https://github.com/felocruz/MTS.git
+git clone https://github.com/felocruz/schema.git
+git clone https://github.com/felocruz/Atratus.git
 ```
 
-## 9. Cross-compile sysroot (no Visual Studio install needed on this machine)
+(Use `git@github.com:felocruz/...` instead if you set up an SSH key above.)
 
-**Puget-specific caution (2026-09-13): do not follow this step's commands literally yet.** The
-`xwin splat` invocation below was validated on the old (now-retired) Dell machine only. Puget's
-actual on-disk sysroot uses a differently-shaped splat (`crt/`/`sdk/` flat layout, `x86_64` not
-`x64` arch dirs) that the committed `toolchain-clang-cl.cmake` doesn't yet match — a fix is
-empirically validated but not yet applied/build-verified. Live status, findings, and the pending
-fix: `docs/PUGET_SETUP_COORDINATION.md` (Entries 1-2). This section will be rewritten to match
-reality once that fix is confirmed against a real `./build_dll.sh` run, per the Doc Sync Contract.
+## 9. Cross-compile sysroot (no Visual Studio install needed on this machine)
 
 As of 2026-09-10 the C++ toolchain no longer depends on a Windows-side Visual Studio install or
 `/mnt/c` at all -- everything lives natively under `~/.local/sysroots/x86_64-pc-windows-msvc/`.
@@ -396,28 +431,48 @@ tar -xzvf mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
 rm mindfultrader-vcpkg-sysroot-x64-windows.tar.gz
 ```
 
-**MSVC CRT + Windows SDK (via `xwin`, no VS installer, no sudo):**
+**MSVC CRT + Windows SDK (via `xwin`, no VS installer, no sudo) -- validated end-to-end on Puget's
+Ubuntu 26.04 install, 2026-09-13:**
 ```bash
 cd /tmp
 gh release download 0.10.0 --repo Jake-Shadle/xwin --pattern "xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz*"
 sha256sum xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz   # compare manually against the .sha256 file's bare hash
 tar -xzvf xwin-0.10.0-x86_64-unknown-linux-musl.tar.gz
+mkdir -p ~/.local/bin
 cp xwin-0.10.0-x86_64-unknown-linux-musl/xwin ~/.local/bin/xwin
 chmod +x ~/.local/bin/xwin
-xwin --accept-license --temp --crt-version 14.44.17.14 --sdk-version 10.0.26100 \
+mkdir -p ~/.cache/xwin-cache
+xwin --cache-dir ~/.cache/xwin-cache --accept-license --crt-version 14.44.17.14 --sdk-version 10.0.26100 \
   splat --output ~/.local/sysroots/x86_64-pc-windows-msvc \
-  --preserve-ms-arch-notation --use-winsysroot-style
+  --use-winsysroot-style
 ```
+**Do not use `--temp` in place of `--cache-dir`** -- confirmed 2026-09-13: `--temp` downloads/
+unpacks into a system temp dir (often `tmpfs`, e.g. `/tmp` on this machine), then tries to
+`rename()` the final files into `--output`; if temp and output aren't on the same filesystem this
+fails with `Cross-device link (os error 18)` -- and fails **silently on the surface** (progress
+bars look fine) while leaving only empty directory skeletons behind (`du -sh` on the result will
+be suspiciously tiny, ~100K instead of ~600M+). Always pass `--cache-dir <dir-on-the-same-
+filesystem-as-output>` instead.
+
 (Do **not** add `--disable-symlinks` -- that flag is only correct when running clang-cl *on Windows
 itself*; cross-compiling from this Linux/WSL host needs the default casing-fix symlinks, e.g.
 `windows.h` -> `Windows.h`, or the build fails with `fatal error: 'windows.h' file not found`.)
 
 `toolchain-clang-cl.cmake`'s `MSVC_VERSION`/`SDK_VERSION` (`14.44.17.14`/`10.0.26100`) are `xwin`'s
 own on-disk directory-naming convention, not the real MSVC toolset/SDK version strings -- already
-wired up correctly in the committed toolchain file, nothing to edit here unless `xwin` resolves
+wired up correctly in the committed toolchain file (including the `x86_64`, not `x64`, arch-dir
+naming this splat produces, and absolute paths for `llvm-rc`/`llvm-lib` since `apt.llvm.org`'s LLVM
+22 packaging doesn't put them on `PATH` by default) -- nothing to edit here unless `xwin` resolves
 different versions on this machine (compare via `xwin --accept-license list` first).
 
 ## 10. Verify the build
+
+**Also install `libeigen3-dev`** -- a real system dependency (`CMakeLists.txt` hardcodes
+`/usr/include/eigen3`) discovered 2026-09-13, header-only so it doesn't need cross-compiling, just
+installing on the host (not previously in this doc's dependency inventory at all):
+```bash
+sudo apt install -y libeigen3-dev
+```
 
 ```bash
 cd ~/devel/VSCode/MindfulTrader
