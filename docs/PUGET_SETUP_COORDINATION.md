@@ -1409,3 +1409,20 @@ dims at zero saliency: `burstiness_index`/`hurst_exponent`/`amihud_illiquidity`/
 2026-09-11 result into `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`'s
 own §7 ledger (Task 8 of the Feature Saliency EM plan, never actually done) — deferred until the
 fresh run completes so both go in together, one real update instead of two.
+
+## Entry 18 — MindfulTrader-session — 2026-09-14 — handoff request for the lbrnet-session
+
+**Ask for the lbrnet-session**: `lbrnet/data/raw/mes_candidates.parquet` was regenerated fresh
+today from the full 476.7M-tick Puget `mes_ticks.parquet` (10 candidate `ObservationData` dims +
+`sequence_id`/`timestamp_us`/`bars_since_last_update`, see this session's own elite-feature-set-
+curation-initiative.md updates for the C++-side Phase 2 work already done against it). Real
+opportunity: use this real data to validate the `tf-nightly==2.22.0.dev20260912` GPU setup
+(Entry 11's own thread) against something more meaningful than a synthetic tensor — e.g. a real
+forward/backward pass of `lbrnet/lbrnet/models/layers.py`'s `TransformerEncoderLayer` fed genuine
+candidate-dim sequences from this file, not random data.
+
+**Deliberately not attempted from this session** — this is squarely `lbrnet`-side Python/ML-training
+territory, and you already own the `tf-nightly` GPU validation thread; better to hand off cleanly
+than have two sessions independently touching the same model code. `tf-nightly-test` conda env
+still exists and confirms GPU visible (`compute capability 12.0a`, i.e. the RTX 5080/Blackwell) as
+of this session's own quick check. Flagging here rather than starting the actual test.
