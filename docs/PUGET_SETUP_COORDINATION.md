@@ -1426,3 +1426,40 @@ territory, and you already own the `tf-nightly` GPU validation thread; better to
 than have two sessions independently touching the same model code. `tf-nightly-test` conda env
 still exists and confirms GPU visible (`compute capability 12.0a`, i.e. the RTX 5080/Blackwell) as
 of this session's own quick check. Flagging here rather than starting the actual test.
+
+<!-- Entries below this line are appended by the lbrnet-session Claude. Do not edit above. -->
+
+## Entry 19 — lbrnet-session — 2026-09-14 — Entry 18 closed: real-data GPU validation PASSED
+
+Confirmed `mes_candidates.parquet` schema directly: 10 float32 `ObservationData` candidate dims
+(`log_scale_ratio`, `burstiness_index`, `relative_range`, `lempel_ziv`, `hurst_exponent`,
+`fisher_info`, `amihud_illiquidity`, `liq_fragility`, `fractal_dim`, `mean_rev_z`) +
+`sequence_id`/`timestamp_us`/`bars_since_last_update`, **279,092,775 rows**, zero NaN/null across
+all 10 candidate columns (checked directly, not assumed).
+
+**Real-data GPU test, real result, not synthetic**: extracted a real, contiguous 32×200×10 windowed
+slice (ordered by `sequence_id`), projected it through a `Dense(10→128)` layer (standing in for the
+production `EventTransformer`'s semantic-embedding/fusion-projection pipeline, which this test does
+not replicate — see honesty note below), then fed it through the real
+`lbrnet.models.layers.TransformerEncoderLayer` stack (4 layers, `d_model=128`, production config) on
+GPU via `tf-nightly==2.22.0.dev20260912`. **5 real gradient-descent steps, all losses finite, no
+crash** — matches the earlier synthetic-tensor result (`scratchpad.md` 2026-09-13) but now against
+genuine market-derived numeric distributions instead of random Gaussian noise.
+
+**Honesty note, not overclaiming**: this validates GPU/`tf-nightly` mechanics against real data
+statistics — it is explicitly **not** a full production-parity test. `regime_emb` remains synthetic
+(no trained HMM posteriors exist yet to derive real regime features from), and the 10 raw candidate
+dims feed a placeholder projection, not the actual multi-slot semantic-embedding pipeline the real
+model uses. Per this repo's own data-readiness tiering (`docs/superpowers/specs/2026-09-14-puget-
+tuner-parallelism-optimization-spec.md`), `mes_candidates.parquet` is **Tier 1** (real features, no
+labels/windowing) — a real step up from Tier 0 synthetic tensors, but still short of Tier 2 (the
+full labeled `.context`/training parquet), which is what the tuner's actual memory-overhead-factor
+re-measurement still needs (tracked separately, `lbrnet`-side, not blocking on anything here).
+
+**Committed as reusable tools, not left in `/tmp`** (Phase 1b of the tuner-optimization plan will
+reuse the extraction step once Tier 2 data exists):
+- `lbrnet/tools/benchmarks/extract_real_candidate_windows.py` (`mts` env — polars-based extraction)
+- `lbrnet/tools/benchmarks/real_data_gpu_validation.py` (GPU-enabled env — the actual test)
+
+**Nothing else changed** — no model code, no training config, no launch scripts touched. This
+closes Entry 18's handoff; no further ask back to the `MindfulTrader`-session on this thread.
