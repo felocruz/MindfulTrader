@@ -413,12 +413,39 @@ differently. **Do not treat these φ_j=0 verdicts as a final answer** until Phas
 extension, explicitly deferred, spec §1) exists — this result is Phase 2a's honest output, not the
 institutional final word.
 
-**Not yet done**: this result is against the *old* machine's `mes_candidates.parquet` (271.9M
-ticks' worth, generated before the Puget migration). A fresh regeneration from Puget's own
-476.7M-tick `mes_ticks.parquet` was launched 2026-09-14 (`docs/PUGET_SETUP_COORDINATION.md` Entry
-17) — once it completes, re-run `feature_saliency_eval` against it and record the fresh φ_j
-alongside this table to confirm the same 5-zero/5-salient pattern holds on the larger, fresher
-dataset.
+**Phase 2b, RESOLVED 2026-09-14 — no exact joint EM exists, do not attempt to invent one.**
+Real literature search (Claude Code's own search — Semantic Scholar/Bing bibliographic
+verification, real citations not guessed — plus an independent Gemini CLI consult run in an
+isolated, read-only sandbox with zero repo access, `CLAUDE_BRIEF_139`/`_REPLY`,
+`lbrnet/logs/rc_gemini.log`) confirms: **no published closed-form EM combining Law-Figueiredo-Jain
+(2004) binary feature-saliency indicators with Peel & McLachlan (2000) Student-t scale-mixture
+weights exists.** The joint E-step is genuinely analytically intractable, not just undiscovered —
+the saliency indicator `z_{i,j}` and the Student-t scale weight `u_i` are coupled inside the same
+exponential term and do not factorize; computing `E[z_{i,j}]` requires marginalizing over `u_i`'s
+continuous distribution, while computing `E[u_i]` requires summing over all `2^D` (262,144 at
+D=18) binary saliency configurations per observation, per EM step. The `ν_k` profile-likelihood
+equation would also need to change depending on an architectural choice (does the background
+component share `u_i` or not) that has no clean resolution. The Gaussian-vs-Student-t saliency
+tension already flagged (§7 above, RESEARCH_RESPONSE_005 §2) is independently confirmed
+mathematically real: as `u_i → 0` (Student-t's own outlier-dampening response), the salient/
+background likelihood ratio collapses toward 1, actively destroying the leverage Feature Saliency
+needs to detect rare-but-extreme features — explaining, not just describing, the risk. **Decision:
+Phase 2b will not be attempted as an exact joint EM.** If prioritized in the future, the literature
+(Sun, Zhou & Keates 2017, *IEEE Trans. Neural Networks and Learning Systems*, "Simultaneous
+Bayesian Clustering and Feature Selection Through Student's t Mixtures Model" — independently
+found by both searches) points to two real alternatives: Variational Bayes (breaks the coupling via
+a factorized posterior by construction) or an L1/LASSO penalty on feature variances/means in the
+M-step (keeps a single per-observation `u_i`, no binary indicator at all). Neither is scoped or
+started — this is a future-initiative decision, not an implementation task done here.
+
+**Phase 2a re-run against fresh Puget data: `mes_candidates.parquet` regenerated, `feature_saliency_
+eval` not yet re-run.** The 2026-09-11 result above is against the *old* machine's
+`mes_candidates.parquet` (274.9M ticks' worth, generated before the Puget migration). A fresh
+regeneration from Puget's own 476.7M-tick `mes_ticks.parquet` was launched 2026-09-14
+(`docs/PUGET_SETUP_COORDINATION.md` Entry 17) and **completed the same day** (476,745,947 ticks
+processed, 279,092,775 records written, `tools/RECALIBRATION_LEDGER.md` 2026-09-14 08:43 row) — the
+fresh `feature_saliency_eval` re-run itself has not yet been executed; once it is, record the fresh
+φ_j alongside this table to confirm the same 5-zero/5-salient pattern holds on the larger dataset.
 
 ### Phase 3 — Reactivity-vs-precision redesign for flagged dims (`MindfulTrader`, C++)
 
