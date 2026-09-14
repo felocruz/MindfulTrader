@@ -1,14 +1,19 @@
 # Elite Feature Set Curation for the Student-t HMM Observation Vector — Institutional Methodology
 
-**Status, updated 2026-09-07: Phase 0 done bar 3 ambiguous decisions + `fast_mean_rev_z`'s fate (see
-§4 Phase 0). Phase 1 (whole-vector redundancy audit) DONE for the calendar-clock vector — no
-redundancy found (§4 Phase 1). Phase 2 (Feature Saliency EM) has a dedicated implementation spec,
-not yet built. A side thread (§4, after Phase 2) opened the same day: every dim's real math, plus
-the Mahalanobis significant-change gate, is now confirmed pure C++ and reusable outside Sierra
-Chart. A cross-cutting finding (§5) closes off one entire line of "did live-reactivity help"
-investigation as circular given the current model's training-data contamination — see §5's bullet
-before attempting anything like it again. Supersedes the pairwise, ad hoc treatment of individual
-dim redundancy questions — from here forward, redundancy/relevance is a whole-vector question, not a
+**Status, updated 2026-09-14: Phase 0 fully CLOSED (`relative_range`, row 3, resolved via real-data
+validation — the candidate median-range reformulation is MORE fat-tailed than the current ATR(14),
+kept as-is). Phase 1 (whole-vector redundancy audit) DONE for the calendar-clock vector — no
+redundancy found; `tail_index`'s clock/window also verified against its live call site 2026-09-14.
+Phase 2 (Feature Saliency EM) is BUILT and has a first real-data result (2026-09-11, old machine):
+5 of 10 candidate dims got zero saliency (`burstiness_index`/`hurst_exponent`/`amihud_illiquidity`/
+`liq_fragility`/`fractal_dim`) — see §4 Phase 2's own results subsection; a fresh re-run against
+Puget's larger `mes_ticks.parquet` is in progress. A side thread (§4, after Phase 2) opened
+2026-09-07: every dim's real math, plus the Mahalanobis significant-change gate, is now confirmed
+pure C++ and reusable outside Sierra Chart. A cross-cutting finding (§5) closes off one entire line
+of "did live-reactivity help" investigation as circular given the current model's training-data
+contamination — see §5's bullet before attempting anything like it again. Supersedes the pairwise,
+ad hoc treatment of individual dim redundancy questions — from here forward, redundancy/relevance is
+a whole-vector question, not a
 one-off pairwise fix.**
 
 ## 0. Origin and mandate
@@ -374,6 +379,46 @@ language; building it in C++ keeps it in the same tested, native, dependency-lig
 other offline validation tool this initiative has produced. Runnable once Phase 0/1 produce a clean
 candidate feature set to fit against -- does not need the data-quality fix or a production retrain
 first.
+
+**Phase 2 real-data results (Task 8 of `docs/superpowers/plans/2026-09-09-feature-saliency-em-
+fitter-implementation.md`, run 2026-09-11 on the old machine, recorded here 2026-09-14 — this
+transcription was the plan's own last open item, the run/code itself was already done)**:
+
+`tools/bin/feature_saliency_eval` against the old machine's `mes_candidates.parquet` (274,893,510
+rows, 10 candidate dims, K=4, seed=13, 500K reservoir sample, 337 EM iterations to convergence):
+
+| Candidate dim | Ledger row | φ_j (saliency) | Verdict |
+|---|---|---|---|
+| `mean_rev_z` | 18 | 0.9600 | Salient |
+| `fisher_info` | 9 | 0.9476 | Salient |
+| `relative_range` | 3 | 0.8901 | Salient |
+| `lempel_ziv` | 6 | 0.8135 | Salient |
+| `log_scale_ratio` | 1 | 0.6983 | Salient |
+| `burstiness_index` | 2 | 0.0000 | **Zero saliency** |
+| `hurst_exponent` | 7 | 0.0000 | **Zero saliency** |
+| `amihud_illiquidity` | 13 | 0.0000 | **Zero saliency** |
+| `liq_fragility` | 14 | 0.0000 | **Zero saliency** |
+| `fractal_dim` | 17 | 0.0000 | **Zero saliency** |
+
+Exactly 5 of 10 candidate dims got `φ_j=0` (not just low) — their state-conditional means barely
+separate across the K=4 clusters fit here. **This is real evidence for Phase 4's mRMR selection
+step, not itself a pruning decision** (per spec §2.4's "report the numbers, don't auto-decide"
+posture) — whether to actually drop these 5 from the HMM's final vector is still open.
+
+**Gaussian-vs-Student-t caveat (spec §7), flagged explicitly per Task 8's own requirement**: this
+fit is Phase 2a — a Gaussian mixture + Feature Saliency EM, not the production Student-t HMM. A
+dim that looks non-salient under a Gaussian cluster-mean-separation test could still carry real
+tail-behavior-specific information a Student-t model's own per-state ν would pick up on
+differently. **Do not treat these φ_j=0 verdicts as a final answer** until Phase 2b (the Student-t
+extension, explicitly deferred, spec §1) exists — this result is Phase 2a's honest output, not the
+institutional final word.
+
+**Not yet done**: this result is against the *old* machine's `mes_candidates.parquet` (271.9M
+ticks' worth, generated before the Puget migration). A fresh regeneration from Puget's own
+476.7M-tick `mes_ticks.parquet` was launched 2026-09-14 (`docs/PUGET_SETUP_COORDINATION.md` Entry
+17) — once it completes, re-run `feature_saliency_eval` against it and record the fresh φ_j
+alongside this table to confirm the same 5-zero/5-salient pattern holds on the larger, fresher
+dataset.
 
 ### Phase 3 — Reactivity-vs-precision redesign for flagged dims (`MindfulTrader`, C++)
 
