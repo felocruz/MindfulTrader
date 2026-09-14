@@ -11,6 +11,21 @@ Update this doc, not a copy elsewhere, whenever a setting changes or is re-verif
 
 ---
 
+## 0. Time Zone — Eastern Time (America/New_York), required
+
+**Hard requirement, not optional.** `src/Indicator.cpp` ("Regular Trading Hours Boundaries (Eastern
+Time)", `MARKET_OPEN = 9*60+30`, `MARKET_CLOSE = 16*60`, etc.) and
+`src/EventDataCollectorStudy.cpp` ("CME Globex ES session times — Eastern Time (NYC)",
+`CME_ES_SESSION_START_SECS = 18*3600`) both hardcode literal Eastern-Time hour-of-day boundaries
+with **no timezone conversion logic** — they read `sc.BaseDateTimeIn`'s hour/minute directly. This
+only produces correct `TimeOfDayEnum` classification, RTH boundaries, and CME Globex session-gap
+detection if Sierra Chart's own Time Zone setting is Eastern Time. Set via Global Settings → Time
+Zone → **Eastern Time**. Found missing from this doc and from the live Puget install 2026-09-14
+(the fresh install defaulted to UTC) — was previously an implicit, undocumented assumption carried
+over tacitly from the old machine's own setup.
+
+---
+
 ## 1. Package, data feed, and execution setup
 
 **Decision** (full rationale in the ADR): Sierra Chart **Package 11** (Integrated Standard Plus /
@@ -74,13 +89,14 @@ over — a fresh install starts every row unverified regardless of what a prior 
 
 | Setting | Old machine (retired) | Puget (current) |
 |---|---|---|
+| Time Zone = Eastern Time (§0) | Confirmed set (implicit, undocumented) | **Found set to UTC — needs fixing**, flagged 2026-09-14 |
 | Package 11 subscription active | Confirmed active | Not yet re-verified |
 | Denali (CME, no depth) feed connected | Confirmed active | **Confirmed live** — `MESZ26-CME.scid` updating in real time (Entry 14) |
-| IB Gateway API settings (§1 step 1) | Confirmed configured | Not yet done — trade service shows `TradeAccount: No account specified` (Entry 14) |
+| IB Gateway API settings (§1 step 1) | Confirmed configured | TWS running — API settings (port, Read-Only API, ActiveX/Socket Clients) not yet individually confirmed |
 | Sierra Chart IB trading-service config (§1 step 2) | Confirmed configured | Not yet done — see above |
 | Symbol mapping override (§1 step 3) | Confirmed working | Not yet re-verified |
 | Sierra Chart build version (§1 step 4) | Confirmed post-2480 | **Confirmed** — build 2949 (Entry 14) |
-| `Intraday Data Storage Time Unit` = 1 Tick (§2.1) | Confirmed set | Not yet re-verified |
+| `Intraday Data Storage Time Unit` = 1 Tick (§2.1) | Confirmed set | **Ambiguous** — log showed `1` before the DLL fix, `0` after a restart; raw log value's enum mapping not confirmed against the actual UI dropdown, needs direct visual confirmation |
 | MindfulTrader studies reset-to-defaults (§2.2) | Confirmed done | Not yet re-verified — new DLL/chartbook, needs redoing regardless |
 | Chartbook restore (§3) | N/A (original install) | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |
 | `/mnt/c/Trading/config/*.json` live config | Confirmed present | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |

@@ -1304,3 +1304,25 @@ step, walking through `docs/SIERRA_CHART_SETUP.md`'s verification table live.
   own warning).
 - **Not yet re-verified**: whether the DLL now actually loads and MACD/Keltner render after this
   fix — needs a Sierra Chart restart/study reload, not yet done as of this entry.
+
+**Follow-up, same session — DLL load fix CONFIRMED working, plus a real, previously-undocumented
+timezone finding:**
+
+- Operator restarted Sierra Chart and copied the fresh log: `Loading DLL:
+  C:\SierraChart2\Data\MindfulTrader.dll ... Handle: 7ffdde200000` — no error 126 this time, DLL
+  loaded cleanly. All three timeframes (60min/240min/15min) on `MESZ26-CME` completed loading.
+  `libzmq` fix from earlier this entry confirmed working end-to-end.
+- **Real, previously-undocumented requirement found**: Sierra Chart's Time Zone was set to UTC on
+  this fresh install (`Time Zone: +00:00:00 (UTC+00)` in the log), but `src/Indicator.cpp`
+  ("Regular Trading Hours Boundaries (Eastern Time)") and `src/EventDataCollectorStudy.cpp` ("CME
+  Globex ES session times — Eastern Time (NYC)") both hardcode literal ET hour-of-day boundaries
+  with zero timezone conversion — they read `sc.BaseDateTimeIn`'s hour/minute directly. This was
+  never written down anywhere (an implicit assumption carried over tacitly from the old machine's
+  own Eastern-Time setup) — added to `docs/SIERRA_CHART_SETUP.md` as new §0, a hard requirement.
+  Operator instructed to set Global Settings → Time Zone → Eastern Time; not yet re-verified as
+  applied.
+- **Side finding, not yet resolved**: the log's `Intraday Data Storage Time Unit` field read `1`
+  before this restart and `0` after — raw log value's enum mapping isn't confirmed against the
+  actual UI dropdown text, so this could be a real regression or just a different internal index
+  than assumed the first time. Needs a direct visual check of the dropdown (not the log's raw
+  number) before trusting Volume Profile output on this data.
