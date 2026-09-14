@@ -89,14 +89,14 @@ over — a fresh install starts every row unverified regardless of what a prior 
 
 | Setting | Old machine (retired) | Puget (current) |
 |---|---|---|
-| Time Zone = Eastern Time (§0) | Confirmed set (implicit, undocumented) | **Found set to UTC — needs fixing**, flagged 2026-09-14 |
+| Time Zone = Eastern Time (§0) | Confirmed set (implicit, undocumented) | **Fixed and confirmed** — log now shows `-04:00:00 (EST-05EDT+01,...)`, correct EDT offset (2026-09-14) |
 | Package 11 subscription active | Confirmed active | Not yet re-verified |
 | Denali (CME, no depth) feed connected | Confirmed active | **Confirmed live** — `MESZ26-CME.scid` updating in real time (Entry 14) |
 | IB Gateway API settings (§1 step 1) | Confirmed configured | TWS running — API settings (port, Read-Only API, ActiveX/Socket Clients) not yet individually confirmed |
 | Sierra Chart IB trading-service config (§1 step 2) | Confirmed configured | Not yet done — see above |
 | Symbol mapping override (§1 step 3) | Confirmed working | Not yet re-verified |
 | Sierra Chart build version (§1 step 4) | Confirmed post-2480 | **Confirmed** — build 2949 (Entry 14) |
-| `Intraday Data Storage Time Unit` = 1 Tick (§2.1) | Confirmed set | **Ambiguous** — log showed `1` before the DLL fix, `0` after a restart; raw log value's enum mapping not confirmed against the actual UI dropdown, needs direct visual confirmation |
+| `Intraday Data Storage Time Unit` = 1 Tick (§2.1) | Confirmed set | **Confirmed set** — UI dropdown directly checked, reads "1 Tick"; log's raw enum value `0` = "1 Tick" (mapping now known) (2026-09-14) |
 | MindfulTrader studies reset-to-defaults (§2.2) | Confirmed done | Not yet re-verified — new DLL/chartbook, needs redoing regardless |
 | Chartbook restore (§3) | N/A (original install) | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |
 | `/mnt/c/Trading/config/*.json` live config | Confirmed present | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |

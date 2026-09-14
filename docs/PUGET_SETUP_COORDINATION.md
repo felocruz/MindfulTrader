@@ -1326,3 +1326,13 @@ timezone finding:**
   actual UI dropdown text, so this could be a real regression or just a different internal index
   than assumed the first time. Needs a direct visual check of the dropdown (not the log's raw
   number) before trusting Volume Profile output on this data.
+
+**Follow-up, same session — both open items resolved:**
+
+- Operator set Global Settings → Time Zone Settings to Eastern Time. Fresh log confirms:
+  `Time Zone: -04:00:00 (EST-05EDT+01,M3.2.0/02:00,M11.1.0/02:00)` — correct POSIX Eastern Time
+  definition, `-04:00` = EDT (correct for September under daylight saving). DLL still loads clean
+  on this restart too (`Loading DLL: ... Handle: 7ffdde560000`).
+- `Intraday Data Storage Time Unit` ambiguity resolved: operator directly checked the UI dropdown —
+  reads **"1 Tick"**. So the log's raw enum value `0` = "1 Tick" (not a regression, just an enum
+  mapping neither session had confirmed before). Both settings now correctly configured on Puget.
