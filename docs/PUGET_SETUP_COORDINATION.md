@@ -1198,5 +1198,24 @@ resolving first (fix the script bug → run it for config → `gh release downlo
 chartbooks), on top of the still-open `./deploy_mindfultrader.sh` step above. Not fixed this entry,
 flagging per operator's "update docs if genuinely pending" instruction — holding for a go-ahead
 before touching the live Sierra Chart install or the script.
+
+**Follow-up, same session — both blockers resolved, operator said go:**
+
+1. Fixed `scripts/promote_config_to_live.py`'s `CONFIG_FILES` list to add `classifier_params.json`
+   (was missing since Entry 7). Ran it: all three files promoted clean to
+   `/mnt/c/Trading/config/{execution_params,hmm_regime_risk_policy,classifier_params}.json`.
+2. Restored chartbooks: `gh release download sierrachart-chartbooks-20260910` +
+   `tar -xzvf` into `/mnt/c/SierraChart2/Data/` per `NEW_MACHINE_WSL_SETUP.md` §12a. **Note**: `tar`
+   exits non-zero on this machine (`Cannot utime: Operation not permitted` for every file) — a
+   benign WSL9p/`drvfs` limitation on `/mnt/c` mounts that can't set arbitrary file timestamps, not
+   a real extraction failure. Verified via `ls -la`: all 10 `.Cht`/`.cht` files plus
+   `ChartbookSharing/ChartbookSharingSettings.config` are present with correct sizes. Manually
+   removed the leftover `.tar.gz` (the `&&`-chained `rm` never ran because of `tar`'s exit code).
+   **Worth a doc note**: anyone replaying §12a's exact command line should not treat a non-zero
+   `tar` exit as a failure without checking file presence first, and should not rely on `&&`
+   chaining past it.
+
+Both are done — `./deploy_mindfultrader.sh` + a real Sierra Chart load test remain the only
+pre-launch step not yet attempted.
 Nothing else in Group D (chartbook restore, config promotion) changes — just the data-transfer line
 item specifically.

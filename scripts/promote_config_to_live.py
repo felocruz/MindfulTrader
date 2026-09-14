@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO_CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 LIVE_CONFIG_DIR = Path("/mnt/c/Trading/config")
-CONFIG_FILES = ["execution_params.json", "hmm_regime_risk_policy.json"]
+CONFIG_FILES = ["execution_params.json", "hmm_regime_risk_policy.json", "classifier_params.json"]
 
 
 def _utc_stamp() -> str:
