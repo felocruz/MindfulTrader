@@ -1359,3 +1359,53 @@ it with default flags (sync + decode). **Full success, first attempt:**
   `mes_ticks.parquet` yet — every existing "471.9M real ticks" reference throughout `CLAUDE.md`/
   specs is now stale relative to this file specifically, though the analysis conclusions those
   entries recorded remain valid (they were about the methodology, not this exact row count).
+
+## Entry 16 — MindfulTrader-session — 2026-09-14 — real finding: `PRODUCTION_TRIAGE.md` missing entirely on Puget
+
+While discussing `.context.parquet` generation for HMM training, operator asked whether the North
+Star doc (`CLAUDE.md`/`.github/copilot-instructions.md`'s documented path,
+`/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md`) was accessible. **Confirmed missing** — does not
+exist at that path, nor anywhere findable via `find /home/rcruz/devel/VSCode -maxdepth 2`. A
+same-named file exists at `/home/rcruz/devel/VSCode/Atratus/PRODUCTION_TRIAGE.md`, but operator
+confirmed it's unrelated (an `Atratus`-local file that happens to share the name, not the
+cross-project North Star doc).
+
+**Root cause, per operator**: this file was never committed/git-tracked on the old machine, so the
+git-clone-based migration to Puget had no way to carry it over — genuine data loss unless still
+recoverable from the old (not-yet-retired) machine directly. This is now the **second** real
+data-loss-risk item found in this whole migration (the first being `MTS_Fractal_Evolution.txt`,
+Entry 7) — both share the same root cause: real, substantive content that was never git-tracked
+anywhere.
+
+**Not yet resolved** — needs retrieval from the old machine while it's still reachable (matches
+Entry 7/8 Group A's existing "retrieve `MTS_Fractal_Evolution.txt`" action item; recommend bundling
+both retrievals into the same one-time old-machine access session). Once recovered, worth a
+deliberate decision on whether `PRODUCTION_TRIAGE.md` should finally be git-tracked somewhere (it's
+described as the single most important cross-project planning artifact in `CLAUDE.md`'s own North
+Star section) — not resolved here, flagging for operator sign-off given it's explicitly cross-repo
+and doesn't obviously belong to any one of the four project repos.
+
+## Entry 17 — MindfulTrader-session — 2026-09-14 — first QA pass on `mes_ticks.parquet` itself
+
+Built `tools/bin/market_data_replay` and `tools/bin/feature_saliency_eval` (neither previously built
+on Puget); launched `market_data_replay` against the full 476.7M-tick `mes_ticks.parquet` to
+regenerate `mes_candidates.parquet` fresh (the old machine's version, 274.9M rows, was never
+transferred — consistent with Entry 11's "old data is low-quality, don't prioritize" call). Long
+single-pass run, ~2.5-3h estimated at the observed ~5M ticks/~112s rate — **appears single-threaded
+despite 32 available cores**, a real future optimization opportunity, not touched mid-run.
+
+**While waiting, ran a real QA pass on `mes_ticks.parquet` itself — a check that had never actually
+been done** (the ledger's existing "REVIEWED" QA entries are all for `mes_candidates.parquet`, its
+downstream derivative, never the raw tick file). Streaming, row-group-wise (no full-file
+materialization): **clean bill of health** — 476,745,947 total rows across 14 contracts (`Z26`, the
+new front month, correctly shows only 53,319 rows so far), zero negative prices, zero negative
+volumes, zero NaN trade prices, price range 4122.25-7838.5 (plausible MES range across the full
+2023-05-26 to 2026-09-14 span), timestamp range matches the generation run exactly.
+
+**Not yet done**: `market_data_replay`'s completion + the `feature_saliency_eval` re-run against the
+fresh `mes_candidates.parquet`, to check whether the 2026-09-11 old-machine result (5 of 10 candidate
+dims at zero saliency: `burstiness_index`/`hurst_exponent`/`amihud_illiquidity`/`liq_fragility`/
+`fractal_dim`) holds on the larger, fresher Puget dataset. Also still pending: transcribing that
+2026-09-11 result into `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md`'s
+own §7 ledger (Task 8 of the Feature Saliency EM plan, never actually done) — deferred until the
+fresh run completes so both go in together, one real update instead of two.
