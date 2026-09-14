@@ -1336,3 +1336,26 @@ timezone finding:**
 - `Intraday Data Storage Time Unit` ambiguity resolved: operator directly checked the UI dropdown —
   reads **"1 Tick"**. So the log's raw enum value `0` = "1 Tick" (not a regression, just an enum
   mapping neither session had confirmed before). Both settings now correctly configured on Puget.
+
+## Entry 15 — MindfulTrader-session — 2026-09-14 — MILESTONE: first real tick parquet on Puget
+
+Built `tools/scid_processing/scid_to_ticks_parquet` (not previously built on this machine) and ran
+it with default flags (sync + decode). **Full success, first attempt:**
+
+- Mirror sync: all 14 MES contracts (`MESU23`-`MESZ26`) copied from `/mnt/c/SierraChart2/Data` into
+  `lbrnet/data/scid/` — this is a **new** local repo (`lbrnet/data/` didn't exist on Puget at all
+  before this run, per Entry 7/8's "not yet transferred" finding — created fresh here rather than
+  ported from the old machine, consistent with Entry 11's "old data is low-quality, don't
+  prioritize transferring it" operator directive).
+- Full decode of all 14 contracts succeeded, zero errors: **476,745,947 total rows** written to
+  `lbrnet/data/raw/mes_ticks.parquet` (2.9GB), timestamp range 2023-05-26 to 2026-09-14 — the upper
+  bound is today, meaning this run captured genuinely fresh live-collected ticks from this
+  session's own Sierra Chart activity, not just historical backfill.
+- This is more real ticks than the old machine's own last recorded figure (471.9M, cited throughout
+  `CLAUDE.md`) — expected, since Puget has one more contract (`MESZ26`, the new front month) plus
+  ~3 months of additional real trading days the old dataset didn't cover.
+- **Not yet done**: no downstream validation tool (`tools/observation_vector/*_eval.cpp`, the
+  offline `.context` generator, etc.) has been re-run against this new Puget-local
+  `mes_ticks.parquet` yet — every existing "471.9M real ticks" reference throughout `CLAUDE.md`/
+  specs is now stale relative to this file specifically, though the analysis conclusions those
+  entries recorded remain valid (they were about the methodology, not this exact row count).
