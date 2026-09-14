@@ -76,6 +76,10 @@ copy_dependency() {
     fi
 }
 
+# libzmq is dynamically linked (not statically), so it must be bundled alongside the DLL
+VCPKG_BIN_DIR="${HOME}/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows/bin"
+copy_dependency "libzmq-mt-4_3_5.dll" "$VCPKG_BIN_DIR"
+
 echo ""
 echo "✅ DEPLOYMENT COMPLETE"
 echo "New DLL and critical dependencies deployed to: $DEST_DIR"

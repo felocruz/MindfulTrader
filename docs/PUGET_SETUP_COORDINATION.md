@@ -1276,3 +1276,31 @@ step, walking through `docs/SIERRA_CHART_SETUP.md`'s verification table live.
   itself.
 - Still open: chartbook not yet confirmed loaded/opened in the running SC instance, `Intraday Data
   Storage Time Unit` setting not yet confirmed, IB Gateway/TWS not yet confirmed running.
+
+**Follow-up, same session — real DLL load failure found and fixed, via operator-copied `SierraChart.log`:**
+
+- Sierra Chart's own log showed the actual blocker: `MindfulTrader.dll loading error. Windows error
+  code 126: The specified module could not be found.` — the DLL file itself deployed fine, but one
+  of *its own* runtime dependencies was missing from the search path, so every TripleScreen1/2/3
+  study (MACD, Keltner, Impulse, etc.) silently failed to run on every chart.
+- Root cause, confirmed via `llvm-objdump-22 -p`: `MindfulTrader.dll` dynamically links
+  `libzmq-mt-4_3_5.dll` (not statically) — and `deploy_mindfultrader.sh` had a real, previously
+  undiscovered bug: it **defined** a `copy_dependency()` function but **never called it anywhere**.
+  Section 5 was dead code; the final echo ("Your DLL should now load as it contains the required
+  static C/C++ runtimes") was simply wrong for `libzmq`, which is dynamic.
+- Fixed: added the actual `copy_dependency "libzmq-mt-4_3_5.dll" "$VCPKG_BIN_DIR"` call, sourcing
+  from `~/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows/bin`. Re-ran
+  `./deploy_mindfultrader.sh` — `libzmq-mt-4_3_5.dll` now copied alongside the DLL.
+- Checked the DLL's other dynamic deps (`MSVCP140.dll`/`VCRUNTIME140.dll`, all `api-ms-win-crt-*`)
+  against `/mnt/c/Windows/System32/` — already present on this fresh Windows 11 install, no gap
+  there.
+- **Also found, same log**: switching Sierra Chart's Data/Trading service to Interactive Brokers
+  made IB **also** start supplying real-time market data for `MESZ26-CME` (not just trade
+  execution) — contradicting the documented Denali-for-data/IB-for-execution-only architecture
+  (`docs/SIERRA_CHART_SETUP.md` §1). Was disconnected and reverted to "SC Data" shortly after in
+  the same session; root cause of why IB took over data too, not yet investigated — flagging for
+  next session, do not re-enable the IB trading service until this is understood (risk of Amihud/
+  order-flow-asymmetry inputs silently reading from the wrong, less-accurate source per the ADR's
+  own warning).
+- **Not yet re-verified**: whether the DLL now actually loads and MACD/Keltner render after this
+  fix — needs a Sierra Chart restart/study reload, not yet done as of this entry.
