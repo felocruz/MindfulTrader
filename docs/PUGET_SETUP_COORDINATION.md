@@ -1231,3 +1231,28 @@ what the old machine had confirmed). The ADR keeps only its decision rationale; 
 ACTIONS.md` §1/§2 now point to the new doc instead of duplicating it; `TRAINING_DATA_EXPORT.md` gets
 a one-line cross-reference. Spec: `docs/superpowers/specs/2026-09-13-sierra-chart-setup-
 consolidation-spec.md`. No settings were changed by this entry — pure doc reorganization.
+
+## Entry 14 — MindfulTrader-session — 2026-09-14 — first real deploy onto Puget
+
+`./deploy_mindfultrader.sh` run successfully: `/mnt/c/SierraChart2/Data/MindfulTrader.dll` now
+1,799,168 bytes, timestamped 2026-09-14 03:30, matching the DLL built in Entry 12. First real
+deploy onto this machine's Sierra Chart install (script's own backup-existing-DLL step had nothing
+to back up — this is the initial deploy, not a redeploy).
+
+Also refreshed the daily data files that feed `DailyHighLowLoader`/`NhNlDataLoader`
+(`src/DailyHighLowLoader.cpp`/`src/NhNlDataLoader.cpp` hardcode `C:/Trading/data/daily_high_low.csv`
+/ `C:/Trading/data/NH_NL.csv` — confirmed via direct grep before copying, not assumed):
+- Fixed a real, unrelated bug in `update_daily_data.sh`: `mamba shell.bash hook` is invalid syntax
+  for this mamba version (2.9.0) — corrected to `mamba shell hook --shell bash`.
+- `data/daily_high_low.csv` backfilled via `populate_daily_high_low_hybrid.py` (Yahoo `ES=F` proxy)
+  for the full gap since 2026-08-13 (20 trading days, through 2026-09-11) — the old machine's last
+  update predates the Puget migration by a month.
+- `data/NH_NL.csv` (`$USHL5` NYSE High-Low Index, manual StockCharts.com export, no automated
+  source) updated the same way, operator supplied the raw export; converted per
+  `docs/DAILY_DATA_UPDATE_README.md`'s documented format (`MM-DD-YYYY`→`YYYY-MM-DD`,
+  `nh_nl_weekly` = trailing 7-trading-day rolling sum inclusive of current day) and appended.
+- Both copied to `/mnt/c/Trading/data/` — verified destination path directly against the hardcoded
+  C++ paths (`grep`), not assumed from the docs.
+
+**Not yet done**: an actual Sierra Chart launch/load test with the new DLL + refreshed data — next
+step, walking through `docs/SIERRA_CHART_SETUP.md`'s verification table live.

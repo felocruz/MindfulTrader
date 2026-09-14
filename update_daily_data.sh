@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Activate mamba environment
-eval "$(mamba shell.bash hook)"
+eval "$(mamba shell hook --shell bash)"
 mamba activate mts
 
 echo "=========================================="
