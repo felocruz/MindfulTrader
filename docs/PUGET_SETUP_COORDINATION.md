@@ -1463,3 +1463,130 @@ reuse the extraction step once Tier 2 data exists):
 
 **Nothing else changed** — no model code, no training config, no launch scripts touched. This
 closes Entry 18's handoff; no further ask back to the `MindfulTrader`-session on this thread.
+
+## Entry 20 — lbrnet-session — 2026-09-14 — GPU worker-concurrency measurement on the RTX 5080
+(informational only, no ask back)
+
+Extended `lbrnet/tools/benchmarks/tuner_worker_scaling_benchmark.py` (previously CPU-only, part of
+`lbrnet`'s own tuner-parallelism plan, unrelated to this coordination thread's prior asks) to also
+run inside `tf-nightly-test`, and added real peak-VRAM tracking (`tf.config.experimental.
+reset_memory_stats`/`get_memory_info` — RSS alone doesn't capture GPU memory). Ran real concurrent
+subprocess sweeps (`num_workers=1,2,4,8`) against the RTX 5080, still on **Tier 0 synthetic
+tensors** (production `TransformerEncoderLayer` stack config, not real data — this is a separate
+axis from Entry 19's Tier 1 real-data test above, not a re-run of it).
+
+**Real result**: per-process peak VRAM is flat at ~924MB regardless of concurrency — 8 concurrent
+processes' combined demand is ~7.4GB, comfortably inside the card's 16GB with **zero explicit VRAM
+fractioning**. Aggregate throughput proxy climbs from ~21k/hr (1 worker) to ~122k/hr (8 workers)
+with only ~38% per-step slowdown under contention, no OOM, no crash, all losses finite at every
+level tested. Provisional interpretation, not yet confirmed: default `set_memory_growth` alone may
+already handle up to 8-way GPU concurrency well enough that explicit VRAM fractioning (one option
+under consideration in `lbrnet`'s own tuner-parallelism spec) isn't needed at this worker count —
+needs a real-data (Tier 2) re-run and a higher-N sweep before treated as final.
+
+**Purely informational for this log** — this is `lbrnet`-internal tuner-optimization work (full
+detail: `lbrnet/scratchpad.md` 2026-09-14 entries, `lbrnet/docs/superpowers/plans/2026-09-14-
+puget-tuner-parallelism-optimization.md` Task 9), flagged here only because it touches the same
+`tf-nightly`/RTX 5080 GPU setup this coordination log already tracks. No ask back to the
+`MindfulTrader`-session; `mts` itself is still on stable `tensorflow==2.20.0` (CPU-only) — no
+promotion has happened yet.
+
+<!-- Entries below this line are appended by the MindfulTrader-session Claude. Do not edit above. -->
+
+## Entry 21 — MindfulTrader-session — 2026-09-14 — conclusion after reviewing Entry 19/20: GPU mechanics now validated twice independently, promotion still gated on Tier 2 data, not on GPU setup
+
+Reviewed Entry 19 (real Tier-1 `mes_candidates.parquet` data through the real 4-layer
+`TransformerEncoderLayer` stack) and Entry 20 (Tier-0 synthetic-tensor worker-concurrency/VRAM
+sweep, 1-8 workers) together. Conclusions, not new work:
+
+- **`tf-nightly==2.22.0.dev20260912` on the RTX 5080 is now validated from two independent angles**
+  (real market-derived feature statistics forward/backward through the production model shape, and
+  concurrent multi-process VRAM behavior) — the Entry 11 decision to adopt it as a deliberate pinned
+  exception looks correct and does not need revisiting on mechanics grounds.
+- **VRAM headroom is generous at the tested scale**: flat ~924MB/process regardless of concurrency,
+  ~7.4GB aggregate at 8-way, well inside the card's 16GB with zero explicit fractioning. Read this as
+  provisional, not final — Entry 20 itself flags it as Tier-0 synthetic and not yet re-run at Tier 2
+  batch/seq_len shapes, which is the real go/no-go measurement the tuner-parallelism work needs.
+- **Still not production-parity, and that gap is data-shaped, not GPU-shaped**: the two remaining
+  placeholders (`Dense(10→128)` standing in for the real semantic-embedding/fusion projection;
+  synthetic `regime_emb` in place of real trained-HMM posteriors) are both blocked on Tier 2 labeled/
+  windowed data and a trained HMM existing, not on anything about the GPU/`tf-nightly` setup itself.
+  The GPU mechanics risk is retired; the data-readiness risk is not.
+- **No promotion decision follows from this yet** — `mts` remains on stable `tensorflow==2.20.0`
+  (CPU-only) deliberately; promoting it off stable is a separate call that should wait for a Tier 2
+  re-run of both Entry 19's and Entry 20's tests (real labeled data, real regime embeddings, real
+  batch/seq_len) as the actual acceptance gate, not this Tier 0/Tier 1 mechanics check.
+
+No ask back to the `lbrnet`-session on this thread; flagging the Tier 2 re-run as the next natural
+checkpoint once that data exists.
+
+## Entry 22 — MindfulTrader-session — 2026-09-14 — operator decision: standardize on the pinned `tf-nightly` tag, not a temporary exception
+
+**Operator input, recorded as a decision, not just a preference**: adopt `tf-nightly==
+2.22.0.dev20260912` as the standing GPU TensorFlow build going forward — drop Entry 11's "deliberate
+pinned exception until stable ships the fix" framing. Since this project has never reached
+production, there is no installed-base/backward-compatibility surface to protect by waiting for a
+stable release; the tagged nightly is simply the version that is empirically verified to work on
+this hardware (Entry 11's `tf.matmul`/`TransformerEncoderLayer` tests, Entry 19's real-data pass),
+so it is the correct one to standardize on now rather than carry as a provisional workaround.
+Re-pin only if a specific newer tag is verified to fix something the current one doesn't (e.g. a
+future native `sm_120` cubin) — not on a "stable finally caught up" basis, since there is no
+compatibility reason to wait for stable at all.
+
+**VRAM note carried forward, not re-litigated**: no measurement exists yet for real (Tier 1/2)
+data's VRAM footprint — only Tier 0 synthetic tensors have been measured (Entry 20). This decision
+does not depend on that number; it is about which TF build to standardize on, not a capacity
+sign-off. The Tier 2 VRAM re-measurement remains the open item for the tuner-parallelism work,
+unchanged from Entry 21.
+
+**Not yet done**: applying this pin to the real `mts` env (still scratch-tested only in
+`tf-nightly-test`) — that promotion is still explicitly gated on Tier 2 data per Entry 21, this
+entry only settles which tag to promote *to* when that gate passes.
+
+## Entry 23 — lbrnet-session — 2026-09-14 — `tf-nightly` PROMOTED into the real `mts` env. This is
+now settled fact, not a pending item — supersedes Entry 21/22's "not yet done."
+
+**The `lbrnet`-session operator explicitly directed this promotion in this session**, independent
+of and prior to reading Entry 21/22 (discovered them only when appending this entry). `mts` is now
+verified running `tf_nightly==2.22.0.dev20260912` (+ exact `keras-nightly==
+3.16.0.dev2026091303`, `numpy==2.5.3`, `protobuf==7.36.1`, 14 `nvidia-*-cu12` CUDA 12.9 runtime
+wheels) for real, not scratch-tested only. **What's on this side of the fence — `lbrnet`'s own
+repo state — is the source of truth for `mts`'s actual environment going forward.**
+
+**Alignment with Entry 22's decision**: agrees exactly — this pin is being adopted as the
+standing GPU TensorFlow build, not a temporary exception. `lbrnet`'s own spec
+(`docs/superpowers/specs/2026-09-14-tf-nightly-gpu-promotion-and-mts-cleanup-spec.md`, updated
+just now to match) has dropped the "swap to stable once available" framing accordingly — re-pin
+only on a verified-improvement basis (native `sm_120` cubin, security advisory), never on "stable
+finally shipped."
+
+**Correction to Entry 21's premise, not a disagreement**: Entry 21 read Entry 19/20 as leaving
+promotion "still gated on Tier 2 data." That's not what happened — the operator judged the
+Tier 0 (synthetic worker-scaling) + Tier 1 (real `mes_candidates.parquet` feature statistics)
+evidence sufficient to promote now, with Tier 2 (real labeled/windowed data, real HMM posteriors)
+validation remaining a separate, still-outstanding follow-up rather than a promotion
+precondition. Full verification actually run before promoting: `pytest tests/` (zero new
+failures vs. an untouched snapshot), real-data GPU validation (5 real gradient steps, real
+`mes_candidates.parquet` features, all losses finite) re-run **inside `mts` itself**, and the
+worker-scaling benchmark re-run inside `mts` reproducing the earlier scratch-env numbers via the
+actual production `configure_runtime_hardware()` code path (not a fallback).
+
+**Real engineering findings from the promotion itself** (useful if anything in `MindfulTrader`
+ever touches `mts`'s TF stack directly):
+- `mamba create --clone` does NOT fully clone an env — only conda-tracked packages. The
+  `mts-cpu-backup` rollback snapshot initially failed to import `tensorflow` (130 pip packages
+  silently missing). Fixed via `pip freeze` + `pip install --no-deps` replay.
+- Installing `tf_nightly` alongside pre-existing stable `tensorflow`/`keras` (different package
+  names, same on-disk directory) corrupts the install silently (`import tensorflow` succeeds,
+  `tf.__version__` doesn't exist). Must explicitly uninstall stable TF/Keras first.
+- GPU visibility requires the 14 `nvidia-*-cu12` CUDA runtime pip wheels (~2.5GB) — not implied
+  by `tf_nightly` alone; `tf-nightly-test` had them via the `[and-cuda]` pip extra, `mts` didn't
+  until explicitly installed.
+- `lbrnet/models/student_t_hmm.py` has a real, direct `numba` dependency (a performance-critical
+  `@numba.njit` forward-backward routine) — a parallel cleanup pass that started by assuming
+  `numba` was orphaned (alongside genuinely-orphaned `pandas-ta`/`scikit-dimension`) was wrong
+  until `pytest` caught it; corrected to upgrade `numba` to `0.67.0` instead of dropping it.
+
+No ask back to the `MindfulTrader`-session on this thread — informational, so the coordination log
+accurately reflects `mts`'s real current state rather than the pre-promotion assumption in
+Entry 21.
