@@ -160,8 +160,11 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 added to `CMakeLists.txt`/`build_dll.sh`; bare `mamba run -n mts g++ -std=c++17 ...` builds.
 Organized into subfolders by function (reorg 2026-09-02): `tools/observation_vector/` (16D HMM
 observation-vector dim calibration/eval), `tools/context_pipeline/` (`.context` file I/O),
-`tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Compiled binaries go
-in `tools/bin/` (gitignored, mirrors `build-windows/bin/`'s convention) — never next to source.
+`tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export), `tools/market_data_replay/`
+(offline `.context` generator from raw ticks), `tools/visualization/` (Python chart-comparison
+scripts). Compiled binaries go in `tools/bin/` (gitignored, mirrors `build-windows/bin/`'s
+convention) — never next to source. **Full per-file index and grouping (incl. an `observation_vector/`
+Evals/Recalibration/Diagnostics/Shared-headers/Tests breakdown): `tools/README.md`.**
 **TOP-LEVEL DIRECTIVE (2026-09-03): always keep tool output.** Every long-running `tools/`
 executable must route ALL results through `ToolProgressLogger::Log()` (never a bare
 `std::printf`/`std::puts`) — it auto-archives the full transcript to

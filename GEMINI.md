@@ -217,8 +217,11 @@ plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
 - **Organized into subfolders by function** (reorg 2026-09-02): `tools/observation_vector/`
   (16D HMM observation-vector dimension calibration/eval, incl. `market_test_stats.h`/
   `market_data_io.h`), `tools/context_pipeline/` (`.context` training-cache file I/O),
-  `tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export). Put new tools in
-  the matching subfolder, not flat in `tools/`.
+  `tools/scid_processing/` (`.scid` tick decode/mirror-sync/parquet export),
+  `tools/market_data_replay/` (offline `.context` generator from raw ticks), `tools/visualization/`
+  (Python chart-comparison scripts). Put new tools in the matching subfolder, not flat in `tools/`.
+  **Full per-file index and grouping (incl. an `observation_vector/` Evals/Recalibration/
+  Diagnostics/Shared-headers/Tests breakdown): `tools/README.md`.**
 - **Compiled binaries go in `tools/bin/`** (gitignored) — mirrors `build-windows/bin/`'s
   convention; never mixed into the source subfolders above.
 - **TOP-LEVEL DIRECTIVE (2026-09-03): always keep tool output.** Every `tools/` executable that
