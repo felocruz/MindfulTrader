@@ -1175,5 +1175,28 @@ Group B unblocked and executed, per Entry 11's report that `rg`/`gh` are now ins
 - **Not yet done**: `./deploy_mindfultrader.sh` + a real Sierra Chart load test (Entry 10's own
   "Status / what's NOT done yet" list) — natural next step, holding for operator go-ahead before
   writing into the live Sierra Chart install.
+
+**Two real, confirmed-pending blockers found before SC can actually be launched against the new
+DLL** (operator asked to verify, not assume):
+
+1. **Custom chartbooks never restored.** Only Sierra Chart's own stock `ExampleChartbook.cht`
+   exists under `/mnt/c/SierraChart2/{Backups,Data}/` — confirmed via `find -iname "*.cht"`. The
+   real chartbooks live in the `gh` release `sierrachart-chartbooks-20260910` (confirmed present via
+   `gh release list`, now downloadable since `gh` is installed — Entry 1/2/8 Group D's blocker is
+   cleared but the restore itself, `NEW_MACHINE_WSL_SETUP.md` §12a, hasn't been run yet).
+2. **`/mnt/c/Trading/` does not exist on this machine at all** (confirmed, `ls` → no such
+   directory) — so `execution_params.json`/`hmm_regime_risk_policy.json`/`classifier_params.json`
+   have no live copy for the DLL to read at Sierra Chart startup, even though all three are
+   git-tracked in `config/` (confirmed present, 3 files). `scripts/promote_config_to_live.py` would
+   create `/mnt/c/Trading/config/` from those, **but still has Entry 7's known bug**: its
+   `CONFIG_FILES` list only has `["execution_params.json", "hmm_regime_risk_policy.json"]` —
+   missing `classifier_params.json` (re-confirmed via direct read this session). Must fix that list
+   before running it, per Entry 7's original flag and Entry 8 Group B's own checklist item.
+
+**Net: do not attempt a real Sierra Chart launch with the new DLL yet** — both of these need
+resolving first (fix the script bug → run it for config → `gh release download` + restore
+chartbooks), on top of the still-open `./deploy_mindfultrader.sh` step above. Not fixed this entry,
+flagging per operator's "update docs if genuinely pending" instruction — holding for a go-ahead
+before touching the live Sierra Chart install or the script.
 Nothing else in Group D (chartbook restore, config promotion) changes — just the data-transfer line
 item specifically.
