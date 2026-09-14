@@ -1256,3 +1256,23 @@ Also refreshed the daily data files that feed `DailyHighLowLoader`/`NhNlDataLoad
 
 **Not yet done**: an actual Sierra Chart launch/load test with the new DLL + refreshed data — next
 step, walking through `docs/SIERRA_CHART_SETUP.md`'s verification table live.
+
+**Follow-up, same session — SC launched, real findings from filesystem inspection (not guessing):**
+
+- SC build version **2949** confirmed (`VersionNumber.txt`) — well past the §1-item-4 pre-2480 IB
+  concern, closed as moot.
+- Denali feed confirmed live: `MESZ26-CME.scid` (front month) updating in real time; `MESU26`
+  correctly stopped at its 2026-09-11 rollover.
+- Trade service: `TradeActivityLogs` shows `Connected to server` but `TradeAccount: No account
+  specified` and a rejected open-orders request — IB Gateway/TWS API config + Sierra Chart's own
+  IB trading-service pointing (§1 steps 1-2) still not done.
+- **Real, previously-undiscovered gap**: `/mnt/c/Trading/logs/` did not exist on this machine at
+  all — `src/Logger.cpp`'s constructor opens `C:/Trading/logs/MindfulTrader.log` with a bare
+  `std::ofstream`, which does **not** create missing parent directories; the whole constructor body
+  is wrapped in `catch (...)` with a "silently fail - don't crash Sierra Chart" comment, so this
+  would have failed with zero visible error and no log ever written. Created the directory by hand
+  (`mkdir -p /mnt/c/Trading/logs`). Worth a `NEW_MACHINE_WSL_SETUP.md`/`SIERRA_CHART_SETUP.md` note
+  for future fresh installs — this isn't auto-created by `deploy_mindfultrader.sh` or the DLL
+  itself.
+- Still open: chartbook not yet confirmed loaded/opened in the running SC instance, `Intraday Data
+  Storage Time Unit` setting not yet confirmed, IB Gateway/TWS not yet confirmed running.

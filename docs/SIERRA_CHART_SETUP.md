@@ -75,14 +75,17 @@ over — a fresh install starts every row unverified regardless of what a prior 
 | Setting | Old machine (retired) | Puget (current) |
 |---|---|---|
 | Package 11 subscription active | Confirmed active | Not yet re-verified |
-| Denali (CME, no depth) feed connected | Confirmed active | Not yet re-verified |
-| IB Gateway API settings (§1 step 1) | Confirmed configured | Not yet re-verified |
-| Sierra Chart IB trading-service config (§1 step 2) | Confirmed configured | Not yet re-verified |
+| Denali (CME, no depth) feed connected | Confirmed active | **Confirmed live** — `MESZ26-CME.scid` updating in real time (Entry 14) |
+| IB Gateway API settings (§1 step 1) | Confirmed configured | Not yet done — trade service shows `TradeAccount: No account specified` (Entry 14) |
+| Sierra Chart IB trading-service config (§1 step 2) | Confirmed configured | Not yet done — see above |
 | Symbol mapping override (§1 step 3) | Confirmed working | Not yet re-verified |
-| Sierra Chart build version (§1 step 4) | Confirmed post-2480 | Not yet re-verified |
+| Sierra Chart build version (§1 step 4) | Confirmed post-2480 | **Confirmed** — build 2949 (Entry 14) |
 | `Intraday Data Storage Time Unit` = 1 Tick (§2.1) | Confirmed set | Not yet re-verified |
 | MindfulTrader studies reset-to-defaults (§2.2) | Confirmed done | Not yet re-verified — new DLL/chartbook, needs redoing regardless |
 | Chartbook restore (§3) | N/A (original install) | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |
 | `/mnt/c/Trading/config/*.json` live config | Confirmed present | **Done** — `docs/PUGET_SETUP_COORDINATION.md` Entry 12 |
+| `/mnt/c/Trading/logs/` directory exists | Confirmed present | **Done** — Entry 14; was missing, `Logger.cpp` silently fails without it (see Entry 14 for the finding) |
+| `/mnt/c/Trading/data/{daily_high_low,NH_NL}.csv` fresh | Confirmed current | **Done** — refreshed through 2026-09-11 (Entry 14) |
+| MindfulTrader chartbook opened/study attached | N/A (always running) | Not yet confirmed — `MindfulTrader.log` not yet written |
 
 Update this table (not a new copy of it) as each row is confirmed on the current machine.
