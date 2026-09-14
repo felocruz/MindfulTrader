@@ -413,6 +413,31 @@ differently. **Do not treat these φ_j=0 verdicts as a final answer** until Phas
 extension, explicitly deferred, spec §1) exists — this result is Phase 2a's honest output, not the
 institutional final word.
 
+**HARD GATE, added 2026-09-14 (operator directive): the 5 zero-φ dims above (`burstiness_index`,
+`hurst_exponent`, `amihud_illiquidity`, `liq_fragility`, `fractal_dim`) MUST NOT be dropped from
+the observation vector on the strength of this Phase 2a result alone.** Real, specific reason this
+is more than the generic caveat above: all 5 are substantially tail-behavior/persistence-structure
+dims (event-clustering, long-memory, roughness, heavy-tailed liquidity measures), while the 5 that
+scored salient (`mean_rev_z`, `fisher_info`, `relative_range`, `lempel_ziv`, `log_scale_ratio`) skew
+toward dims with genuine location/scale shifts across regimes — exactly the split a Gaussian
+mean-separation test would be expected to produce if it is systematically blind to tail-shape-only
+discrimination, independent of whether these 5 dims are actually informative. This is an observed
+pattern in this specific result, not yet independently confirmed as the actual cause — but it is
+reason enough on its own to block any Phase 4/mRMR pruning action on these 5 dims until a
+fat-tail-aware saliency test (see below) either confirms or overturns this Gaussian-only verdict.
+
+**Phase 2a', proposed 2026-09-14, NOT yet verified or implemented**: swap the per-feature marginal
+density inside Law-Figueiredo-Jain's own EM structure from Gaussian to an independent univariate
+Student-t per feature (own `ν_j`, solved via the same 1D profile-likelihood root-find Peel &
+McLachlan already use) — this is different from, and does not reintroduce, Phase 2b's ruled-out
+joint coupling, because there is no single per-observation scale weight `u_i` shared across
+dimensions in this formulation; each feature's density stays independently conditionally
+Student-t given the state/salient assignment, matching Law-Figueiredo-Jain's own per-feature-
+conditional-independence structure. **This is Claude Code's own unverified reasoning, not a
+citation** — flagged explicitly per this project's own discipline; needs literature verification
+(or an independently-reviewed from-scratch derivation) before any implementation, exactly the same
+bar Phase 2b's joint-EM idea was held to.
+
 **Phase 2b, RESOLVED 2026-09-14 — no exact joint EM exists, do not attempt to invent one.**
 Real literature search (Claude Code's own search — Semantic Scholar/Bing bibliographic
 verification, real citations not guessed — plus an independent Gemini CLI consult run in an
