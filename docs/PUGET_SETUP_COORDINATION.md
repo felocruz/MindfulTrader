@@ -1219,3 +1219,15 @@ Both are done — `./deploy_mindfultrader.sh` + a real Sierra Chart load test re
 pre-launch step not yet attempted.
 Nothing else in Group D (chartbook restore, config promotion) changes — just the data-transfer line
 item specifically.
+
+## Entry 13 — MindfulTrader-session — 2026-09-13
+
+Doc restructuring, per operator ask: Sierra Chart settings content was scattered across
+`docs/ADR/sierra_chart_data_feed_setup.md` and `docs/PENDING_USER_ACTIONS.md` §1/§2 with real
+duplication risk. Consolidated into a new centralized SSOT: `docs/SIERRA_CHART_SETUP.md` (package/
+feed/execution settings, Volume Profile/Intraday Data Storage prerequisites, chartbook-restore
+pointer, and a per-machine verification-status table — Puget's rows start unverified regardless of
+what the old machine had confirmed). The ADR keeps only its decision rationale; `PENDING_USER_
+ACTIONS.md` §1/§2 now point to the new doc instead of duplicating it; `TRAINING_DATA_EXPORT.md` gets
+a one-line cross-reference. Spec: `docs/superpowers/specs/2026-09-13-sierra-chart-setup-
+consolidation-spec.md`. No settings were changed by this entry — pure doc reorganization.

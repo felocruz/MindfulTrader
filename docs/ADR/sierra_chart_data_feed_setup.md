@@ -22,12 +22,12 @@ IB also has limited historical intraday data, conflicting with `EventDataCollect
 
 Package 12 + MBO specifically was evaluated and **not recommended**: the literature on MBO's incremental value over aggregated order-book data (arXiv:2102.08811) shows it's modest/orthogonal, realized mainly via ensembling, at horizons (tick/sub-second) far shorter than this system's regime dwell times (~200-400s, from the HMM's own calibrated temporal half-life). MBO's message rate would also seriously strain this project's already-tight compute budget.
 
-### Setup steps (not yet executed)
+### Setup steps
 
-1. TWS/IB Gateway: File → Global Configuration → API → Settings — enable "ActiveX and Socket Clients," port 7496 (live) / 7497 (paper), disable "Read-Only API," Component Exchange Separator = `/`.
-2. Sierra Chart: Global Settings → Data/Trade Service Settings → select Interactive Brokers as the *trading* service, `127.0.0.1:7496`, unique Instance Client ID, enable "Connect On Program Startup" / "Reconnect On Failure." Denali continues to supply chart data automatically for subscribed exchanges.
-3. **Verify at setup time, don't trust this doc blindly**: symbol mapping differs between Denali's native Sierra Chart symbol and IB's own ES format (`ES-YYYYMM-GLOBEX`, e.g. `ES-202509-GLOBEX`). Sierra Chart has a per-symbol trade-symbol-override field for this dual-source case — confirm the exact current UI path against Sierra Chart's setup wizard/support board, not this note.
-4. Confirm a recent Sierra Chart build (IB-integration issues were flagged by Sierra Chart's own team pre-version-2480, ~2023 — almost certainly moot by now, worth a one-line version check before going live).
+**Moved to the centralized settings reference, `docs/SIERRA_CHART_SETUP.md` §1** (2026-09-13) — that
+doc is now the single source of truth for the step-by-step configuration and its per-machine
+verification status. This ADR keeps only the decision rationale above; do not re-add a duplicate
+step list here.
 
 ## Separate finding: genuine low-hanging fruit in the existing code, independent of any package/feed decision above
 

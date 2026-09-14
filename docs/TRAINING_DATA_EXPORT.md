@@ -2,6 +2,10 @@
 
 **Last Updated:** December 28, 2025
 
+**See also:** `docs/SIERRA_CHART_SETUP.md` is the centralized reference for the underlying Sierra
+Chart settings this workflow depends on (e.g. `Intraday Data Storage Time Unit`, chartbook restore)
+— this doc covers only the replay procedure and output format themselves.
+
 ## 1. Overview
 
 This document outlines the definitive architecture and user workflow for generating time-aligned, historical training data for the Transformer neural network. The primary goal is to capture the complete state of all indicators across three different timeframes (240-min, 60-min, 15-min) at the precise moment each 15-minute bar closes.

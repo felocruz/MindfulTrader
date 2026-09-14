@@ -4,21 +4,12 @@ Everything below requires hands-on Sierra Chart access or a decision only you ca
 
 ---
 
-## 1. Sierra Chart data feed setup (Package 11 + Denali + IB) — not yet executed
+## 1-2. Sierra Chart data feed, execution, and Volume Profile settings
 
-From `docs/ADR/sierra_chart_data_feed_setup.md`, "Setup steps (not yet executed)":
-
-1. **TWS/IB Gateway**: File → Global Configuration → API → Settings — enable "ActiveX and Socket Clients," port 7496 (live) / 7497 (paper), disable "Read-Only API," Component Exchange Separator = `/`.
-2. **Sierra Chart**: Global Settings → Data/Trade Service Settings → select Interactive Brokers as the *trading* service, `127.0.0.1:7496`, unique Instance Client ID, enable "Connect On Program Startup" / "Reconnect On Failure." Denali continues to supply chart data automatically for subscribed exchanges.
-3. **Verify symbol mapping at setup time, don't trust the doc blindly**: Denali's native Sierra Chart symbol vs. IB's own ES format (`ES-YYYYMM-GLOBEX`) differ. Confirm the exact current trade-symbol-override UI path against Sierra Chart's own setup wizard/support board.
-4. **Confirm a recent Sierra Chart build** (a pre-version-2480 IB-integration issue was flagged by Sierra Chart's own team — almost certainly moot now, worth a one-line version check before going live).
-
----
-
-## 2. Volume Profile Value Area — prerequisites (before the feature can be trusted at all)
-
-1. **Confirm the Intraday Data Storage Time Unit setting.** Sierra Chart → Global Settings → Data/Trade Service Settings → `Intraday Data Storage Time Unit` must be **1 Tick**. If it's coarser, `sc.VolumeAtPriceForBars` will be empty or inaccurate. Note whether Sierra Chart needs to redownload/rebuild historical intraday data at the new granularity, and budget time for that if so.
-2. **Re-add or "Reset Instance to Defaults" on the MindfulTrader studies on any chart where they're already added.** `sc.MaintainVolumeAtPriceData = 1` is only applied inside each study's `SetDefaults` block, which doesn't re-run automatically for an already-configured study instance — so an existing chart won't pick up this setting until you re-add the study or explicitly reset it to defaults. This applies to both `Mindful Trading System` (`scsf_MindfulTrader`) and `Screen 3 - Keltner Channel` (`scsf_Screen3_KeltnerChannel`) on the TS3 (15-minute) chart.
+**Moved to the centralized settings reference, `docs/SIERRA_CHART_SETUP.md`** (2026-09-13) — §1
+(package/feed/execution) and §2 (Intraday Data Storage / Volume Profile prerequisites), plus a
+per-machine verification status table. Update that doc, not this section, when these are
+re-verified or changed.
 
 ---
 
