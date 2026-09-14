@@ -1158,5 +1158,22 @@ path to real training data on this machine is **`MindfulTrader` reaching a worki
 Sierra Chart deployment and collecting fresh data here** — i.e. Group B (toolchain fix → `build_dll.sh`
 → `deploy_mindfultrader.sh` → live collection) is now the critical path for `lbrnet`'s next real
 milestone (a real GPU-trained model on real data), not merely a `MindfulTrader`-side build concern.
+
+<!-- Entries below this line are appended by the MindfulTrader-session Claude. Do not edit above. -->
+
+## Entry 12 — MindfulTrader-session — 2026-09-13
+
+Group B unblocked and executed, per Entry 11's report that `rg`/`gh` are now installed.
+
+- Confirmed `/usr/bin/rg`, `/usr/bin/gh`, `/usr/bin/clang-cl-22` all present; `git status` clean;
+  `toolchain-clang-cl.cmake` already carries Entry 10's validated fixes (`e21cbb1`/`54cfcad`), no
+  further edit needed on this side.
+- Ran `rm -rf build-windows && ./build_dll.sh` — **succeeded clean, 7s build**, no WS-07/`rg`
+  failure, no toolchain/sysroot error. Output: `build-windows/bin/MindfulTrader.dll`, confirmed via
+  `file` as `PE32+ executable for MS Windows 6.00 (DLL), x86-64, 6 sections`, 1,799,168 bytes —
+  matches Entry 10's reference build exactly (same byte count).
+- **Not yet done**: `./deploy_mindfultrader.sh` + a real Sierra Chart load test (Entry 10's own
+  "Status / what's NOT done yet" list) — natural next step, holding for operator go-ahead before
+  writing into the live Sierra Chart install.
 Nothing else in Group D (chartbook restore, config promotion) changes — just the data-transfer line
 item specifically.
