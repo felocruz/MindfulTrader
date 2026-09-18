@@ -10,6 +10,7 @@
 #include "ContextManager.h" // Elite v2.5: Observation integration
 #include "generated/mts_schema_contract_generated.h"
 #include "generated/indicator_key_registry_generated.h"
+#include "generated/indicator_binding_policy_generated.h"
 #include "generated/training_shared_writers_generated.h"
 #include "messaging/EventSerializer.h"
 #include "VolumeProfileEngine.h"
@@ -51,68 +52,22 @@ namespace {
     constexpr uint64_t SECONDARY_TRIGGER_MASK =
         ALL_INDICATOR_MASK & ~PRIMARY_TRIGGER_MASK;
 
-    template <std::size_t N>
-    constexpr bool ArraysEqual(const std::array<unsigned int, N>& lhs,
-                               const std::array<unsigned int, N>& rhs) {
-        for (std::size_t i = 0; i < N; ++i) {
-            if (lhs[i] != rhs[i]) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // WS-04: Compile-time parity guard between generated registry and runtime
-    // constructor registration contract list.
-    constexpr std::array<unsigned int, mts::schema_contract::kIndicatorKeyRegistryRowCount>
-        kRuntimeRegisteredIndicatorKeyValues = {{
-            static_cast<unsigned int>(IndicatorKey::LONG_MACD),
-            static_cast<unsigned int>(IndicatorKey::LONG_FI13_SIGNAL),
-            static_cast<unsigned int>(IndicatorKey::LONG_MACD_DIVERGENCE),
-            static_cast<unsigned int>(IndicatorKey::LONG_IMP),
-            static_cast<unsigned int>(IndicatorKey::LONG_MKT_ACTION),
-            static_cast<unsigned int>(IndicatorKey::INTERM_STOCHASTIC),
-            static_cast<unsigned int>(IndicatorKey::RASCHKE_STRATEGY_SETUP),
-            static_cast<unsigned int>(IndicatorKey::RASCHKE_TACTICAL_TRIGGER),
-            static_cast<unsigned int>(IndicatorKey::RSI),
-            static_cast<unsigned int>(IndicatorKey::INTERM_FI2_SIGNAL),
-            static_cast<unsigned int>(IndicatorKey::EMA_PROXIMITY),
-            static_cast<unsigned int>(IndicatorKey::PRICE_METRICS),
-            static_cast<unsigned int>(IndicatorKey::INTERM_MACD_DIVERGENCE),
-            static_cast<unsigned int>(IndicatorKey::INTERM_IMP),
-            static_cast<unsigned int>(IndicatorKey::INTERM_MACD),
-            static_cast<unsigned int>(IndicatorKey::STRUCTURE_TEST),
-            static_cast<unsigned int>(IndicatorKey::VOLUME_SIGNAL),
-            static_cast<unsigned int>(IndicatorKey::ATR_PROXIMITY),
-            static_cast<unsigned int>(IndicatorKey::DAILY_BIAS),
-            static_cast<unsigned int>(IndicatorKey::KANGAROO_TAIL),
-            static_cast<unsigned int>(IndicatorKey::TURTLE_SOUP),
-            static_cast<unsigned int>(IndicatorKey::MOMENTUM_PINBALL),
-            static_cast<unsigned int>(IndicatorKey::ELDER_BREAKOUT),
-            static_cast<unsigned int>(IndicatorKey::NR7),
-            static_cast<unsigned int>(IndicatorKey::SHORT_MKT_ACTION),
-            static_cast<unsigned int>(IndicatorKey::OSCILLATOR_310),
-            static_cast<unsigned int>(IndicatorKey::VWAP),
-            static_cast<unsigned int>(IndicatorKey::SIDE),
-            static_cast<unsigned int>(IndicatorKey::MARKET_SYMBOL),
-            static_cast<unsigned int>(IndicatorKey::TIME_OF_DAY),
-            static_cast<unsigned int>(IndicatorKey::OVERNIGHT_EXIT),
-            static_cast<unsigned int>(IndicatorKey::HURST_EXPONENT),
-            static_cast<unsigned int>(IndicatorKey::NH_NL_SIGNAL),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_ZN),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_DX),
-            static_cast<unsigned int>(IndicatorKey::ZN_TREND),
-            static_cast<unsigned int>(IndicatorKey::DX_TREND),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_ZN_DELTA),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_ZN_ACCEL),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_DX_DELTA),
-            static_cast<unsigned int>(IndicatorKey::CORR_ES_DX_ACCEL),
-            static_cast<unsigned int>(IndicatorKey::INTERM_MKT_ACTION),
-        }};
-
-    static_assert(ArraysEqual(kRuntimeRegisteredIndicatorKeyValues,
-                              mts::schema_contract::kIndicatorKeyRegistryValues),
-                  "Runtime indicator registration keys diverge from generated indicator key registry");
+    // WS-04 (revised 2026-09-17): the previous version of this guard hand-typed
+    // a THIRD, purely duplicative copy of the same 42 IndicatorKey values here
+    // (kRuntimeRegisteredIndicatorKeyValues) solely to static_assert it against
+    // the generated registry -- providing no independent verification (it
+    // never checked against IndicatorStore's actual member declarations in
+    // IndicatorManager.h, just against another hand-typed list), and it broke
+    // the build the moment the generated array's order changed for an
+    // unrelated, legitimate reason (schema/scripts/generate_indicator_key_rows.py
+    // upgrading the registry from hand-typed to schema-derived, 2026-09-17).
+    // Reference the generated registry directly instead -- see
+    // docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md
+    // §10 finding 4 for the full trace.
+    static_assert(mts::schema_contract::kIndicatorKeyRegistryRowCount ==
+                      mts::schema_contract::kExpectedManagedIndicatorKeyCount,
+                  "IndicatorKey registry row count changed -- review IndicatorStore's "
+                  "member list in IndicatorManager.h for any indicator that needs adding/removing");
 
     // ------------------------------------------------------------------------
     // Task 9 (indicator-manager-dod-soa plan): devirtualized ShouldTrigger()

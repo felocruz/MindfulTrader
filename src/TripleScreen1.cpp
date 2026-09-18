@@ -34,7 +34,7 @@ enum class Ts1MacroObsLogMode : int {
 
 // TS1 macro-observation diagnostics were used during WS-09 investigation.
 // Keep disabled by default to avoid polluting runtime logs.
-constexpr Ts1MacroObsLogMode kTs1MacroObsLogMode = Ts1MacroObsLogMode::IMPORTANT_ONLY;
+constexpr Ts1MacroObsLogMode kTs1MacroObsLogMode = Ts1MacroObsLogMode::OFF;
 constexpr uint64_t kTs1MacroDigestEveryWrites = 500;
 constexpr uint64_t kTs1MacroStaleWarnEveryWrites = 2000;
 constexpr uint64_t kTs1MacroNonFiniteWarnEveryWrites = 1000;

@@ -822,7 +822,16 @@ SCSFExport scsf_Screen2_KeltnerChannel(SCStudyInterfaceRef sc)
     if (intermPriceAction) {
         intermPriceAction->setFastEma(Subgraph_KeltnerAverage[sc.Index], Subgraph_TopBand[sc.Index], Subgraph_BottomBand[sc.Index]);
 
-        intermPriceAction->setEma(Subgraph_EMA21[sc.Index]);
+        // FIXED (2026-09-16, RASCHKE_STRATEGY_SETUP replay-port audit, Gemini-
+        // confirmed CLAUDE_BRIEF_147): this previously passed Subgraph_EMA21
+        // -- the SAME series DetectRaschkeStrategySetup() already receives as
+        // its own `ema21` parameter -- making BREAD_AND_BUTTER's `ema > ema21`/
+        // `ema < ema21` checks compare a value against itself (always false),
+        // permanently dead code. `ema()` is the intended SHORT EMA half of a
+        // short-vs-long crossover; Subgraph_KeltnerAverage (EMA 13) is the
+        // genuinely shorter-period series already computed for this exact
+        // purpose (also stored separately as fastEma() below).
+        intermPriceAction->setEma(Subgraph_KeltnerAverage[sc.Index]);
 
         PriceActionEnum action = GetPriceAction(sc, sc.Close[sc.Index], Subgraph_EMA21[sc.Index], Subgraph_KeltnerAverage[sc.Index],
                                                     Subgraph_TopBand[sc.Index], Subgraph_BottomBand[sc.Index]);

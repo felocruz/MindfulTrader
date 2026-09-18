@@ -383,6 +383,108 @@ int main() {
         check("elder_breakout_none_when_inside_bands", e == ElderBreakoutEnum::NONE);
     }
 
+    // --- DetectNR7 --------------------------------------------------------
+    {
+        // All 7 priors strictly wider than current -> STRONG, hand-computed
+        // avg/percentile/volumeSpike/qualityScore.
+        float priorRanges[7] = {2.0f, 3.0f, 2.5f, 4.0f, 3.5f, 2.2f, 5.0f};
+        float avg = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(
+            /*currentRange=*/1.5f, priorRanges, 7,
+            /*isChaosClimateBlocked=*/false,
+            /*currentVolume=*/80.0f, /*avgVolume=*/100.0f,
+            avg, pct, volSpike, quality);
+        check("nr7_strong_when_narrowest", e == NR7Enum::STRONG);
+        check("nr7_avg7BarRange_hand_computed", near(avg, 3.171429f));
+        check("nr7_rangePercentile_hand_computed", near(pct, 0.473077f));
+        check("nr7_volumeSpike_hand_computed", near(volSpike, 0.8f));
+        check("nr7_qualityScore_hand_computed", near(quality, 0.368846f));
+    }
+    {
+        // A prior bar at/below current range -> NOT NR7 -> NONE, defaults.
+        float priorRanges[7] = {2.0f, 3.0f, 2.5f, 4.0f, 3.5f, 2.2f, 5.0f};
+        float avg = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(
+            /*currentRange=*/3.0f, priorRanges, 7,
+            /*isChaosClimateBlocked=*/false,
+            /*currentVolume=*/80.0f, /*avgVolume=*/100.0f,
+            avg, pct, volSpike, quality);
+        check("nr7_none_when_not_narrowest", e == NR7Enum::NONE);
+        check("nr7_defaults_on_none", avg == 0.0f && pct == 1.0f && volSpike == 1.0f && quality == 0.0f);
+    }
+    {
+        // SHANNON_CHAOS climate gate blocks regardless of range qualifying.
+        float priorRanges[7] = {2.0f, 3.0f, 2.5f, 4.0f, 3.5f, 2.2f, 5.0f};
+        float avg = 0.0f, pct = 0.0f, volSpike = 0.0f, quality = 0.0f;
+        NR7Enum e = DetectNR7(
+            /*currentRange=*/1.0f, priorRanges, 7,
+            /*isChaosClimateBlocked=*/true,
+            /*currentVolume=*/80.0f, /*avgVolume=*/100.0f,
+            avg, pct, volSpike, quality);
+        check("nr7_blocked_by_chaos_climate", e == NR7Enum::NONE);
+    }
+
+    // --- DetectRSI / ClassifyStructure / ClassifyATRProximity (Task 7, market-
+    // data-replay-alpha-generator plan -- moved here from StudyHelperFunctions.cpp) ---
+    {
+        check("detect_rsi_overbought", DetectRSI(75.0f) == RSI::OVERBOUGHT);
+        check("detect_rsi_oversold", DetectRSI(25.0f) == RSI::OVERSOLD);
+        check("detect_rsi_normal", DetectRSI(50.0f) == RSI::NORMAL);
+        check("detect_rsi_boundary_70_is_normal", DetectRSI(70.0f) == RSI::NORMAL);
+        check("detect_rsi_boundary_30_is_normal", DetectRSI(30.0f) == RSI::NORMAL);
+    }
+    {
+        // Inside bar: current bar's range strictly inside prior bar's range.
+        check("classify_structure_inside_bar",
+              ClassifyStructure(101.0f, 99.0f, 100.0f, 102.0f, 98.0f, 1.0, 110.0f, 90.0f) == StructureTest::INSIDE_BAR);
+        // Outside bar: current bar's range strictly engulfs prior bar's range.
+        check("classify_structure_outside_bar",
+              ClassifyStructure(103.0f, 97.0f, 100.0f, 102.0f, 98.0f, 1.0, 110.0f, 90.0f) == StructureTest::OUTSIDE_BAR);
+        // Failed high strong reversal: breaks the 20-bar lookback high but closes
+        // back below it by more than 0.5xATR (trap / spring).
+        check("classify_structure_failed_high_strong_reversal",
+              ClassifyStructure(111.0f, 100.0f, 108.0f, 105.0f, 95.0f, 1.0, 110.0f, 90.0f) == StructureTest::FAILED_HIGH_STRONG_REVERSAL);
+        // Decisive breakout high: closes beyond prev_high + 0.25xATR.
+        check("classify_structure_decisive_breakout_high",
+              ClassifyStructure(106.0f, 104.0f, 105.5f, 104.0f, 98.0f, 1.0, 130.0f, 70.0f) == StructureTest::DECISIVE_BREAKOUT_HIGH);
+        check("classify_structure_none",
+              ClassifyStructure(100.5f, 99.5f, 100.0f, 100.5f, 99.5f, 1.0, 130.0f, 70.0f) == StructureTest::NONE);
+    }
+    {
+        // bar_range=1.5, atr=1.0 -> in [1.0,2.5] -> HIGH_MOVE.
+        check("classify_atr_proximity_high_move",
+              ClassifyATRProximity(101.5f, 100.0f, 101.0f, 1.0) == ATRProximityEnum::HIGH_MOVE);
+        // bar_range=0.5, atr=1.0 -> below 1.0x -> LOW_VOLATILITY.
+        check("classify_atr_proximity_low_volatility",
+              ClassifyATRProximity(100.5f, 100.0f, 100.2f, 1.0) == ATRProximityEnum::LOW_VOLATILITY);
+        // bar_range=3.0, atr=1.0 (>2.5x); close near low -> EXTREME_LOW.
+        check("classify_atr_proximity_extreme_low",
+              ClassifyATRProximity(103.0f, 100.0f, 100.2f, 1.0) == ATRProximityEnum::EXTREME_LOW);
+        // bar_range=3.0, atr=1.0; close near high -> EXTREME_HIGH.
+        check("classify_atr_proximity_extreme_high",
+              ClassifyATRProximity(103.0f, 100.0f, 102.8f, 1.0) == ATRProximityEnum::EXTREME_HIGH);
+    }
+    {
+        // ema=100, stdDev=5 throughout.
+        check("classify_ema_proximity_cross_above",
+              ClassifyEmaProximity(101.0f, 99.0f, 100.0, 5.0) == EmaProximity::CROSS_ABOVE);
+        check("classify_ema_proximity_cross_below",
+              ClassifyEmaProximity(99.0f, 101.0f, 100.0, 5.0) == EmaProximity::CROSS_BELOW);
+        // distance=0.2 <= 0.1*5=0.5 -> AT_EMA (no cross: both sides >= ema).
+        check("classify_ema_proximity_at_ema",
+              ClassifyEmaProximity(100.2f, 100.4f, 100.0, 5.0) == EmaProximity::AT_EMA);
+        // distance=3, 0.1*5=0.5 (not AT_EMA), 1.0*5=5 (3<=5) -> ABOVE_TOUCH.
+        check("classify_ema_proximity_above_touch",
+              ClassifyEmaProximity(103.0f, 102.5f, 100.0, 5.0) == EmaProximity::ABOVE_TOUCH);
+        // distance=10 > 1.0*5=5 -> PRICE_ABOVE_EMA.
+        check("classify_ema_proximity_price_above_ema",
+              ClassifyEmaProximity(110.0f, 109.0f, 100.0, 5.0) == EmaProximity::PRICE_ABOVE_EMA);
+        check("classify_ema_proximity_below_touch",
+              ClassifyEmaProximity(97.0f, 97.5f, 100.0, 5.0) == EmaProximity::BELOW_TOUCH);
+        check("classify_ema_proximity_price_below_ema",
+              ClassifyEmaProximity(90.0f, 91.0f, 100.0, 5.0) == EmaProximity::PRICE_BELOW_EMA);
+    }
+
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",
                 g_failures, g_failures == 1 ? "" : "s");
     return g_failures == 0 ? 0 : 1;

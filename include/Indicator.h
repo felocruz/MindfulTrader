@@ -29,29 +29,14 @@ const int BLUE{ CreateRGB(0, 128, 255) };
  *
  * Source: Linda Raschke "Street Smarts" (1995) + Elder "Come Into My Trading Room" (2002)
  * Range: 0-18 (mirrors Python rc_enums.RaschkeTacticalTrigger exactly)
+ *
+ * RaschkeTacticalTrigger and getRaschkeTacticalTriggerName() moved to
+ * IndicatorComputations.h (2026-09-16, market-data-replay Task 7 institutional
+ * fix) so the offline replay tool can classify it without linking sierrachart.h
+ * -- the enum itself has zero ACSIL dependency, this file still re-exposes it
+ * via the #include "IndicatorComputations.h" below, matching the established
+ * KangarooTailEnum/TurtleSoupEnum/etc. single-source pattern.
  */
-enum class RaschkeTacticalTrigger : int8_t
-{
-    NONE = 0,
-    KANGAROO_TAIL_BUY = 1,
-    KANGAROO_TAIL_SELL = 2,
-    TURTLE_SOUP_BUY = 3,
-    TURTLE_SOUP_SELL = 4,
-    MOMENTUM_PINBALL_BUY = 5,
-    MOMENTUM_PINBALL_SELL = 6,
-    ELDER_BREAKOUT_BUY = 7,
-    ELDER_BREAKOUT_SELL = 8,
-    NR7_BREAKOUT_BUY = 9,
-    NR7_BREAKOUT_SELL = 10,
-    ITR_BREAKOUT_BUY = 11,
-    ITR_BREAKOUT_SELL = 12,
-    ITR_FADE_BUY = 13,
-    ITR_FADE_SELL = 14,
-    RSI_FAILURE_SWING_BUY = 15,
-    RSI_FAILURE_SWING_SELL = 16,
-    STOCHASTIC_POP_BUY = 17,
-    STOCHASTIC_POP_SELL = 18
-};
 
 /**
  * Linda Raschke Strategy Setups (Screen 2, 15-min bars)
@@ -64,57 +49,17 @@ enum class RaschkeTacticalTrigger : int8_t
  *
  * Source: Linda Raschke "Street Smarts" (1995), "Reminiscences of a Stock Operator" (Livermore)
  * Range: 0-21 (mirrors Python rc_enums.RaschkeStrategySetup exactly)
+ *
+ * RaschkeStrategySetup moved to IndicatorComputations.h (2026-09-16,
+ * market-data-replay RASCHKE_STRATEGY_SETUP port) so the offline replay tool
+ * can classify it without linking sierrachart.h -- the enum itself has zero
+ * ACSIL dependency, this file still re-exposes it via the
+ * #include "IndicatorComputations.h" below, matching RaschkeTacticalTrigger's
+ * own identical move earlier this session.
  */
-enum class RaschkeStrategySetup : int8_t
-{
-    NONE = 0,
-    THREE_BAR_TRIANGLE = 1,
-    NR4 = 2,
-    NR7 = 3,
-    IDNR4 = 4,
-    WHIPLASH = 7,
-    GHOST = 8,
-    TWO_B_REVERSAL = 9,
-    ANTI = 10,
-    HOLY_GRAIL_CONTINUATION = 12,
-    HOLY_GRAIL_BUY = 13,
-    HOLY_GRAIL_SELL = 14,
-    SLINGSHOT = 15,
-    FIRST_CROSS = 16,
-    BREAD_AND_BUTTER = 17,
-    DOUBLE_REPO = 18,
-    DOUBLE_REPO_FAILURE = 19,
-    FLIP = 20,
-    NR4_NR7_VOLUME_SPIKE = 21
-};
 
-// Helper: Get enum name for logging
-inline const char* getRaschkeTacticalTriggerName(RaschkeTacticalTrigger trigger) {
-    switch (trigger) {
-        case RaschkeTacticalTrigger::NONE: return "NONE";
-        case RaschkeTacticalTrigger::KANGAROO_TAIL_BUY: return "KANGAROO_TAIL_BUY";
-        case RaschkeTacticalTrigger::KANGAROO_TAIL_SELL: return "KANGAROO_TAIL_SELL";
-        case RaschkeTacticalTrigger::TURTLE_SOUP_BUY: return "TURTLE_SOUP_BUY";
-        case RaschkeTacticalTrigger::TURTLE_SOUP_SELL: return "TURTLE_SOUP_SELL";
-        case RaschkeTacticalTrigger::MOMENTUM_PINBALL_BUY: return "MOMENTUM_PINBALL_BUY";
-        case RaschkeTacticalTrigger::MOMENTUM_PINBALL_SELL: return "MOMENTUM_PINBALL_SELL";
-        case RaschkeTacticalTrigger::ELDER_BREAKOUT_BUY: return "ELDER_BREAKOUT_BUY";
-        case RaschkeTacticalTrigger::ELDER_BREAKOUT_SELL: return "ELDER_BREAKOUT_SELL";
-        case RaschkeTacticalTrigger::NR7_BREAKOUT_BUY: return "NR7_BREAKOUT_BUY";
-        case RaschkeTacticalTrigger::NR7_BREAKOUT_SELL: return "NR7_BREAKOUT_SELL";
-        case RaschkeTacticalTrigger::ITR_BREAKOUT_BUY: return "ITR_BREAKOUT_BUY";
-        case RaschkeTacticalTrigger::ITR_BREAKOUT_SELL: return "ITR_BREAKOUT_SELL";
-        case RaschkeTacticalTrigger::ITR_FADE_BUY: return "ITR_FADE_BUY";
-        case RaschkeTacticalTrigger::ITR_FADE_SELL: return "ITR_FADE_SELL";
-        case RaschkeTacticalTrigger::RSI_FAILURE_SWING_BUY: return "RSI_FAILURE_SWING_BUY";
-        case RaschkeTacticalTrigger::RSI_FAILURE_SWING_SELL: return "RSI_FAILURE_SWING_SELL";
-        case RaschkeTacticalTrigger::STOCHASTIC_POP_BUY: return "STOCHASTIC_POP_BUY";
-        case RaschkeTacticalTrigger::STOCHASTIC_POP_SELL: return "STOCHASTIC_POP_SELL";
-        default: return "UNKNOWN";
-    }
-}
 
-// Define the TradeSideEnum here for use by multiple components
+
 enum class TradeSideEnum : int8_t
 {
     FLAT = 0,
@@ -256,15 +201,9 @@ enum class FI2Enum : int8_t
     SIGNAL_DOWN = -2
 };
 
-enum class StochasticEnum : int8_t
-{
-    UNDEFINED = 0,
-    NORMAL = 1,
-    OVER_BOUGHT = 2,
-    OVER_SOLD = 3,
-    BULLISH_DIVERGENCE = 4,
-    BEARISH_DIVERGENCE = 5
-};
+// StochasticEnum moved to IndicatorComputations.h (Task 7, market-data-replay-
+// alpha-generator plan) -- same "extracted so it's ACSIL-independent" rationale
+// as RSI/StructureTest/ATRProximityEnum above.
 
 enum class DivergenceEnum : int8_t
 {
@@ -336,72 +275,22 @@ enum class PriceActionEnum : int8_t
 // This duplicate was for backward compatibility. Use the primary definition above.
 // DO NOT use this - it's only kept for reference. Delete if compilation succeeds.
 
-// KangarooTailEnum/TurtleSoupEnum/MomentumPinballEnum/ElderBreakoutEnum/NR7Enum
-// (extracted so they're ACSIL-independent; see IndicatorComputations.h) — same
-// rationale as MacdEnum/ImpulseEnum/VolumeEnum's extraction elsewhere in this
-// file (indicator-manager-dod-soa plan, Task 8): DetectKangarooTail/
-// DetectTurtleSoup/DetectMomentumPinball/DetectElderBreakout/DetectNR7's return
-// types must be the real enums, and that header must stay includable with no
-// sierrachart.h on the path.
-
-enum class RSI : int8_t
-{
-    UNDEFINED = 0,          // RSI undefined
-    NORMAL = 1,             // RSI is in a normal range
-    OVERBOUGHT = 2,         // RSI is in the overbought region (above 70)
-    OVERSOLD = 3,           // RSI is in the oversold region (below 30)
-    BULLISH_DIVERGENCE = 4, // RSI shows bullish divergence with price
-    BEARISH_DIVERGENCE = 5  // RSI shows bearish divergence with price
-};
+// KangarooTailEnum/TurtleSoupEnum/MomentumPinballEnum/ElderBreakoutEnum/NR7Enum/
+// RSI/StructureTest/ATRProximityEnum (extracted so they're ACSIL-independent;
+// see IndicatorComputations.h) — same rationale as MacdEnum/ImpulseEnum/
+// VolumeEnum's extraction elsewhere in this file (indicator-manager-dod-soa
+// plan, Task 8): DetectKangarooTail/DetectTurtleSoup/DetectMomentumPinball/
+// DetectElderBreakout/DetectNR7/DetectRSI/ClassifyStructure/ClassifyATRProximity's
+// return types must be the real enums, and that header must stay includable
+// with no sierrachart.h on the path.
 
 // VolumeEnum (extracted so it's ACSIL-independent; see IndicatorComputations.h) —
 // same rationale as MacdEnum/ImpulseEnum's extraction above (indicator-manager-
 // dod-soa plan, Task 7): ComputeVolumeClassification's return type must be the
 // real VolumeEnum.
 
-enum class StructureTest : int8_t
-{
-    NONE = 0, // No price action near the previous bar high or low boundary.
-
-    // BULLISH REVERSAL / FAILURE TESTS (Suggests Long Opportunity)
-    FAILED_LOW_CLOSE_INSIDE = 1, // Price penetrates previous low but closes inside. Bear trap reversal signal.
-    FAILED_LOW_STRONG_REVERSAL = 2, // Price breaks previous low, closes significantly higher. Strong bullish reversal signal (Turtle Soup potential).
-
-    // BEARISH REVERSAL / FAILURE TESTS (Suggests Short Opportunity)
-    FAILED_HIGH_CLOSE_INSIDE = 3, // Price penetrates previous high but closes inside. Bull trap reversal signal.
-    FAILED_HIGH_STRONG_REVERSAL = 4, // Price breaks previous high, closes significantly lower. Strong bearish reversal signal (Turtle Soup potential).
-
-    // CONTINUATION / DECISIVE ACTION
-    DECISIVE_BREAKOUT_HIGH = 5, // Price closes decisively above the previous bar high. Strong bullish continuation signal.
-    DECISIVE_BREAKDOWN_LOW = 6, // Price closes decisively below the previous bar low. Strong bearish continuation signal.
-
-    // CONSOLIDATION / EXPANSION
-    INSIDE_BAR = 7, // Current bar's range is completely within the previous bar's range.
-    OUTSIDE_BAR = 8 // Current bar's range completely engulfs the previous bar's range.
-};
-
-enum class ATRProximityEnum : int8_t
-{
-    LOW_VOLATILITY = 0,
-    HIGH_MOVE = 1,
-    EXTREME_VOLATILITY = 2,
-    EXTREME_LOW = 3,
-    EXTREME_HIGH = 4
-};
-
-enum class EmaProximity : int8_t
-{
-    NONE = -1,
-    ABOVE_STRONG = 0,
-    ABOVE_TOUCH = 1,
-    CROSS_ABOVE = 2,
-    AT_EMA = 3,
-    CROSS_BELOW = 4,
-    BELOW_TOUCH = 5,
-    BELOW_STRONG = 6,
-    PRICE_ABOVE_EMA = 7,
-    PRICE_BELOW_EMA = 8
-};
+// EmaProximity moved to IndicatorComputations.h (Task 7, market-data-replay-
+// alpha-generator plan) -- same ACSIL-independence rationale as above.
 
 enum class PriceMetrics : int8_t
 {

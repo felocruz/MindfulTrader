@@ -28,10 +28,15 @@ RaschkeTacticalTrigger DetectRaschkeTacticalTrigger(SCStudyInterfaceRef sc, floa
 DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevDayLow, float hurstExponent, float entropy,
                                   float valueAreaLow = 0.0f, float valueAreaHigh = 0.0f);
 // GetVolumeEnum() removed in v5.7 — VolumeIndicator self-classifies via robust z-score
-StructureTest ClassifyStructure(float high, float low, float close,
-                                float prev_high, float prev_low, double atr,
-                                float lookbackHigh, float lookbackLow);
-StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float prev_low, double atr, float lookbackHigh, float lookbackLow);
+// ClassifyStructure() moved to IndicatorComputations.h (Task 7, market-data-
+// replay-alpha-generator plan) -- ACSIL-free, single source of truth.
+// `prevDayHigh`/`prevDayLow` (renamed 2026-09-16, live-code hardening pass):
+// these bind to the previous COMPLETED TRADING DAY's high/low
+// (IndicatorManager::GetCachedPrevDayHigh/Low()) at the real call site
+// (src/TripleScreen3.cpp), NOT the immediately-prior bar -- the generic
+// `prev_high`/`prev_low` names this codebase uses elsewhere (e.g.
+// TripleBarrierEngine.h) for real prior-bar values were a naming trap here.
+StructureTest DetectStructure(SCStudyInterfaceRef sc, float prevDayHigh, float prevDayLow, double atr, float lookbackHigh, float lookbackLow);
 
 // Done
 ATRProximityEnum DetectATRProximity(SCStudyInterfaceRef sc, double atr);
@@ -39,8 +44,8 @@ ATRProximityEnum DetectATRProximity(SCStudyInterfaceRef sc, double atr);
 // Done
 EmaProximity DetectEmaProximity(SCStudyInterfaceRef sc, double ema, double std_dev);
 
-// Done
-RSI DetectRSI(float rsiValue);
+// DetectRSI() moved to IndicatorComputations.h (Task 7, market-data-replay-
+// alpha-generator plan) -- ACSIL-free, single source of truth.
 
 PriceMetrics DeterminePriceMetric(SCStudyInterfaceRef sc, float avg_range, float avg_volume);
 

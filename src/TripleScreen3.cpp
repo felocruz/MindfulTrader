@@ -1416,9 +1416,6 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         // Calculate current bar's range
         const float currentRange = sc.High[sc.Index] - sc.Low[sc.Index];
 
-        // Check if current bar has the narrowest range in last 7 bars
-        bool isNR7 = true;
-
         // === ELITE PHYSICS FILTER: NR7 (Mean Reversion/Compression) ===
         // Pattern: Volatility Compression -> Expansion.
         // Climate Filter:
@@ -1427,46 +1424,33 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
         // - PARETO_MOMENTUM: ALLOW (Continuation pattern).
         // - TALEBIAN_FRAGILE: ALLOW (Explosive potential).
 
-        bool allowNR7 = true;
-
-        if (currentClimate == MarketClimate::SHANNON_CHAOS) {
-             allowNR7 = false;
+        // Task 6 (indicator-manager-dod-soa-style extraction,
+        // docs/superpowers/plans/2026-09-16-market-data-replay-alpha-generator-
+        // implementation.md): the 7-bar range comparison + climate gate +
+        // metrics calculation now live in the pure, natively-tested
+        // DetectNR7() (IndicatorComputations.h) — this call site only
+        // gathers the live ACSIL inputs and forwards them, unchanged output.
+        float priorRanges[NR7_LOOKBACK];
+        for (int i = 1; i <= NR7_LOOKBACK; i++) {
+            priorRanges[i - 1] = sc.High[sc.Index - i] - sc.Low[sc.Index - i];
         }
-
-        if (allowNR7) {
-            for (int i = 1; i <= NR7_LOOKBACK; i++) {
-                const float priorRange = sc.High[sc.Index - i] - sc.Low[sc.Index - i];
-
-                // If any prior bar has a smaller or equal range, current bar is NOT NR7
-                if (!sc.FormattedEvaluate(priorRange, sc.BaseGraphValueFormat, GREATER_OPERATOR, currentRange, sc.BaseGraphValueFormat)) {
-                    isNR7 = false;
-                    break;
-                }
-            }
-        } else {
-            isNR7 = false; // Blocked by Physics
-        }
+        float avg7BarRange = 0.0f;
+        float rangePercentile = 1.0f;
+        float volumeSpike = 1.0f;
+        float qualityScore = 0.0f;
+        const NR7Enum nr7Result = DetectNR7(
+            currentRange, priorRanges, NR7_LOOKBACK,
+            currentClimate == MarketClimate::SHANNON_CHAOS,
+            static_cast<float>(sc.Volume[sc.Index]), Subgraph_AvgVolume[sc.Index],
+            avg7BarRange, rangePercentile, volumeSpike, qualityScore);
+        const bool isNR7 = (nr7Result != NR7Enum::NONE);
 
         if (isNR7) {
             auto* const nr7Indicator = indMgr.GetIndicator<NR7>(IndicatorKey::NR7);
             if (nr7Indicator) {
-                // Calculate basic metrics for indicator
-                float avg7BarRange = 0.0f;
-                for (int i = 0; i < NR7_LOOKBACK; i++) {
-                    avg7BarRange += sc.High[sc.Index - i] - sc.Low[sc.Index - i];
-                }
-                avg7BarRange /= NR7_LOOKBACK;
-
-                const float rangePercentile = (avg7BarRange > 0.0f) ? (currentRange / avg7BarRange) : 1.0f;
-
-                // Volume spike calculation — reuse precomputed Subgraph_AvgVolume (20-period SMA)
-                const float avgVolume = Subgraph_AvgVolume[sc.Index];
-                const float volumeSpike = (avgVolume > 0.0f) ? (static_cast<float>(sc.Volume[sc.Index]) / avgVolume) : 1.0f;
-
-                // Simple quality score: lower range percentile + lower volume = better compression
-                const float qualityScore = (1.0f - rangePercentile) * 0.7f + (volumeSpike < 0.8f ? 0.3f : 0.0f);
-
-                // Update indicator with STRONG classification (simplified from WEAK/STRONG/EXTREME)
+                // Always STRONG: confirmed intentional, not a gap -- qualityScore below
+                // already conveys the severity WEAK/EXTREME would have (see NR7Enum's
+                // own doc comment, IndicatorComputations.h).
                 nr7Indicator->Update(NR7Enum::STRONG);
                 nr7Indicator->SetMetrics(currentRange, avg7BarRange, rangePercentile, volumeSpike, 0, qualityScore);
 

@@ -1374,20 +1374,35 @@ inline ElderBreakoutEnum DetectElderBreakout(
  * Named after Linda Raschke's compression breakout pattern.
  * Range = High - Low; NR7 = bar with smallest range over 7-bar lookback.
  *
+ * RESOLVED (2026-09-16, live-code hardening pass, see market-data-replay-alpha-
+ * generator spec/plan): the tiered WEAK/STRONG/EXTREME design below was never
+ * implemented live -- the real call site (src/TripleScreen3.cpp) unconditionally
+ * classifies any qualifying bar as STRONG, per its own "simplified from
+ * WEAK/STRONG/EXTREME" comment. Confirmed intentional, not an oversight: `WEAK`/
+ * `EXTREME` have ZERO real callers anywhere in this codebase (grep-verified),
+ * and the CONTINUOUS `qualityScore` this same detector already computes
+ * conveys the same severity gradation the 3 discrete tiers would have added --
+ * a 3-bucket enum would be redundant, not a fix. `WEAK`/`EXTREME` are kept
+ * below as documented-but-unused values (not deleted, to preserve this design
+ * history/FlatBuffers wire compatibility for any future decision to revive
+ * them), not as a live behavior description.
+ *
  * Theory: "Volatility compression precedes expansion. When price consolidates in a tight range,
  *         the spring coils tighter. When it breaks, the expansion follows." — Raschke
  *
- * WEAK: Range 95-100% of 7-bar average (barely narrowest)
+ * WEAK (NOT LIVE -- see RESOLVED note above): Range 95-100% of 7-bar average (barely narrowest)
  * - Close to the 7-bar average, barely qualifies as compression
  * - High probability of failure or fizzle
  * - Base quality: 0.15
  *
- * STRONG: Range 85-95% of 7-bar average + volume declining (good compression signal)
+ * STRONG (the ONLY value the real live code ever emits): Range 85-95% of 7-bar average +
+ * volume declining (good compression signal)
  * - Solid compression with volume drying up
  * - Best when after multi-bar consolidation
  * - Base quality: 0.25
  *
- * EXTREME: Range <80% of 7-bar average + volume very low + consolidation (nuclear setup)
+ * EXTREME (NOT LIVE -- see RESOLVED note above): Range <80% of 7-bar average + volume very low +
+ * consolidation (nuclear setup)
  * - Extremely tight range (compression extreme)
  * - Volume drying up completely (low participation)
  * - After 3+ bars at band (spring fully coiled)
@@ -1404,10 +1419,76 @@ inline ElderBreakoutEnum DetectElderBreakout(
 enum class NR7Enum : int8_t
 {
     NONE = 0,
-    WEAK = 1,               // Range 95-100% of 7-bar average
-    STRONG = 2,             // Range 85-95% + volume declining
-    EXTREME = 3             // Range <80% + volume dry + consolidation
+    WEAK = 1,               // NOT LIVE -- zero real callers, see RESOLVED note above
+    STRONG = 2,             // the only value the real live code ever emits
+    EXTREME = 3             // NOT LIVE -- zero real callers, see RESOLVED note above
 };
+
+// Extracted from the real, live inline logic (src/TripleScreen3.cpp, "NR7
+// (Narrow Range 7) Detection" block) — indicator-manager-dod-soa-style
+// extraction (docs/superpowers/plans/2026-09-16-market-data-replay-alpha-
+// generator-implementation.md Task 6), matching the other 4 `Detect*`
+// functions' pure/no-ACSIL-types convention in this file.
+//
+// Matches the real live code's ACTUAL behavior (always STRONG when
+// qualifying) -- see NR7Enum's own doc comment above for why this is now a
+// confirmed intentional simplification, not a gap to fix.
+//
+// `isChaosClimateBlocked` replaces a direct `MarketClimate` enum parameter
+// (`Indicator.h`'s `MarketClimate` is not includable here without pulling in
+// ACSIL headers transitively) — the caller evaluates
+// `currentClimate == MarketClimate::SHANNON_CHAOS` and passes the boolean
+// result, same "keep this header ACSIL-free" convention as every other
+// `Detect*` function.
+//
+// `priorRanges`/`priorRangeCount` accepts the last 7 completed bars' own
+// `high-low` ranges in any order (the real check is an unordered "all must
+// exceed current," and the average is order-independent) — designed to be
+// fed directly from `BoundedBarRing::RangeAt()`.
+//
+// One known, accepted precision difference from production: the real
+// `sc.FormattedEvaluate(..., GREATER_OPERATOR, ...)` comparison is tolerant
+// of the chart's own display-format rounding; this function uses a plain
+// `<=` float comparison — a documented simplification, not silently assumed
+// identical, flagged for Task 12's empirical validation.
+inline NR7Enum DetectNR7(
+    float currentRange,
+    const float* priorRanges, int priorRangeCount,
+    bool isChaosClimateBlocked,
+    float currentVolume, float avgVolume,
+    float& outAvg7BarRange, float& outRangePercentile,
+    float& outVolumeSpike, float& outQualityScore)
+{
+    outAvg7BarRange = 0.0f;
+    outRangePercentile = 1.0f;
+    outVolumeSpike = 1.0f;
+    outQualityScore = 0.0f;
+
+    if (isChaosClimateBlocked) {
+        return NR7Enum::NONE;
+    }
+
+    bool isNR7 = true;
+    for (int i = 0; i < priorRangeCount; ++i) {
+        if (priorRanges[i] <= currentRange) {
+            isNR7 = false;
+            break;
+        }
+    }
+    if (!isNR7 || priorRangeCount <= 0) {
+        return NR7Enum::NONE;
+    }
+
+    float sum = 0.0f;
+    for (int i = 0; i < priorRangeCount; ++i) sum += priorRanges[i];
+    outAvg7BarRange = sum / static_cast<float>(priorRangeCount);
+
+    outRangePercentile = (outAvg7BarRange > 0.0f) ? (currentRange / outAvg7BarRange) : 1.0f;
+    outVolumeSpike = (avgVolume > 0.0f) ? (currentVolume / avgVolume) : 1.0f;
+    outQualityScore = (1.0f - outRangePercentile) * 0.7f + (outVolumeSpike < 0.8f ? 0.3f : 0.0f);
+
+    return NR7Enum::STRONG;  // matches production's real "simplified" classification
+}
 
 // ============================================================================
 // TickCompanionValues (indicator-manager-dod-soa plan, Task 10)
@@ -1442,3 +1523,307 @@ struct TickCompanionValues {
     float volumeImbalance = 0.0f;
     float atr10 = 0.0f;
 };
+
+// ============================================================================
+// RSI / StructureTest / ATRProximityEnum (Task 7, docs/superpowers/plans/
+// 2026-09-16-market-data-replay-alpha-generator-implementation.md) — moved
+// here from Indicator.h (same "extracted so it's ACSIL-independent" rationale
+// as KangarooTailEnum/etc. above), single source of truth, no duplication.
+// ============================================================================
+
+enum class RSI : int8_t
+{
+    UNDEFINED = 0,          // RSI undefined
+    NORMAL = 1,             // RSI is in a normal range
+    OVERBOUGHT = 2,         // RSI is in the overbought region (above 70)
+    OVERSOLD = 3,           // RSI is in the oversold region (below 30)
+    BULLISH_DIVERGENCE = 4, // RSI shows bullish divergence with price
+    BEARISH_DIVERGENCE = 5  // RSI shows bearish divergence with price
+};
+
+// Transcribed exactly from the real DetectRSI() (src/StudyHelperFunctions.cpp).
+// IndicatorKey::RSI's real config: period=2, MOVAVGTYPE_WILDERS
+// (src/TripleScreen2.cpp:385-386) — the caller computes the RSI value itself
+// (e.g. via RsiEngine), this only classifies the resulting float.
+inline RSI DetectRSI(float rsiValue)
+{
+    if (rsiValue > 70) return RSI::OVERBOUGHT;
+    if (rsiValue < 30) return RSI::OVERSOLD;
+    return RSI::NORMAL;
+}
+
+enum class StructureTest : int8_t
+{
+    NONE = 0, // No price action near the previous bar high or low boundary.
+
+    // BULLISH REVERSAL / FAILURE TESTS (Suggests Long Opportunity)
+    FAILED_LOW_CLOSE_INSIDE = 1, // Price penetrates previous low but closes inside. Bear trap reversal signal.
+    FAILED_LOW_STRONG_REVERSAL = 2, // Price breaks previous low, closes significantly higher. Strong bullish reversal signal (Turtle Soup potential).
+
+    // BEARISH REVERSAL / FAILURE TESTS (Suggests Short Opportunity)
+    FAILED_HIGH_CLOSE_INSIDE = 3, // Price penetrates previous high but closes inside. Bull trap reversal signal.
+    FAILED_HIGH_STRONG_REVERSAL = 4, // Price breaks previous high, closes significantly lower. Strong bearish reversal signal (Turtle Soup potential).
+
+    // CONTINUATION / DECISIVE ACTION
+    DECISIVE_BREAKOUT_HIGH = 5, // Price closes decisively above the previous bar high. Strong bullish continuation signal.
+    DECISIVE_BREAKDOWN_LOW = 6, // Price closes decisively below the previous bar low. Strong bearish continuation signal.
+
+    // CONSOLIDATION / EXPANSION
+    INSIDE_BAR = 7, // Current bar's range is completely within the previous bar's range.
+    OUTSIDE_BAR = 8 // Current bar's range completely engulfs the previous bar's range.
+};
+
+// Pure structural classifier (no SC dependency) — single source of truth shared
+// by the live intra-bar DetectStructure() and the completed-bar native TRAP
+// floor (src/StudyHelperFunctions.cpp). Transcribed exactly, unchanged logic --
+// only the `prevDayHigh`/`prevDayLow` parameter names changed (2026-09-16,
+// live-code hardening pass): the generic `prev_high`/`prev_low` names read
+// like "the immediately-prior bar," but the real call site
+// (src/TripleScreen3.cpp:614) binds these to the PREVIOUS COMPLETED TRADING
+// DAY's own high/low (`IndicatorManager::GetCachedPrevDayHigh/Low()`) -- a
+// naming trap this session's own first replay-tool wiring pass fell into.
+inline StructureTest ClassifyStructure(float high, float low, float close,
+                                        float prevDayHigh, float prevDayLow, double atr,
+                                        float lookbackHigh, float lookbackLow)
+{
+    const double breakout_threshold = 0.25 * atr;
+    const double reversal_threshold = 0.5 * atr;
+
+    if (high < prevDayHigh && low > prevDayLow) {
+        return StructureTest::INSIDE_BAR;
+    }
+    if (high > prevDayHigh && low < prevDayLow) {
+        return StructureTest::OUTSIDE_BAR;
+    }
+
+    if (high > lookbackHigh && close < lookbackHigh - reversal_threshold) {
+        return StructureTest::FAILED_HIGH_STRONG_REVERSAL;
+    }
+    if (low < lookbackLow && close > lookbackLow + reversal_threshold) {
+        return StructureTest::FAILED_LOW_STRONG_REVERSAL;
+    }
+
+    if (high > prevDayHigh) {
+        if (close > prevDayHigh + breakout_threshold) {
+            return StructureTest::DECISIVE_BREAKOUT_HIGH;
+        } else if (close < prevDayHigh) {
+            return StructureTest::FAILED_HIGH_CLOSE_INSIDE;
+        } else {
+            return StructureTest::DECISIVE_BREAKOUT_HIGH;
+        }
+    }
+
+    if (low < prevDayLow) {
+        if (close < prevDayLow - breakout_threshold) {
+            return StructureTest::DECISIVE_BREAKDOWN_LOW;
+        } else if (close > prevDayLow) {
+            return StructureTest::FAILED_LOW_CLOSE_INSIDE;
+        } else {
+            return StructureTest::DECISIVE_BREAKDOWN_LOW;
+        }
+    }
+
+    return StructureTest::NONE;
+}
+
+enum class ATRProximityEnum : int8_t
+{
+    LOW_VOLATILITY = 0,
+    HIGH_MOVE = 1,
+    EXTREME_VOLATILITY = 2,
+    EXTREME_LOW = 3,
+    EXTREME_HIGH = 4
+};
+
+// Pure classifier extracted from DetectATRProximity(SCStudyInterfaceRef sc, ...)
+// (src/StudyHelperFunctions.cpp) -- the original takes `sc` only to read the
+// current bar's own high/low/close, all supplied directly here instead.
+inline ATRProximityEnum ClassifyATRProximity(float high, float low, float close, double atr)
+{
+    const double bar_range = high - low;
+    ATRProximityEnum newValue = ATRProximityEnum::LOW_VOLATILITY;
+
+    if (bar_range >= atr && bar_range <= 2.5 * atr) {
+        newValue = ATRProximityEnum::HIGH_MOVE;
+    } else if (bar_range > 2.5 * atr) {
+        if (std::abs(close - low) < std::abs(close - high)) {
+            newValue = ATRProximityEnum::EXTREME_LOW;
+        } else if (std::abs(close - high) < std::abs(close - low)) {
+            newValue = ATRProximityEnum::EXTREME_HIGH;
+        } else {
+            newValue = ATRProximityEnum::EXTREME_VOLATILITY;
+        }
+    }
+    return newValue;
+}
+
+enum class StochasticEnum : int8_t
+{
+    UNDEFINED = 0,
+    NORMAL = 1,
+    OVER_BOUGHT = 2,
+    OVER_SOLD = 3,
+    BULLISH_DIVERGENCE = 4,
+    BEARISH_DIVERGENCE = 5
+};
+
+// Extracted from the real, live inline "Crossover Detection" block
+// (src/TripleScreen2.cpp scsf_Screen2_StochasticCrossover) -- divergence
+// detection (a separate, disabled-by-default branch, regression-slope-based)
+// is NOT ported here, matching this repo's own default config. `rawK`/`fastD`
+// are this study's OWN "SlowK"/"SlowD" locals, which despite the name are
+// bound to sc.Stochastic()'s Arrays[0]/Arrays[1] (RawK/FastD) -- confirmed by
+// direct read, a real naming trap in the live code, not this port's error.
+inline StochasticEnum ClassifyStochasticCrossover(
+    float rawK, float fastD, float prevRawK, float prevFastD,
+    float oversoldLine = 30.0f, float overboughtLine = 70.0f)
+{
+    const float prevDiff = prevRawK - prevFastD;
+    const float currDiff = rawK - fastD;
+    if (prevDiff <= 0.0f && currDiff > 0.0f && rawK < oversoldLine) {
+        return StochasticEnum::OVER_SOLD;
+    }
+    if (prevDiff >= 0.0f && currDiff < 0.0f && rawK > overboughtLine) {
+        return StochasticEnum::OVER_BOUGHT;
+    }
+    return StochasticEnum::NORMAL;
+}
+
+enum class EmaProximity : int8_t
+{
+    NONE = -1,
+    ABOVE_STRONG = 0,
+    ABOVE_TOUCH = 1,
+    CROSS_ABOVE = 2,
+    AT_EMA = 3,
+    CROSS_BELOW = 4,
+    BELOW_TOUCH = 5,
+    BELOW_STRONG = 6,      // NOT LIVE -- DetectEmaProximity/ClassifyEmaProximity
+                           // never emits this value (grep-verified, zero real
+                           // producers); kept for wire/enum-value stability.
+    PRICE_ABOVE_EMA = 7,
+    PRICE_BELOW_EMA = 8
+};
+
+// Extracted from the real, live DetectEmaProximity(SCStudyInterfaceRef sc, ...)
+// (src/StudyHelperFunctions.cpp) -- the original takes `sc` only to read the
+// current/previous bar's own close, both supplied directly here instead.
+// `ema`/`stdDev` are TS2's own Keltner EMA(13)-of-OHLC-avg line and a rolling
+// 13-bar stddev of THAT LINE'S OWN VALUES (not of price) --
+// `sc.StdDeviation(Subgraph_KeltnerAverage, ..., 13)`, confirmed by direct
+// read, not assumed.
+inline EmaProximity ClassifyEmaProximity(float price, float prevPrice, double ema, double stdDev)
+{
+    const float distance = std::abs(price - static_cast<float>(ema));
+
+    if (prevPrice <= ema && price > ema) {
+        return EmaProximity::CROSS_ABOVE;
+    }
+    if (prevPrice >= ema && price < ema) {
+        return EmaProximity::CROSS_BELOW;
+    }
+    if (distance <= 0.1 * stdDev) {
+        return EmaProximity::AT_EMA;
+    }
+    if (price > ema) {
+        return (distance <= 1.0 * stdDev) ? EmaProximity::ABOVE_TOUCH : EmaProximity::PRICE_ABOVE_EMA;
+    }
+    return (distance <= 1.0 * stdDev) ? EmaProximity::BELOW_TOUCH : EmaProximity::PRICE_BELOW_EMA;
+}
+
+/**
+ * Linda Raschke Tactical Trigger (Screen 3, 15-min bars) -- moved from
+ * Indicator.h (2026-09-16, market-data-replay Task 7 institutional fix): the
+ * enum itself has zero ACSIL dependency, only its indicator wrapper
+ * (RaschkeTacticalIndicator, still in Indicator.h) does. This is the SINGLE
+ * writer target of 5 real call sites in src/TripleScreen3.cpp, each an
+ * unconditional Update() (last-write-wins in ascending line-number order,
+ * i.e. ascending precedence): DetectRaschkeTacticalTrigger() (lowest) ->
+ * KangarooTail's gate -> ElderBreakout's gate -> TurtleSoup's gate ->
+ * NR7's breakout-visualization gate (highest).
+ *
+ * Source: Linda Raschke "Street Smarts" (1995) + Elder "Come Into My Trading Room" (2002)
+ * Range: 0-18 (mirrors Python rc_enums.RaschkeTacticalTrigger exactly)
+ */
+enum class RaschkeTacticalTrigger : int8_t
+{
+    NONE = 0,
+    KANGAROO_TAIL_BUY = 1,
+    KANGAROO_TAIL_SELL = 2,
+    TURTLE_SOUP_BUY = 3,
+    TURTLE_SOUP_SELL = 4,
+    MOMENTUM_PINBALL_BUY = 5,   // NOT LIVE -- writer removed 2026-09-04 (see
+                                // src/StudyHelperFunctions.cpp's own comment);
+                                // kept for wire/enum-value stability.
+    MOMENTUM_PINBALL_SELL = 6,  // NOT LIVE, same as above.
+    ELDER_BREAKOUT_BUY = 7,
+    ELDER_BREAKOUT_SELL = 8,
+    NR7_BREAKOUT_BUY = 9,
+    NR7_BREAKOUT_SELL = 10,
+    ITR_BREAKOUT_BUY = 11,
+    ITR_BREAKOUT_SELL = 12,
+    ITR_FADE_BUY = 13,
+    ITR_FADE_SELL = 14,
+    RSI_FAILURE_SWING_BUY = 15,
+    RSI_FAILURE_SWING_SELL = 16,
+    STOCHASTIC_POP_BUY = 17,
+    STOCHASTIC_POP_SELL = 18
+};
+
+inline const char* getRaschkeTacticalTriggerName(RaschkeTacticalTrigger trigger) {
+    switch (trigger) {
+        case RaschkeTacticalTrigger::NONE: return "NONE";
+        case RaschkeTacticalTrigger::KANGAROO_TAIL_BUY: return "KANGAROO_TAIL_BUY";
+        case RaschkeTacticalTrigger::KANGAROO_TAIL_SELL: return "KANGAROO_TAIL_SELL";
+        case RaschkeTacticalTrigger::TURTLE_SOUP_BUY: return "TURTLE_SOUP_BUY";
+        case RaschkeTacticalTrigger::TURTLE_SOUP_SELL: return "TURTLE_SOUP_SELL";
+        case RaschkeTacticalTrigger::MOMENTUM_PINBALL_BUY: return "MOMENTUM_PINBALL_BUY";
+        case RaschkeTacticalTrigger::MOMENTUM_PINBALL_SELL: return "MOMENTUM_PINBALL_SELL";
+        case RaschkeTacticalTrigger::ELDER_BREAKOUT_BUY: return "ELDER_BREAKOUT_BUY";
+        case RaschkeTacticalTrigger::ELDER_BREAKOUT_SELL: return "ELDER_BREAKOUT_SELL";
+        case RaschkeTacticalTrigger::NR7_BREAKOUT_BUY: return "NR7_BREAKOUT_BUY";
+        case RaschkeTacticalTrigger::NR7_BREAKOUT_SELL: return "NR7_BREAKOUT_SELL";
+        case RaschkeTacticalTrigger::ITR_BREAKOUT_BUY: return "ITR_BREAKOUT_BUY";
+        case RaschkeTacticalTrigger::ITR_BREAKOUT_SELL: return "ITR_BREAKOUT_SELL";
+        case RaschkeTacticalTrigger::ITR_FADE_BUY: return "ITR_FADE_BUY";
+        case RaschkeTacticalTrigger::ITR_FADE_SELL: return "ITR_FADE_SELL";
+        case RaschkeTacticalTrigger::RSI_FAILURE_SWING_BUY: return "RSI_FAILURE_SWING_BUY";
+        case RaschkeTacticalTrigger::RSI_FAILURE_SWING_SELL: return "RSI_FAILURE_SWING_SELL";
+        case RaschkeTacticalTrigger::STOCHASTIC_POP_BUY: return "STOCHASTIC_POP_BUY";
+        case RaschkeTacticalTrigger::STOCHASTIC_POP_SELL: return "STOCHASTIC_POP_SELL";
+        default: return "UNKNOWN";
+    }
+}
+
+/**
+ * Linda Raschke Strategy Setups (Screen 2, 60-min bars) -- moved from
+ * Indicator.h (2026-09-16, market-data-replay RASCHKE_STRATEGY_SETUP port),
+ * same zero-ACSIL-dependency rationale as RaschkeTacticalTrigger's own
+ * identical move earlier this session.
+ *
+ * Source: Linda Raschke "Street Smarts" (1995), "Reminiscences of a Stock Operator" (Livermore)
+ * Range: 0-21 (mirrors Python rc_enums.RaschkeStrategySetup exactly)
+ */
+enum class RaschkeStrategySetup : int8_t
+{
+    NONE = 0,
+    THREE_BAR_TRIANGLE = 1,
+    NR4 = 2,
+    NR7 = 3,
+    IDNR4 = 4,
+    WHIPLASH = 7,
+    GHOST = 8,
+    TWO_B_REVERSAL = 9,
+    ANTI = 10,
+    HOLY_GRAIL_CONTINUATION = 12,
+    HOLY_GRAIL_BUY = 13,
+    HOLY_GRAIL_SELL = 14,
+    SLINGSHOT = 15,
+    FIRST_CROSS = 16,
+    BREAD_AND_BUTTER = 17,
+    DOUBLE_REPO = 18,
+    DOUBLE_REPO_FAILURE = 19,
+    FLIP = 20,
+    NR4_NR7_VOLUME_SPIKE = 21
+};
+

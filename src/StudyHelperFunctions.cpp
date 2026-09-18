@@ -1028,8 +1028,28 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
     // Bullish: Price makes lower low, but MACD makes higher low
     // Bearish: Price makes higher high, but MACD makes lower high
     // Uses Sierra Chart's swing detection to find proper divergence points
+    //
+    // FIXED (2026-09-16, RASCHKE_STRATEGY_SETUP replay-port audit, Gemini-
+    // confirmed CLAUDE_BRIEF_148): this previously called
+    // sc.IsSwingLow/High(*, sc.Index, SWING_LENGTH) on sc.Index itself --
+    // Sierra Chart's own symmetric swing definition needs SWING_LENGTH bars
+    // on BOTH sides, so checking the CURRENT (just-closed/still-forming) bar
+    // reads sc.Low/High[sc.Index+1..+3], which do not exist yet in ANY real
+    // execution context (live AutoLoop=1, this project's own BackTesterStudy.cpp
+    // pipeline, or Sierra Chart's native Chart Replay -- all three withhold
+    // future bars by design). That read is effectively always a losing
+    // comparison against a zero/uninitialized value, making both GHOST
+    // branches permanently unreachable in production today. Fix: the most
+    // recent bar that CAN be legitimately confirmed as a swing point right
+    // now is sc.Index - SWING_LENGTH (it already has SWING_LENGTH real bars
+    // on both sides) -- anchor the divergence comparison there instead of at
+    // sc.Index, and search further back from that anchor for the prior
+    // swing. This is a genuine behavior change (GHOST goes from never-fires
+    // to sometimes-fires) -- flagged for downstream empirical validation via
+    // the replay tool (Task 12), not silently assumed safe.
     if (sc.Index >= GHOST_LOOKBACK) {
         constexpr int SWING_LENGTH = 3;  // Look for swings with 3 bars on each side
+        const int currentSwingIndex = sc.Index - SWING_LENGTH;
 
         const MacdEnum currentMacd = static_cast<MacdEnum>(
             IndicatorManager::Instance().GetValue<IndicatorKey::INTERM_MACD, mts::StorageBlock::Int8>());
@@ -1045,30 +1065,31 @@ RaschkeStrategySetup DetectRaschkeStrategySetup(SCStudyInterfaceRef sc, const fl
             currentMacd == MacdEnum::ZERO_FROM_ABOVE ||
             currentMacd == MacdEnum::BEARISH_CROSS;
 
-        // Look back for previous swing points (GHOST_LOOKBACK bars)
-        for (int lookback = SWING_LENGTH + 1; lookback <= GHOST_LOOKBACK; ++lookback) {
-            const int priorSwingIndex = sc.Index - lookback;
+        // Look back for previous swing points (GHOST_LOOKBACK bars, relative
+        // to the now-confirmable currentSwingIndex anchor, not sc.Index).
+        for (int lookback = SWING_LENGTH + 1; lookback <= GHOST_LOOKBACK && currentSwingIndex >= SWING_LENGTH; ++lookback) {
+            const int priorSwingIndex = currentSwingIndex - lookback;
             if (priorSwingIndex < SWING_LENGTH) break;
 
-            // BULLISH DIVERGENCE: Check if current bar is swing low
-            if (sc.IsSwingLow(sc.Low, sc.Index, SWING_LENGTH)) {
+            // BULLISH DIVERGENCE: Check if the most recently confirmable bar is a swing low
+            if (sc.IsSwingLow(sc.Low, currentSwingIndex, SWING_LENGTH)) {
                 // Check if prior bar was also a swing low
                 if (sc.IsSwingLow(sc.Low, priorSwingIndex, SWING_LENGTH)) {
                     // Bullish divergence: Price lower low (simple check without MACD historical access)
                     // Note: Full MACD divergence requires accessing historical MACD values from study arrays
-                    if (sc.Low[sc.Index] < sc.Low[priorSwingIndex] && bullishMacdConfirm) {
+                    if (sc.Low[currentSwingIndex] < sc.Low[priorSwingIndex] && bullishMacdConfirm) {
                         return RaschkeStrategySetup::GHOST;
                     }
                 }
             }
 
-            // BEARISH DIVERGENCE: Check if current bar is swing high
-            if (sc.IsSwingHigh(sc.High, sc.Index, SWING_LENGTH)) {
+            // BEARISH DIVERGENCE: Check if the most recently confirmable bar is a swing high
+            if (sc.IsSwingHigh(sc.High, currentSwingIndex, SWING_LENGTH)) {
                 // Check if prior bar was also a swing high
                 if (sc.IsSwingHigh(sc.High, priorSwingIndex, SWING_LENGTH)) {
                     // Bearish divergence: Price higher high (simple check without MACD historical access)
                     // Note: Full MACD divergence requires accessing historical MACD values from study arrays
-                    if (sc.High[sc.Index] > sc.High[priorSwingIndex] && bearishMacdConfirm) {
+                    if (sc.High[currentSwingIndex] > sc.High[priorSwingIndex] && bearishMacdConfirm) {
                         return RaschkeStrategySetup::GHOST;
                     }
                 }
@@ -1450,71 +1471,11 @@ DailyBiasEnum CalculateDailyBias(float lastPrice, float prevDayHigh, float prevD
 // GetVolumeEnum() removed in v5.7 — VolumeIndicator self-classifies using
 // robust log-volume z-score thresholds (Taleb-consistent, replaces Gaussian mu/sigma).
 
-// Pure structural classifier (no SC dependency) — single source of truth shared by the
-// intra-bar DetectStructure() and the completed-bar native TRAP floor. Keeping it pure
-// makes it unit-testable and the deterministic parity anchor with the Python labeler.
-StructureTest ClassifyStructure(float high, float low, float close,
-                                float prev_high, float prev_low, double atr,
-                                float lookbackHigh, float lookbackLow)
-{
-    // ATR-based thresholds
-    double breakout_threshold = 0.25 * atr;
-    double reversal_threshold = 0.5 * atr;
+// ClassifyStructure() moved to IndicatorComputations.h (Task 7, market-data-
+// replay-alpha-generator plan) — single source of truth, no duplicate
+// definition here (its declaration was also removed from StudyHelperFunctions.h).
 
-    // Consolidation / Expansion
-    bool is_inside_bar = high < prev_high && low > prev_low;
-    if (is_inside_bar) {
-        return StructureTest::INSIDE_BAR;
-    }
-
-    bool is_outside_bar = high > prev_high && low < prev_low;
-    if (is_outside_bar) {
-        return StructureTest::OUTSIDE_BAR;
-    }
-
-    // --- Strong Reversal Tests (using lookbackHigh/Low) ---
-    // FAILED_HIGH_STRONG_REVERSAL: Price breaks above lookbackHigh but closes significantly lower
-    if (high > lookbackHigh && close < lookbackHigh - reversal_threshold) {
-        return StructureTest::FAILED_HIGH_STRONG_REVERSAL;
-    }
-
-    // FAILED_LOW_STRONG_REVERSAL: Price breaks below lookbackLow but closes significantly higher
-    if (low < lookbackLow && close > lookbackLow + reversal_threshold) {
-        return StructureTest::FAILED_LOW_STRONG_REVERSAL;
-    }
-
-    // Bullish Tests (using prev_high/low for shorter-term context)
-    if (high > prev_high) {
-        if (close > prev_high + breakout_threshold) {
-            return StructureTest::DECISIVE_BREAKOUT_HIGH;
-        }
-        else if (close < prev_high) {
-            return StructureTest::FAILED_HIGH_CLOSE_INSIDE;
-        }
-        else {
-            // Marginal breakout: high broke prev_high, close is above prev_high but < prev_high + 0.25*atr
-            return StructureTest::DECISIVE_BREAKOUT_HIGH;  // Still treat as breakout, just less decisive
-        }
-    }
-
-    // Bearish Tests (using prev_high/low for shorter-term context)
-    if (low < prev_low) {
-        if (close < prev_low - breakout_threshold) {
-            return StructureTest::DECISIVE_BREAKDOWN_LOW;
-        }
-        else if (close > prev_low) {
-            return StructureTest::FAILED_LOW_CLOSE_INSIDE;
-        }
-        else {
-            // Marginal breakdown: low broke prev_low, close is below prev_low but > prev_low - 0.25*atr
-            return StructureTest::DECISIVE_BREAKDOWN_LOW;  // Still treat as breakdown, just less decisive
-        }
-    }
-
-    return StructureTest::NONE;
-}
-
-StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float prev_low, double atr, float lookbackHigh, float lookbackLow)
+StructureTest DetectStructure(SCStudyInterfaceRef sc, float prevDayHigh, float prevDayLow, double atr, float lookbackHigh, float lookbackLow)
 {
     if (sc.Index < 1) {
         return StructureTest::NONE;
@@ -1522,29 +1483,13 @@ StructureTest DetectStructure(SCStudyInterfaceRef sc, float prev_high, float pre
 
     // Intra-bar read of the current forming bar (feeds the model observation vector).
     return ClassifyStructure(sc.High[sc.Index], sc.Low[sc.Index], sc.Close[sc.Index],
-                             prev_high, prev_low, atr, lookbackHigh, lookbackLow);
+                             prevDayHigh, prevDayLow, atr, lookbackHigh, lookbackLow);
 }
 
 ATRProximityEnum DetectATRProximity(SCStudyInterfaceRef sc, double atr)
 {
-    double bar_range = sc.High[sc.Index] - sc.Low[sc.Index];
-    ATRProximityEnum newValue = ATRProximityEnum::LOW_VOLATILITY;
-
-    if (bar_range >= atr && bar_range <= 2.5 * atr)
-        newValue = ATRProximityEnum::HIGH_MOVE;      // Current bar range is between 1.0 and 2.5 ATR (Strong but normal volatility).
-    else if (bar_range > 2.5 * atr) {
-        // Price is stretched beyond 2.5 ATR from the previous close (Potential extreme reversal).
-        // Now differentiate between EXTREME_LOW and EXTREME_HIGH
-        if (std::abs(sc.Close[sc.Index] - sc.Low[sc.Index]) < std::abs(sc.Close[sc.Index] - sc.High[sc.Index])) {
-            newValue = ATRProximityEnum::EXTREME_LOW;
-        } else if (std::abs(sc.Close[sc.Index] - sc.High[sc.Index]) < std::abs(sc.Close[sc.Index] - sc.Low[sc.Index])) {
-            newValue = ATRProximityEnum::EXTREME_HIGH;
-        } else {
-            newValue = ATRProximityEnum::EXTREME_VOLATILITY;
-        }
-    }
-
-    return newValue;
+    return ClassifyATRProximity(static_cast<float>(sc.High[sc.Index]), static_cast<float>(sc.Low[sc.Index]),
+                                 static_cast<float>(sc.Close[sc.Index]), atr);
 }
 
 EmaProximity DetectEmaProximity(SCStudyInterfaceRef sc, double ema, double std_dev)
@@ -1552,59 +1497,12 @@ EmaProximity DetectEmaProximity(SCStudyInterfaceRef sc, double ema, double std_d
     if (sc.Index < 1) {
         return EmaProximity::ABOVE_STRONG;
     }
-
-    float price = sc.Close[sc.Index];
-    float prev_price = sc.Close[sc.Index - 1];
-    float distance = std::abs(price - ema);
-
-    // Check for crossing first
-    if (prev_price <= ema && price > ema) {
-        return EmaProximity::CROSS_ABOVE;
-    }
-
-    if (prev_price >= ema && price < ema) {
-        return EmaProximity::CROSS_BELOW;
-    }
-
-    // If not crossing, check proximity
-    if (distance <= 0.1 * std_dev) {
-        return EmaProximity::AT_EMA;
-    }
-
-    if (price > ema) { // Price is above EMA
-        if (distance <= 1.0 * std_dev) {
-            return EmaProximity::ABOVE_TOUCH;
-        }
-        else { // If not touching, and simply above, return PRICE_ABOVE_EMA
-            return EmaProximity::PRICE_ABOVE_EMA;
-        }
-    } else { // Price is below EMA
-        if (distance <= 1.0 * std_dev) {
-            return EmaProximity::BELOW_TOUCH;
-        }
-        else { // If not touching, and simply below, return PRICE_BELOW_EMA
-            return EmaProximity::PRICE_BELOW_EMA;
-        }
-    }
-
-    return EmaProximity::ABOVE_STRONG;
+    return ClassifyEmaProximity(sc.Close[sc.Index], sc.Close[sc.Index - 1], ema, std_dev);
 }
 
-RSI DetectRSI(float rsiValue)
-{
-    if (rsiValue > 70)
-    {
-        return RSI::OVERBOUGHT;
-    }
-    else if (rsiValue < 30)
-    {
-        return RSI::OVERSOLD;
-    }
-    else
-    {
-        return RSI::NORMAL;
-    }
-}
+// DetectRSI() moved to IndicatorComputations.h (Task 7, market-data-replay-
+// alpha-generator plan) — single source of truth, no duplicate definition
+// here (its declaration was also removed from StudyHelperFunctions.h).
 
 PriceMetrics DeterminePriceMetric(SCStudyInterfaceRef sc, float avg_range, float avg_volume)
 {
@@ -2686,6 +2584,17 @@ void UpdateObservationVectorSubgraphs(
         Subgraph_SkewnessIdx[sc.Index] = 0.0f;
     } else {
         Subgraph_PathEfficiencySNR[sc.Index] = CalculatePathEfficiencySNR(sc, Subgraph_ATR[sc.Index], adaptive_window_n);
+        // Deliberately NOT CalculateHurstExponent(sc, adaptive_window_n, 8): DFA's
+        // own minScale*4 floor (StudyHelperFunctions.cpp's CalculateHurstExponent
+        // guard) requires length>=32, but adaptive_window_n's clamped range here
+        // is [10,40] -- most of that range would silently hit the fallback/stale-
+        // carry-forward path instead of computing a real estimate. DFA's OLS
+        // scaling-law regression also needs a wide, stable block (few scales at
+        // N<100 already carries a wide 95% CI per this repo's own DFA bias
+        // Monte Carlo) -- unlike PathEfficiencySNR/single-lag statistics, Hurst
+        // is intentionally kept on the fixed (100, minScale=8) window here.
+        // Confirmed via Gemini consult, not just this comment's own reasoning
+        // (lbrnet/logs/rc_gemini.log CLAUDE_BRIEF_146/_REPLY).
         Subgraph_HurstExponent[sc.Index] = CalculateHurstExponent(sc);
         Subgraph_RealizedKurtosis[sc.Index] = CalculateRealizedKurtosis(sc, Subgraph_RealizedKurtosis[sc.Index - 1], Subgraph_ATR.Data);
         Subgraph_SkewnessIdx[sc.Index] = CalculateSkewness(sc, Subgraph_ATR.Data);
