@@ -45,21 +45,38 @@ canonical `lbrnet/data/raw/mes_ticks.parquet` (true per-tick data, no aggregatio
   `.context` file
 - `test_context_*.cpp` — native tests
 
-### `market_data_replay/` — offline `.context` generator (no Sierra Chart needed)
+### `market_data_replay/` — offline `.context`/`.alpha` generators + dim-selection exporter (no Sierra Chart needed)
 
-Reconstructs TS1/TS2/TS3 bars and the full observation vector directly from
-`lbrnet/data/raw/mes_ticks.parquet`, replicating the real Mahalanobis significant-change gate —
-built so training-cache generation doesn't require a live/replay Sierra Chart session.
+Reconstructs TS1/TS2/TS3 bars, the full 18D observation vector, and (since the
+2026-09-16 `.alpha` initiative) all 17 `PRIMARY_TRIGGER_MASK` pattern-detector
+indicators directly from `lbrnet/data/raw/mes_ticks.parquet` — built so
+training-cache generation doesn't require a live/replay Sierra Chart session.
+**Two separate CLI entry points**, not one — do not conflate them:
 
-- `MarketDataReplayEngine.h` — the reconstruction engine (tick aggregation → observation dims →
-  trigger gate)
+- `MarketDataReplayEngine.h` — the shared reconstruction engine (tick aggregation → observation
+  dims → 17 pattern detectors → trigger gates), reused unmodified by both CLIs below.
 - `CandidateObservationDims.h` / `CandidateTriggerGate.h` — dimension/gate definitions
-- `ContextFileWriter.h` — standalone, byte-faithful `.context` writer (can't link
-  `LBRFileManager.cpp` directly — pulls in `windows.h` transitively)
-- `MarketDataReplay.cpp` — CLI driver
+- `ContextFileWriter.h` / `AlphaFileWriter.h` — standalone, byte-faithful `.context`/`.alpha`
+  writers (can't link `LBRFileManager.cpp` directly — pulls in `windows.h` transitively)
+- `MarketDataReplayContext.cpp` — CLI driver for real, byte-compatible `.context`+`.alpha` file
+  pairs (two independent triggers: Mahalanobis gate for `.context`, `PRIMARY_TRIGGER_MASK`
+  dirty-bit + Locks A/B/D/E for `.alpha` — never unified). This is the tool that replaces a real
+  Sierra-Chart-collected `.context`/`.alpha` pair.
+- `MarketDataReplay.cpp` — a SEPARATE CLI driver for the dim-selection research pipeline
+  (`docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md`): streams the same
+  engine's output directly to flat Parquet (all 18 dims as columns, one row per Mahalanobis-gated
+  tick) for `lbrnet`'s dim-IN/OUT calibration work — NOT a `.context`/`.alpha` writer, does not use
+  `ContextFileWriter.h`/`AlphaFileWriter.h` at all (this reflects a real 2026-09-09 pivot away from
+  `.context` output for that specific research use case; corrected here 2026-09-17 after this
+  entry was found stale, still describing `MarketDataReplay.cpp` as "the CLI driver" singular).
 - `test_*.cpp` — native tests
-- Design reference: `docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md`,
+- Design reference (`.context`/`.alpha`): `docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md`,
+  plan: `docs/superpowers/plans/2026-09-16-market-data-replay-alpha-generator-implementation.md`
+- Design reference (original `.context`-only generator, superseded by the spec above):
+  `docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md`,
   plan: `docs/superpowers/plans/2026-09-08-market-data-replay-implementation.md`
+- Design reference (dim-selection Parquet exporter): `docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md`
+
 
 ### `observation_vector/` — HMM observation-vector dimension calibration/eval
 
