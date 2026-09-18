@@ -335,6 +335,14 @@ public:
     TurtleSoupEnum GetTurtleSoupResult() const { return m_lastTurtleSoup; }
     MomentumPinballEnum GetMomentumPinballResult() const { return m_lastMomentumPinball; }
     ElderBreakoutEnum GetElderBreakoutResult() const { return m_lastElderBreakout; }
+    // Diagnostic accessors (test verification that each pattern's own quality score,
+    // computed by its Detect*() call, actually makes it onto the wire -- see
+    // mutate_*_quality() call sites below).
+    float GetKangarooTailQuality() const { return m_lastKangarooTailQuality; }
+    float GetTurtleSoupQuality() const { return m_lastTurtleSoupQuality; }
+    float GetMomentumPinballQuality() const { return m_lastMomentumPinballQuality; }
+    float GetElderBreakoutQuality() const { return m_lastElderBreakoutQuality; }
+    float GetNr7Quality() const { return m_lastNr7Quality; }
     // Diagnostic accessor (audit-fix verification): the TS3-local 100-bar
     // DFA(minScale=8) Hurst actually fed into DetectElderBreakout -- distinct
     // from GetObservation().hurst_exponent()'s canonical TS1-based dim.
@@ -413,10 +421,15 @@ public:
         // this engine's own already-computed Task 7 results.
         auto& ind = *event.indicators;
         ind.mutate_kangaroo_tail(static_cast<int8_t>(m_lastKangarooTail));
+        ind.mutate_kangaroo_tail_quality(m_lastKangarooTailQuality);
         ind.mutate_turtle_soup(static_cast<int8_t>(m_lastTurtleSoup));
+        ind.mutate_turtle_soup_quality(m_lastTurtleSoupQuality);
         ind.mutate_momentum_pinball(static_cast<int8_t>(m_lastMomentumPinball));
+        ind.mutate_momentum_pinball_quality(m_lastMomentumPinballQuality);
         ind.mutate_elder_breakout(static_cast<int8_t>(m_lastElderBreakout));
+        ind.mutate_elder_breakout_quality(m_lastElderBreakoutQuality);
         ind.mutate_nr7(static_cast<int8_t>(m_lastNr7));
+        ind.mutate_nr7_quality(m_lastNr7Quality);
         ind.mutate_rsi(static_cast<int8_t>(m_lastRsiTop));
         ind.mutate_interm_stochastic(static_cast<int8_t>(m_lastIntermStochastic));
         ind.mutate_atr_proximity(static_cast<int8_t>(m_lastAtrProximity));
@@ -1745,6 +1758,10 @@ private:
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::TURTLE_SOUP);
             }
             m_lastTurtleSoup = result;
+            // Raw quality, from BEFORE the separation-filter override above -- matches
+            // production's own "Forward RAW quality score (Physics only)" unconditional
+            // SetMetrics() call (src/TripleScreen3.cpp), not gated on the filtered enum.
+            m_lastTurtleSoupQuality = quality;
         }
 
         // --- Momentum Pinball (needs previous-bar RSI3/RSI10 + cross-
@@ -1761,6 +1778,7 @@ private:
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::MOMENTUM_PINBALL);
             }
             m_lastMomentumPinball = result;
+            m_lastMomentumPinballQuality = quality;
         }
         m_prevRsi3 = rsi3;
         m_prevRsi10 = rsi10;
@@ -1835,6 +1853,7 @@ private:
                     m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::ELDER_BREAKOUT);
                 }
                 m_lastElderBreakout = result;
+                m_lastElderBreakoutQuality = quality;
             }
         }
 
@@ -1851,6 +1870,7 @@ private:
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::NR7);
             }
             m_lastNr7 = result;
+            m_lastNr7Quality = quality;
         }
 
         // --- RASCHKE_TACTICAL_TRIGGER (5-writer, last-write-wins field --
@@ -2624,6 +2644,15 @@ private:
 
     RaschkeTacticalTrigger m_lastRaschkeTactical = RaschkeTacticalTrigger::NONE;
     float m_lastKangarooTailQuality = 0.0f;  // KangarooTail's own qualityScore, needed by its RASCHKE_TACTICAL_TRIGGER gate
+    // Real bug found 2026-09-18 (lbrnet session): these 4 were already computed by their own
+    // Detect*() calls below but discarded -- only the enum got serialized, never the quality
+    // score IndicatorState's own schema has a field for. Added alongside the existing
+    // KangarooTail precedent, same "raw quality, unaffected by any later enum override" semantics
+    // as production's own SetMetrics() forwarding (src/TripleScreen3.cpp).
+    float m_lastTurtleSoupQuality = 0.0f;
+    float m_lastMomentumPinballQuality = 0.0f;
+    float m_lastElderBreakoutQuality = 0.0f;
+    float m_lastNr7Quality = 0.0f;
 
     // RASCHKE_STRATEGY_SETUP (TS2): TS2-local 100-bar DFA(minScale=8) Hurst
     // (mirrors TS3's own m_ts3HurstCloses/m_lastElderBreakoutTs3Hurst pattern,

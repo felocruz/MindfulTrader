@@ -737,6 +737,7 @@ int main() {
 
         check("task7_nr7_fires_strong_on_genuine_narrow_bar",
               engine.GetNr7Result() == NR7Enum::STRONG);
+        check("task7_nr7_quality_nonzero_when_strong", engine.GetNr7Quality() > 0.0f);
         const uint64_t dirtyMask = engine.ConsumePatternDirtyMask();
         check("task7_nr7_dirty_bit_set_on_classification_change",
               (dirtyMask & (1ULL << static_cast<uint64_t>(IndicatorKey::NR7))) != 0);
@@ -775,6 +776,7 @@ int main() {
 
         check("task7_kangaroo_tail_fires_bullish_strong",
               engine.GetKangarooTailResult() == KangarooTailEnum::BULLISH_STRONG);
+        check("task7_kangaroo_tail_quality_nonzero_when_strong", engine.GetKangarooTailQuality() > 0.0f);
         const uint64_t kangarooDirtyMask = engine.ConsumePatternDirtyMask();
         check("task7_kangaroo_tail_dirty_bit_set",
               (kangarooDirtyMask & (1ULL << static_cast<uint64_t>(IndicatorKey::KANGAROO_TAIL))) != 0);
@@ -1264,6 +1266,21 @@ int main() {
               event.indicators->elder_breakout() == static_cast<int8_t>(engine.GetElderBreakoutResult()));
         check("task9_indicator_state_nr7_matches",
               event.indicators->nr7() == static_cast<int8_t>(engine.GetNr7Result()));
+
+        // Real bug fixed 2026-09-18 (lbrnet finding): the 5 quality scores were computed
+        // internally by each pattern's own Detect*() call but never reached the wire --
+        // only kangaroo_tail_quality had a member to even hold the value, and even that one
+        // was never mutate_*()'d. All 5 must now round-trip exactly, same as their enums above.
+        check("task9_indicator_state_kangaroo_tail_quality_matches",
+              event.indicators->kangaroo_tail_quality() == engine.GetKangarooTailQuality());
+        check("task9_indicator_state_turtle_soup_quality_matches",
+              event.indicators->turtle_soup_quality() == engine.GetTurtleSoupQuality());
+        check("task9_indicator_state_momentum_pinball_quality_matches",
+              event.indicators->momentum_pinball_quality() == engine.GetMomentumPinballQuality());
+        check("task9_indicator_state_elder_breakout_quality_matches",
+              event.indicators->elder_breakout_quality() == engine.GetElderBreakoutQuality());
+        check("task9_indicator_state_nr7_quality_matches",
+              event.indicators->nr7_quality() == engine.GetNr7Quality());
         check("task9_indicator_state_rsi_matches",
               event.indicators->rsi() == static_cast<int8_t>(engine.GetRsiTopResult()));
         check("task9_indicator_state_interm_stochastic_matches",
