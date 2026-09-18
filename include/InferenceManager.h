@@ -84,6 +84,8 @@ public:
 
     /// Red gate: TransitionRisk > critical threshold (policy-driven, default 0.60).
     /// True → cancel working orders immediately (imminent regime flip).
+    /// Safe-closed: returns true if HMM state is stale (a working order shouldn't fill on a
+    /// dead regime signal — cancelling costs only a missed entry, not an open position).
     [[nodiscard]] bool IsHighTransitionRisk() const;
 
     /// Long-vs-GAUSSIAN_FRAGILE or Short-vs-PARETO_MOMENTUM after a genuine state change.

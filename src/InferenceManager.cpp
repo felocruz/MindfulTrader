@@ -53,12 +53,23 @@ void InferenceManager::AddToTrainingEventFB(MTS::Training::TrainingEventT& event
 // ── Consolidated Inference Policy Methods ──
 
 bool InferenceManager::IsInDefensiveMode() const {
+    // Safe-closed: an unreliable/dead regime signal is itself grounds for caution.
+    const uint64_t nowUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (IsHmmStateStale(nowUs)) return true;
+
     const float risk = std::clamp(m_hmmState.TransitionRisk(), 0.0f, 1.0f);
     const float threshold = RiskManager::Instance().GetTransitionRiskDefensiveThreshold();
     return risk > threshold;
 }
 
 bool InferenceManager::IsHighTransitionRisk() const {
+    // Safe-closed: cancelling a not-yet-filled working order on a dead regime signal
+    // costs only a missed entry, never an open position — cheap insurance.
+    const uint64_t nowUs = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    if (IsHmmStateStale(nowUs)) return true;
+
     const float risk = std::clamp(m_hmmState.TransitionRisk(), 0.0f, 1.0f);
     const float threshold = RiskManager::Instance().GetTransitionRiskCriticalThreshold();
     return risk > threshold;

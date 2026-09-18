@@ -79,6 +79,7 @@ set(SOURCE_FILES
     src/NhNlDataLoader.cpp
     src/PositionManager.cpp
     src/PositionManagerPatterns.cpp
+    src/RegimeManager.cpp
     src/RiskManager.cpp
     src/Scoring.cpp
     src/StructureEngine.cpp
