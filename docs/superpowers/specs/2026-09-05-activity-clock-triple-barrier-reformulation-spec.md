@@ -9,6 +9,25 @@ reformulation-spec.md` remains the governing spec ONLY for ATR's 4 peripheral, n
 (`ATRProximityEnum`/`EmaProximity`, Trade Grade Keltner Channels, VWAP distance normalization, Elder
 Breakout distance-beyond-band) — none of which set money-at-risk stop/target width.**
 
+**§4 validation, first real result 2026-09-18** (re-run of the 2026-09-06 `activity_clock_bv_
+comparison` work — its own output files no longer existed on disk, gitignored, never actually
+reviewed; see `tools/RECALIBRATION_LEDGER.md`'s 2026-09-18 15:22 row for the full re-run). Full
+471.9M-tick real dataset, 109,704 joint samples, threshold=700/bv-window=20 (the values this
+thread's own 2026-09-06 sweep had already settled on): the activity-clock BV-derived scale runs
+systematically ~42-55% of Wilder ATR's magnitude (ratio mean=0.546 vs completed-bar Wilder, 0.538
+vs intra-bar Wilder) — expected (return-based vol vs range-based ATR are different constructions),
+confirms §4 item 2's own plan to re-derive `stop_mult`/`target_r_mult` from scratch rather than
+reuse ATR-era constants, not itself a problem. **Real open question surfaced**: the core motivating
+claim (BV is natively jump-robust AND more reactive than ATR) was checked against the single
+largest BV jump in the dataset, using a FAIR baseline — Wilder's own intra-bar preview (matching
+live `sc.ATR()`'s actual every-tick re-evaluation, not the naive completed-bar-only value this
+tool's comments note was an "unfair handicap" in earlier informal comparisons). In this one
+example, intra-bar Wilder reacted the SAME bar as the real price shock; BV's own comparable jump
+landed one imbalance-bar later. **This is an N=1 anecdote, not a systematic verdict** — before this
+spec's design can be considered validated, a real multi-event reactivity comparison (top-K largest
+jumps/gaps in the dataset, lag measured systematically, not eyeballed from one trace) is still
+needed. Not yet built.
+
 ## 0. Origin and decisive framing
 
 This began as a narrower question (`docs/superpowers/specs/2026-09-05-robust-atr-reformulation-
