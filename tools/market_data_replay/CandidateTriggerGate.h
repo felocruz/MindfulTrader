@@ -1,13 +1,28 @@
-// CandidateTriggerGate.h — tool-local copy of ObservationTriggerGate's
-// median/MAD Mahalanobis significant-change logic, sized to the EVOLVING
-// candidate dim count (CandidateObservationDims.h), not the fixed 18D
-// ObservationData space. Deliberately NOT shared with
-// include/ObservationTriggerGate.h -- the dim-selection spec (§2) requires
-// that live ContextManager.cpp's gate stay untouched until dim selection
-// concludes; this is a genuinely separate copy, not a parameterization of
-// the shared header.
+// CandidateTriggerGate.h — Mahalanobis significant-change decision over the
+// EVOLVING candidate dim count (CandidateObservationDims.h), computed
+// DIRECTLY from FeatureScaler's already-scaled candidate vector. Deliberately
+// NOT shared with include/ObservationTriggerGate.h -- the dim-selection spec
+// (§2) requires that live ContextManager.cpp's gate stay untouched until dim
+// selection concludes; this is a genuinely separate copy, not a
+// parameterization of the shared header.
 //
-// docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md §3.
+// docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md
+// §3/§3c (the push-on-change/rolling-window design in §3a/§3b was tried,
+// native-tested, and then found empirically NOT to fix the real-data
+// emission rate -- 73.2% vs. an expected ~10% -- because it still ran a
+// SECOND, independent median/MAD re-normalization over FeatureScaler's
+// OWN already-scaled output. §3c replaces that design entirely: no rolling
+// window, no re-normalization, no per-dim warm-up concept of its own --
+// FeatureScaler already produces properly-scaled, institutional-grade
+// z-scores (rolling robust Soft-Log-Z/Log-Z, shrinkage-corrected, its own
+// 500-sample warmup already gates candidateObs's validity upstream in
+// MarketDataReplayEngine::ComputeShouldEmit()). Re-normalizing that output
+// through a SECOND small rolling window destroyed FeatureScaler's own
+// calibration and reintroduced the exact MAD-collapse failure mode §3a/§3b
+// were trying to fix, just one layer up (diagnosed independently by Gemini
+// CLI, `docs/Gemini.md`, then empirically confirmed: a direct
+// sum-of-squares metric on the same real data gave 7.1%, matching the
+// chi-squared(10) 90th-percentile prediction almost exactly).
 
 #pragma once
 
@@ -23,98 +38,54 @@ namespace mdr {
 struct CandidateTriggerMetrics {
     float mahalanobis_distance = 0.0f;
     bool significant_change = false;
+    // Per-dim breakdown (diagnostics) -- now literally just currentObs itself
+    // (FeatureScaler's own scaled output), squared-summed to
+    // mahalanobis_distance^2. Kept as its own field so a future investigation
+    // can attribute a trigger to specific dims without extra plumbing.
+    std::array<float, kCandidateDimCount> perDimZ{};
 };
 
 // Operates on a caller-provided candidate-only vector (kCandidateDimCount
-// floats, already extracted/scaled by the caller) -- this class has no
-// knowledge of the full 18D ObservationData layout at all.
+// floats, already extracted + FeatureScaler-scaled by the caller) -- this
+// class has no knowledge of the full 18D ObservationData layout, and no
+// internal state of its own beyond "has a baseline ever been set" (used only
+// to force the very first post-warmup tick to emit unconditionally, matching
+// live ContextManager.cpp's ShouldTriggerHMM(hmm_initialized,
+// significant_change) precedent).
 class CandidateTriggerGate {
 public:
-    static constexpr std::size_t kMinSamples = 40;
-    static constexpr float kVarEps = 1e-6f;
-    static constexpr float kTriggerMult = 1.0f;
-    static constexpr float kBaseEpsilon = 4.0f;
+    // kBaseEpsilon=5.1: re-derived 2026-09-16 for kCandidateDimCount=18 (all
+    // 18 schema dims, operator directive -- this gate is now a pure row-
+    // thinning heuristic, not a dim-selection mechanism; lbrnet's own
+    // Student-t HMM training does dim selection). For 18 independent
+    // standard-normal z's, sum(z_i^2) ~ chi-squared(18); the 90th percentile
+    // of chi-squared(18) is 25.99 (Wilson-Hilferty approximation, cross-
+    // checked against the standard chi-squared table), and sqrt(25.99) =
+    // 5.098 ≈ 5.1 -- same ~10% base (false-positive) trigger rate this
+    // threshold has always targeted, just re-derived for the new dimension
+    // count (was 4.0 for kCandidateDimCount=10, chi-squared(10) 90th
+    // percentile 15.987, sqrt=3.998). Re-derive again if kCandidateDimCount
+    // changes.
+    static constexpr float kBaseEpsilon = 5.1f;
 
-    void PushObservation(const std::array<float, kCandidateDimCount>& obs) {
-        for (std::size_t dim = 0; dim < kCandidateDimCount; ++dim) {
-            m_history[dim].push_back(obs[dim]);
-            if (m_history[dim].size() > kMinSamples) {
-                m_history[dim].pop_front();
-            }
-        }
-    }
-
-    std::size_t SampleCount() const { return m_history[0].size(); }
     bool HasBaseline() const { return m_hasBaseline; }
-    void SetBaseline(const std::array<float, kCandidateDimCount>& obs) {
-        m_baseline = obs;
-        m_hasBaseline = true;
-    }
-    void Reset() {
-        for (auto& h : m_history) h.clear();
-        m_hasBaseline = false;
-    }
+    void SetBaseline(const std::array<float, kCandidateDimCount>&) { m_hasBaseline = true; }
+    void Reset() { m_hasBaseline = false; }
 
     CandidateTriggerMetrics ComputeTriggerDecisionMetrics(
         const std::array<float, kCandidateDimCount>& currentObs) const {
         CandidateTriggerMetrics metrics;
-        if (m_history[0].size() < kMinSamples) return metrics;
-
         float distance_sq = 0.0f;
-        const int n = static_cast<int>(m_history[0].size());
-        const int mid = n / 2;
-
         for (std::size_t dim = 0; dim < kCandidateDimCount; ++dim) {
-            std::array<float, kMinSamples + 1> scratch{};
-            for (int k = 0; k < n; ++k) {
-                scratch[static_cast<std::size_t>(k)] = m_history[dim][static_cast<std::size_t>(k)];
-            }
-            std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-            const float median = scratch[static_cast<std::size_t>(mid)];
-
-            for (int k = 0; k < n; ++k) {
-                scratch[static_cast<std::size_t>(k)] = std::abs(
-                    m_history[dim][static_cast<std::size_t>(k)] - median);
-            }
-            std::nth_element(scratch.begin(), scratch.begin() + mid, scratch.begin() + n);
-            const float madScale = scratch[static_cast<std::size_t>(mid)] * 1.4826f;
-
-            const float safe_variance = std::max(madScale * madScale, kVarEps);
-            const float z = (currentObs[dim] - median) / std::sqrt(safe_variance);
-            distance_sq += z * z;
+            metrics.perDimZ[dim] = currentObs[dim];
+            distance_sq += currentObs[dim] * currentObs[dim];
         }
-
         metrics.mahalanobis_distance = std::sqrt(std::max(distance_sq, 0.0f));
-        metrics.significant_change = metrics.mahalanobis_distance >= (kBaseEpsilon * kTriggerMult);
+        metrics.significant_change = metrics.mahalanobis_distance >= kBaseEpsilon;
         return metrics;
     }
 
 private:
-    // Minimal fixed-capacity deque substitute -- avoids pulling in
-    // include/RingBuffer.h (a live-execution-path header) for this tool-local
-    // copy; capacity is kMinSamples, push_back+pop_front only.
-    struct RingBufferLike {
-        std::array<float, kMinSamples> buf{};
-        std::size_t count = 0;
-        std::size_t head = 0;
-
-        std::size_t size() const { return count; }
-        void push_back(float v) {
-            buf[(head + count) % kMinSamples] = v;
-            if (count < kMinSamples) ++count;
-            else head = (head + 1) % kMinSamples;
-        }
-        void pop_front() {
-            if (count == 0) return;
-            head = (head + 1) % kMinSamples;
-            --count;
-        }
-        void clear() { count = 0; head = 0; }
-        float operator[](std::size_t i) const { return buf[(head + i) % kMinSamples]; }
-    };
-
-    std::array<RingBufferLike, kCandidateDimCount> m_history{};
-    std::array<float, kCandidateDimCount> m_baseline{};
     bool m_hasBaseline = false;
 };
 

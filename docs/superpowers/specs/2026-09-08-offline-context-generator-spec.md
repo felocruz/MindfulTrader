@@ -55,7 +55,17 @@ already applied in §3 open question 1 (splice tick data continuously across con
 matching SC's own front-month rollover convention, no per-contract state reset) — the same lens
 should be applied to every future design choice this spec makes.
 
-**Reusability mandate for a future `.alpha` generator (operator directive, 2026-09-08).** The
+**Reusability mandate for a future `.alpha` generator (operator directive, 2026-09-08) — SUPERSEDED
+2026-09-16, see `docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md`.**
+The one-shared-trigger framing below turned out not to match production once traced end-to-end:
+`.context` (this spec) and `.alpha` are gated by two genuinely **independent** triggers in real
+production (`ContextManager::CheckAndTriggerHMM`'s Mahalanobis gate vs. `EventDataCollectorStudy
+.cpp`'s own Lock A-E + `HasSignificantChange()` gate) — not one trigger with a second consumer
+bolted on. The new spec's design keeps this generator's per-tick observation-vector computation
+fully reusable/unmodified (confirmed real production parity: `.alpha`'s observation field is
+sourced from the exact same `m_latestScaledObs` buffer this generator already reconstructs) but
+adds `.alpha` emission as a **separate, independently-gated, independently-toggleable** path
+alongside it, rather than a shared-trigger extension. Original text, kept for history: The
 offline `.alpha` (`TrainingEvent`) generator is a stated near-future follow-on, not speculative —
 so per this repo's own explicit "single source of truth, not a parallel reimplementation"
 convention (`CLAUDE.md`'s `IndicatorManager` Task 10 note; the `GetTrainingEventT`

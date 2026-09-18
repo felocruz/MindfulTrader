@@ -39,23 +39,27 @@ namespace {
 
 constexpr std::size_t kChunkRows = 2'000'000;  // matches context_to_parquet.cpp's own convention
 
-// Flat, columnar accumulation buffer -- one std::vector<float> per candidate
-// dim, plus sequence_id/timestamp_us/bars_since_last_update. Reused across
+// Flat, columnar accumulation buffer -- one std::vector<float> per
+// ObservationData dim (ALWAYS all 18, schema order, regardless of the
+// current candidate/IN gate set -- operator directive, 2026-09-16: a dim
+// marked OUT still gets its own column, just hard-zeroed by the engine, so
+// lbrnet's ignore-list -- not a shrinking column count -- is what excludes
+// it), plus sequence_id/timestamp_us/bars_since_last_update. Reused across
 // chunks (cleared, not reallocated) to avoid per-chunk heap churn (DOD).
 struct ChunkBuffers {
-    std::array<std::vector<float>, mdr::kCandidateDimCount> candidate_cols;
+    std::array<std::vector<float>, MTS::Schema::Contract::kObservationDim> obs_cols;
     std::vector<std::uint64_t> sequence_id;
     std::vector<std::int64_t> timestamp_us;
     std::vector<float> bars_since_last_update;
 
     void Reserve(std::size_t n) {
-        for (auto& col : candidate_cols) col.reserve(n);
+        for (auto& col : obs_cols) col.reserve(n);
         sequence_id.reserve(n);
         timestamp_us.reserve(n);
         bars_since_last_update.reserve(n);
     }
     void Clear() {
-        for (auto& col : candidate_cols) col.clear();
+        for (auto& col : obs_cols) col.clear();
         sequence_id.clear();
         timestamp_us.clear();
         bars_since_last_update.clear();
@@ -65,7 +69,7 @@ struct ChunkBuffers {
 
 arrow::Status BuildArrowSchema(std::shared_ptr<arrow::Schema>* out) {
     std::vector<std::shared_ptr<arrow::Field>> fields;
-    for (std::size_t dim : mdr::kCandidateDims) {
+    for (std::size_t dim = 0; dim < MTS::Schema::Contract::kObservationDim; ++dim) {
         fields.push_back(arrow::field(
             MTS::Schema::Contract::kObservationFieldNames[dim], arrow::float32()));
     }
@@ -80,7 +84,7 @@ arrow::Status BuildRecordBatch(
     const ChunkBuffers& buf, const std::shared_ptr<arrow::Schema>& schema,
     std::shared_ptr<arrow::RecordBatch>* out) {
     std::vector<std::shared_ptr<arrow::Array>> columns;
-    for (const auto& col : buf.candidate_cols) {
+    for (const auto& col : buf.obs_cols) {
         arrow::FloatBuilder builder;
         ARROW_RETURN_NOT_OK(builder.AppendValues(col));
         std::shared_ptr<arrow::Array> arr;
@@ -141,7 +145,9 @@ int main(int argc, char** argv) {
     ToolProgressLogger progress("market_data_replay");
     progress.Log("streaming from " + ticksPath + " -> " + outputPath +
                   " (max-rss-mb=" + std::to_string(maxRssMB) + ", " +
-                  std::to_string(mdr::kCandidateDimCount) + " candidate dims, direct-to-Parquet)");
+                  std::to_string(MTS::Schema::Contract::kObservationDim) + " dims written (fixed), " +
+                  std::to_string(mdr::kCandidateDimCount) + " currently IN the Mahalanobis gate, " +
+                  "direct-to-Parquet)");
 
     std::shared_ptr<arrow::Schema> schema;
     auto schemaStatus = BuildArrowSchema(&schema);
@@ -212,8 +218,8 @@ int main(int argc, char** argv) {
                 if (significant) {
                     const auto& obs = engine.GetObservation();
                     const auto rawObs = MTS::Schema::Contract::ToObservationArray(obs);
-                    for (std::size_t i = 0; i < mdr::kCandidateDimCount; ++i) {
-                        buffers.candidate_cols[i].push_back(rawObs[mdr::kCandidateDims[i]]);
+                    for (std::size_t i = 0; i < MTS::Schema::Contract::kObservationDim; ++i) {
+                        buffers.obs_cols[i].push_back(rawObs[i]);
                     }
                     buffers.sequence_id.push_back(nextSequenceId++);
                     buffers.timestamp_us.push_back(ts);

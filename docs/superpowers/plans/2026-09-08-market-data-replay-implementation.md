@@ -68,7 +68,7 @@ confirmed pure/standard-layout/fixed-size (spec §1) — this plan needs no new 
 new generated-header content, only consumption.
 
 **Never hand-edit either generated file directly** — both are regenerated on demand and any local
-patch is silently lost the next time `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`
+patch is silently lost the next time `bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh`
 runs (the canonical entrypoint per `CLAUDE.md`'s hard requirement — a thin wrapper around `schema/
 regenerate_schema.sh`, which calls `flatc` for the raw schema headers and `generate_contract_header.py`
 for the contract header).
@@ -801,6 +801,165 @@ in this plan's own scope (`MarketDataReplayEngine`/CLI) yet.
   scoped gate fixed the earlier 69-74% blowup). Verified valid/readable via `pyarrow.parquet.
   read_table` (correct 13-column schema, correct row count).
 
+### Post-implementation finding: Task 13/14 confirmed unwired on real full-density data; root
+cause is a tick-clock vs. update-clock mismatch (2026-09-15)
+
+A `full_fidelity_smoke` run reproduced the original 2026-09-09 problem this dim-selection phase
+was supposed to have fixed — 58.5% significant-change rate on the full 476.7M-tick run
+(`tools/output/market_data_replay_20260914_084354.txt`), 69.6% on a 50M-tick smoke sample
+(`tools/output/market_data_replay_20260914_214750.txt`). Full diagnosis: dim-selection spec §0a/§3a
+— not duplicated here. Headline: despite Task 13/14 below being marked done,
+`MarketDataReplayEngine.h`/`MarketDataReplay.cpp` never actually used `CandidateTriggerGate`/the
+direct-Parquet writer in the run that produced this file — both still ran the original full 18-dim
+`otg::ObservationTriggerGate` + `.context`→Parquet path, possibly (not confirmed via `git log`) a
+deliberate revert for diagnosis (diagnostic scaffolding — `m_correctedOrderGate` + per-channel
+fire-rate counters — only makes sense against the split-channel gate `CandidateTriggerGate` lacks)
+but never restored either way, and the 3
+`tools/RECALIBRATION_LEDGER.md` rows this produced were left `PENDING REVIEW`. Separately, even
+once `CandidateTriggerGate` is genuinely wired in, it would not fully fix the rate on its own: 2 of
+the 10 candidate dims (`log_scale_ratio`, `relative_range`) exhibit the same tick-clock/update-clock
+MAD-collapse degeneracy already diagnosed for `tail_index`/`fast_taleb_kurtosis` (both
+non-candidates) — confirmed via direct measurement on `full_fidelity_smoke.parquet`:
+`relative_range` frozen 99.7% of tick-to-tick transitions (runs up to 35,119 ticks), `log_scale_ratio`
+frozen ~82-85% (runs up to 184 ticks) — both far exceeding the gate's 40-tick window. Fix design:
+dim-selection spec §3a (push-on-change history + compute-before-push ordering). New tasks below.
+
+---
+
+### Task 16: Actually wire `CandidateTriggerGate` into the engine/CLI (finish Task 13/14 for real)
+— DONE, 2026-09-15 (turned out to be a restore, not a re-wire)
+
+**Files:** `tools/market_data_replay/MarketDataReplayEngine.h`,
+`tools/market_data_replay/MarketDataReplay.cpp`.
+
+**Spec:** dim-selection spec §0a.
+
+- [x] **Resolved via `git log`/`git show`, not guessed**: commit `ea752c4` already had
+  `mdr::CandidateTriggerGate` + the direct-Parquet writer correctly committed. The full-gate/
+  `.context` version running on this machine was **uncommitted working-tree changes** (`git status`
+  showed `MM` on both files) — a revert-for-diagnosis that was never committed. Preserved via
+  `git stash push` (`stash@{0}`, message references this investigation) rather than discarded, then
+  the clean `ea752c4` state was restored as the base for Task 17's fix. No manual re-wiring of
+  `CandidateTriggerGate` was actually needed — it was already there.
+- [x] Direct-Parquet output (Task 14's original design, 10 candidate dims +
+  `sequence_id`/`timestamp_us`/`bars_since_last_update`) confirmed as the sole CLI output mode —
+  no `--full-fidelity` flag added; the diagnostic detour's value (finding the root cause) is fully
+  captured in the spec/plan/ledger, so a permanent full-18D dump mode wasn't judged worth the extra
+  maintained surface. Revisit if a future investigation needs it again.
+- [x] `test_market_data_replay_engine.cpp` + `test_candidate_trigger_gate.cpp` both pass against
+  the actually-wired (post-stash-restore, post-Task-17-fix) engine — see Task 17's own test results.
+
+### Task 17: Event-indexed (push-on-change) candidate history + compute-before-push ordering —
+DONE, 2026-09-15, then SUPERSEDED the same day (empirically insufficient on real data — see
+Task 19)
+
+**Files:** `tools/market_data_replay/CandidateTriggerGate.h`,
+`tools/market_data_replay/test_candidate_trigger_gate.cpp`.
+
+**Spec:** dim-selection spec §3a.
+
+- [x] Track a per-dim `lastPushedValue`; `PushObservation()` only appends to a dim's history buffer
+  when the incoming raw value differs from that dim's last pushed value by more than
+  `kFreezeEpsilon=1e-6f`.
+- [x] **Redesign for per-dim-independent buffer lengths** (spec §3b) — added `AllDimsWarmedUp()`
+  (true only once every dim independently holds `kMinSamples` distinct samples),
+  `PerDimSampleCounts()` (diagnostic), and redefined `SampleCount()` to report the minimum across
+  dims. `ComputeTriggerDecisionMetrics()`'s loop now uses each dim's own history size.
+- [x] Changed `ComputeShouldEmit()`'s call order so `ComputeTriggerDecisionMetrics()` runs against
+  the pre-update history, then `PushObservation()` happens after.
+- [x] `kBaseEpsilon=4.0` re-derived and confirmed correct, left unchanged: for 10 independent
+  standard-normal z's, `sum(z_i^2) ~ chi-squared(10)`, whose 90th percentile is 15.987
+  (`sqrt(15.987)=3.998≈4.0`) — the derivation is now a code comment in `CandidateTriggerGate.h`,
+  not left implicit.
+- [x] New unit tests (17/17 pass, `tools/market_data_replay/test_candidate_trigger_gate.cpp`):
+  push-on-change dedup (`repeated_identical_value_never_accumulates_history`), a frozen-then-step
+  regression replaying the real `relative_range`/`log_scale_ratio` pattern
+  (`frozen_dim_normal_step_z_is_bounded`, z stays <20 vs. the pre-fix hundreds/thousands) alongside
+  a genuine-anomaly-still-detected control, per-dim z sum-of-squares consistency, and per-dim
+  independent warm-up timing (slow vs. fast dims in the same fixture).
+- [x] Explicitly NOT ported to the shared `include/ObservationTriggerGate.h` yet — tracked as a §4
+  closing-contract line item in the spec.
+- [x] **Real, previously-unknown test-fixture bug found and fixed while validating**: the existing
+  Task 8 engine-test fixture used a perfectly regular hourly tick cadence with no intrabar range,
+  which left `burstiness_index`/`liq_fragility` permanently stuck at 1-2 samples under the new
+  per-dim-independent design (confirmed via a standalone debug harness using the new
+  `GetCandidateSampleCounts()` diagnostic accessor) — not a real-world condition (both dims change
+  frequently on real tick data), purely a too-regular synthetic fixture. Fixed by clustering ticks
+  within each TS3 bucket with randomized intra-cluster timing/volume and randomized inter-cluster
+  (macro) spacing; all 75 existing engine tests + the fixed Task 8 assertions now pass.
+- [x] **Superseded, 2026-09-15, same day**: a real 50M-tick run with this fix applied still showed
+  71.0% significant-change rate — barely different from the pre-fix 69.6%. Root cause (this fix
+  was necessary but not sufficient): see Task 19. `GetCandidateSampleCounts()`/`AllDimsWarmedUp()`/
+  `PushObservation()`/`kFreezeEpsilon` were all removed in Task 19's rewrite — kept here as a
+  record of what was tried and why it wasn't enough, not because the code still exists.
+
+### Task 19: The real fix — remove `CandidateTriggerGate`'s own double-normalization, compute
+directly from `FeatureScaler`'s already-scaled output — DONE, 2026-09-15
+
+**Files:** `tools/market_data_replay/CandidateTriggerGate.h` (rewritten),
+`tools/market_data_replay/MarketDataReplayEngine.h` (`ComputeShouldEmit()` simplified, new
+`GetLastScaledCandidateObs()` diagnostic accessor added), `tools/market_data_replay/
+test_candidate_trigger_gate.cpp` (rewritten), `tools/market_data_replay/
+diagnose_real_data_trigger.cpp` (new ad hoc diagnostic, not part of the CLI/build).
+
+**Spec:** dim-selection spec §3c.
+
+- [x] **Independent second opinion sought before guessing at a second fix**: Gemini CLI invoked
+  directly, read-only (`--approval-mode plan`, structurally incapable of editing files) — full
+  prompt and verbatim response in `docs/Gemini.md`. Correctly diagnosed: `CandidateTriggerGate` ran
+  its own rolling median/MAD re-normalization on top of `FeatureScaler`'s own already-scaled
+  output — several dims (`amihud_illiquidity`, `liq_fragility`, `hurst_exponent`, `mean_rev_z`) are
+  reactive on essentially every tick, so push-on-change never skipped them, and the gate's own
+  40-sample window re-normalized a continuously-drifting already-scaled sequence, reproducing the
+  same MAD-collapse mechanism one layer up.
+- [x] **Verified against the codebase before trusting it**: `include/FeatureScaler.h`'s own
+  comments confirm Amihud's real rolling MAD is ~1e-11 to 1e-10 (matches Gemini's independent
+  estimate almost exactly) and that its floor was deliberately lowered specifically so this dim's
+  z-score never collapses to exactly zero — i.e. it's essentially never bit-identical tick-to-tick,
+  so push-on-change structurally cannot skip it.
+- [x] **Empirically confirmed before implementing the real gate change** (not just theorized):
+  extended `diagnose_real_data_trigger.cpp` to compute a **direct** sum-of-squares metric
+  (`sqrt(sum(currentObs[dim]^2))`, no rolling window at all) alongside the existing
+  double-normalized one, on the identical 8,000,000-tick real sample. Result: current (double-
+  normalized) gate = 73.17%, direct metric = **7.14%** — matching the chi-squared(10) 90th-
+  percentile prediction (~10%) closely.
+- [x] Rewrote `CandidateTriggerGate` to be stateless beyond `HasBaseline()`/`SetBaseline()`: no
+  rolling window, no median/MAD, no per-dim warm-up concept of its own (FeatureScaler's own
+  500-sample warmup, already checked upstream, is the only warm-up gate needed). `kBaseEpsilon=
+  4.0` unchanged — now genuinely applicable since `currentObs` IS FeatureScaler's own scaled
+  output, not a re-derived quantity.
+- [x] Rewrote `test_candidate_trigger_gate.cpp` for the simplified API (11/11 pass): zero input not
+  significant, small/large uniform inputs above/below threshold, a single-dim spike still detected,
+  `perDimZ` literally equals the input vector, baseline/reset semantics.
+- [x] Full engine test suite re-run unchanged (75/75 pass) — the Task 8 fixture fix from the
+  superseded attempt is still valid and needed (it tests real engine warm-up timing, independent of
+  which gate design is used).
+- [x] Full real-dataset (476.7M-tick) validation run launched to confirm the final rate at full
+  scale, not just the 8M-tick sample — **completed**: 476,745,947 ticks processed, 24,170,802
+  records written, **final significant-change rate = 5.07%** (`tools/log/market_data_replay.log`) —
+  sane, same order of magnitude as the 8M-tick sample's 7.14% and the chi-squared(10) theoretical
+  prediction (~10%). Output copied to `lbrnet/data/raw/candidate_direct_metric_full.parquet`
+  (808MB) — not yet renamed/promoted to replace the stale, degenerate-gate `mes_candidates.parquet`
+  — a deliberate next step, not done automatically, since that file feeds downstream Feature
+  Saliency EM work.
+
+### Task 18: Re-run full validation, close out the 2026-09-14 ledger rows
+
+**Files:** none (execution + `tools/RECALIBRATION_LEDGER.md` status update only).
+
+- [x] Re-run the full 476.7M-tick `market_data_replay` pass — done as part of Task 19, using the
+  real (double-normalization-free) fix, not the superseded Task 17 attempt.
+- [x] Confirm the resulting significant-change rate is in the same order of magnitude as the
+  chi-squared(10) theoretical prediction (~10%) and the 8M-tick sample's empirical 7.14% —
+  **confirmed: 5.07% on the full 476,745,947-tick dataset**.
+- [ ] Update the 3 `PENDING REVIEW` `market_data_replay` rows dated 2026-09-14 in
+  `tools/RECALIBRATION_LEDGER.md` to reference this finding + the fix, per the ledger's own "Update
+  its Status column by hand once a finding is consumed" convention.
+- [ ] Only then re-run `feature_saliency_eval` against the corrected output before trusting any
+  Phase 2/mRMR selection conclusions drawn from the earlier (degenerate-gate) `mes_candidates.parquet`.
+
+---
+
 ### Task 15: Live-code refactor once dim selection concludes (dim-selection spec §4) — BLOCKED,
 not startable until Feature Saliency EM/HMM training actually concludes which dims belong
 
@@ -814,6 +973,8 @@ not duplicated here.
 - [ ] Prune `ObservationData` (`../schema/mts_schema.fbs`) to the final selected dims; regenerate
   via `regenerate_schema.sh` (never hand-edit generated headers).
 - [ ] Update `include/ObservationTriggerGate.h` to match `CandidateTriggerGate.h`'s final dim set.
+- [ ] Port Task 19's real fix into `include/ObservationTriggerGate.h` too — the shared gate has the
+  same double-normalization structure over an already-scaled `currentObs` (dim-selection spec §4).
 - [ ] Per-dropped-dim audit for non-observation-vector consumers (`PositionManager.cpp`,
   `RiskManager.cpp`, `Scoring.cpp`, `TradeDecisionEngine.h`) — do this **before** removing any
   computation, not after. Known cases already flagged, re-verify at refactor time: `tail_index` →
