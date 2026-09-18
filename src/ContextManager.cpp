@@ -10,6 +10,7 @@
 #include "RecurrenceRateEngine.h"
 #include "RQAEpsilonSelector.h"
 #include "DfaHurstExponent.h"
+#include "ActivityClockMeanReversion.h"
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -471,6 +472,22 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             m_localRiskContext.fastHurstExponent = std::isfinite(fastHurstRaw) ? fastHurstRaw : s_lastValidFastHurst;
             if (std::isfinite(fastHurstRaw)) { s_lastValidFastHurst = m_localRiskContext.fastHurstExponent; }
 
+            // Dim 17 (fast_mean_rev_z): wired 2026-09-17, EXPLICIT operator authorization.
+            // The 2026-09-04 "do not wire" decision (docs/superpowers/specs/2026-09-06-
+            // observation-vector-gang-statistical-reformulation-initiative.md) stands and is NOT
+            // being re-litigated here -- that was a well-powered hit-rate test on raw predictive
+            // power, a different question. What was never run is the HMM-based cross-state
+            // discrimination test (this project's preferred dim-selection methodology, blocked
+            // historically by model-staleness circularity). This wiring exists solely to make
+            // that measurement possible; it is not a claim the dim is useful. See
+            // docs/superpowers/specs/2026-09-17-live-trading-log-observability-and-data-quality-
+            // spec.md §4 for the full authorization trail.
+            static float s_lastValidFastMeanRevZ = 0.0f;
+            const float fastMeanRevZRaw = ActivityClockMeanRevZ(returnsArray.data(), 100);
+            m_localRiskContext.fastMeanRevZ = std::isfinite(fastMeanRevZRaw) ? fastMeanRevZRaw : s_lastValidFastMeanRevZ;
+            if (std::isfinite(fastMeanRevZRaw)) { s_lastValidFastMeanRevZ = m_localRiskContext.fastMeanRevZ; }
+            obs[OBS_FAST_MEAN_REV_Z] = m_localRiskContext.fastMeanRevZ;
+
             // Dim 13 (recurrence_rate): replaced 2026-08-28, source moved from
             // TS2's time-bar CalculateRecurrenceRate() to this same buffer
             // (spec 2026-08-25-observation-vector-institutional-hardening-
@@ -504,6 +521,8 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             obs[OBS_SKEWNESS] = 0.0f;  // Warmup: neutral (symmetric)
             obs[OBS_RECURRENCE_RATE] = 0.0f;  // Warmup: neutral (matches contract's [0,1] floor)
             m_localRiskContext.fastHurstExponent = 0.5f;  // Warmup: neutral (random-walk default)
+            m_localRiskContext.fastMeanRevZ = 0.0f;  // Warmup: neutral (no deviation)
+            obs[OBS_FAST_MEAN_REV_Z] = 0.0f;
         }
         obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
         obs[OBS_FAST_HURST_EXPONENT] = m_localRiskContext.fastHurstExponent;
@@ -548,16 +567,15 @@ MTS::Schema::AsymmetryContext ContextManager::GetAsymmetryContext() const {
     });
 }
 
-// Utility: Calculate event velocity from timestamp history
+// Utility: Calculate event velocity from timestamp history.
+// Buffer maintenance (push_back/pop_front) moved OUT to CheckAndTriggerHMM()'s
+// own Phase 1 (2026-09-17) -- it used to live here, which meant it silently
+// never ran whenever a caller supplied a synthetic velocity (every
+// EventDataCollectorStudy.cpp call), permanently starving
+// CalculateBurstinessIndex()'s shared m_eventTimestampsUS input. See
+// docs/superpowers/specs/2026-09-17-live-trading-log-observability-and-data-
+// quality-spec.md §4 for the full trace.
 float ContextManager::CalculateEventVelocity(uint64_t now_us) {
-    // Deque maintenance UNCHANGED: CalculateBurstinessIndex() (below) independently
-    // reads this same m_eventTimestampsUS history for its own CV-of-inter-arrival-times
-    // computation (raschkeBurst) -- do not remove or resize this buffer.
-    if (m_eventTimestampsUS.size() >= EVENT_VELOCITY_MAX) {
-        m_eventTimestampsUS.pop_front();
-    }
-    m_eventTimestampsUS.push_back(now_us);
-
     // Velocity itself: EMA of inter-arrival time (uncapped, O(1)), replacing the
     // old windowed-count formula, which was mathematically capped at
     // EVENT_VELOCITY_MAX / EVENT_VELOCITY_WINDOW_SEC = 50.0 events/sec regardless
@@ -1024,6 +1042,24 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     // ========================================================================
     // PHASE 1: Calculate Event Velocity (Events Per Second)
     // ========================================================================
+    // Shared timestamp buffer maintenance -- MUST run unconditionally, every
+    // call, regardless of which velocity path is used below. CalculateBurstinessIndex()
+    // (the Burstiness Loop right after) depends on m_eventTimestampsUS independently of
+    // event_velocity's own computation. Previously this lived inside
+    // CalculateEventVelocity() itself, which is skipped whenever syntheticVelocity is
+    // supplied -- i.e. every EventDataCollectorStudy.cpp call -- so the buffer never
+    // grew past 0 entries in any data-collection/replay session, and
+    // CalculateBurstinessIndex()'s own n<20 guard fired on every single call, freezing
+    // burstiness_index/raschke_burst at a constant 0.0f forever (confirmed live,
+    // 2026-09-17: dominanceRatio=1.0 for 165,000+ consecutive samples). Live production's
+    // SCStudies.cpp path was unaffected -- it always omits syntheticVelocity. See
+    // docs/superpowers/specs/2026-09-17-live-trading-log-observability-and-data-quality-
+    // spec.md §4 for the full trace.
+    if (m_eventTimestampsUS.size() >= EVENT_VELOCITY_MAX) {
+        m_eventTimestampsUS.pop_front();
+    }
+    m_eventTimestampsUS.push_back(now_us);
+
     // If caller provides a synthetic velocity (>= 0), use it directly.
     // Data-collection / replay passes NumberOfTrades/SecondsPerBar (EMA-smoothed)
     // because sub-bar timestamps are clamped to bar-open during replay.

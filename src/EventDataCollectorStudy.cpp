@@ -1,8 +1,9 @@
 #include "MindfulTrader_Precompiled.h"
 #include "LBRFileManager.h"
-#include "TradeSignalManager.h" // ELITE: Access to model confidence
+#include "InferenceManager.h"
 #include "Logger.h"
 #include "ActivityClockManager.h"
+#include "BarKeyedLogThrottle.h"
 
 // Persistent IDs
 namespace {
@@ -22,6 +23,20 @@ namespace {
     constexpr int EDC_LOCK_D_BLOCK_COUNT_ID = 70;      // TS1 freshness lock not ready
     constexpr int EDC_LOCK_D_STALE_STREAK_ID = 71;     // Consecutive stale TS1 checks
     constexpr int EDC_LOCK_E_BLOCK_COUNT_ID = 72;      // TS2 structural freshness lock not ready
+
+    // Bar-keyed (sc.Index, TS3 15-min bars -- this study's own chart, not wall-
+    // clock/tick-count) edge-triggered log throttle state for LockA/LockB --
+    // see BarKeyedLogThrottle.h for the full rationale.
+    constexpr int EDC_LOCK_A_WAS_BLOCKED_ID = 73;
+    constexpr int EDC_LOCK_A_ENTERED_BAR_ID = 74;
+    constexpr int EDC_LOCK_A_LAST_HEARTBEAT_BAR_ID = 75;
+    constexpr int EDC_LOCK_A_NEXT_INTERVAL_ID = 76;
+    constexpr int EDC_LOCK_A_RUN_BLOCK_COUNT_ID = 77;
+    constexpr int EDC_LOCK_B_WAS_BLOCKED_ID = 78;
+    constexpr int EDC_LOCK_B_ENTERED_BAR_ID = 79;
+    constexpr int EDC_LOCK_B_LAST_HEARTBEAT_BAR_ID = 80;
+    constexpr int EDC_LOCK_B_NEXT_INTERVAL_ID = 81;
+    constexpr int EDC_LOCK_B_RUN_BLOCK_COUNT_ID = 82;
 
     // Lock C hysteresis thresholds (Schmidt Trigger on rank-percentile scaled values)
     // Post-FeatureScaler [0,1] rank thresholds — distribution-agnostic.
@@ -333,6 +348,16 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
         Logger::getInstance().log("EventDataCollector: Export armed - collecting to: " + g_exportFilename + ".alpha/.context");
         sc.SetPersistentInt(EDC_LOCK_A_BLOCK_COUNT_ID, 0);
         sc.SetPersistentInt(EDC_LOCK_B_BLOCK_COUNT_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_A_WAS_BLOCKED_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_A_ENTERED_BAR_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_A_LAST_HEARTBEAT_BAR_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_A_NEXT_INTERVAL_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_A_RUN_BLOCK_COUNT_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_B_WAS_BLOCKED_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_B_ENTERED_BAR_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_B_LAST_HEARTBEAT_BAR_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_B_NEXT_INTERVAL_ID, 0);
+        sc.SetPersistentInt(EDC_LOCK_B_RUN_BLOCK_COUNT_ID, 0);
         sc.SetPersistentInt(EDC_LOCK_C_BLOCK_COUNT_ID, 0);
         sc.SetPersistentInt(EDC_LOCK_C_STABLE_COUNT_ID, 0);
         sc.SetPersistentInt(EDC_LOCK_C_UNSTABLE_COUNT_ID, 0);
@@ -678,27 +703,92 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
             // .context collection is handled inside CheckAndTriggerHMM() and is allowed
             // to mature independently from Lock B.
             if (!lockAReady) {
-                int lockABlocks = sc.GetPersistentInt(EDC_LOCK_A_BLOCK_COUNT_ID) + 1;
-                sc.SetPersistentInt(EDC_LOCK_A_BLOCK_COUNT_ID, lockABlocks);
+                sc.SetPersistentInt(EDC_LOCK_A_BLOCK_COUNT_ID,
+                                    sc.GetPersistentInt(EDC_LOCK_A_BLOCK_COUNT_ID) + 1);
+            }
+            {
+                bool wasBlocked = sc.GetPersistentInt(EDC_LOCK_A_WAS_BLOCKED_ID) != 0;
+                int64_t enteredAtBar = sc.GetPersistentInt(EDC_LOCK_A_ENTERED_BAR_ID);
+                int64_t lastHeartbeatBar = sc.GetPersistentInt(EDC_LOCK_A_LAST_HEARTBEAT_BAR_ID);
+                int64_t nextIntervalBars = sc.GetPersistentInt(EDC_LOCK_A_NEXT_INTERVAL_ID);
+                int64_t runBlockCount = sc.GetPersistentInt(EDC_LOCK_A_RUN_BLOCK_COUNT_ID);
 
-                if ((lockABlocks % 250) == 0) {
+                const auto event = mts::log_throttle::UpdateBarKeyedLock(
+                    !lockAReady, sc.Index, wasBlocked, enteredAtBar, lastHeartbeatBar,
+                    nextIntervalBars, runBlockCount);
+
+                sc.SetPersistentInt(EDC_LOCK_A_WAS_BLOCKED_ID, wasBlocked ? 1 : 0);
+                sc.SetPersistentInt(EDC_LOCK_A_ENTERED_BAR_ID, static_cast<int>(enteredAtBar));
+                sc.SetPersistentInt(EDC_LOCK_A_LAST_HEARTBEAT_BAR_ID, static_cast<int>(lastHeartbeatBar));
+                sc.SetPersistentInt(EDC_LOCK_A_NEXT_INTERVAL_ID, static_cast<int>(nextIntervalBars));
+                sc.SetPersistentInt(EDC_LOCK_A_RUN_BLOCK_COUNT_ID, static_cast<int>(runBlockCount));
+
+                using mts::log_throttle::BarKeyedEvent;
+                if (event == BarKeyedEvent::kEntered) {
                     Logger::getInstance().log(
-                        "EventDataCollector: LockA waiting (observation saturation) samples=" +
-                        std::to_string(saturationSamples) + "/" + std::to_string(saturationRequired)
+                        "EventDataCollector: LockA BLOCKED (observation saturation) samples=" +
+                        std::to_string(saturationSamples) + "/" + std::to_string(saturationRequired) +
+                        " at bar=" + std::to_string(sc.Index)
+                    );
+                } else if (event == BarKeyedEvent::kHeartbeat) {
+                    Logger::getInstance().log(
+                        "EventDataCollector: LockA still waiting (observation saturation) samples=" +
+                        std::to_string(saturationSamples) + "/" + std::to_string(saturationRequired) +
+                        " bars_blocked=" + std::to_string(sc.Index - enteredAtBar) +
+                        " blocks=" + std::to_string(runBlockCount)
+                    );
+                } else if (event == BarKeyedEvent::kCleared) {
+                    Logger::getInstance().log(
+                        "EventDataCollector: LockA CLEARED after " + std::to_string(runBlockCount) +
+                        " blocks over " + std::to_string(sc.Index - enteredAtBar) + " bars"
                     );
                 }
+            }
+            if (!lockAReady) {
                 return;
             }
 
             if (!lockBReady) {
-                int lockBBlocks = sc.GetPersistentInt(EDC_LOCK_B_BLOCK_COUNT_ID) + 1;
-                sc.SetPersistentInt(EDC_LOCK_B_BLOCK_COUNT_ID, lockBBlocks);
+                sc.SetPersistentInt(EDC_LOCK_B_BLOCK_COUNT_ID,
+                                    sc.GetPersistentInt(EDC_LOCK_B_BLOCK_COUNT_ID) + 1);
+            }
+            {
+                bool wasBlocked = sc.GetPersistentInt(EDC_LOCK_B_WAS_BLOCKED_ID) != 0;
+                int64_t enteredAtBar = sc.GetPersistentInt(EDC_LOCK_B_ENTERED_BAR_ID);
+                int64_t lastHeartbeatBar = sc.GetPersistentInt(EDC_LOCK_B_LAST_HEARTBEAT_BAR_ID);
+                int64_t nextIntervalBars = sc.GetPersistentInt(EDC_LOCK_B_NEXT_INTERVAL_ID);
+                int64_t runBlockCount = sc.GetPersistentInt(EDC_LOCK_B_RUN_BLOCK_COUNT_ID);
 
-                if ((lockBBlocks % 250) == 0) {
+                const auto event = mts::log_throttle::UpdateBarKeyedLock(
+                    !lockBReady, sc.Index, wasBlocked, enteredAtBar, lastHeartbeatBar,
+                    nextIntervalBars, runBlockCount);
+
+                sc.SetPersistentInt(EDC_LOCK_B_WAS_BLOCKED_ID, wasBlocked ? 1 : 0);
+                sc.SetPersistentInt(EDC_LOCK_B_ENTERED_BAR_ID, static_cast<int>(enteredAtBar));
+                sc.SetPersistentInt(EDC_LOCK_B_LAST_HEARTBEAT_BAR_ID, static_cast<int>(lastHeartbeatBar));
+                sc.SetPersistentInt(EDC_LOCK_B_NEXT_INTERVAL_ID, static_cast<int>(nextIntervalBars));
+                sc.SetPersistentInt(EDC_LOCK_B_RUN_BLOCK_COUNT_ID, static_cast<int>(runBlockCount));
+
+                using mts::log_throttle::BarKeyedEvent;
+                if (event == BarKeyedEvent::kEntered) {
                     Logger::getInstance().log(
-                        "EventDataCollector: LockB waiting (indicator warm-up not complete)"
+                        "EventDataCollector: LockB BLOCKED (indicator warm-up not complete) at bar=" +
+                        std::to_string(sc.Index)
+                    );
+                } else if (event == BarKeyedEvent::kHeartbeat) {
+                    Logger::getInstance().log(
+                        "EventDataCollector: LockB still waiting (indicator warm-up not complete) "
+                        "bars_blocked=" + std::to_string(sc.Index - enteredAtBar) +
+                        " blocks=" + std::to_string(runBlockCount)
+                    );
+                } else if (event == BarKeyedEvent::kCleared) {
+                    Logger::getInstance().log(
+                        "EventDataCollector: LockB CLEARED after " + std::to_string(runBlockCount) +
+                        " blocks over " + std::to_string(sc.Index - enteredAtBar) + " bars"
                     );
                 }
+            }
+            if (!lockBReady) {
                 return;
             }
 
@@ -781,9 +871,14 @@ SCSFExport scsf_EventDataCollector(SCStudyInterfaceRef sc)
 
                 WriteBreadcrumb(30);  // TrainingEvent populated
 
-                // Log Model Confidence (if fresh signal exists)
-                if (TradeSignalManager::Instance().HasFreshSignal()) {
-                    eventT->model_confidence = TradeSignalManager::Instance().GetTradeSignal().modelConfidence;
+                // Log Model Confidence from the LIVE InferenceManager prediction path.
+                // Previously read from TradeSignalManager::Instance() -- a dead code path,
+                // zero callers anywhere (SetTradeSignal() is never called in production),
+                // so model_confidence was always 0.0f even when a genuine live Transformer
+                // prediction was available. See docs/superpowers/specs/2026-09-16-market-
+                // data-replay-alpha-generator-spec.md's coordination-doc Entry 8 for the trace.
+                if (const auto* pred = InferenceManager::Instance().Prediction()) {
+                    eventT->model_confidence = pred->Confidence();
                 } else {
                     eventT->model_confidence = 0.0f;
                 }
