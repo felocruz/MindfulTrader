@@ -101,7 +101,7 @@ Legacy-name note: PC-03 (the `vpin`-is-actually-Amihud mislabel) is **resolved**
 ## 7. Backward compatibility & regeneration
 
 - Additive table fields with defaults → existing `.alpha`/`.context` parse unchanged (new field reads null/absent). Python must treat absent `risk_gate_context` as "old file → keep stopgap path" until re-collection, OR gate the switch on presence. **Graceful, no forced immediate re-collection.**
-- Regenerate via `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`, then `./build_dll.sh`. Update both repos' generated bindings in the same change.
+- Regenerate via `bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh`, then `./build_dll.sh`. Update both repos' generated bindings in the same change.
 - Re-examine `CMakeLists.txt` schema contracts (WS-03 `MindfulTraderSchemaContract`, WS-07 shared-root-write audit) — the new shared writer must pass the parity audit.
 - Doc-sync contract: the four mirror docs if guidance changes.
 

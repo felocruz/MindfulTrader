@@ -227,7 +227,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 ./build_dll.sh --no-clean
 
 # Schema must be regenerated before build if .fbs schema changed
-bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh
+bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh
 
 # Python ZMQ integration tests
 cd tests && ./run_python_tests.sh

@@ -630,7 +630,7 @@ Change PSC-03's status line to `DECIDED, 2026-08-26` once the field addition its
 
 - [ ] **Step 4: Regenerate the schema**
 
-Run: `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`
+Run: `bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh`
 Expected: `include/generated/mts_schema_contract_generated.h` and `mts_schema_generated.h` regenerate cleanly, new field(s) appear as generated accessors, `kObservationDim` unchanged (the new field is NOT part of `ObservationData`).
 
 - [ ] **Step 5: Update `PENDING_SCHEMA_CHANGES.md` to IMPLEMENTED**

@@ -78,7 +78,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 - When auditing for performance, treat all three screens with the same urgency.
 
 ## Hard Requirements (Must Follow)
-1. **Schema regeneration**: `bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh`
+1. **Schema regeneration**: `bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh` (must run with a base-env `flatc` matching `include/flatbuffers/base.h`'s vendored version, not the `mts` env's older one)
 2. **C++ build**: `cd /home/rcruz/devel/VSCode/MindfulTrader && ./build_dll.sh`
 3. **Do not** use ad-hoc `flatc` or manual cmake/ninja flows for normal work.
 4. This project is now a **local Git repo** (`master` branch, no remote by default). Use Git-based validation (`git status`, `git diff`, changed-file queries) as a source of truth alongside file reads and runtime command exits. Git-ignored: `build-windows/`, generated `*.bak_*` backups, `__pycache__/`, `.btst`/`.lbr` artifacts.
