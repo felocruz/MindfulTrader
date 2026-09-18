@@ -28,6 +28,34 @@ spec's design can be considered validated, a real multi-event reactivity compari
 jumps/gaps in the dataset, lag measured systematically, not eyeballed from one trace) is still
 needed. Not yet built.
 
+**§4 validation, systematic follow-up 2026-09-18 — INCONCLUSIVE, real methodology flaw found.**
+Built `tools/observation_vector/activity_clock_reactivity_eval.cpp` (top-30 independent jump
+events, selected by calendar-bar True Range with a minimum bar-gap for independence; full
+471.9M-tick real dataset; see `tools/RECALIBRATION_LEDGER.md`'s 2026-09-18 16:09 row for the full
+result). Two real problems surfaced, not a clean answer either way:
+
+1. **The reaction-fraction-of-eventual-move metric is numerically unstable.** BV's value 30 minutes
+   after an event is often close to its own pre-event baseline (near-zero denominator), which blows
+   the normalized fractions up to meaningless magnitudes. Only the raw baseline/target numbers
+   (printed per-event in the archive) are trustworthy.
+2. **A genuine event-definition bias.** Defining jump events by calendar-bar True Range couples the
+   event timestamp to Wilder ATR's own clock — the selected bar structurally captures Wilder's
+   intra-bar-preview reading near ITS OWN local peak, biasing the comparison toward Wilder showing
+   a larger post-event decay (26/30 events lower 30 min later) regardless of which estimator is
+   actually more reactive to the underlying tick-level shock.
+
+**Raw finding, with that caveat attached, not a decisive conclusion**: BV's 30-minutes-later value
+sits close to its pre-event level in most events (near-zero net raw change) while Wilder shows a
+large, consistent decay. Two explanations remain open and indistinguishable with this event
+definition: (a) BV genuinely settles near its true post-shock level faster (support for
+jump-robustness), or (b) BV's imbalance-bar clock has a much shorter effective wall-clock memory
+during high-activity periods (a real limitation of the design, not previously flagged, since more
+imbalance bars close per minute exactly when volatility is high, shrinking BV's EWMA half-life in
+wall-clock terms right when the shock is happening). **Do not treat this run as validating or
+invalidating the cutover.** Real next step, not yet done: redefine jump events via a clock-agnostic
+method (e.g. raw price displacement over a fixed short wall-clock window, independent of either
+estimator's own bar boundaries) before either direction can be trusted.
+
 ## 0. Origin and decisive framing
 
 This began as a narrower question (`docs/superpowers/specs/2026-09-05-robust-atr-reformulation-
