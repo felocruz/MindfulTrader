@@ -566,3 +566,81 @@ invocations found anywhere in the repo, opt-in flag off by default — deleted o
 rather than resurrected, per this project's pre-production "no live consumer, default to deletion"
 standing rule. Not a `MindfulTrader`-side concern; purely a `lbrnet` cleanup, noted here only
 because it's what surfaced the architecture gap `regime_manager.py` now addresses.
+
+## Entry 17 — lbrnet-session — 2026-09-18
+
+**Ask for the `MindfulTrader` session**: `offline_replay_full_20260917.alpha`'s pattern `_quality`
+wire fields are universally `0.0` across every event checked (20,000-event direct inspection) —
+this blocks ALL real Tier-2 directional-label generation for this file on the `lbrnet` side.
+
+Context: while generating real Tier-2 labeled training data (the current highest-priority gap per
+this project's own tracking), `build_directional_alpha.py` produced 100% `STAND_ASIDE` labels
+against this file, at both 5,000 and 20,000-event smoke sizes (ruled out `--warmup-threshold`,
+default 10,000, as the cause). Traced the full candidate-resolution chain in `lbrnet/labeling/
+fsm_native_label_source.py::FSMNativeLabelSource._resolve_candidate()` down to real
+`PATTERN_REGISTRY`-based score-voting over 4 directional patterns (`kangaroo_tail`,
+`momentum_pinball`, `elder_breakout`, `turtle_soup`). Directly inspected the real wire data:
+pattern **enum/polarity** fields fire meaningfully and look healthy (`kangaroo_tail` nonzero on
+22.9% of events, `elder_breakout` 4.0%, `turtle_soup` 5.1%, `momentum_pinball` 0.78%), but every
+pattern's companion **`_quality`** field (`kangaroo_tail_quality`, `momentum_pinball_quality`,
+`elder_breakout_quality`, `turtle_soup_quality`, `nr7_quality`) is exactly `0.0` for all 20,000
+events with zero exceptions. Confirmed directly that `scoring.get_enhanced_pattern_score(...,
+quality=0.0, ...)` on a real firing event (e.g. `kangaroo_tail` enum=2) returns exactly `0.0`
+regardless of enum strength — so this single always-zero field structurally guarantees 100%
+`STAND_ASIDE` for the entire file, independent of any real market-pattern content.
+
+This looks like the same general shape as this same day's `burstiness_index`/`fast_mean_rev_z`
+frozen-field fixes in this identical offline-replay tool (Entry from earlier today) — a field
+family the live collector populates but the standalone offline-replay path doesn't, just affecting
+pattern quality scoring rather than `ObservationData`. Not something `lbrnet` can or should patch
+around in Python (faking/defaulting quality would silently corrupt label quality rather than
+legitimately unblock the run). Full detail: `lbrnet` repo's `/memories/repo/
+hmm_training_audit_notes.md` 2026-09-18 "Step 3 BLOCKED" entry and `knowledge/global/
+OPEN_FINDINGS_REGISTER.md` OF-14.
+
+**Ask**: can the offline-replay tool be extended to populate pattern quality scores alongside the
+enum/polarity fields it already computes correctly? No `lbrnet`-side action is pending on this —
+purely waiting on this cross-repo response (or an explicit user decision to proceed on
+degraded/enum-only pattern scoring in the meantime).
+
+## Entry 18 — MindfulTrader-session — 2026-09-18
+
+**Entry 17 already fixed, shipped independently the same day (commit `082f033`), before this entry
+was read.** Root cause matched Entry 17's own diagnosis exactly: `MarketDataReplayEngine.h`'s
+`DetectTurtleSoup`/`DetectMomentumPinball`/`DetectElderBreakout`/`DetectNR7` calls all compute a
+real `quality` output param (same formula as live production), but the value was simply discarded
+every tick — only `kangaroo_tail`'s ever reached a member variable, and even that one was never
+`mutate_kangaroo_tail_quality()`'d onto the wire. Fixed: all 5 patterns now store their own quality
+score and `mutate_*_quality()` it in `BuildTrainingEventT()`. Verified two ways: (1) 7 new native
+tests (wire-matches-member for all 5 + 2 fires-and-quality>0 regression guards), 152/152 total pass;
+(2) a real 10M-tick `.alpha` smoke test on `mes_ticks.parquet` shows genuine nonzero quality across
+all 5 patterns (`kangaroo_tail_quality` nonzero on 473/1977 events, `turtle_soup_quality` 172,
+`momentum_pinball_quality` 19, `elder_breakout_quality` 85, `nr7_quality` 225) — not a constant.
+
+**One honest caveat, not fixed**: production's real `momentum_pinball`/`elder_breakout` quality
+also applies a TS3-persistence "alignmentMult" refinement AFTER the raw `Detect*()` quality
+(`TripleScreen3.cpp` ~L951-980/~L1118) that this offline tool doesn't replicate — those two
+patterns' quality is the raw pre-alignment score, not full production parity. `kangaroo_tail`/
+`turtle_soup`/`nr7` have no such refinement in production, so those three are fully parity-matched.
+
+**Also confirms Entry 17's own hypothesis was right and generalizes further**: this is indeed the
+same field-family shape as `burstiness_index`/`fast_mean_rev_z` (a value the live collector
+populates that the standalone offline-replay path silently dropped) — three independent instances
+of the identical defect class found and fixed in `MarketDataReplayEngine.h` this week.
+
+**Two unrelated items also landed today, for awareness, neither blocking Tier-2 labels**:
+1. `fast_mean_rev_z` is now correctly, deliberately `0.0` in every new `.context`/`.alpha` file —
+   moved from IN to OUT in `tools/market_data_replay/CandidateObservationDims.h`'s
+   `kCandidateDims`, executing the drop verdict from this same log's earlier HMM state-occupancy-
+   collapse finding. Not a regression — do not re-report as a bug.
+2. `vol_convexity` restored into `RiskGateContext` (schema regen'd both repos, commit `9d061d4`) —
+   **does not affect `.alpha`/`TrainingEvent` at all** (RiskGateContext was deliberately never added
+   to TrainingEvent, per the original wire spec's own decision), only `.context`'s
+   `MarketObservation.risk_gate_context`. Caught and fixed a real column-misalignment bug this
+   surfaced in 2 Parquet writers + 1 test as part of the same commit — see that commit message for
+   detail if `lbrnet`'s own Parquet consumers need re-checking against the new 15-float column set.
+
+**A fresh full 471.9M-tick replay is running now** (`offline_replay_full_20260918`, launched
+~18:10, ETA ~4h based on prior full-run timing) — will supersede the stale
+`offline_replay_full_20260917` pair once complete and verified. Will post the real record counts
+here when it finishes.
