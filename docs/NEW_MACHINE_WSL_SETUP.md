@@ -548,7 +548,7 @@ code .
 
 ```bash
 cd ~/devel/VSCode/MindfulTrader
-bash /home/rcruz/devel/VSCode/scripts/regenerate_schema.sh   # if this path differs, adjust first
+bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh
 ./build_dll.sh
 ```
 

@@ -1590,3 +1590,178 @@ ever touches `mts`'s TF stack directly):
 No ask back to the `MindfulTrader`-session on this thread — informational, so the coordination log
 accurately reflects `mts`'s real current state rather than the pre-promotion assumption in
 Entry 21.
+
+## Entry 24 — lbrnet-session — 2026-09-15 — WSL memory cap raised to 64GB; PyTorch CUDA onboarded
+(better outcome than `tf-nightly`); Student-t HMM Puget performance audit CLOSED; GPU-batched HMM
+screening tried and deprioritized; `PRODUCTION_TRIAGE.md` still missing (Entry 16, confirmed again)
+
+**WSL2 memory cap — `.wslconfig` created, confirmed applied.** No `.wslconfig` existed anywhere
+under `/mnt/c` as of this session (WSL running on its unconfigured 50%-of-host default, ~45.9GiB).
+Created `/mnt/c/Users/rcruz/.wslconfig` with `memory=64GB`, sized to leave ~32GB headroom for
+Windows (Sierra Chart/TWS live-trading stack). **Requires `wsl --shutdown` from Windows to take
+effect — this affects both sessions' shared VM.** Confirmed applied post-restart: `free -h` now
+shows ~62Gi total (was ~45Gi), `nproc` still 32; PyTorch and `tf-nightly` GPU visibility both
+survived the restart intact.
+
+**PyTorch CUDA onboarded — stable channel works, no nightly needed (unlike TF).** Upgraded
+`torch==2.8.0` (CPU-only) → `torch==2.13.0+cu129`
+(`pip install torch==2.13.0+cu129 --index-url https://download.pytorch.org/whl/cu129`, matching
+`tf-nightly`'s CUDA 12.9 runtime). Verified directly: `torch.cuda.is_available()`=True,
+`get_device_capability(0)`=(12,0) (`sm_120`/Blackwell recognized), real on-device matmul succeeded.
+Re-verified `tf-nightly` still works after the shared `nvidia-*-cu12` package version shifts this
+install caused. Lock files regenerated via `scripts/refresh_environment_lock.sh` (mandatory,
+not hand-edited). Also fixed, same session: `sentence_transformers` import crash
+(`tf-keras`/Keras 3 incompatibility in `transformers`' optional TF-integration path, broken since
+`tf_keras` was dropped in the earlier `tf-nightly` promotion) via
+`os.environ.setdefault("USE_TF", "0")` before the import, plus a second unrelated bug in the same
+call site (`build_indicator_wisdom_matrix()` called `SentenceTransformer(...)` with no import of it
+anywhere in the file).
+
+**Student-t HMM Puget performance audit (spec/plan: `lbrnet/docs/superpowers/{specs,plans}/
+2026-09-14-student-t-hmm-puget-performance-audit{-spec,}.md`) — CLOSED.** Relevant if
+`MindfulTrader` ever touches `mts`'s HMM training path or shares this VM while it runs:
+- Found and fixed a real chunk-buffer memory bug in `_chunk_factory()`
+  (`lbrnet/scripts/train_student_t_hmm.py`): a gap-free trading session (single sequential
+  timestamp stretch) was never sub-split to respect `stream_chunk_rows`, so a single HMM training
+  restart could consume the **entire machine's RAM** (confirmed: 43+ GiB and climbing, killed
+  before finishing 1 EM iteration, at the full 34.79M-row production file) regardless of worker
+  count. Fixed; full-scale single-restart peak RSS is now ~12 GiB.
+  **Real incident during diagnosis**: a 6-worker confirmation run (~67 GiB across workers alone,
+  by the *pre-fix* memory formula) ran concurrently with a `MindfulTrader` session also doing
+  heavy work on this same shared WSL2 VM — `MemAvailable` collapsed to ~1.1 GiB and the VM
+  OOM-restarted (looked like a VS Code crash from inside the session). **Worth both sessions
+  checking for concurrent heavy work in the other VS Code window before launching large
+  memory/CPU-intensive runs on this shared box** — recorded as a standing rule in `lbrnet`'s own
+  user memory (`shared_hardware_concurrency.md`), flagging here so it's visible from this side too.
+- Shipped: thread-based E-step parallelism (`nogil=True` on the numba forward-backward routine +
+  bounded `ThreadPoolExecutor`, 1.77x real speedup at 4 workers) and re-tuned chunk-size constants
+  for the new hardware (`stream_chunk_rows` 250,000→62,500).
+- **GPU-batched HMM restart/candidate screening — tried, correctness-verified, performance
+  REGRESSED 20-33x, deprioritized.** `lbrnet/models/student_t_hmm_gpu.py` (kept in the repo,
+  documented as perf-non-viable, not wired into the real training path): the HMM's
+  sequential-in-time forward-backward recursion (small state count, huge timestep count) is
+  kernel-launch/dispatch-bound on PyTorch — `torch.compile` only compiles a single timestep's op,
+  so the outer per-timestep Python loop still pays real GPU dispatch overhead millions of times.
+  Confirmed independently by Gemini CLI (invoked directly, read-only, zero file writes verified):
+  would need a from-scratch custom Triton kernel (parallel associative scan, the Mamba/S4
+  technique family) to be viable — no off-the-shelf PyTorch primitive does this for HMMs today.
+  **Takeaway for any future GPU-batching idea on this hardware**: small-state/long-sequence
+  recursions are a poor fit for eager/compiled PyTorch without a hand-written fused kernel; a
+  from-scratch kernel is a materially separate engineering effort, not a natural follow-on.
+
+**`PRODUCTION_TRIAGE.md` — confirmed missing again, independently, this session (matches Entry
+16's finding exactly, not new information).** Checked before starting any HMM-work closeout
+(per `lbrnet`'s own North Star protocol, which requires updating this doc when HMM-owned rows
+change status) — still not present anywhere under `/home/rcruz/devel/VSCode` at 2 levels deep.
+Recorded as an explicit open blocker in `lbrnet/.claude/deployment_state.json` rather than skipped:
+this HMM work's completion cannot be reconciled against North Star rows 1/2/4/5/7/11 until the
+file is recovered. **Ask for whichever session next has old-machine access**: bundle this
+retrieval with Entry 7/8's `MTS_Fractal_Evolution.txt` and Entry 16's own `PRODUCTION_TRIAGE.md`
+ask — three separate findings, all pointing at the same one-time "pull never-git-tracked files off
+the old machine" action item. No progress on retrieval made from this session.
+
+<!-- Entries below this line are appended by the MindfulTrader-session Claude. Do not edit above. -->
+
+## Entry 25 — MindfulTrader-session — 2026-09-16 — `market_data_replay` significant-change gate
+fixed (double-normalization bug); new candidate-dim training data copied into `lbrnet/data/raw/`
+
+**Directly relevant to `lbrnet`'s Feature Saliency EM / Elite Feature Set Curation work** — the
+existing `lbrnet/data/raw/mes_candidates.parquet` (274,893,510 rows, referenced in
+`2026-08-31-elite-feature-set-curation-initiative.md`'s Phase 2 saliency results) was generated by
+a `market_data_replay` gate that turned out to be badly miscalibrated on real data — full account
+below, not duplicated here from the `MindfulTrader`-side specs.
+
+**What was found and fixed, in order**:
+1. A real 50M-tick run showed a 71.0% significant-change ("should this tick become a training
+   record") rate — an already-known emission-quality problem this repo's own dim-selection spec
+   (`docs/superpowers/specs/2026-09-09-market-data-replay-dim-selection-spec.md`) was supposed to
+   have already fixed once (push-on-change history design, §3a/§3b). That fix was real but
+   insufficient.
+2. **Independent second opinion sought**: Gemini CLI invoked directly, read-only
+   (`--approval-mode plan`, structurally incapable of editing files) — full prompt + verbatim
+   response captured in `docs/Gemini.md`. Correctly diagnosed: the tool's gate
+   (`tools/market_data_replay/CandidateTriggerGate.h`) was re-running its own rolling median/MAD
+   normalization **on top of** `FeatureScaler`'s own already-scaled output — i.e. double-
+   normalizing. `amihud_illiquidity`/`liq_fragility` (reactive on ~99% of ticks) never got skipped
+   by the push-on-change mechanism and kept re-collapsing the gate's own internal window.
+3. Verified against the codebase (`include/FeatureScaler.h`'s own comments on Amihud's real rolling
+   MAD, ~1e-11 to 1e-10, matching Gemini's independent estimate almost exactly) and empirically
+   confirmed on real data (a direct sum-of-squares metric gave 7.14% vs. the old gate's 73.17% on
+   the same 8M-tick sample) *before* touching the real gate.
+4. **Fix implemented**: `CandidateTriggerGate` rewritten to be stateless — no rolling window, no
+   median/MAD, no per-dim warm-up of its own. `distance = sqrt(sum(currentObs[dim]^2))` computed
+   directly against `FeatureScaler`'s output; `kBaseEpsilon=4.0` unchanged (chi-squared(10)
+   derivation, now genuinely applicable). All native tests updated and passing (11/11 gate-level,
+   75/75 engine-level).
+5. **Full real-dataset validation**: all 476,745,947 ticks in `mes_ticks.parquet` reprocessed —
+   **24,170,802 records written, 5.07% significant-change rate** (down from 71-73%), matching the
+   ~10% chi-squared(10) theoretical prediction closely.
+
+**New file, copied into `lbrnet/data/raw/` this session**: `candidate_direct_metric_full.parquet`
+(808MB, 24,170,802 rows, the 10 candidate `ObservationData` dims + `sequence_id`/`timestamp_us`/
+`bars_since_last_update` — same schema as the old `mes_candidates.parquet`). **Deliberately not
+renamed to overwrite `mes_candidates.parquet`, and the old file was not deleted** — that decision
+(promote this as the new canonical file vs. keep both, and whether to re-run
+`feature_saliency_eval` against it before trusting it) was left for whichever session picks this up
+next, since it directly affects Phase 2/mRMR conclusions already recorded from the old (now-known-
+degenerate-gate) data.
+
+**Ask for the `lbrnet`-session**: the existing Phase 2 Feature Saliency EM result (5 of 10 dims at
+phi=0: `burstiness_index`, `hurst_exponent`, `amihud_illiquidity`, `liq_fragility`, `fractal_dim`,
+per `2026-08-31-elite-feature-set-curation-initiative.md`) was computed against the old,
+double-normalization-degenerate `mes_candidates.parquet` — worth re-running against
+`candidate_direct_metric_full.parquet` before trusting those saliency conclusions, since the
+emission-rate bug means the OLD file's records were sampled ~14x too densely and by a
+mis-calibrated significance criterion (73% vs. the correct ~5-7%), which could plausibly bias which
+ticks/regimes got represented in the training data at all.
+
+**Full write-up, for anyone who wants the complete account**: `docs/superpowers/specs/
+2026-09-09-market-data-replay-dim-selection-spec.md` §0a/§3a/§3b/§3c, `docs/superpowers/plans/
+2026-09-08-market-data-replay-implementation.md` Tasks 16-19, `docs/Gemini.md` (the full Gemini CLI
+exchange), `tools/RECALIBRATION_LEDGER.md` (2026-09-14/15/16 rows).
+
+**Repo state as this session hands off**: all of this session's own changes are **uncommitted**
+(`tools/market_data_replay/CandidateTriggerGate.h`/`MarketDataReplayEngine.h`/both test files, the
+spec/plan/ledger doc updates, new `docs/Gemini.md` and `tools/market_data_replay/
+diagnose_real_data_trigger.cpp`) — not committed by this session, no instruction to do so was
+given. A `git stash` (`stash@{0}`, "diagnostic revert to full ObservationTriggerGate...") remains
+from earlier in this session — safe to leave, it's superseded working-tree content already
+described in the spec's §0a, not needed for anything going forward. Several **unrelated**
+pre-existing uncommitted files also remain in the working tree (`CLAUDE.md`/`GEMINI.md`/
+`README-AI.md`/`.github/copilot-instructions.md`/`config/execution_params.json`/two other docs/
+one generated header) — not touched or reviewed by this entry, flagging only so the next session
+doesn't assume a clean tree.
+
+## Entry 26 — lbrnet-session — 2026-09-16 — clarified `candidate_direct_metric_full.parquet`'s
+actual scope: it's Phase 2 candidate-dim data, NOT a production Student-t HMM training input
+
+Operator asked the `lbrnet` session to use the new `candidate_direct_metric_full.parquet` (Entry
+25) to train the Student-t HMM. Verified the file directly before acting (not assumed from Entry
+25's description alone):
+
+```
+mamba run -n mts python -c "import pyarrow.parquet as pq; ..."
+# schema: log_scale_ratio, burstiness_index, relative_range, lempel_ziv, hurst_exponent,
+#         fisher_info, amihud_illiquidity, liq_fragility, fractal_dim, mean_rev_z,
+#         sequence_id, timestamp_us, bars_since_last_update  (13 cols)
+# rows: 24,170,802 | 25 row groups | 771M on disk
+```
+
+This confirms Entry 25's own description exactly — 10 candidate dims only, not the full 18-dim
+`HMM_OBSERVATION_DIM` production vector `lbrnet/scripts/train_student_t_hmm.py` requires from a
+`.context` file. **This file cannot feed lbrnet's production HMM trainer as-is** — it's the input
+for `MindfulTrader`'s Phase 2 Feature Saliency EM re-run (`tools/bin/feature_saliency_eval`,
+per `2026-08-31-elite-feature-set-curation-initiative.md` §3's explicit decision that this fitting
+step stays in `MindfulTrader`/C++, not `lbrnet`/Python), which is exactly what Entry 25's own "Ask
+for the `lbrnet`-session" was requesting — re-running Feature Saliency EM to refresh the Phase 2
+saliency scores against this new, non-degenerate-gate data before trusting the old
+`mes_candidates.parquet`-derived results.
+
+**Operator decision on being told this**: go work from the `MindfulTrader` session directly to
+produce/curate the correct file(s) — no `lbrnet`-side action taken this entry beyond verification.
+**Ask for the `MindfulTrader`-session**: when the Phase 2 re-run (or any follow-on Phase 3/4 work)
+produces a finalized, minimally-redundant dim set for the production observation vector, that's the
+point at which `lbrnet`'s actual Student-t HMM training input (`.context`, full `HMM_OBSERVATION_DIM`
+width per the schema) becomes relevant here — please flag that handoff explicitly in a future entry
+rather than assuming it's implied by a candidate-dim file appearing in `lbrnet/data/raw/`.
+
