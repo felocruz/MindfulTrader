@@ -63,24 +63,24 @@
   "featurescaler_winsorization": {
     "_owner": "manual/MindfulTrader",
     "_generated_by": "manual/MindfulTrader (docs/superpowers/specs/2026-08-15-risk-gate-context-cpp-coevolution.md Unit C; values carried forward verbatim from include/FeatureScaler.h compiled defaults, zero behavior change on first load)",
-    "_updated": "2026-08-30 -- index 13 (liq_fragility)'s logz_winsor_sigma_override re-derived (2524.5 -> 21.26) after discovering the verification tool never actually exercised shrinkage_scale_min; see its own note below. Prior entry: 2026-08-29 -- indices 12 (amihud_illiquidity) and 13 (liq_fragility) recalibrated after both dims were made live-reactive (brainstorm doc §1.11). Prior entry: 2026-08-28 -- CORRECTED: this file had gone stale relative to the 17D (fast_taleb_kurtosis, 7c51f33/ff22e48) and 18D (fast_hurst_exponent, 2026-08-28) schema extensions -- indices 9+ were still the pre-fast_taleb_kurtosis 16D numbering (index 9 mapped to tail_index instead of fast_hurst_exponent, and fast_taleb_kurtosis had no entry at all). Renumbered to match include/FeatureScaler.h's current 18-entry arrays exactly; new dims (9, 14) get compiled-default placeholder values (all zero), not calibrated ones.",
+    "_updated": "2026-09-14 -- FULL REGENERATION from include/FeatureScaler.h's current compiled DIM_WINSOR_SIGMA_OVERRIDE/LOGZ_WINSOR_SIGMA_OVERRIDE/SHRINKAGE_SCALE_MIN arrays (all dated 2026-09-04, the latest recalibration pass). This file had never been updated for the vol_convexity removal (19D->18D, 2026-08-31): a stale 'vol_convexity' entry was still sitting at index 4, shifting every entry from index 4-17 one position out of alignment with the real schema (LoadConfig() maps purely by 'index', so this was silently applying the wrong dim's calibration from index 4 onward), and index 17 (fast_mean_rev_z) had no entry at all. Same failure class already caught once in FeatureScaler.h's own array literal during that removal. Prior entries (2026-08-28/29/30) superseded, see git history for that trail.",
     "state_winsor_sigma": 6,
     "dims": [
       {
         "index": 0,
-        "name": "log_variance_ratio",
-        "dim_winsor_sigma_override": 262,
+        "name": "log_scale_ratio",
+        "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0.000389,
-        "note": "GPD-derived on corrected z, Frechet (xi=+0.2533), p=1/N return level; shrinkage: confirmed collapse signature (z=-176 traced)"
+        "shrinkage_scale_min": 0,
+        "note": "RE-AUDITED 2026-09-04 against current BV-based signal: n_tail=49 (thin), xi=-0.2520 (Weibull), endpoint ~7.38, barely above default -- audited clean, no override forced. Shrinkage disabled pending fresh audit against the post-rename (was log_variance_ratio) BV formula."
       },
       {
         "index": 1,
         "name": "burstiness_index",
-        "dim_winsor_sigma_override": 45,
+        "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "GPD+bootstrap derived (D7); shrinkage disabled -- tail decays cleanly under generic path + wide bound"
+        "note": "RE-AUDITED 2026-09-04, full 471,930,392-tick population: mean|z|=1.1351, rate-at-bound(6.0)=1.96%, xi=-0.0336 (Gumbel/borderline) -- audited clean, current default adequate."
       },
       {
         "index": 2,
@@ -88,127 +88,127 @@
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "audited, closed clean (0 exceedances on 18,761 real bars); shrinkage disabled -- LOGZ, 0.035% clip rate, no evidence of need"
+        "note": "audited, closed clean (0 exceedances on 18,761 real bars); shrinkage disabled -- LOGZ, 0.035% clip rate, no evidence of need."
       },
       {
         "index": 3,
-        "name": "correction_action",
-        "dim_winsor_sigma_override": 4587,
+        "name": "log_scale_expansion_ratio",
+        "dim_winsor_sigma_override": 12.0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 7e-05,
-        "note": "GPD-derived, p=1/N return level (D7); shrinkage: original D4 derivation"
+        "shrinkage_scale_min": 0,
+        "note": "RE-AUDITED 2026-09-04 against current BV-based signal (was correction_action): xi=+0.4233 (Frechet), p=1/N return level 11.9459 -> 12.0. Shrinkage disabled pending fresh audit against the post-rename BV formula."
       },
       {
         "index": 4,
-        "name": "vol_convexity",
-        "dim_winsor_sigma_override": 0,
-        "logz_winsor_sigma_override": 12,
-        "shrinkage_scale_min": 0.211521,
-        "note": "LOGZ dim, GPD-derived on corrected (shrinkage-blended) z, real margin above theoretical wall; first LOGZ dim to use the shrinkage mechanism"
-      },
-      {
-        "index": 5,
         "name": "lempel_ziv",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "static scaler, not applicable -- no winsorization/shrinkage override"
+        "note": "static scaler, not applicable -- no winsorization/shrinkage override."
+      },
+      {
+        "index": 5,
+        "name": "hurst_exponent",
+        "dim_winsor_sigma_override": 345.0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0.000145,
+        "note": "GPD-derived, p=1/N return level, genuine Frechet tail (xi=+0.3014) confirmed via tail-conditional noise decomposition; shrinkage: exact-formula-derived, confirmed collapse signature."
       },
       {
         "index": 6,
-        "name": "hurst_exponent",
-        "dim_winsor_sigma_override": 345,
+        "name": "micro_asymmetry",
+        "dim_winsor_sigma_override": 36.0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0.000145,
-        "note": "GPD-derived, p=1/N return level, genuine Frechet tail confirmed via tail-conditional noise decomposition; shrinkage: exact-formula-derived"
+        "shrinkage_scale_min": 0.00733,
+        "note": "GPD-derived on corrected z, p=1/N return level; shrinkage: confirmed collapse signature, z=438 traced."
       },
       {
         "index": 7,
-        "name": "micro_asymmetry",
-        "dim_winsor_sigma_override": 36,
+        "name": "fisher_info",
+        "dim_winsor_sigma_override": 20.0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0.00733,
-        "note": "GPD-derived on corrected z, p=1/N return level; shrinkage: confirmed collapse signature, z=438 traced"
+        "shrinkage_scale_min": 0,
+        "note": "GPD-derived, margin above a smaller-sample fit; audited 2026-08-14, clean, no shrinkage needed."
       },
       {
         "index": 8,
-        "name": "fisher_info",
-        "dim_winsor_sigma_override": 20,
+        "name": "fast_hurst_exponent",
+        "dim_winsor_sigma_override": 10.9,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "GPD-derived, margin above a smaller-sample fit; audited 2026-08-14, clean, no shrinkage needed"
+        "note": "RECALIBRATED 2026-09-04, full-dataset activity-clock run: xi=+0.0373 (Gumbel/borderline), p=1/N return level 10.8502 -> 10.9. Shrinkage not yet empirically calibrated -- placeholder."
       },
       {
         "index": 9,
-        "name": "fast_hurst_exponent",
-        "dim_winsor_sigma_override": 0,
+        "name": "tail_index",
+        "dim_winsor_sigma_override": 10.0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0,
-        "note": "NEW 2026-08-28, additive activity-clock twin of hurst_exponent -- not yet empirically calibrated, compiled-default placeholder"
+        "shrinkage_scale_min": 0.0438,
+        "note": "GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall; shrinkage: confirmed collapse signature, z=1963 traced."
       },
       {
         "index": 10,
-        "name": "tail_index",
-        "dim_winsor_sigma_override": 10,
+        "name": "skewness_idx",
+        "dim_winsor_sigma_override": 269.0,
         "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0.0438,
-        "note": "GPD-derived on corrected z, Weibull (xi=-0.3259), just past the theoretical wall; shrinkage: confirmed collapse signature, z=1963 traced"
+        "shrinkage_scale_min": 0.000781,
+        "note": "RECALIBRATED 2026-09-04: shrinkage enabled, genuine residual heavy tail confirmed (corr(localMad,|z|) -0.2459 -> -0.1691, not fully zeroed like dim12/liq_fragility); GPD on corrected z, xi=+0.2670 (Frechet), p=1/N return level 269.0766 -> 269.0."
       },
       {
         "index": 11,
-        "name": "skewness_idx",
-        "dim_winsor_sigma_override": 0,
+        "name": "amihud_illiquidity",
+        "dim_winsor_sigma_override": 191703.9,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "audited, negligible clip rate, no action needed; shrinkage disabled per ruthless-simplicity (D8 precedent)"
+        "note": "RECALIBRATED 2026-09-04, second pass (supersedes a same-day 3036.0 value that rested on a subsampling zeta_u bug): corrected zeta_u=nTail/nSample_retained=0.01, an ordinary ~100x ratio, not pathological. p=1/N return level (N=467,376,145 real ticks) = 191703.887 -> 191703.9. Shrinkage disabled -- dedicated AMIHUD_ABSOLUTE_FLOOR mechanism already does the job, audited clean not skipped."
       },
       {
         "index": 12,
-        "name": "amihud_illiquidity",
-        "dim_winsor_sigma_override": 2706.0,
-        "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0,
-        "note": "RECALIBRATED 2026-08-29 (live-reactivity, brainstorm doc §1.11), refit against kLiveBarMinVolume=50 (empirically tuned, see StudyHelperFunctions.cpp) for internal consistency: GPD-derived on real tick-level replica (tools/amihud_liqfragility_recalibration.cpp, u=p99=32.68, n_tail=7709, xi=+0.2920), Frechet, p=1/N return level (N=38,540,567 ticks). OLD 0 (generic 6.0-sigma default) was clipping 8.5254% of live readings. Shrinkage RE-AUDITED 2026-08-29: correlation(localMAD,|z|)=-0.0340 (weak, not a collapse signature) -- this dim already has its own dedicated AMIHUD_ABSOLUTE_FLOOR mechanism doing the job; stays disabled, audited clean not skipped"
+        "name": "liq_fragility",
+        "dim_winsor_sigma_override": 0,
+        "logz_winsor_sigma_override": 1100.8,
+        "shrinkage_scale_min": 0.0035,
+        "note": "RECALIBRATED 2026-09-04 (supersedes 2026-08-30's 21.26, stale on two grounds: partial 38.5M-tick sample, and computed against the pre-2026-09-03 still-ATR-coupled formula). Fresh full-dataset GPD refit against the CURRENT median-based elasticity-ratio formula (all 467,376,145 real ticks): xi=+0.3147 (Frechet), p=1/N return level 1100.7906 -> 1100.8. Shrinkage: confirmed real collapse signature."
       },
       {
         "index": 13,
-        "name": "liq_fragility",
-        "dim_winsor_sigma_override": 0,
-        "logz_winsor_sigma_override": 21.26,
-        "shrinkage_scale_min": 0.0035,
-        "note": "RE-DERIVED 2026-08-30: the 2524.5 figure recorded 2026-08-29 was computed from a broken audit tool (liqFragZ manually recomputed the plain z formula, bypassing ComputeShrinkageZ(), so it never actually reflected shrinkage_scale_min being enabled). Fixed the tool to read the real shrinkage-blended z (FeatureScaler.h now exposes it via lastRawZ[13] unconditionally); rerunning at guard=50 showed shrinkage enabling collapses the tail entirely: max|z| 503.22 -> 20.59, corr(localMAD,|z|) -0.2058 -> +0.0016 (collapse signature genuinely gone). Refit GPD on the corrected z (u=p99=8.297, n_tail=7709, xi=-0.1452, Weibull/bounded), p=1/N return level (N=38,540,567 ticks) = 21.2565. shrinkage_scale_min=0.0035 unchanged and now verified to actually be taking effect (previous audit run never exercised it)"
+        "name": "fast_taleb_kurtosis",
+        "dim_winsor_sigma_override": 97.0,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "RECALIBRATED 2026-09-04, full-dataset activity-clock run: xi=+0.2513 (Frechet), p=1/N return level 97.0987 -> 97.0. Shrinkage not yet empirically calibrated -- placeholder."
       },
       {
         "index": 14,
-        "name": "fast_taleb_kurtosis",
-        "dim_winsor_sigma_override": 0,
-        "logz_winsor_sigma_override": 0,
-        "shrinkage_scale_min": 0,
-        "note": "activity-clock twin of the Moors kurtosis gate (ff22e48/7c51f33) -- not yet empirically calibrated, compiled-default placeholder. This entry was MISSING entirely before the 2026-08-28 fix."
-      },
-      {
-        "index": 15,
         "name": "recurrence_rate",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "static scaler, not applicable"
+        "note": "static scaler, not applicable."
       },
       {
-        "index": 16,
+        "index": 15,
         "name": "fractal_dim",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "static scaler, not applicable"
+        "note": "static scaler, not applicable."
+      },
+      {
+        "index": 16,
+        "name": "mean_rev_z",
+        "dim_winsor_sigma_override": 7.8,
+        "logz_winsor_sigma_override": 0,
+        "shrinkage_scale_min": 0,
+        "note": "RE-AUDITED 2026-09-04 against current median/MAD signal: xi=-0.1909 (Weibull), genuine finite endpoint ~8.68, p=1/N return level 7.8218 -> 7.8. No shrinkage action needed."
       },
       {
         "index": 17,
-        "name": "mean_rev_z",
+        "name": "fast_mean_rev_z",
         "dim_winsor_sigma_override": 0,
         "logz_winsor_sigma_override": 0,
         "shrinkage_scale_min": 0,
-        "note": "audited, 0.028% clip rate, only 14 exceedances, negligible, no action needed"
+        "note": "MOOT 2026-09-04: DROPPED, will never be wired into production (no predictive power over mean_rev_z on real data, statistically indistinguishable from a coin flip). Calibrating this bound is not needed; entry present only for index-completeness against the 18D schema."
       }
     ]
   }

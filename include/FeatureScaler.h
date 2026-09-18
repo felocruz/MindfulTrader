@@ -58,7 +58,12 @@ struct FeatureScaler {
     /// existing adaptive rolling median/MAD calibration for this dim, just lets
     /// it actually clear the gate. See logs/rc_gemini.log CLAUDE_BRIEF_086/087
     /// and GEMINI_BRIEF_087_RESPONSE for the full derivation.
-    static constexpr size_t DIM_AMIHUD_INDEX = 11;               ///< == OBS_AMIHUD_ILLIQUIDITY (shifted 12->11 when vol_convexity was removed at dim4, 2026-08-31)
+    /// Sourced directly from the schema-reflection-derived constant (not a
+    /// hand-typed literal) -- this exact index has silently desynced from
+    /// ObservationData's real field order 3 times before (see DIM_RECURRENCE_
+    /// INDEX/DIM_FRACTAL_INDEX's comment below for the full history), so it
+    /// can no longer drift on the next dim add/remove/reorder.
+    static constexpr size_t DIM_AMIHUD_INDEX = MTS::Schema::Contract::kObsAmihudIlliquidity;
     static constexpr float AMIHUD_ABSOLUTE_FLOOR = 1e-16f;       ///< Negligible vs. ABSOLUTE_FLOOR; still divide-by-zero-safe
 
     /// Dim 3 (log_scale_expansion_ratio): the binary floor-gate + carry-forward-decay
@@ -550,7 +555,8 @@ struct FeatureScaler {
     /// LZ76 on n=64 binary string produces ~10 discrete values (step ≈ 0.094).
     /// MAD(identical values) = 0.0 → guaranteed carry-forward death spiral.
     /// Static center/scale keeps the signal alive without zero-denominator risk.
-    static constexpr size_t DIM_LZ_INDEX = 4;  // shifted 5->4 when vol_convexity was removed at dim4, 2026-08-31
+    // Sourced from the schema-reflection-derived constant -- see DIM_AMIHUD_INDEX's comment above.
+    static constexpr size_t DIM_LZ_INDEX = MTS::Schema::Contract::kObsLempelZiv;
     static constexpr float LZ_STATIC_CENTER = 0.5f;              ///< Theoretical mean of LZ76 for n=64
     static constexpr float LZ_STATIC_SCALE = 0.25f;              ///< Maps [0,1] → [-2,+2] z-score range
 
@@ -572,8 +578,12 @@ struct FeatureScaler {
     /// was removed from the vector at dim4 -- same class of bug the 2026-08-28
     /// correction above already warned about, checked explicitly this time
     /// rather than left to a test failure to catch.
-    static constexpr size_t DIM_RECURRENCE_INDEX = 14;
-    static constexpr size_t DIM_FRACTAL_INDEX = 15;
+    /// Both now sourced from the schema-reflection-derived constants instead of
+    /// hand-typed literals -- this pair specifically was the repeat offender
+    /// above (wrong twice in a row before finally being audited by hand), so
+    /// it can no longer silently desync on the next schema reorder.
+    static constexpr size_t DIM_RECURRENCE_INDEX = MTS::Schema::Contract::kObsRecurrenceRate;
+    static constexpr size_t DIM_FRACTAL_INDEX = MTS::Schema::Contract::kObsFractalDim;
     /// Recalibrated 2026-07-23 against real event_data.context (500k-sample pull):
     /// original constants assumed symmetric use of the theoretical contract range,
     /// but real data centers well off that assumption and only spans a narrow band.
