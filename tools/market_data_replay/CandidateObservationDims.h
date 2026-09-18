@@ -5,13 +5,15 @@
 // done via Gaussian-based metrics in this tool (chi-squared gating / Feature
 // Saliency EM) -- the HMM this vector feeds is a Student-t (fat-tailed) model,
 // and a Gaussian selection criterion is the wrong tool for choosing its
-// inputs. This list now holds ALL 18 schema dims, unfiltered -- lbrnet does
-// the real dim-selection work by training the actual Student-t HMM on the
-// full vector and testing which dims don't belong. The 10-dim subset used
-// during 2026-09-09..2026-09-15 (docs/superpowers/specs/2026-09-09-market-
-// data-replay-dim-selection-spec.md) is superseded, not deleted from history
-// -- that spec's own §3c fix (no double-normalization) still applies, it
-// just now runs over 18 dims instead of 10 (see CandidateTriggerGate.h).
+// inputs. This list held ALL 18 schema dims, unfiltered, from 2026-09-16 --
+// lbrnet does the real dim-selection work by training the actual Student-t
+// HMM on the full vector and testing which dims don't belong. The first real
+// verdict landed 2026-09-18 (fast_mean_rev_z moved OUT, see below); the 10-dim
+// subset used during 2026-09-09..2026-09-15 (docs/superpowers/specs/
+// 2026-09-09-market-data-replay-dim-selection-spec.md) remains superseded,
+// not deleted from history -- that spec's own §3c fix (no double-
+// normalization) still applies, it just now runs over 17 dims (see
+// CandidateTriggerGate.h).
 //
 // Every other tool-local file (CandidateTriggerGate.h, the engine, the CLI's
 // Parquet writer) derives its dimensionality from kCandidateDims, never a
@@ -32,10 +34,14 @@
 
 namespace mdr {
 
-// Indices into MTS::Schema::Contract's kObservationDim=18 space -- all 18,
+// Indices into MTS::Schema::Contract's kObservationDim=18 space -- 17 of 18,
 // in schema field order (operator directive, 2026-09-16: let lbrnet's own
 // Student-t HMM training decide which dims to drop, not a Gaussian gate here).
-inline constexpr std::array<std::size_t, MTS::Schema::Contract::kObservationDim> kCandidateDims = {
+// Size is explicit (not kObservationDim) -- std::array does NOT infer its
+// size from the initializer list here, so it MUST match the element count
+// below exactly or the array silently pads with zero-valued (duplicate
+// dim-0) entries.
+inline constexpr std::array<std::size_t, 17> kCandidateDims = {
     MTS::Schema::Contract::kObsLogScaleRatio,
     MTS::Schema::Contract::kObsBurstinessIndex,
     MTS::Schema::Contract::kObsRelativeRange,
@@ -53,10 +59,15 @@ inline constexpr std::array<std::size_t, MTS::Schema::Contract::kObservationDim>
     MTS::Schema::Contract::kObsRecurrenceRate,
     MTS::Schema::Contract::kObsFractalDim,
     MTS::Schema::Contract::kObsMeanRevZ,
-    MTS::Schema::Contract::kObsFastMeanRevZ,  // wired 2026-09-17 to enable the previously-blocked
-                                               // HMM cross-state discrimination test -- the
-                                               // 2026-09-04 "do not wire on raw predictive power"
-                                               // decision stands and is not being re-litigated
+    // kObsFastMeanRevZ moved OUT 2026-09-18: the measurement this dim was
+    // wired in for (2026-09-17) concluded -- lbrnet's Student-t HMM training
+    // found it collapses one state to 0.39% occupancy (Celeux & Durand
+    // pathology, a genuinely-varying but non-predictive dim fragmenting a
+    // spurious state), vs. healthy occupancy across all 4 states at 17D.
+    // Reconfirms the 2026-08-31/2026-09-04 DROP decision this dim already
+    // carried. Live src/ContextManager.cpp keeps computing/emitting it
+    // (out of this tool's scope, and other consumers may still want it) --
+    // this only removes it from the HMM-training candidate view.
 };
 
 inline constexpr std::size_t kCandidateDimCount = kCandidateDims.size();

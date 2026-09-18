@@ -54,19 +54,16 @@ struct CandidateTriggerMetrics {
 // significant_change) precedent).
 class CandidateTriggerGate {
 public:
-    // kBaseEpsilon=5.1: re-derived 2026-09-16 for kCandidateDimCount=18 (all
-    // 18 schema dims, operator directive -- this gate is now a pure row-
-    // thinning heuristic, not a dim-selection mechanism; lbrnet's own
-    // Student-t HMM training does dim selection). For 18 independent
-    // standard-normal z's, sum(z_i^2) ~ chi-squared(18); the 90th percentile
-    // of chi-squared(18) is 25.99 (Wilson-Hilferty approximation, cross-
-    // checked against the standard chi-squared table), and sqrt(25.99) =
-    // 5.098 ≈ 5.1 -- same ~10% base (false-positive) trigger rate this
-    // threshold has always targeted, just re-derived for the new dimension
-    // count (was 4.0 for kCandidateDimCount=10, chi-squared(10) 90th
-    // percentile 15.987, sqrt=3.998). Re-derive again if kCandidateDimCount
-    // changes.
-    static constexpr float kBaseEpsilon = 5.1f;
+    // kBaseEpsilon=5.0: re-derived 2026-09-18 for kCandidateDimCount=17
+    // (fast_mean_rev_z moved OUT, see CandidateObservationDims.h). For 17
+    // independent standard-normal z's, sum(z_i^2) ~ chi-squared(17); the 90th
+    // percentile of chi-squared(17) is 24.769 (scipy chi2.ppf(0.90, 17),
+    // cross-checked against the standard chi-squared table), and
+    // sqrt(24.769) = 4.977 ≈ 5.0 -- same ~10% base (false-positive) trigger
+    // rate this threshold has always targeted, just re-derived for the new
+    // dimension count (was 5.1 for kCandidateDimCount=18, 4.0 for 10).
+    // Re-derive again if kCandidateDimCount changes.
+    static constexpr float kBaseEpsilon = 5.0f;
 
     bool HasBaseline() const { return m_hasBaseline; }
     void SetBaseline(const std::array<float, kCandidateDimCount>&) { m_hasBaseline = true; }

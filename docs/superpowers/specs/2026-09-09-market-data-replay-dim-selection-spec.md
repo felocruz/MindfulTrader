@@ -344,6 +344,32 @@ pointer:
   as a correctness oracle.
 - A full 471.9M-tick run (~4h projected, ~7GB `.context`) was offered but not yet launched.
 
+## 0e. First IN→OUT verdict: `fast_mean_rev_z` moved OUT, 2026-09-18
+
+`lbrnet` trained a real Student-t HMM (K=4) candidate on the 18D vector from
+`offline_replay_full_20260917.context.parquet` and found one state collapsed to 0.39% occupancy
+(below the 3% floor). Dropping `fast_mean_rev_z` alone (same seed/config/chunking otherwise) fixed
+it decisively: all 4 states landed at 18-35% occupancy, `dof_by_state` healthy. Diagnosed as a
+Celeux & Durand pathology — a genuinely-varying but non-predictive dimension gives EM a degree of
+freedom to fragment a spurious state to explain noise. This reconfirms (via an actual HMM
+cross-state discrimination test, not just the raw hit-rate test) the 2026-08-31/2026-09-04 DROP
+decision this dim already carried in the elite-feature-set-curation ledger.
+
+Action taken (tool-scope only, per §2's standing rule): `fast_mean_rev_z` moved from IN to OUT in
+`CandidateObservationDims.h`'s `kCandidateDims` (18→17 dims). `CandidateTriggerGate.h`'s
+`kBaseEpsilon` re-derived: chi-squared(17) 90th percentile = 24.769, sqrt = 4.977 ≈ 5.0 (was 5.1 at
+18 dims). Both native test suites re-run clean (11/11 gate, 145/145 engine — `test_market_data_
+replay_engine.cpp`'s own `task7_fast_mean_rev_z_stays_zero_sentinel_after_full_warmup` now passes
+for its originally-intended reason again, since the engine's own per-dim compute sites were already
+`IsCandidateDim`-guarded). `MarketDataReplay.cpp`/`MarketDataReplayContext.cpp` both re-verified to
+compile clean against the change.
+
+**Not changed, deliberately**: `src/ContextManager.cpp`'s live wiring (still computes and emits
+`fast_mean_rev_z` every tick) — out of this spec's scope per its own opening line, and this action
+only removes the dim from this tool's HMM-training candidate view, not from the schema or the live
+observation vector. `lbrnet` is expected to also exclude this column from its own training input
+(their own ignore-list mechanism, not a MindfulTrader-side change).
+
 ## 5. Cross-references
 
 - `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` §7 — the ledger,
