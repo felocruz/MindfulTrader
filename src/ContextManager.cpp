@@ -529,6 +529,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
     }
     m_localRiskContext.talebSkewness = m_latestInstitutionalMetrics.talebSkewness;
     m_localRiskContext.elderChandelierATR = m_latestInstitutionalMetrics.elderChandelierATR;
+    m_localRiskContext.volConvexity = m_volConvexityRaw;  // pushed directly by TripleScreen3.cpp's SetVolConvexity()
     m_localRiskContext.paretoTailAlpha = m_cachedHillAlpha.load(std::memory_order_relaxed);
     m_localRiskContext.amihudIlliquidity = obs[OBS_AMIHUD_ILLIQUIDITY];
     m_localRiskContext.spreadStress = obs[OBS_LIQ_FRAGILITY];
@@ -874,6 +875,7 @@ MTS::Schema::RiskGateContextT ContextManager::BuildRiskGateContext() const {
     rgc.taleb_kurtosis        = lrc.talebKurtosis;
     rgc.taleb_skewness        = lrc.talebSkewness;
     rgc.elder_chandelier_atr  = lrc.elderChandelierATR;
+    rgc.vol_convexity         = lrc.volConvexity;
     rgc.pareto_tail_alpha     = lrc.paretoTailAlpha;
     rgc.amihud_illiquidity    = lrc.amihudIlliquidity;   // raw canonical Amihud (log-ret / dollar-volume)
     rgc.spread_stress         = lrc.spreadStress;

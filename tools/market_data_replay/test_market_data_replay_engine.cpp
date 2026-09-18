@@ -1387,8 +1387,8 @@ int main() {
         check("task10_out_of_scope_fields_hold_documented_defaults",
               rgc.shannon_flow_entropy == 0.0f && rgc.shannon_efficiency == 0.5f &&
               rgc.taleb_kurtosis == 0.0f && rgc.taleb_skewness == 0.0f &&
-              rgc.elder_chandelier_atr == 0.0f && rgc.regime_duration == 0 &&
-              rgc.amihud_percentile == 0.5f);
+              rgc.elder_chandelier_atr == 0.0f && rgc.vol_convexity == 0.0f &&
+              rgc.regime_duration == 0 && rgc.amihud_percentile == 0.5f);
         check("task10_raschke_burst_is_poisson_neutral_not_wire_default",
               rgc.raschke_burst == 0.0f);
     }

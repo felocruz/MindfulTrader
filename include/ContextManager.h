@@ -370,6 +370,7 @@ public:
     /// instead of obs[OBS_FRACTAL_DIM] so the gate's window is not silently re-coupled to
     /// the widened HMM window.
     void SetFractalDimShort(float value) { m_fractalDimShortRaw = value; }
+    void SetVolConvexity(float value) { m_volConvexityRaw = value; }
 
     /// Layer B: push one raw Amihud sample (once per closed 15-min bar) into its
     /// session pool (RTH vs overnight) and refresh the cached percentile stored on
@@ -431,6 +432,10 @@ private:
     // Short-window (~30-40 bar) fractal_dim, set directly by TripleScreen2.cpp, decoupled
     // from OBS_FRACTAL_DIM's HMM-bound 400-bar window -- see SetFractalDimShort().
     float m_fractalDimShortRaw = 1.5f;  // Brownian-guess default, matches cold-start convention
+    // Restored 2026-09-18 (lbrnet ask, Entry 15/17): set directly by TripleScreen3.cpp's
+    // CalculateVolConvexity() call, same "push directly" precedent as SetFractalDimShort() --
+    // feeds RiskGateContext only, never ObservationData.
+    float m_volConvexityRaw = 0.0f;
 
     // Predator Decision Contract's unified macro context (public via GetPredatorContext()).
     // Assembled lazily from m_localRiskContext + HMM state on each accessor call.

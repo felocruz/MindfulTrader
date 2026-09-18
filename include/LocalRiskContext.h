@@ -22,6 +22,10 @@ struct LocalRiskContext {
     float talebSkewness = 0.0f;        // Bowley (1920) quartile skewness (0 = symmetric, bounded [-1,+1])
     float elderChandelierATR = 0.0f;   // Elder's Chandelier: (price - stop) / ATR distance
     float paretoTailAlpha = 4.0f;      // Pareto tail index via Hill estimator (4.0 = safe default)
+    // Restored 2026-09-18 (lbrnet ask, coordination log Entry 15/17): coefficient of variation
+    // of True Range -- volatility-of-volatility, feeds RiskGateContext only (not ObservationData,
+    // whose 2026-08-31 removal of this dim as an HMM input stands unchanged).
+    float volConvexity = 0.0f;
 
     // Pareto (Structure/Flow) — from StructureEngine + ObservationData
     float amihudIlliquidity = 0.0f;    // Amihud illiquidity (canonical: mean |log-ret| / dollar-volume; formerly 'vpin')

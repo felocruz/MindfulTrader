@@ -799,6 +799,12 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
     // Keep it on the same adaptive window used by the canonical updater.
     const float meanRevZ = CalculateMeanReversionSpeed(sc, observation_window_n);
 
+    // Restored 2026-09-18 (lbrnet ask, Entry 15/17): RiskGateContext-only, not
+    // ObservationData (that removal, 2026-08-31, stands unchanged) -- pushed directly,
+    // same "SetFractalDimShort()" precedent, not through the obs[]/mutate_ path below.
+    const float volConvexity = CalculateVolConvexity(sc, observation_window_n);
+    ContextManager::Instance().SetVolConvexity(volConvexity);
+
     // Update Central Observation Store
     // Note: Mutating canonical ObservationData fields owned by Screen 3
     auto* obs = ContextManager::Instance().GetMutableObservation();

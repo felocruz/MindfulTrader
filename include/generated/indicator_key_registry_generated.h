@@ -58,7 +58,9 @@ inline constexpr std::array<IndicatorKeyRegistryRow, 42> kIndicatorKeyRegistryRo
 inline constexpr std::size_t kIndicatorKeyRegistryRowCount = kIndicatorKeyRegistryRows.size();
 
 inline constexpr std::array<unsigned int, kIndicatorKeyRegistryRowCount> kIndicatorKeyRegistryValues = {{
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 23, 24, 25, 20, 54, 26, 53, 27, 28, 29, 31, 34, 35, 45, 46, 47, 48, 49, 50, 51, 52
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+    21, 22, 23, 24, 25, 20, 26, 53, 27, 28, 29, 31, 34, 35, 45, 46,
+    47, 48, 49, 50, 51, 52, 54,
 }};
 
 constexpr bool IndicatorRegistryHasUniqueValues() {

@@ -58,7 +58,7 @@ void WriteSyntheticContextFile(const std::string& path, int n_pairs) {
     for (int i = 0; i < n_pairs; ++i) {
         flatbuffers::FlatBufferBuilder mo_fbb(256);
         MTS::Schema::ObservationData obs(
-            static_cast<float>(i), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            static_cast<float>(i), 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         MTS::Schema::AsymmetryContext ctx(0, 0, 0, 0, 0, 0, 0, 0);
         auto mo = MTS::Schema::CreateMarketObservation(
             mo_fbb, 1000 + i, static_cast<std::uint64_t>(i), &obs, &ctx, 0, 0);
@@ -128,12 +128,12 @@ int main() {
         flatbuffers::FlatBufferBuilder fbb(512);
         MTS::Schema::ObservationData obs(
             1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f,
-            11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 17.0f, 18.0f, 19.0f);
+            11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f, 17.0f, 18.0f);
         MTS::Schema::AsymmetryContext ctx(0, 0, 0, 0, 0, 0, 0, 0);
         auto rgc_offset = MTS::Schema::CreateRiskGateContext(
             fbb, /*shannon_flow_entropy=*/0.1f, /*shannon_efficiency=*/0.2f,
             /*taleb_kurtosis=*/0.3f, /*taleb_skewness=*/0.4f,
-            /*elder_chandelier_atr=*/0.5f, /*pareto_tail_alpha=*/4.0f,
+            /*elder_chandelier_atr=*/0.5f, /*vol_convexity=*/0.45f, /*pareto_tail_alpha=*/4.0f,
             /*amihud_illiquidity=*/0.6f, /*spread_stress=*/0.7f,
             /*hurst_exponent=*/0.8f, /*fractal_dim=*/1.5f,
             /*mean_rev_z=*/0.9f, /*raschke_burst=*/1.0f,
@@ -148,10 +148,12 @@ int main() {
         check("sequence_id round-trips", parsed.sequence_id == 7);
         check("observation pointer is non-null", parsed.observation != nullptr);
         check("observation.log_scale_ratio() round-trips", parsed.observation->log_scale_ratio() == 1.0f);
-        check("observation.fast_mean_rev_z() round-trips", parsed.observation->fast_mean_rev_z() == 19.0f);
+        check("observation.fast_mean_rev_z() round-trips", parsed.observation->fast_mean_rev_z() == 18.0f);
         check("risk_gate_context is present", parsed.risk_gate_context != nullptr);
         check("risk_gate_context.hurst_exponent() (raw) round-trips",
               parsed.risk_gate_context->hurst_exponent() == 0.8f);
+        check("risk_gate_context.vol_convexity() round-trips",
+              parsed.risk_gate_context->vol_convexity() == 0.45f);
         check("risk_gate_context.regime_duration() round-trips",
               parsed.risk_gate_context->regime_duration() == 42);
     }
@@ -159,7 +161,7 @@ int main() {
         // No RiskGateContext supplied (live path) -- must not crash, pointer is null.
         flatbuffers::FlatBufferBuilder fbb(256);
         MTS::Schema::ObservationData obs(
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
         MTS::Schema::AsymmetryContext ctx(0, 0, 0, 0, 0, 0, 0, 0);
         auto mo = MTS::Schema::CreateMarketObservation(fbb, 1, 1, &obs, &ctx, 0, 0);
         fbb.Finish(mo);

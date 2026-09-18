@@ -548,6 +548,10 @@ public:
         rgc.taleb_kurtosis = 0.0f;
         rgc.taleb_skewness = 0.0f;
         rgc.elder_chandelier_atr = 0.0f;
+        // vol_convexity (restored 2026-09-18, RiskGateContext-only): CalculateVolConvexity()
+        // is ACSIL-coupled (sc.BaseData reads), not yet ported to this offline engine -- same
+        // "out of scope" treatment as the other unreplicated subsystems above.
+        rgc.vol_convexity = 0.0f;
         rgc.raschke_burst = 0.0f;
         rgc.regime_duration = 0;
         rgc.amihud_percentile = 0.5f;

@@ -73,8 +73,10 @@ struct ChunkBuffers {
 // Default values matching RiskGateContext's own .fbs-declared field defaults
 // (mts_schema.fbs:432-448) -- used when a record has no RiskGateContext at all,
 // mirroring observation_vector_bulk_reader.py's _RISK_GATE_FLOAT_DEFAULTS.
+// Order/count MUST track kRiskGateFloatFieldCount/kRiskGateFloatOutputColumnNames exactly --
+// see the vol_convexity restoration fix (2026-09-18) that caught this list stale by one field.
 constexpr std::array<float, MTS::Schema::Contract::kRiskGateFloatFieldCount> kRiskGateFloatDefaults = {
-    0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 4.0f, 0.0f, 0.0f, 0.5f, 1.5f, 0.0f, 1.0f, 0.0f, 0.5f,
+    0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 0.0f, 0.0f, 0.5f, 1.5f, 0.0f, 1.0f, 0.0f, 0.5f,
 };
 
 void AppendPair(const PairedRecord& rec, void* user_data) {
@@ -90,7 +92,8 @@ void AppendPair(const PairedRecord& rec, void* user_data) {
     if (rgc != nullptr) {
         const std::array<float, MTS::Schema::Contract::kRiskGateFloatFieldCount> rgc_values = {
             rgc->shannon_flow_entropy(), rgc->shannon_efficiency(), rgc->taleb_kurtosis(),
-            rgc->taleb_skewness(), rgc->elder_chandelier_atr(), rgc->pareto_tail_alpha(),
+            rgc->taleb_skewness(), rgc->elder_chandelier_atr(), rgc->vol_convexity(),
+            rgc->pareto_tail_alpha(),
             rgc->amihud_illiquidity(), rgc->spread_stress(), rgc->hurst_exponent(),
             rgc->fractal_dim(), rgc->mean_rev_z(), rgc->raschke_burst(), rgc->fisher_info(),
             rgc->amihud_percentile(),

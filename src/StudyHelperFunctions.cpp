@@ -2930,6 +2930,49 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     return meanRevZ;
 }
 
+float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n) {
+    // Volatility of Volatility: coefficient of variation of True Range over a closed-bar-only
+    // window. Restored 2026-09-18 (lbrnet ask, docs/HMM_REGIME_MANAGER_COORDINATION.md Entry
+    // 15/17) -- removed from ObservationData entirely 2026-08-31 (weakest HMM cross-state
+    // discriminator), but the formula is real OHLC-derived realized-vol-of-vol, not an
+    // options-implied quantity, and still has a genuine non-HMM consumer (RiskGateContext ->
+    // lbrnet's backtest_runner.py barrier-width modulation). Feeds LocalRiskContext.
+    // volConvexity/RiskGateContext.vol_convexity ONLY -- the ObservationData/HMM-input removal
+    // stands unchanged.
+    //
+    // Uses only closed bars (i=1..n) -- sc.Index itself (the still-forming current bar) is
+    // never read, since this function is called every tick and its High/Low would otherwise
+    // leak the live, not-yet-final bar into a statistic meant to summarize completed bars
+    // (the closed-bar-only fix from this function's original 2026-08-12 hardening pass).
+    constexpr int kMaxLookback = 40;
+    const int n = std::clamp(lookback_n, 1, kMaxLookback);
+    if (sc.Index < n + 1) return 0.0f;
+
+    std::array<float, kMaxLookback> trValues{};
+    double sumTR = 0;
+    for (int i = 1; i <= n; i++) {
+        const int idx = sc.Index - i;
+        const float h = sc.BaseData[SC_HIGH][idx];
+        const float l = sc.BaseData[SC_LOW][idx];
+        const float c_prev = sc.BaseData[SC_LAST][idx - 1];
+        const float tr = std::max(h - l, std::max(std::abs(h - c_prev), std::abs(l - c_prev)));
+        trValues[static_cast<size_t>(i - 1)] = tr;
+        sumTR += tr;
+    }
+
+    const double meanTR = sumTR / n;
+    double sumSqDiff = 0;
+    for (int i = 0; i < n; i++) {
+        const float tr = trValues[static_cast<size_t>(i)];
+        sumSqDiff += (tr - meanTR) * (tr - meanTR);
+    }
+
+    const double trStd = std::sqrt(sumSqDiff / n);
+    const double trMean = std::max(meanTR, 1e-6);
+    const float cv = static_cast<float>(trStd / trMean);
+    return std::clamp(cv, 0.0f, 5.0f);
+}
+
 // CalculateRecurrenceRate (time-bar RQA) removed 2026-08-28: recurrence_rate moved to an
 // activity-clock computation (ContextManager::BuildObservationVector(), imbalance-bar returns)
 // -- see docs/superpowers/plans/2026-08-28-activity-clock-mean-rev-hurst-recurrence.md Task 1.

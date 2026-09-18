@@ -3245,6 +3245,7 @@ struct RiskGateContextT : public ::flatbuffers::NativeTable {
   float taleb_kurtosis = 0.0f;
   float taleb_skewness = 0.0f;
   float elder_chandelier_atr = 0.0f;
+  float vol_convexity = 0.0f;
   float pareto_tail_alpha = 4.0f;
   float amihud_illiquidity = 0.0f;
   float spread_stress = 0.0f;
@@ -3268,18 +3269,19 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_TALEB_KURTOSIS = 8,
     VT_TALEB_SKEWNESS = 10,
     VT_ELDER_CHANDELIER_ATR = 12,
-    VT_PARETO_TAIL_ALPHA = 14,
-    VT_AMIHUD_ILLIQUIDITY = 16,
-    VT_SPREAD_STRESS = 18,
-    VT_HURST_EXPONENT = 20,
-    VT_FRACTAL_DIM = 22,
-    VT_MEAN_REV_Z = 24,
-    VT_RASCHKE_BURST = 26,
-    VT_FISHER_INFO = 28,
-    VT_REGIME_DURATION = 30,
-    VT_IS_VALID = 32,
-    VT_SNAPSHOT_TIMESTAMP_US = 34,
-    VT_AMIHUD_PERCENTILE = 36
+    VT_VOL_CONVEXITY = 14,
+    VT_PARETO_TAIL_ALPHA = 16,
+    VT_AMIHUD_ILLIQUIDITY = 18,
+    VT_SPREAD_STRESS = 20,
+    VT_HURST_EXPONENT = 22,
+    VT_FRACTAL_DIM = 24,
+    VT_MEAN_REV_Z = 26,
+    VT_RASCHKE_BURST = 28,
+    VT_FISHER_INFO = 30,
+    VT_REGIME_DURATION = 32,
+    VT_IS_VALID = 34,
+    VT_SNAPSHOT_TIMESTAMP_US = 36,
+    VT_AMIHUD_PERCENTILE = 38
   };
   float shannon_flow_entropy() const {
     return GetField<float>(VT_SHANNON_FLOW_ENTROPY, 0.0f);
@@ -3310,6 +3312,12 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   bool mutate_elder_chandelier_atr(float _elder_chandelier_atr = 0.0f) {
     return SetField<float>(VT_ELDER_CHANDELIER_ATR, _elder_chandelier_atr, 0.0f);
+  }
+  float vol_convexity() const {
+    return GetField<float>(VT_VOL_CONVEXITY, 0.0f);
+  }
+  bool mutate_vol_convexity(float _vol_convexity = 0.0f) {
+    return SetField<float>(VT_VOL_CONVEXITY, _vol_convexity, 0.0f);
   }
   float pareto_tail_alpha() const {
     return GetField<float>(VT_PARETO_TAIL_ALPHA, 4.0f);
@@ -3390,6 +3398,7 @@ struct RiskGateContext FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_TALEB_KURTOSIS, 4) &&
            VerifyField<float>(verifier, VT_TALEB_SKEWNESS, 4) &&
            VerifyField<float>(verifier, VT_ELDER_CHANDELIER_ATR, 4) &&
+           VerifyField<float>(verifier, VT_VOL_CONVEXITY, 4) &&
            VerifyField<float>(verifier, VT_PARETO_TAIL_ALPHA, 4) &&
            VerifyField<float>(verifier, VT_AMIHUD_ILLIQUIDITY, 4) &&
            VerifyField<float>(verifier, VT_SPREAD_STRESS, 4) &&
@@ -3427,6 +3436,9 @@ struct RiskGateContextBuilder {
   }
   void add_elder_chandelier_atr(float elder_chandelier_atr) {
     fbb_.AddElement<float>(RiskGateContext::VT_ELDER_CHANDELIER_ATR, elder_chandelier_atr, 0.0f);
+  }
+  void add_vol_convexity(float vol_convexity) {
+    fbb_.AddElement<float>(RiskGateContext::VT_VOL_CONVEXITY, vol_convexity, 0.0f);
   }
   void add_pareto_tail_alpha(float pareto_tail_alpha) {
     fbb_.AddElement<float>(RiskGateContext::VT_PARETO_TAIL_ALPHA, pareto_tail_alpha, 4.0f);
@@ -3482,6 +3494,7 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(
     float taleb_kurtosis = 0.0f,
     float taleb_skewness = 0.0f,
     float elder_chandelier_atr = 0.0f,
+    float vol_convexity = 0.0f,
     float pareto_tail_alpha = 4.0f,
     float amihud_illiquidity = 0.0f,
     float spread_stress = 0.0f,
@@ -3506,6 +3519,7 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(
   builder_.add_spread_stress(spread_stress);
   builder_.add_amihud_illiquidity(amihud_illiquidity);
   builder_.add_pareto_tail_alpha(pareto_tail_alpha);
+  builder_.add_vol_convexity(vol_convexity);
   builder_.add_elder_chandelier_atr(elder_chandelier_atr);
   builder_.add_taleb_skewness(taleb_skewness);
   builder_.add_taleb_kurtosis(taleb_kurtosis);
@@ -10616,6 +10630,7 @@ inline void RiskGateContext::UnPackTo(RiskGateContextT *_o, const ::flatbuffers:
   { auto _e = taleb_kurtosis(); _o->taleb_kurtosis = _e; }
   { auto _e = taleb_skewness(); _o->taleb_skewness = _e; }
   { auto _e = elder_chandelier_atr(); _o->elder_chandelier_atr = _e; }
+  { auto _e = vol_convexity(); _o->vol_convexity = _e; }
   { auto _e = pareto_tail_alpha(); _o->pareto_tail_alpha = _e; }
   { auto _e = amihud_illiquidity(); _o->amihud_illiquidity = _e; }
   { auto _e = spread_stress(); _o->spread_stress = _e; }
@@ -10643,6 +10658,7 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffer
   auto _taleb_kurtosis = _o->taleb_kurtosis;
   auto _taleb_skewness = _o->taleb_skewness;
   auto _elder_chandelier_atr = _o->elder_chandelier_atr;
+  auto _vol_convexity = _o->vol_convexity;
   auto _pareto_tail_alpha = _o->pareto_tail_alpha;
   auto _amihud_illiquidity = _o->amihud_illiquidity;
   auto _spread_stress = _o->spread_stress;
@@ -10662,6 +10678,7 @@ inline ::flatbuffers::Offset<RiskGateContext> CreateRiskGateContext(::flatbuffer
       _taleb_kurtosis,
       _taleb_skewness,
       _elder_chandelier_atr,
+      _vol_convexity,
       _pareto_tail_alpha,
       _amihud_illiquidity,
       _spread_stress,

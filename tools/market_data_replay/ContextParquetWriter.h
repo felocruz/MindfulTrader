@@ -99,7 +99,8 @@ public:
             const std::array<float, MTS::Schema::Contract::kRiskGateFloatFieldCount> rgc_values = {
                 risk_gate_context->shannon_flow_entropy, risk_gate_context->shannon_efficiency,
                 risk_gate_context->taleb_kurtosis, risk_gate_context->taleb_skewness,
-                risk_gate_context->elder_chandelier_atr, risk_gate_context->pareto_tail_alpha,
+                risk_gate_context->elder_chandelier_atr, risk_gate_context->vol_convexity,
+                risk_gate_context->pareto_tail_alpha,
                 risk_gate_context->amihud_illiquidity, risk_gate_context->spread_stress,
                 risk_gate_context->hurst_exponent, risk_gate_context->fractal_dim,
                 risk_gate_context->mean_rev_z, risk_gate_context->raschke_burst,
@@ -134,8 +135,10 @@ public:
 private:
     // Matches RiskGateContext's own .fbs-declared field defaults (mts_schema.fbs),
     // same values context_to_parquet.cpp's kRiskGateFloatDefaults already uses.
+    // Order/count MUST track kRiskGateFloatFieldCount/kRiskGateFloatOutputColumnNames exactly --
+    // see the vol_convexity restoration fix (2026-09-18) that caught this list stale by one field.
     static constexpr std::array<float, MTS::Schema::Contract::kRiskGateFloatFieldCount> kRiskGateFloatDefaults = {
-        0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 4.0f, 0.0f, 0.0f, 0.5f, 1.5f, 0.0f, 1.0f, 0.0f, 0.5f,
+        0.0f, 0.5f, 0.0f, 0.0f, 0.0f, 0.0f, 4.0f, 0.0f, 0.0f, 0.5f, 1.5f, 0.0f, 1.0f, 0.0f, 0.5f,
     };
     static constexpr std::size_t kChunkRows = 2'000'000;  // matches context_to_parquet.cpp's own convention
 

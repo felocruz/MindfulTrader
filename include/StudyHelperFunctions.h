@@ -327,8 +327,11 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n,
 /// Lookback: ~5-20 bars (Ripple)
 float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n);
 
-/// Volatility Convexity: Curvature of realized volatility (smile proxy)
+/// Volatility Convexity: coefficient of variation of True Range (volatility-of-volatility).
+/// Restored 2026-09-18 (lbrnet ask, Entry 15/17) -- RiskGateContext-only, see
+/// StudyHelperFunctions.cpp's own comment for the full history/rationale.
 /// Lookback: ~5-20 bars (Ripple)
+float CalculateVolConvexity(SCStudyInterfaceRef sc, int lookback_n);
 
 // CalculateRecurrenceRate removed 2026-08-28: recurrence_rate moved to an activity-clock
 // computation (ContextManager.cpp, imbalance-bar returns). See

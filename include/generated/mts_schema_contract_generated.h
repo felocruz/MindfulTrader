@@ -81,8 +81,8 @@ inline constexpr std::array<const char*, kAsymmetryDim> kAsymmetryFieldNames = {
     "session_quality_score",
 };
 
-inline constexpr std::size_t kRiskGateFieldCount = 17;
-inline constexpr std::size_t kRiskGateFloatFieldCount = 14;
+inline constexpr std::size_t kRiskGateFieldCount = 18;
+inline constexpr std::size_t kRiskGateFloatFieldCount = 15;
 
 inline constexpr std::array<const char*, kRiskGateFieldCount> kRiskGateFieldNames = {
     "shannon_flow_entropy",
@@ -90,6 +90,7 @@ inline constexpr std::array<const char*, kRiskGateFieldCount> kRiskGateFieldName
     "taleb_kurtosis",
     "taleb_skewness",
     "elder_chandelier_atr",
+    "vol_convexity",
     "pareto_tail_alpha",
     "amihud_illiquidity",
     "spread_stress",
@@ -110,6 +111,7 @@ inline constexpr std::array<const char*, kRiskGateFloatFieldCount> kRiskGateFloa
     "taleb_kurtosis",
     "taleb_skewness",
     "elder_chandelier_atr",
+    "vol_convexity",
     "pareto_tail_alpha",
     "amihud_illiquidity",
     "spread_stress",
@@ -131,6 +133,7 @@ inline constexpr std::array<const char*, kRiskGateFloatFieldCount> kRiskGateFloa
     "taleb_kurtosis",
     "taleb_skewness",
     "elder_chandelier_atr",
+    "vol_convexity",
     "pareto_tail_alpha",
     "amihud_illiquidity_raw",
     "spread_stress",
