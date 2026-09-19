@@ -1040,6 +1040,7 @@ Step 1. Run after collecting the paired CSV; prints the mapped thresholds --
 does not modify any C++ files itself (that's a manual follow-up commit once
 the mapping is reviewed).
 """
+
 import sys
 import csv
 import numpy as np
@@ -1056,6 +1057,7 @@ OLD_THRESHOLDS = {
     "cascade_gate_high (RiskManager.cpp:1756)": 2.5,
 }
 
+
 def main(csv_path: str) -> None:
     old_vals, new_vals = [], []
     with open(csv_path, newline="") as f:
@@ -1070,6 +1072,7 @@ def main(csv_path: str) -> None:
         percentile = float((old_arr <= old_threshold).mean() * 100.0)
         mapped = float(np.percentile(new_arr, percentile))
         print(f"{name}: old={old_threshold} (P{percentile:.1f}) -> new={mapped:.4f}")
+
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
@@ -1313,7 +1316,9 @@ if a stable bias-correction curve emerges. Output-only spike -- does not
 modify production code. See docs/superpowers/specs/2026-08-13-observation-
 vector-institutional-elevation-spec.md Unit 6a.
 """
+
 import numpy as np
+
 
 def simulate_fbm(n: int, hurst: float, rng: np.random.Generator) -> np.ndarray:
     # Hosking method or simple approximation via cumulative sum of a
@@ -1321,8 +1326,10 @@ def simulate_fbm(n: int, hurst: float, rng: np.random.Generator) -> np.ndarray:
     # (e.g. `fbm` package, `pip install fbm`) rather than hand-rolling, to
     # keep the simulation itself trustworthy.
     from fbm import FBM
+
     f = FBM(n=n, hurst=hurst, length=1, method="daviesharte")
     return f.fbm()
+
 
 def dfa(series: np.ndarray, min_scale: int = 8) -> float:
     # Mirror this codebase's DFA implementation
@@ -1340,16 +1347,17 @@ def dfa(series: np.ndarray, min_scale: int = 8) -> float:
             continue
         rms = []
         for seg in range(segments):
-            chunk = y[seg * scale:(seg + 1) * scale]
+            chunk = y[seg * scale : (seg + 1) * scale]
             t = np.arange(len(chunk))
             coeffs = np.polyfit(t, chunk, 1)
             trend = np.polyval(coeffs, t)
             rms.append(np.sqrt(np.mean((chunk - trend) ** 2)))
         flucts.append(np.mean(rms))
-    log_scales = np.log(scales[:len(flucts)])
+    log_scales = np.log(scales[: len(flucts)])
     log_flucts = np.log(flucts)
     slope, _ = np.polyfit(log_scales, log_flucts, 1)
     return slope
+
 
 def main():
     rng = np.random.default_rng(2026)
@@ -1358,8 +1366,11 @@ def main():
         estimates = [dfa(simulate_fbm(100, true_hurst, rng)) for _ in range(n_trials)]
         bias = np.mean(estimates) - true_hurst
         std = np.std(estimates)
-        print(f"true H={true_hurst}: estimated mean={np.mean(estimates):.3f} "
-              f"bias={bias:+.3f} std={std:.3f}")
+        print(
+            f"true H={true_hurst}: estimated mean={np.mean(estimates):.3f} "
+            f"bias={bias:+.3f} std={std:.3f}"
+        )
+
 
 if __name__ == "__main__":
     main()
@@ -1411,6 +1422,7 @@ already used to analyze dims 1/2/4/10/11/12, applied to dim 9 instead.
 See docs/superpowers/specs/2026-08-13-observation-vector-institutional-
 elevation-spec.md Unit 6b.
 """
+
 import struct
 import sys
 from collections import defaultdict
@@ -1428,10 +1440,14 @@ import numpy as np
 def time_bucket(timestamp_us: int) -> str:
     dt = datetime.fromtimestamp(timestamp_us / 1e6, tz=timezone.utc)
     hour = dt.hour
-    if hour < 14: return "pre-open"
-    if hour < 15: return "open"
-    if 15 <= hour < 19: return "midday"
-    if 19 <= hour < 21: return "close"
+    if hour < 14:
+        return "pre-open"
+    if hour < 15:
+        return "open"
+    if 15 <= hour < 19:
+        return "midday"
+    if 19 <= hour < 21:
+        return "close"
     return "overnight"
 
 

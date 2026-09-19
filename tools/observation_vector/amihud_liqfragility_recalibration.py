@@ -16,6 +16,7 @@ which no longer describes what these two dims measure.
 Usage: mamba run -n mts python tools/observation_vector/amihud_liqfragility_recalibration.py \
            [--live-bar-min-volume 10]
 """
+
 import argparse
 import struct
 import subprocess
@@ -23,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+
 
 WORKSPACE = Path("/home/rcruz/devel/VSCode")
 TICKS_PARQUET = WORKSPACE / "lbrnet/data/raw/mes_continuous_ticks.parquet"
@@ -36,10 +38,16 @@ BINARY_PATH = Path("/tmp/amihud_liqfrag_ticks.bin")
 def build_driver():
     DRIVER_BIN.parent.mkdir(parents=True, exist_ok=True)
     cmd = [
-        "g++", "-O2", "-std=c++17",
-        "-I", str(MINDFULTRADER / "include"),
-        "-I", VCPKG_JSON_INCLUDE,
-        str(DRIVER_SRC), "-o", str(DRIVER_BIN),
+        "g++",
+        "-O2",
+        "-std=c++17",
+        "-I",
+        str(MINDFULTRADER / "include"),
+        "-I",
+        VCPKG_JSON_INCLUDE,
+        str(DRIVER_SRC),
+        "-o",
+        str(DRIVER_BIN),
     ]
     print(f"building driver: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
@@ -78,8 +86,12 @@ def export_binary():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--live-bar-min-volume", type=float, default=10.0,
-                         help="kLiveBarMinVolume guard candidate to evaluate")
+    parser.add_argument(
+        "--live-bar-min-volume",
+        type=float,
+        default=10.0,
+        help="kLiveBarMinVolume guard candidate to evaluate",
+    )
     args = parser.parse_args()
 
     export_binary()

@@ -20,8 +20,10 @@ here unmeasured.
 
 Requires: pip install fbm numpy scipy (same env as dfa_bias_montecarlo.py).
 """
+
 import numpy as np
 from fbm import FBM
+
 
 # ----------------------------------------------------------------------------
 # fGn generator (identical to dfa_bias_montecarlo.py)
@@ -35,9 +37,12 @@ def simulate_fgn(n: int, hurst: float, rng: np.random.Generator) -> np.ndarray:
     return f.fgn()
 
 
-def contaminate_with_fat_tail_spikes(fgn: np.ndarray, rng: np.random.Generator,
-                                      contamination_frac: float = 0.05,
-                                      spike_scale_mult: float = 8.0) -> np.ndarray:
+def contaminate_with_fat_tail_spikes(
+    fgn: np.ndarray,
+    rng: np.random.Generator,
+    contamination_frac: float = 0.05,
+    spike_scale_mult: float = 8.0,
+) -> np.ndarray:
     """Replace a small fraction of increments with heavy-tailed (Student-t,
     df=3) spikes scaled to spike_scale_mult times the series' own std -- a
     crude but standard way to simulate real financial fat-tail contamination
@@ -90,7 +95,7 @@ def mfdfa(log_returns: np.ndarray, q: float, min_scale: int = 8) -> float:
         seg_f2 = []  # per-segment F^2(s,v) = mean squared residual
         for v in range(num_segments):
             start = v * s
-            chunk = profile[start:start + s]
+            chunk = profile[start : start + s]
             k = np.arange(s, dtype=np.float64)
 
             sum_y = np.sum(chunk)
@@ -144,11 +149,20 @@ def mfdfa(log_returns: np.ndarray, q: float, min_scale: int = 8) -> float:
     return float(np.clip(hurst, 0.0, 1.5))
 
 
-def run_scenario(label: str, true_hursts, n_trials: int, n_samples: int, min_scale: int,
-                  contaminate: bool, rng: np.random.Generator):
+def run_scenario(
+    label: str,
+    true_hursts,
+    n_trials: int,
+    n_samples: int,
+    min_scale: int,
+    contaminate: bool,
+    rng: np.random.Generator,
+):
     print(f"\n=== {label} ===")
-    print(f"{'true H':>8} {'q2 mean':>9} {'q2 bias':>8} {'q2 std':>8} "
-          f"{'q1 mean':>9} {'q1 bias':>8} {'q1 std':>8}")
+    print(
+        f"{'true H':>8} {'q2 mean':>9} {'q2 bias':>8} {'q2 std':>8} "
+        f"{'q1 mean':>9} {'q1 bias':>8} {'q1 std':>8}"
+    )
     for true_hurst in true_hursts:
         q2_estimates = []
         q1_estimates = []
@@ -160,9 +174,11 @@ def run_scenario(label: str, true_hursts, n_trials: int, n_samples: int, min_sca
             q1_estimates.append(mfdfa(fgn, q=1, min_scale=min_scale))
         q2_estimates = np.array(q2_estimates)
         q1_estimates = np.array(q1_estimates)
-        print(f"{true_hurst:8.2f} "
-              f"{q2_estimates.mean():9.4f} {q2_estimates.mean() - true_hurst:+8.4f} {q2_estimates.std():8.4f}  "
-              f"{q1_estimates.mean():9.4f} {q1_estimates.mean() - true_hurst:+8.4f} {q1_estimates.std():8.4f}")
+        print(
+            f"{true_hurst:8.2f} "
+            f"{q2_estimates.mean():9.4f} {q2_estimates.mean() - true_hurst:+8.4f} {q2_estimates.std():8.4f}  "
+            f"{q1_estimates.mean():9.4f} {q1_estimates.mean() - true_hurst:+8.4f} {q1_estimates.std():8.4f}"
+        )
 
 
 def main():
@@ -172,16 +188,31 @@ def main():
     min_scale = 8
     true_hursts = [0.3, 0.4, 0.5, 0.6, 0.7]
 
-    print(f"DFA(q=2) vs MFDFA(q=1) Monte Carlo -- N={n_samples}, minScale={min_scale}, "
-          f"trials={n_trials} per true-H value")
+    print(
+        f"DFA(q=2) vs MFDFA(q=1) Monte Carlo -- N={n_samples}, minScale={min_scale}, "
+        f"trials={n_trials} per true-H value"
+    )
 
-    run_scenario("Scenario A: pure Gaussian fGn (Kristoufek 2010 baseline, matches "
-                 "dfa_bias_montecarlo.py exactly)", true_hursts, n_trials, n_samples,
-                 min_scale, contaminate=False, rng=rng)
+    run_scenario(
+        "Scenario A: pure Gaussian fGn (Kristoufek 2010 baseline, matches "
+        "dfa_bias_montecarlo.py exactly)",
+        true_hursts,
+        n_trials,
+        n_samples,
+        min_scale,
+        contaminate=False,
+        rng=rng,
+    )
 
-    run_scenario("Scenario B: fGn + 5% Student-t(3) outlier contamination (real "
-                 "fat-tail-jump simulation)", true_hursts, n_trials, n_samples,
-                 min_scale, contaminate=True, rng=rng)
+    run_scenario(
+        "Scenario B: fGn + 5% Student-t(3) outlier contamination (real fat-tail-jump simulation)",
+        true_hursts,
+        n_trials,
+        n_samples,
+        min_scale,
+        contaminate=True,
+        rng=rng,
+    )
 
 
 if __name__ == "__main__":

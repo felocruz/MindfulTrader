@@ -373,27 +373,28 @@ import zmq
 import time
 from datetime import datetime
 
+
 def heartbeat_monitor():
     context = zmq.Context()
     heartbeat_sub = context.socket(zmq.SUB)
     heartbeat_sub.connect("tcp://172.20.112.1:5559")
     heartbeat_sub.subscribe("")  # Subscribe to all messages
-    
+
     last_heartbeat_time = time.time()
-    
+
     while True:
         try:
             # Non-blocking poll with timeout
             if heartbeat_sub.poll(timeout=2000):  # 2 second timeout
                 msg = heartbeat_sub.recv_json()
                 last_heartbeat_time = time.time()
-                
+
                 state = msg["payload"]["state"]
                 strike_count = msg["payload"]["strike_count"]
-                
+
                 # Update GUI status indicator
                 update_connection_status(state, strike_count)
-                
+
                 # Handle degraded state
                 if state == "DEGRADED":
                     show_warning("Sierra Chart connection degraded")
@@ -439,15 +440,15 @@ def submit_trade_signal(symbol, direction, entry, stop, target, qty, confidence)
     context = zmq.Context()
     trade_req = context.socket(zmq.REQ)
     trade_req.connect("tcp://172.20.112.1:5556")
-    
+
     # Set timeout (2500ms per config)
     trade_req.setsockopt(zmq.RCVTIMEO, 2500)
-    
+
     request = {
         "header": {
             "msg_type": "TRADE_SIGNAL",
             "sender": "PYTHON_GUI_CLIENT",
-            "timestamp_ns": time.time_ns()
+            "timestamp_ns": time.time_ns(),
         },
         "payload": {
             "symbol": symbol,
@@ -457,14 +458,14 @@ def submit_trade_signal(symbol, direction, entry, stop, target, qty, confidence)
             "take_profit": target,
             "quantity": qty,
             "strategy": "AI_DRIVEN",
-            "confidence": confidence
-        }
+            "confidence": confidence,
+        },
     }
-    
+
     try:
         trade_req.send_json(request)
         response = trade_req.recv_json()
-        
+
         if response["payload"]["status"] == "VALIDATED":
             return True, response["payload"]["trade_id"]
         else:
@@ -533,7 +534,9 @@ except zmq.Again:
 if response["payload"]["negotiation_status"] == "REJECTED":
     sierra_version = response["header"]["version"]
     gui_version = "1.0.2"
-    show_error(f"Version mismatch: GUI {gui_version} incompatible with Sierra Chart {sierra_version}")
+    show_error(
+        f"Version mismatch: GUI {gui_version} incompatible with Sierra Chart {sierra_version}"
+    )
     # Prompt user to upgrade
 ```
 
@@ -616,11 +619,8 @@ import logging
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[
-        logging.FileHandler('mindfultrader_gui.log'),
-        logging.StreamHandler()
-    ]
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.FileHandler("mindfultrader_gui.log"), logging.StreamHandler()],
 )
 
 # Log all handshake attempts

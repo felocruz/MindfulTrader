@@ -1,10 +1,12 @@
 """Test scripts/promote_config_to_live.py's atomic-write + backup behavior."""
+
 import json
 import sys
 from pathlib import Path
 
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
-import promote_config_to_live as promote_mod  # noqa: E402
+import promote_config_to_live as promote_mod
 
 
 def test_promote_writes_content_byte_for_byte(tmp_path):
@@ -42,4 +44,5 @@ def test_promote_backs_up_existing_live_file(tmp_path):
 
 if __name__ == "__main__":
     import pytest
+
     sys.exit(pytest.main([__file__, "-v"]))

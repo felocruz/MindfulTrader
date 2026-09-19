@@ -294,12 +294,16 @@ publisher = zmq.Context().socket(zmq.PUB)
 publisher.bind("tcp://127.0.0.1:5559")
 
 while True:
-    publisher.send_string(json.dumps({
-        "type": "heartbeat",
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-        "model_status": "active",
-        "uptime_seconds": int(time.time() - start_time)
-    }))
+    publisher.send_string(
+        json.dumps(
+            {
+                "type": "heartbeat",
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "model_status": "active",
+                "uptime_seconds": int(time.time() - start_time),
+            }
+        )
+    )
     time.sleep(1.0)
 ```
 
@@ -356,6 +360,7 @@ import time
 from datetime import datetime
 import threading
 
+
 class TransformerPublisher:
     def __init__(self, port=5556):
         self.context = zmq.Context()
@@ -366,10 +371,7 @@ class TransformerPublisher:
     def send_heartbeat(self):
         """Send heartbeat every 1 second"""
         while self.running:
-            heartbeat = {
-                "type": "heartbeat",
-                "timestamp": datetime.utcnow().isoformat() + "Z"
-            }
+            heartbeat = {"type": "heartbeat", "timestamp": datetime.utcnow().isoformat() + "Z"}
             self.socket.send_string(json.dumps(heartbeat))
             time.sleep(1.0)  # 1 second interval
 
@@ -380,7 +382,7 @@ class TransformerPublisher:
             "model_version": model_version,
             "bias": self.get_current_bias(),
             "last_trade_id": last_trade_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z"
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         }
         self.socket.send_string(json.dumps(state_reset))
         print("✅ State reset sent - AI ⇔ C++ synchronized")
@@ -390,6 +392,7 @@ class TransformerPublisher:
         heartbeat_thread = threading.Thread(target=self.send_heartbeat, daemon=True)
         heartbeat_thread.start()
         print("💓 Heartbeat thread started (1s interval)")
+
 
 # Usage:
 if __name__ == "__main__":
@@ -461,7 +464,7 @@ python src/transformer_publisher.py
 signal = {
     "type": "entry_signal",
     "timestamp": "2025-12-19T10:00:00.000000Z",  # 15 seconds old
-    "pattern": {"confidence": 0.85}
+    "pattern": {"confidence": 0.85},
 }
 
 # Expected in C++:
@@ -606,14 +609,15 @@ def start_heartbeat(self):
     self.heartbeat_thread.start()
     print("💓 Heartbeat started on port 5559")
 
+
 def _send_state_reset(self):
     """Send state synchronization message to C++"""
     state_reset = {
         "type": "state_reset",
         "timestamp": datetime.utcnow().isoformat() + "Z",
         "model_version": self._get_model_version(),  # Extract from metadata
-        "current_bias": self._get_current_bias(),     # LONG/SHORT/NEUTRAL
-        "last_trade_id": self._get_last_trade_id()    # From trade log or None
+        "current_bias": self._get_current_bias(),  # LONG/SHORT/NEUTRAL
+        "last_trade_id": self._get_last_trade_id(),  # From trade log or None
     }
     msg = json.dumps(state_reset)
     self.heartbeat_socket.send_string(msg)
@@ -648,13 +652,15 @@ def predict(self, indicators_dict: Dict[str, Any]) -> Optional[Dict]:
     """Make prediction with timestamp freshness check"""
 
     # Extract timestamp from C++ payload
-    cpp_timestamp = indicators_dict.get('timestamp')  # ISO 8601 string
+    cpp_timestamp = indicators_dict.get("timestamp")  # ISO 8601 string
     if cpp_timestamp:
         signal_age = self._calculate_signal_age(cpp_timestamp)
 
         # Warn if approaching staleness threshold
         if signal_age > 8.0:
-            logger.warning(f"⚠️ Signal approaching staleness: {signal_age:.2f}s old (threshold: 10s)")
+            logger.warning(
+                f"⚠️ Signal approaching staleness: {signal_age:.2f}s old (threshold: 10s)"
+            )
 
         # Reject if stale
         if signal_age > 10.0:
@@ -666,9 +672,10 @@ def predict(self, indicators_dict: Dict[str, Any]) -> Optional[Dict]:
     prediction = self.model.predict(preprocessed, verbose=0)
     # ...
 
+
 def _calculate_signal_age(self, iso_timestamp: str) -> float:
     """Calculate seconds since signal was generated"""
-    signal_time = datetime.fromisoformat(iso_timestamp.replace('Z', '+00:00'))
+    signal_time = datetime.fromisoformat(iso_timestamp.replace("Z", "+00:00"))
     now = datetime.now(timezone.utc)
     return (now - signal_time).total_seconds()
 ```
@@ -697,11 +704,7 @@ def _calculate_signal_age(self, iso_timestamp: str) -> float:
 
 **Implementation Required:**
 ```python
-def embed_performance_metadata(
-    model_path: str,
-    backtest_results: Dict,
-    training_config: Dict
-):
+def embed_performance_metadata(model_path: str, backtest_results: Dict, training_config: Dict):
     """Save metadata with model version identifier"""
 
     # Generate version from timestamp + config hash
@@ -710,33 +713,28 @@ def embed_performance_metadata(
     metadata = {
         "model_version": version,  # e.g., "v2.1.0-20251221-a3f7b2"
         "training_date": datetime.utcnow().isoformat() + "Z",
-        "vocab_size": training_config['vocab_size'],
-        "n_features": training_config['n_features'],
+        "vocab_size": training_config["vocab_size"],
+        "n_features": training_config["n_features"],
         "performance": {
-            "sharpe_ratio": backtest_results['sharpe_ratio'],
-            "win_rate": backtest_results['win_rate'],
+            "sharpe_ratio": backtest_results["sharpe_ratio"],
+            "win_rate": backtest_results["win_rate"],
             # ... existing metrics
         },
-        "thresholds": {
-            "min_sharpe": 1.5,
-            "min_win_rate": 0.55,
-            "max_drawdown": 0.15
-        }
+        "thresholds": {"min_sharpe": 1.5, "min_win_rate": 0.55, "max_drawdown": 0.15},
     }
 
     # Save to companion JSON
-    metadata_path = model_path.replace('.keras', '_metadata.json')
-    with open(metadata_path, 'w') as f:
+    metadata_path = model_path.replace(".keras", "_metadata.json")
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
+
 
 def _generate_model_version(config: Dict) -> str:
     """Generate semantic version from config"""
     # Extract major.minor from config or increment
-    config_hash = hashlib.sha256(
-        json.dumps(config, sort_keys=True).encode()
-    ).hexdigest()[:6]
+    config_hash = hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:6]
 
-    date_str = datetime.utcnow().strftime('%Y%m%d')
+    date_str = datetime.utcnow().strftime("%Y%m%d")
     return f"v2.1.0-{date_str}-{config_hash}"
 ```
 

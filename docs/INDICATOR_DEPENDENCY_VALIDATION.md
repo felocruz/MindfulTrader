@@ -129,7 +129,7 @@ Add C++ comment filtering to avoid false positives from commented-out code:
 # Filter out lines starting with // or within /* */ blocks
 def is_commented(line):
     stripped = line.strip()
-    return stripped.startswith('//') or stripped.startswith('/*') or stripped.startswith('*')
+    return stripped.startswith("//") or stripped.startswith("/*") or stripped.startswith("*")
 ```
 
 ### 2. MomentumPinball Dependency Review

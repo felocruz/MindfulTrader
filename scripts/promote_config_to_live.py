@@ -6,13 +6,15 @@ is a deployment target. Run manually after editing config/*.json — not wired
 into any build step, matching this repo's other un-wired scripts/ entries
 (check_nh_nl_freshness.py, refresh_sierra_chart_dependencies.sh).
 """
+
 import argparse
 import json
 import os
 import shutil
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
+
 
 REPO_CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 LIVE_CONFIG_DIR = Path("/mnt/c/Trading/config")
@@ -20,7 +22,7 @@ CONFIG_FILES = ["execution_params.json", "hmm_regime_risk_policy.json", "classif
 
 
 def _utc_stamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _backup_file(path: Path) -> Path:

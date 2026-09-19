@@ -58,12 +58,14 @@ Usage (mts env):
     source /home/rcruz/anaconda3/etc/profile.d/conda.sh && mamba activate mts
     python3 tools/observation_vector/block_length_and_variance_inflation.py
 """
+
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from arch.covariance.kernel import NeweyWest
 from statsmodels.tsa.stattools import acf
+
 
 DRIFT_LOCATION_DIR = Path("/tmp/drift_location_signals")
 JUMP_RATIO_DIR = Path("/tmp/jump_ratio_signals")
@@ -133,13 +135,17 @@ def report_deff(label: str, series: np.ndarray, horizon_minutes: int) -> float:
     # geyer_tau_int's own docstring) before this script was dispatched.
     deff_geyer = tau_int
     deff_final = max(deff_nw, deff_geyer)
-    print(f"  {label:<38} n={len(series):>9} bandwidth={bandwidth:>7}  "
-          f"DEFF_NW={deff_nw:8.4f}  DEFF_Geyer={deff_geyer:8.4f}  "
-          f"-> final={deff_final:8.4f}  sqrt(final)={deff_final ** 0.5:7.4f}")
+    print(
+        f"  {label:<38} n={len(series):>9} bandwidth={bandwidth:>7}  "
+        f"DEFF_NW={deff_nw:8.4f}  DEFF_Geyer={deff_geyer:8.4f}  "
+        f"-> final={deff_final:8.4f}  sqrt(final)={deff_final**0.5:7.4f}"
+    )
     if abs(deff_nw - deff_geyer) / max(deff_nw, deff_geyer) > 0.5:
-        print(f"    NOTE: the two DEFF estimates disagree by >50% -- worth a closer look "
-              f"before trusting this horizon's number, per CLAUDE_BRIEF_116/117's own "
-              f"sanity-check rule.")
+        print(
+            "    NOTE: the two DEFF estimates disagree by >50% -- worth a closer look "
+            "before trusting this horizon's number, per CLAUDE_BRIEF_116/117's own "
+            "sanity-check rule."
+        )
     return deff_final
 
 
@@ -154,8 +160,12 @@ def main() -> None:
     print("\n=== jump_ratio (ComputeBootstrapMedianGapCI: below-median indicator) ===")
     jump_deff: dict[int, float] = {}
     for h in HORIZONS:
-        top = pd.read_csv(JUMP_RATIO_DIR / f"jump_ratio_top_belowmedian_h{h}.csv")["below_median"].to_numpy()
-        bottom = pd.read_csv(JUMP_RATIO_DIR / f"jump_ratio_bottom_belowmedian_h{h}.csv")["below_median"].to_numpy()
+        top = pd.read_csv(JUMP_RATIO_DIR / f"jump_ratio_top_belowmedian_h{h}.csv")[
+            "below_median"
+        ].to_numpy()
+        bottom = pd.read_csv(JUMP_RATIO_DIR / f"jump_ratio_bottom_belowmedian_h{h}.csv")[
+            "below_median"
+        ].to_numpy()
         top_deff = report_deff(f"h={h}min top decile", top, h)
         bottom_deff = report_deff(f"h={h}min bottom decile", bottom, h)
         # Simple average of the two groups' final DEFFs (deliberate
@@ -164,8 +174,10 @@ def main() -> None:
         # horizon-driven overlap mechanism, per the design spec's own
         # §4.1 note).
         jump_deff[h] = (top_deff + bottom_deff) / 2.0
-        print(f"    -> combined (simple average of top/bottom): "
-              f"DEFF={jump_deff[h]:.4f}  sqrt(DEFF)={jump_deff[h] ** 0.5:.4f}")
+        print(
+            f"    -> combined (simple average of top/bottom): "
+            f"DEFF={jump_deff[h]:.4f}  sqrt(DEFF)={jump_deff[h] ** 0.5:.4f}"
+        )
 
     print("\n=== C++ constants to embed (Task 7) ===")
     print("drift_location_eval.cpp's VarianceInflationFor():")

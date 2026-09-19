@@ -736,9 +736,10 @@ After implementing regime calculation:
 2. **Verify distribution** (Python):
    ```python
    import pandas as pd
+
    df = pd.read_csv("data/TransformerData.csv")
-   print(df['market_regime'].value_counts())
-   print(df['nh_nl_signal'].value_counts())
+   print(df["market_regime"].value_counts())
+   print(df["nh_nl_signal"].value_counts())
    ```
 
 **Expected Distribution** (approximate):

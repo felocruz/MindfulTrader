@@ -138,9 +138,9 @@ Copy the correct mapping from validation output into `analyze_transformer_data.p
 
 ```python
 def analyze_strategies_and_triggers(self) -> Dict[str, Any]:
-    strategy_counts = Counter([r.get('raschke_strategy_setup', 0) for r in self.records])
-    trigger_counts = Counter([r.get('raschke_tactical_trigger', 0) for r in self.records])
-    
+    strategy_counts = Counter([r.get("raschke_strategy_setup", 0) for r in self.records])
+    trigger_counts = Counter([r.get("raschke_tactical_trigger", 0) for r in self.records])
+
     # COPY MAPPING FROM validate_enum_mappings.py OUTPUT
     strategy_names = {
         0: "NONE",

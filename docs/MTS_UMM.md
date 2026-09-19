@@ -381,14 +381,16 @@ import polars as pl
 df_events = pl.read_ndjson("data/raw/event_data_2026-01-13.jsonl")
 
 # Verify OHLCV fields present (v2.0.1+)
-assert all(col in df_events.columns for col in ['open', 'high', 'low', 'close', 'volume', 'atr_10']), \
-    "Missing OHLCV/ATR fields - check EventDataCollectorStudy version"
+assert all(
+    col in df_events.columns for col in ["open", "high", "low", "close", "volume", "atr_10"]
+), "Missing OHLCV/ATR fields - check EventDataCollectorStudy version"
 
 # Apply CHL labeling directly (no join needed)
 from lbrnet.features.causal_horizon_labeler import CausalHorizonLabeler
+
 chl = CausalHorizonLabeler(
-    stop_loss_atr_mult=2.0,   # Use ATR-based adaptive stops
-    take_profit_atr_mult=3.0  # ATR available in v2.0+
+    stop_loss_atr_mult=2.0,  # Use ATR-based adaptive stops
+    take_profit_atr_mult=3.0,  # ATR available in v2.0+
 )
 df_labeled = chl.apply_labels(df_events)
 
@@ -533,12 +535,14 @@ from queue import Queue
 # Elite: Initialize orchestrator with state management
 orchestrator = get_orchestrator(host_ip="172.20.112.1")  # WSL2 Windows host
 
+
 # Elite: Register state change callback
 def on_state_change(new_state: SystemState):
     if new_state == SystemState.ACTIVE_TRADING:
         logger.info("✅ System ready for live trading")
     elif new_state == SystemState.DISCONNECTED:
         logger.error("❌ Connection lost - halting inference")
+
 
 orchestrator.state_change_callback = on_state_change
 
@@ -570,20 +574,20 @@ while orchestrator.state in [SystemState.READY, SystemState.ACTIVE_TRADING]:
 
         if topic == "INDICATOR_UPDATE":
             # Header validation (Elite Protocol)
-            if 'header' in msg:
-                header = msg['header']
+            if "header" in msg:
+                header = msg["header"]
                 # Check sequence (handled automatically by ZmqClient)
                 # Check latency
-                if 'latency_us' in header and header['latency_us'] > 500:
+                if "latency_us" in header and header["latency_us"] > 500:
                     logger.warning(f"⚠️ Latency budget exceeded: {header['latency_us']}µs")
-                    orchestrator.telemetry.update_network_jitter(header['latency_us'] / 1000.0)
+                    orchestrator.telemetry.update_network_jitter(header["latency_us"] / 1000.0)
 
             # Infer with payload (46-field Common Core)
-            payload = msg.get('payload', {})
+            payload = msg.get("payload", {})
             action = agent.infer(payload)
 
             # Elite: Track state for C++ mirroring
-            if action in ['ENTER_LONG', 'ENTER_SHORT']:
+            if action in ["ENTER_LONG", "ENTER_SHORT"]:
                 orchestrator.transition_state(SystemState.ACTIVE_TRADING)
 
     except Empty:
@@ -903,12 +907,12 @@ if (IndicatorManager::Instance().IsDirty()) {
 for event in replay_events:
     action = agent.infer(event)
 
-    if action in ['ENTER_LONG', 'ENTER_SHORT']:
+    if action in ["ENTER_LONG", "ENTER_SHORT"]:
         # Track performance
         metrics = {
-            'pnl_ticks': event['pnl_ticks'],
-            'drawdown': event['max_drawdown_ticks'],
-            'win_rate': event['win_rate']
+            "pnl_ticks": event["pnl_ticks"],
+            "drawdown": event["max_drawdown_ticks"],
+            "win_rate": event["win_rate"],
         }
         logger.info(f"Trade #{event['trades_today']}: {metrics}")
 ```
@@ -1081,11 +1085,11 @@ for event in replay_events:
 **Monitoring Strategy**:
 ```python
 # In app.py
-if msg['latency_us'] + inference_time_us > 500:
+if msg["latency_us"] + inference_time_us > 500:
     logger.warning(f"⚠️ Latency budget exceeded: {total_latency}µs")
-    metrics['latency_violations'] += 1
+    metrics["latency_violations"] += 1
 
-    if metrics['latency_violations'] > 10:
+    if metrics["latency_violations"] > 10:
         logger.error("❌ CRITICAL: 10 latency violations - disabling live trading")
         disable_trading()
 ```
@@ -1186,13 +1190,13 @@ def apply_chl_labeling(df_events):
 ```python
 def detect_protocol_version(msg: dict) -> str:
     """Auto-detect protocol version from message fields."""
-    if 'atr_10' in msg:
+    if "atr_10" in msg:
         return "2.0"
-    elif 'pnl_ticks' in msg:
+    elif "pnl_ticks" in msg:
         return "1.0-backtest"
-    elif 'latency_us' in msg:
+    elif "latency_us" in msg:
         return "1.0-live"
-    elif 'date' in msg and 'bar_index' in msg:
+    elif "date" in msg and "bar_index" in msg:
         return "1.0-training"
     else:
         raise ValueError(f"Unknown protocol version: {list(msg.keys())}")
@@ -1375,9 +1379,9 @@ if not orchestrator.connect():
     sys.exit(1)
 
 # 3. Register all handlers (BEFORE starting I/O loop)
-orchestrator.feature_factory = zmq_client          # Port 5555 indicator updates
+orchestrator.feature_factory = zmq_client  # Port 5555 indicator updates
 orchestrator.trade_execution_handler = trade_server  # Port 5558 execution confirmations
-orchestrator.initialization_handler = live_agent    # Port 5557 200-bar bootstrap
+orchestrator.initialization_handler = live_agent  # Port 5557 200-bar bootstrap
 
 # 4. Start unified I/O loop (manages all 5 ports)
 orchestrator.start_io_loop()
@@ -1402,7 +1406,7 @@ logger.info("✅ Elite Protocol initialization complete")
 **Latency Monitoring** (Real-time via Telemetry):
 ```python
 # Track network jitter with EMA (alpha=0.3)
-orchestrator.telemetry.update_network_jitter(msg['header']['latency_us'] / 1000.0)
+orchestrator.telemetry.update_network_jitter(msg["header"]["latency_us"] / 1000.0)
 
 # Alert on budget violations
 if orchestrator.telemetry.network_jitter_ms > 0.5:  # 500µs budget
@@ -1432,20 +1436,19 @@ if orchestrator.telemetry.network_jitter_ms > 1.0:  # 1ms sustained
 # Handle state transitions gracefully
 if orchestrator.state == SystemState.DEGRADED:
     # Only accept high-confidence trades (>0.85)
-    if action in ['ENTER_LONG', 'ENTER_SHORT'] and confidence < 0.85:
+    if action in ["ENTER_LONG", "ENTER_SHORT"] and confidence < 0.85:
         logger.info(f"Skipping trade (confidence={confidence:.2f}, system DEGRADED)")
-        action = 'STAND_ASIDE'
+        action = "STAND_ASIDE"
 
 elif orchestrator.state == SystemState.DISCONNECTED:
     # Emergency: Flatten all positions via TradeExecutionClient
     logger.critical("❌ System DISCONNECTED - sending EMERGENCY_EXIT")
     trade_client.send_request_async(
-        request_type="EMERGENCY_EXIT",
-        reason="PYTHON_ORCHESTRATOR_DISCONNECTED"
+        request_type="EMERGENCY_EXIT", reason="PYTHON_ORCHESTRATOR_DISCONNECTED"
     )
     # Wait for C++ acknowledgment, then halt
     response = trade_client.check_response(timeout_ms=5000)
-    if response and response['status'] == 'ACK':
+    if response and response["status"] == "ACK":
         logger.info("C++ acknowledged emergency exit")
     sys.exit(1)  # Require manual restart
 ```
@@ -1531,6 +1534,7 @@ payload["volume"] = static_cast<int64_t>(sc.Volume[sc.Index]);
 ```python
 class EliteSequenceValidator:
     """Institutional-grade sequence validation with automatic fail-safe."""
+
     def __init__(self, zmq_reply_socket):
         self.last_seq = None
         self.gap_count = 0
@@ -1538,7 +1542,7 @@ class EliteSequenceValidator:
         self.MAX_GAPS_PER_HOUR = 5
 
     def validate(self, msg):
-        seq = msg['sequence_number']
+        seq = msg["sequence_number"]
 
         if self.last_seq is not None:
             expected = self.last_seq + 1
@@ -1551,18 +1555,19 @@ class EliteSequenceValidator:
 
                 # ELITE: Active response - request replay or emergency exit
                 if gap_size <= 3:
-                    self.reply_socket.send_json({
-                        "type": "REQ_REPLAY",
-                        "missing_sequences": list(range(expected, seq))
-                    })
+                    self.reply_socket.send_json(
+                        {"type": "REQ_REPLAY", "missing_sequences": list(range(expected, seq))}
+                    )
                 else:
                     # Large gap - assume system fault
                     logger.critical("❌ CRITICAL GAP - Requesting emergency flatten")
-                    self.reply_socket.send_json({
-                        "type": "EMERGENCY_EXIT",
-                        "reason": "SEQUENCE_INTEGRITY_VIOLATION",
-                        "gap_size": gap_size
-                    })
+                    self.reply_socket.send_json(
+                        {
+                            "type": "EMERGENCY_EXIT",
+                            "reason": "SEQUENCE_INTEGRITY_VIOLATION",
+                            "gap_size": gap_size,
+                        }
+                    )
                     return False  # Signal to halt trading
 
         self.last_seq = seq
@@ -1624,6 +1629,7 @@ python test_elite_protocol.py --mode slave
 # test_sequence_validation.py
 import json
 
+
 def test_sequence_gap_detection():
     zmq_client = ZmqClient(message_queue, orchestrator)
 
@@ -1641,6 +1647,7 @@ def test_sequence_gap_detection():
     # Should detect 3 dropped messages
     assert zmq_client.dropped_message_count == 3
     logger.info("✅ Sequence gap detection working")
+
 
 if __name__ == "__main__":
     test_sequence_gap_detection()
@@ -1670,6 +1677,7 @@ def test_latency_budget():
     assert orchestrator.telemetry.network_jitter_ms > 1.0
     logger.info(f"Network jitter: {orchestrator.telemetry.network_jitter_ms:.2f}ms")
     logger.info("✅ Latency monitoring working")
+
 
 if __name__ == "__main__":
     test_latency_budget()
@@ -1718,10 +1726,11 @@ def test_emergency_exit():
 
     # Verify emergency exit triggered
     # (Requires mock TradeExecutionClient to capture request)
-    assert mock_trade_client.last_request['type'] == 'EMERGENCY_EXIT'
-    assert mock_trade_client.last_request['reason'] == 'PYTHON_ORCHESTRATOR_DISCONNECTED'
+    assert mock_trade_client.last_request["type"] == "EMERGENCY_EXIT"
+    assert mock_trade_client.last_request["reason"] == "PYTHON_ORCHESTRATOR_DISCONNECTED"
 
     logger.info("✅ Emergency exit protocol working")
+
 
 if __name__ == "__main__":
     test_emergency_exit()

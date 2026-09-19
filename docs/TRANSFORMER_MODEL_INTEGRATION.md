@@ -41,30 +41,30 @@ The Transformer's attention mechanism reveals which historical bars are "importa
 ```python
 import torch
 
-def extract_attention_span(attention_weights: torch.Tensor, 
-                          threshold: float = 0.05) -> int:
+
+def extract_attention_span(attention_weights: torch.Tensor, threshold: float = 0.05) -> int:
     """
     Extract attention span from Transformer's attention matrix.
-    
+
     Args:
         attention_weights: [batch, num_heads, seq_len, seq_len]
         threshold: Minimum attention weight to be considered "significant" (default: 5%)
-    
+
     Returns:
         Integer attention span (clamped to [10, 60] bars)
     """
     # Average across attention heads
     avg_attention = attention_weights.mean(dim=1)  # [batch, seq_len, seq_len]
-    
+
     # Focus on attention paid by the last bar (current bar) to historical bars
     last_bar_attention = avg_attention[:, -1, :]  # [batch, seq_len]
-    
+
     # Find bars with significant attention (>5%)
     significant_bars = (last_bar_attention > threshold).sum(dim=1)
-    
+
     # Clamp to reasonable range [10, 60]
     attention_span = torch.clamp(significant_bars, min=10, max=60)
-    
+
     return int(attention_span.item())
 ```
 
@@ -224,152 +224,159 @@ class ElderRaschkeFeatureGenerator:
     """
     Generate 30-feature vector for Transformer input.
     Features align with C++ ACSIL indicators for consistency.
-    
+
     Features #29-30 add inter-market correlations (ES-ZN, ES-DX)
     for macro regime validation and quality scoring.
     """
-    
-    def generate_features(self, df_es: pd.DataFrame, df_zn: pd.DataFrame, 
-                         df_dx: pd.DataFrame, index: int) -> Dict[str, float]:
+
+    def generate_features(
+        self, df_es: pd.DataFrame, df_zn: pd.DataFrame, df_dx: pd.DataFrame, index: int
+    ) -> Dict[str, float]:
         """
         Args:
             df_es: ES DataFrame with OHLCV + indicators
             df_zn: ZN DataFrame with OHLCV (10-Year Treasury)
             df_dx: DX DataFrame with OHLCV (Dollar Index)
             index: Current bar index
-        
+
         Returns:
             Dictionary of 30 normalized features
         """
         features = {}
-        
+
         # ─────────────────────────────────────────────────────────
         # ELDER TRIPLE SCREEN FEATURES (9 features)
         # ─────────────────────────────────────────────────────────
-        
+
         # Screen 1 (240-min trend context)
-        features['screen1_regime'] = self.encode_regime(df_es['screen1_regime'].iloc[index])
-        features['screen1_macd_h'] = self.normalize(df_es['macd_h_240'].iloc[index], method='zscore')
-        features['screen1_ema13_slope'] = self.normalize(df_es['ema13_slope_240'].iloc[index], method='zscore')
-        
+        features["screen1_regime"] = self.encode_regime(df_es["screen1_regime"].iloc[index])
+        features["screen1_macd_h"] = self.normalize(
+            df_es["macd_h_240"].iloc[index], method="zscore"
+        )
+        features["screen1_ema13_slope"] = self.normalize(
+            df_es["ema13_slope_240"].iloc[index], method="zscore"
+        )
+
         # Screen 2 (60-min structure)
-        close = df_es['close'].iloc[index]
-        ema20 = df_es['ema20'].iloc[index]
-        ema13 = df_es['ema13'].iloc[index]
-        
-        features['distance_from_20ema'] = (close - ema20) / ema20  # Normalized %
-        features['distance_from_13ema'] = (close - ema13) / ema13
-        features['ema_alignment'] = 1.0 if ema13 > ema20 else -1.0  # Binary
-        
+        close = df_es["close"].iloc[index]
+        ema20 = df_es["ema20"].iloc[index]
+        ema13 = df_es["ema13"].iloc[index]
+
+        features["distance_from_20ema"] = (close - ema20) / ema20  # Normalized %
+        features["distance_from_13ema"] = (close - ema13) / ema13
+        features["ema_alignment"] = 1.0 if ema13 > ema20 else -1.0  # Binary
+
         # Screen 3 (Entry timing)
-        features['rsi3'] = df_es['rsi_3'].iloc[index] / 100.0  # Normalize to [0, 1]
-        features['stoch_k'] = df_es['stoch_k_14'].iloc[index] / 100.0
-        features['stoch_d'] = df_es['stoch_d_3'].iloc[index] / 100.0
-        
+        features["rsi3"] = df_es["rsi_3"].iloc[index] / 100.0  # Normalize to [0, 1]
+        features["stoch_k"] = df_es["stoch_k_14"].iloc[index] / 100.0
+        features["stoch_d"] = df_es["stoch_d_3"].iloc[index] / 100.0
+
         # ─────────────────────────────────────────────────────────
         # RASCHKE PATTERN FEATURES (6 features)
         # ─────────────────────────────────────────────────────────
-        
-        features['nr4'] = 1.0 if self.is_nr4(df_es, index) else 0.0
-        features['nr7'] = 1.0 if self.is_nr7(df_es, index) else 0.0
-        features['inside_bar'] = 1.0 if self.is_inside_bar(df_es, index) else 0.0
-        features['two_b_reversal'] = 1.0 if self.is_2b_reversal(df_es, index) else 0.0
-        features['turtle_soup'] = 1.0 if self.is_turtle_soup(df_es, index) else 0.0
-        features['whiplash'] = 1.0 if self.is_whiplash(df_es, index) else 0.0
-        
+
+        features["nr4"] = 1.0 if self.is_nr4(df_es, index) else 0.0
+        features["nr7"] = 1.0 if self.is_nr7(df_es, index) else 0.0
+        features["inside_bar"] = 1.0 if self.is_inside_bar(df_es, index) else 0.0
+        features["two_b_reversal"] = 1.0 if self.is_2b_reversal(df_es, index) else 0.0
+        features["turtle_soup"] = 1.0 if self.is_turtle_soup(df_es, index) else 0.0
+        features["whiplash"] = 1.0 if self.is_whiplash(df_es, index) else 0.0
+
         # ─────────────────────────────────────────────────────────
         # VOLATILITY FEATURES (4 features)
         # ─────────────────────────────────────────────────────────
-        
-        atr14 = df_es['atr_14'].iloc[index]
-        atr10_avg = df_es['atr_14'].iloc[index-10:index].mean()
-        
-        features['atr_14'] = self.normalize(atr14, method='minmax')
-        features['atr_expansion'] = atr14 / atr10_avg  # Ratio
-        
-        keltner_upper = df_es['keltner_upper'].iloc[index]
-        keltner_lower = df_es['keltner_lower'].iloc[index]
-        features['keltner_width'] = (keltner_upper - keltner_lower) / close
-        
-        bb_width = df_es['bb_upper'].iloc[index] - df_es['bb_lower'].iloc[index]
-        bb_width_20 = df_es['bb_width'].iloc[index-20:index].mean()
-        features['bollinger_squeeze'] = 1.0 if bb_width < bb_width_20 else 0.0
-        
+
+        atr14 = df_es["atr_14"].iloc[index]
+        atr10_avg = df_es["atr_14"].iloc[index - 10 : index].mean()
+
+        features["atr_14"] = self.normalize(atr14, method="minmax")
+        features["atr_expansion"] = atr14 / atr10_avg  # Ratio
+
+        keltner_upper = df_es["keltner_upper"].iloc[index]
+        keltner_lower = df_es["keltner_lower"].iloc[index]
+        features["keltner_width"] = (keltner_upper - keltner_lower) / close
+
+        bb_width = df_es["bb_upper"].iloc[index] - df_es["bb_lower"].iloc[index]
+        bb_width_20 = df_es["bb_width"].iloc[index - 20 : index].mean()
+        features["bollinger_squeeze"] = 1.0 if bb_width < bb_width_20 else 0.0
+
         # ─────────────────────────────────────────────────────────
         # MOMENTUM FEATURES (4 features)
         # ─────────────────────────────────────────────────────────
-        
-        macd_h = df_es['macd_histogram'].iloc[index]
-        macd_h_prev = df_es['macd_histogram'].iloc[index-1]
-        
-        features['macd_histogram'] = self.normalize(macd_h, method='zscore')
-        features['macd_h_slope'] = macd_h - macd_h_prev  # Raw difference
-        
-        impulse_color = df_es['impulse_color'].iloc[index]  # GREEN, BLUE, RED
-        features['impulse_green'] = 1.0 if impulse_color == 'GREEN' else 0.0
-        features['impulse_blue'] = 1.0 if impulse_color == 'BLUE' else 0.0
-        
+
+        macd_h = df_es["macd_histogram"].iloc[index]
+        macd_h_prev = df_es["macd_histogram"].iloc[index - 1]
+
+        features["macd_histogram"] = self.normalize(macd_h, method="zscore")
+        features["macd_h_slope"] = macd_h - macd_h_prev  # Raw difference
+
+        impulse_color = df_es["impulse_color"].iloc[index]  # GREEN, BLUE, RED
+        features["impulse_green"] = 1.0 if impulse_color == "GREEN" else 0.0
+        features["impulse_blue"] = 1.0 if impulse_color == "BLUE" else 0.0
+
         # ─────────────────────────────────────────────────────────
         # VOLUME FEATURES (2 features)
         # ─────────────────────────────────────────────────────────
-        
-        volume = df_es['volume'].iloc[index]
-        volume_sma20 = df_es['volume'].iloc[index-20:index].mean()
-        
-        features['volume_ratio'] = volume / volume_sma20
-        features['volume_spike'] = 1.0 if volume > 2.0 * volume_sma20 else 0.0
-        
+
+        volume = df_es["volume"].iloc[index]
+        volume_sma20 = df_es["volume"].iloc[index - 20 : index].mean()
+
+        features["volume_ratio"] = volume / volume_sma20
+        features["volume_spike"] = 1.0 if volume > 2.0 * volume_sma20 else 0.0
+
         # ─────────────────────────────────────────────────────────
         # HIGHER TIMEFRAME CONTEXT (2 features)
         # ─────────────────────────────────────────────────────────
-        
-        daily_high = df_es['daily_high'].iloc[index]
-        daily_low = df_es['daily_low'].iloc[index]
-        features['daily_hl_position'] = (close - daily_low) / (daily_high - daily_low + 1e-6)
-        
-        nh_count = df_es['nh_count_10d'].iloc[index]
-        nl_count = df_es['nl_count_10d'].iloc[index]
-        features['nh_nl_net'] = self.normalize(nh_count - nl_count, method='zscore')
-        
+
+        daily_high = df_es["daily_high"].iloc[index]
+        daily_low = df_es["daily_low"].iloc[index]
+        features["daily_hl_position"] = (close - daily_low) / (daily_high - daily_low + 1e-6)
+
+        nh_count = df_es["nh_count_10d"].iloc[index]
+        nl_count = df_es["nl_count_10d"].iloc[index]
+        features["nh_nl_net"] = self.normalize(nh_count - nl_count, method="zscore")
+
         # ─────────────────────────────────────────────────────────
         # ORDER FLOW FEATURE (1 feature)
         # ─────────────────────────────────────────────────────────
-        
-        cumulative_delta = df_es['cumulative_delta'].iloc[index]
-        cumulative_delta_20 = df_es['cumulative_delta'].iloc[index-20:index].mean()
-        delta_vs_price = (cumulative_delta - cumulative_delta_20) / (close - df_es['close'].iloc[index-20])
-        features['delta_divergence'] = self.normalize(delta_vs_price, method='zscore')
-        
+
+        cumulative_delta = df_es["cumulative_delta"].iloc[index]
+        cumulative_delta_20 = df_es["cumulative_delta"].iloc[index - 20 : index].mean()
+        delta_vs_price = (cumulative_delta - cumulative_delta_20) / (
+            close - df_es["close"].iloc[index - 20]
+        )
+        features["delta_divergence"] = self.normalize(delta_vs_price, method="zscore")
+
         # ─────────────────────────────────────────────────────────
         # INTER-MARKET CORRELATIONS (2 features)
         # ─────────────────────────────────────────────────────────
-        
+
         # Feature #29: ES-ZN 10-period correlation (risk-on/risk-off)
-        es_returns = df_es['close'].pct_change().iloc[index-10:index]
-        zn_returns = df_zn['close'].pct_change().iloc[index-10:index]
-        features['es_zn_correlation_10'] = es_returns.corr(zn_returns)
-        
+        es_returns = df_es["close"].pct_change().iloc[index - 10 : index]
+        zn_returns = df_zn["close"].pct_change().iloc[index - 10 : index]
+        features["es_zn_correlation_10"] = es_returns.corr(zn_returns)
+
         # Feature #30: ES-DX 10-period correlation (liquidity/safe-haven)
-        dx_returns = df_dx['close'].pct_change().iloc[index-10:index]
-        features['es_dx_correlation_10'] = es_returns.corr(dx_returns)
-        
+        dx_returns = df_dx["close"].pct_change().iloc[index - 10 : index]
+        features["es_dx_correlation_10"] = es_returns.corr(dx_returns)
+
         return features  # 30 features total
-    
-    def normalize(self, value: float, method: str = 'zscore') -> float:
+
+    def normalize(self, value: float, method: str = "zscore") -> float:
         """Normalize using z-score or min-max scaling"""
-        if method == 'zscore':
+        if method == "zscore":
             return (value - self.mean) / (self.std + 1e-6)
-        elif method == 'minmax':
+        elif method == "minmax":
             return (value - self.min) / (self.max - self.min + 1e-6)
         return value
-    
+
     def encode_regime(self, regime: str) -> float:
         """Encode regime as numeric value"""
         regime_map = {
-            'trending_strong': 1.0,
-            'trending_impulse': 0.5,
-            'ranging': 0.0,
-            'weak_trend': -0.5
+            "trending_strong": 1.0,
+            "trending_impulse": 0.5,
+            "ranging": 0.0,
+            "weak_trend": -0.5,
         }
         return regime_map.get(regime, 0.0)
 ```
@@ -547,13 +554,16 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List
 
+
 class PerformanceAttributionEngine:
     """
     Track AI vs. C++ decision quality via alpha slippage analysis.
     Triggers soft lock if sustained degradation detected (5+ days).
     """
-    
-    def __init__(self, lookback: int = 50, slippage_threshold: float = 1.0, soft_lock_days: int = 5):
+
+    def __init__(
+        self, lookback: int = 50, slippage_threshold: float = 1.0, soft_lock_days: int = 5
+    ):
         """
         Args:
             lookback: Number of trades to evaluate (default: 50)
@@ -563,16 +573,16 @@ class PerformanceAttributionEngine:
         self.lookback = lookback
         self.slippage_threshold = slippage_threshold
         self.soft_lock_days = soft_lock_days
-        
+
         self.trade_log = []  # List of trade dictionaries
-        self.veto_log = []   # List of vetoed signals (with hypothetical outcomes)
+        self.veto_log = []  # List of vetoed signals (with hypothetical outcomes)
         self.alpha_slippage_history = []
         self.model_status = "HEALTHY"  # HEALTHY, WARNING, SOFT_LOCKED
-        
+
     def log_trade(self, trade_data: Dict):
         """
         Log a completed trade with AI and C++ attribution.
-        
+
         Args:
             trade_data: {
                 'entry_time': datetime,
@@ -582,17 +592,17 @@ class PerformanceAttributionEngine:
                 'hard_stop': float,
                 'initial_risk': float,
                 'direction': 'LONG' | 'SHORT',
-                
+
                 # AI Predictions
                 'ai_confidence': float,
                 'ai_predicted_r_multiple': float,
                 'ai_attention_span': int,
-                
+
                 # Actual Results
                 'actual_r_multiple': float,
                 'max_favorable_excursion': float,  # MFE in price
                 'actual_exit_reason': str,  # 'AI_PROACTIVE', 'CHANDELIER', 'ELDER_RED', 'TIME', 'HARD_STOP'
-                
+
                 # Context
                 'pattern': str,
                 'adx': float,
@@ -602,33 +612,33 @@ class PerformanceAttributionEngine:
         """
         # Calculate alpha slippage components
         alpha_slippage, regret, ai_error = self.calculate_alpha_slippage(trade_data)
-        
-        trade_data['alpha_slippage'] = alpha_slippage
-        trade_data['regret'] = regret
-        trade_data['ai_error'] = ai_error
-        
+
+        trade_data["alpha_slippage"] = alpha_slippage
+        trade_data["regret"] = regret
+        trade_data["ai_error"] = ai_error
+
         self.trade_log.append(trade_data)
         self.alpha_slippage_history.append(alpha_slippage)
-        
+
         # Update model health status
         self.update_model_health()
-        
+
     def calculate_alpha_slippage(self, trade: Dict) -> tuple:
         """
         Decompose alpha slippage into:
         1. Regret (exited early, left money on table)
         2. AI Error (AI was wrong, MFE never reached target)
-        
+
         Returns:
             (alpha_slippage, regret, ai_error) in R-multiples
         """
-        mfe_r = trade['max_favorable_excursion'] / trade['initial_risk']
-        actual_r = trade['actual_r_multiple']
-        ai_predicted_r = trade['ai_predicted_r_multiple']
-        
+        mfe_r = trade["max_favorable_excursion"] / trade["initial_risk"]
+        actual_r = trade["actual_r_multiple"]
+        ai_predicted_r = trade["ai_predicted_r_multiple"]
+
         # Total alpha slippage
         alpha_slippage = mfe_r - actual_r
-        
+
         # Distinguish regret vs. AI error
         if mfe_r >= ai_predicted_r:
             # Trade reached AI target - we had regret (exited early)
@@ -638,25 +648,27 @@ class PerformanceAttributionEngine:
             # Trade never reached AI target - AI was overoptimistic
             regret = 0.0
             ai_error = ai_predicted_r - mfe_r
-        
+
         return alpha_slippage, regret, ai_error
-    
+
     def log_vetoed_trade(self, veto_data: Dict):
         """
         Track what WOULD have happened if we took the vetoed trade.
         Critical for detecting over-aggressive veto logic.
         """
         self.veto_log.append(veto_data)
-        
+
         # Calculate veto accuracy
         if len(self.veto_log) >= 20:
             recent_vetoes = self.veto_log[-50:]
-            correct_vetoes = [v for v in recent_vetoes if not v['would_have_won']]
+            correct_vetoes = [v for v in recent_vetoes if not v["would_have_won"]]
             veto_accuracy = len(correct_vetoes) / len(recent_vetoes)
-            
+
             if veto_accuracy < 0.75:
-                print(f"\n⚠️  WARNING: Veto accuracy {veto_accuracy:.1%} - rejecting too many winners!")
-    
+                print(
+                    f"\n⚠️  WARNING: Veto accuracy {veto_accuracy:.1%} - rejecting too many winners!"
+                )
+
     def update_model_health(self):
         """
         Monitor rolling alpha slippage and update model health status.
@@ -664,15 +676,15 @@ class PerformanceAttributionEngine:
         """
         if len(self.alpha_slippage_history) < self.lookback:
             return  # Not enough data yet
-        
+
         # Calculate rolling metrics
-        recent_slippage = self.alpha_slippage_history[-self.lookback:]
+        recent_slippage = self.alpha_slippage_history[-self.lookback :]
         avg_slippage = np.mean(recent_slippage)
-        
+
         # Check for sustained high slippage
         if avg_slippage > self.slippage_threshold:
             days_above_threshold = self.count_consecutive_days_above_threshold()
-            
+
             if days_above_threshold >= self.soft_lock_days:
                 self.model_status = "SOFT_LOCKED"
                 self.trigger_soft_lock()
@@ -683,56 +695,56 @@ class PerformanceAttributionEngine:
             if self.model_status == "WARNING":
                 print("✅ Model health recovered - slippage back to normal")
             self.model_status = "HEALTHY"
-    
+
     def count_consecutive_days_above_threshold(self) -> int:
         """Count consecutive trading days with slippage above threshold"""
         if len(self.trade_log) < self.soft_lock_days:
             return 0
-        
+
         # Group trades by date
         recent_trades = self.trade_log[-50:]
-        dates = [trade['exit_time'].date() for trade in recent_trades]
-        unique_dates = sorted(set(dates), reverse=True)[:self.soft_lock_days]
-        
+        dates = [trade["exit_time"].date() for trade in recent_trades]
+        unique_dates = sorted(set(dates), reverse=True)[: self.soft_lock_days]
+
         # Check if slippage was high on consecutive days
         consecutive_days = 0
         for date in unique_dates:
-            daily_trades = [t for t in recent_trades if t['exit_time'].date() == date]
-            
+            daily_trades = [t for t in recent_trades if t["exit_time"].date() == date]
+
             if not daily_trades:
                 continue
-                
-            daily_slippage = [t.get('alpha_slippage', 0) for t in daily_trades]
+
+            daily_slippage = [t.get("alpha_slippage", 0) for t in daily_trades]
             avg_daily_slippage = np.mean(daily_slippage)
-            
+
             if avg_daily_slippage > self.slippage_threshold:
                 consecutive_days += 1
             else:
                 break  # Streak broken
-        
+
         return consecutive_days
-    
+
     def trigger_soft_lock(self):
         """
         Soft lock: Disable AI entry signals, force manual review and re-calibration.
         Writes status file that C++ can read.
         """
-        print("\n" + "="*70)
+        print("\n" + "=" * 70)
         print("🔴 SOFT LOCK TRIGGERED - MODEL DRIFT DETECTED")
-        print("="*70)
-        
-        recent_trades = self.trade_log[-self.lookback:]
-        avg_slippage = np.mean([t.get('alpha_slippage', 0) for t in recent_trades])
-        avg_regret = np.mean([t.get('regret', 0) for t in recent_trades])
-        avg_ai_error = np.mean([t.get('ai_error', 0) for t in recent_trades])
-        
+        print("=" * 70)
+
+        recent_trades = self.trade_log[-self.lookback :]
+        avg_slippage = np.mean([t.get("alpha_slippage", 0) for t in recent_trades])
+        avg_regret = np.mean([t.get("regret", 0) for t in recent_trades])
+        avg_ai_error = np.mean([t.get("ai_error", 0) for t in recent_trades])
+
         print(f"\nAverage Alpha Slippage (last {self.lookback} trades): {avg_slippage:.2f}R")
         print(f"Threshold: {self.slippage_threshold:.2f}R")
         print(f"Consecutive days above threshold: {self.count_consecutive_days_above_threshold()}")
         print(f"\nBREAKDOWN:")
         print(f"  Execution Regret (early exits): {avg_regret:.2f}R")
         print(f"  AI Prediction Error (overoptimism): {avg_ai_error:.2f}R")
-        
+
         # Determine root cause
         if avg_ai_error > avg_regret:
             root_cause = "Model drift - AI predictions inaccurate"
@@ -740,7 +752,7 @@ class PerformanceAttributionEngine:
         else:
             root_cause = "Execution timing - Exiting too early"
             action = "Review exit hierarchy, tighten Chandelier stops"
-        
+
         print(f"\nROOT CAUSE: {root_cause}")
         print(f"\nACTION REQUIRED:")
         print(f"1. {action}")
@@ -748,28 +760,30 @@ class PerformanceAttributionEngine:
         print(f"3. Analyze feature distribution drift (ES-ZN/ES-DX correlations)")
         print(f"4. Run backtest on recent 3-month window")
         print(f"5. Re-enable AI only after validation")
-        print("="*70 + "\n")
-        
+        print("=" * 70 + "\n")
+
         # Write status file for Sierra Chart C++ to read
         status_file = {
             "model_status": "SOFT_LOCKED",
             "alpha_slippage": float(avg_slippage),
             "timestamp": datetime.now().isoformat(),
             "root_cause": root_cause,
-            "consecutive_days": self.count_consecutive_days_above_threshold()
+            "consecutive_days": self.count_consecutive_days_above_threshold(),
         }
-        
+
         with open("model_health_status.json", "w") as f:
             json.dump(status_file, f, indent=2)
-    
+
     def send_warning(self):
         """Warning: Slippage elevated but not critical yet"""
-        recent_trades = self.trade_log[-self.lookback:]
-        avg_slippage = np.mean([t.get('alpha_slippage', 0) for t in recent_trades])
-        
+        recent_trades = self.trade_log[-self.lookback :]
+        avg_slippage = np.mean([t.get("alpha_slippage", 0) for t in recent_trades])
+
         print(f"\n⚠️  WARNING: Alpha slippage elevated ({avg_slippage:.2f}R)")
         print(f"   Review model performance - approaching soft lock threshold")
-        print(f"   Days above threshold: {self.count_consecutive_days_above_threshold()}/{self.soft_lock_days}\n")
+        print(
+            f"   Days above threshold: {self.count_consecutive_days_above_threshold()}/{self.soft_lock_days}\n"
+        )
 ```
 
 ### 4.3 C++ Integration: Reading Model Health Status

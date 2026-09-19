@@ -6,24 +6,36 @@
 #
 # Run: mamba run -n mts python tools/visualization/imbalance_vs_time_bars.py
 
+import mplfinance as mpf
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-import mplfinance as mpf
+
 
 TICKS_PATH = "/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ticks.parquet"
 OUT_DIR = "tools/output"
-SWING_K = 3        # bars on each side for a swing high/low pivot
-TAIL_Z = 2.0       # |z| threshold for a "tail move" marker
+SWING_K = 3  # bars on each side for a swing high/low pivot
+TAIL_Z = 2.0  # |z| threshold for a "tail move" marker
 
 
 def load_ticks():
     f = pq.ParquetFile(TICKS_PATH)
     # Row groups around NY open on a real trading day (2025-04-16), found by
     # inspection -- 5 groups ~ a few hours of real activity, good for a chart.
-    tables = [f.read_row_group(rg, columns=["timestamp_us", "trade_price", "volume",
-                                             "bid_volume", "ask_volume", "contract"])
-              for rg in range(3602, 3607)]
+    tables = [
+        f.read_row_group(
+            rg,
+            columns=[
+                "timestamp_us",
+                "trade_price",
+                "volume",
+                "bid_volume",
+                "ask_volume",
+                "contract",
+            ],
+        )
+        for rg in range(3602, 3607)
+    ]
     df = pd.concat([t.to_pandas() for t in tables], ignore_index=True)
     df = df[df["contract"] == df["contract"].iloc[0]].reset_index(drop=True)
     df["ts"] = pd.to_datetime(df["timestamp_us"], unit="us", utc=True)
@@ -47,7 +59,9 @@ def build_imbalance_bars(df, threshold):
     low_px = np.inf
     vol = 0
     bar_start_ts = None
-    for ts, price, volume, flow in zip(df["ts"], df["trade_price"], df["volume"], df["signed_flow"]):
+    for ts, price, volume, flow in zip(
+        df["ts"], df["trade_price"], df["volume"], df["signed_flow"]
+    ):
         if open_px is None:
             open_px = price
             bar_start_ts = ts
@@ -62,7 +76,9 @@ def build_imbalance_bars(df, threshold):
             high_px = -np.inf
             low_px = np.inf
             vol = 0
-    bars = pd.DataFrame(rows, columns=["ts", "Open", "High", "Low", "Close", "Volume"]).set_index("ts")
+    bars = pd.DataFrame(rows, columns=["ts", "Open", "High", "Low", "Close", "Volume"]).set_index(
+        "ts"
+    )
     return bars
 
 
@@ -98,8 +114,8 @@ def mark_swings(bars, k=SWING_K):
     swing_high = np.full(n, np.nan)
     swing_low = np.full(n, np.nan)
     for i in range(k, n - k):
-        window_h = highs[i - k:i + k + 1]
-        window_l = lows[i - k:i + k + 1]
+        window_h = highs[i - k : i + k + 1]
+        window_l = lows[i - k : i + k + 1]
         if highs[i] == window_h.max() and np.argmax(window_h) == k:
             swing_high[i] = highs[i] * 1.0015
         if lows[i] == window_l.min() and np.argmin(window_l) == k:
@@ -126,25 +142,41 @@ def render(bars, title, out_path):
         mpf.make_addplot(swing_low, type="scatter", markersize=60, marker="^", color="green"),
         mpf.make_addplot(tail, type="scatter", markersize=90, marker="*", color="gold"),
     ]
-    mpf.plot(bars, type="candle", style="charles", addplot=addplots, volume=True,
-              title=title, savefig=dict(fname=out_path, dpi=150))
+    mpf.plot(
+        bars,
+        type="candle",
+        style="charles",
+        addplot=addplots,
+        volume=True,
+        title=title,
+        savefig=dict(fname=out_path, dpi=150),
+    )
     n_swing_high = int(np.sum(~np.isnan(swing_high)))
     n_swing_low = int(np.sum(~np.isnan(swing_low)))
-    print(f"{title}: n_bars={len(bars)} swing_highs={n_swing_high} swing_lows={n_swing_low} tail_moves={n_tail}")
+    print(
+        f"{title}: n_bars={len(bars)} swing_highs={n_swing_high} swing_lows={n_swing_low} tail_moves={n_tail}"
+    )
 
 
 def main():
     df = load_ticks()
-    print(f"loaded {len(df)} real ticks, {df['ts'].iloc[0]} .. {df['ts'].iloc[-1]}, contract={df['contract'].iloc[0]}")
+    print(
+        f"loaded {len(df)} real ticks, {df['ts'].iloc[0]} .. {df['ts'].iloc[-1]}, contract={df['contract'].iloc[0]}"
+    )
 
     time_bars = build_time_bars(df, minutes=15)
-    render(time_bars, "15-min TIME bars (real MES, NY open window)", f"{OUT_DIR}/time_bars_chart.png")
+    render(
+        time_bars, "15-min TIME bars (real MES, NY open window)", f"{OUT_DIR}/time_bars_chart.png"
+    )
 
     threshold = pick_threshold_for_target_bar_count(df, target_bars=len(time_bars))
     imbalance_bars = build_imbalance_bars(df, threshold)
     print(f"imbalance threshold picked: {threshold:.1f} (targeted {len(time_bars)} bars)")
-    render(imbalance_bars, "Order-flow IMBALANCE bars (same real ticks, same window)",
-           f"{OUT_DIR}/imbalance_bars_chart.png")
+    render(
+        imbalance_bars,
+        "Order-flow IMBALANCE bars (same real ticks, same window)",
+        f"{OUT_DIR}/imbalance_bars_chart.png",
+    )
 
 
 if __name__ == "__main__":

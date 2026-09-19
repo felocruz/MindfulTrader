@@ -132,64 +132,65 @@ Quality scores are already computed in the study functions (e.g., `TripleScreen3
 ```python
 def calculate_enhanced_score(pattern_data):
     """Apply scoring multipliers based on context"""
-    base_quality = pattern_data.get('quality', 0.0)
-    context = pattern_data.get('context', {})
-    
+    base_quality = pattern_data.get("quality", 0.0)
+    context = pattern_data.get("context", {})
+
     score = base_quality
-    
+
     # TurtleSoup multipliers
-    if context.get('at_daily_low') or context.get('at_daily_high'):
+    if context.get("at_daily_low") or context.get("at_daily_high"):
         score *= 1.15  # Daily extreme bonus
-    
-    if context.get('adx', 100) < 25:
-        score *= 1.2   # Ranging market ideal for stop hunts
-    
-    if context.get('screen_aligned'):
-        score *= 1.1   # Multi-timeframe confirmation
-    
+
+    if context.get("adx", 100) < 25:
+        score *= 1.2  # Ranging market ideal for stop hunts
+
+    if context.get("screen_aligned"):
+        score *= 1.1  # Multi-timeframe confirmation
+
     # ElderBreakout multipliers
-    if context.get('channel_squeeze'):
+    if context.get("channel_squeeze"):
         score *= 1.25  # Compression bonus
-    
-    if context.get('consolidation_bars', 0) >= 5:
+
+    if context.get("consolidation_bars", 0) >= 5:
         score *= 1.15  # Coiling duration bonus
-    
-    if context.get('adx', 0) > 30:
-        score *= 1.1   # Strong trend bonus
-    
-    if context.get('volume_spike', 0) > 1.5:
-        score *= 1.1   # Volume confirmation bonus
-    
+
+    if context.get("adx", 0) > 30:
+        score *= 1.1  # Strong trend bonus
+
+    if context.get("volume_spike", 0) > 1.5:
+        score *= 1.1  # Volume confirmation bonus
+
     # MomentumPinball multipliers
-    if context.get('fi2_pullback'):
-        score *= 1.2   # Elder timing confirmation
-    
-    if context.get('impulse_changed'):
+    if context.get("fi2_pullback"):
+        score *= 1.2  # Elder timing confirmation
+
+    if context.get("impulse_changed"):
         score *= 1.15  # Fresh momentum shift
-    
+
     return min(score, 1.0)  # Cap at 1.0
+
 
 # Example usage
 def process_indicator_payload(payload):
     # Process TurtleSoup
-    if payload.get('turtle_soup') != 0:
+    if payload.get("turtle_soup") != 0:
         soup_data = {
-            'quality': payload.get('turtle_soup_quality', 0.0),
-            'context': payload.get('turtle_soup_context', {})
+            "quality": payload.get("turtle_soup_quality", 0.0),
+            "context": payload.get("turtle_soup_context", {}),
         }
         enhanced_score = calculate_enhanced_score(soup_data)
-        
+
         if enhanced_score >= 0.85:
             generate_alert(f"EXCEPTIONAL Turtle Soup: {enhanced_score:.0%}", priority="HIGH")
-    
+
     # Filter by quality
     if kangaroo_strength == 2 and kangaroo_quality >= 0.7:
         # BULLISH_STRONG with high quality - prioritize this signal
         generate_alert("High-quality Kangaroo Tail", priority="HIGH")
-        
-    turtle_strength = payload.get('turtle_soup', 0)
-    turtle_quality = payload.get('turtle_soup_quality', 0.0)
-    
+
+    turtle_strength = payload.get("turtle_soup", 0)
+    turtle_quality = payload.get("turtle_soup_quality", 0.0)
+
     if turtle_strength == 3 and turtle_quality >= 0.8:
         # BULLISH_EXTREME with very high quality - excellent setup
         generate_alert("Exceptional Turtle Soup", priority="CRITICAL")

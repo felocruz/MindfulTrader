@@ -12,12 +12,14 @@ Usage (mts env):
     cd /home/rcruz/devel/VSCode/MindfulTrader
     python3 tools/observation_vector/fractal_dim_threshold_migration.py
 """
+
 import subprocess
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
 
 WAVE_60M = Path("/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_wave_60m.parquet")
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -70,10 +72,14 @@ def main() -> None:
     new_arr = df["fractal_dim_400"].to_numpy()
 
     print(f"Paired sample size: {len(df)}")
-    print(f"fractal_dim@30:  mean={old_arr.mean():.4f} median={np.median(old_arr):.4f} "
-          f"p10={np.percentile(old_arr,10):.4f} p90={np.percentile(old_arr,90):.4f}")
-    print(f"fractal_dim@400: mean={new_arr.mean():.4f} median={np.median(new_arr):.4f} "
-          f"p10={np.percentile(new_arr,10):.4f} p90={np.percentile(new_arr,90):.4f}")
+    print(
+        f"fractal_dim@30:  mean={old_arr.mean():.4f} median={np.median(old_arr):.4f} "
+        f"p10={np.percentile(old_arr, 10):.4f} p90={np.percentile(old_arr, 90):.4f}"
+    )
+    print(
+        f"fractal_dim@400: mean={new_arr.mean():.4f} median={np.median(new_arr):.4f} "
+        f"p10={np.percentile(new_arr, 10):.4f} p90={np.percentile(new_arr, 90):.4f}"
+    )
     print()
     for name, old_threshold in OLD_THRESHOLDS.items():
         percentile = float((old_arr <= old_threshold).mean() * 100.0)
@@ -81,9 +87,11 @@ def main() -> None:
         print(f"{name}: old={old_threshold} (P{percentile:.1f}) -> new={mapped:.4f}")
 
     corr = np.corrcoef(old_arr, new_arr)[0, 1]
-    print(f"\ncorrelation(fractal_dim@30, fractal_dim@400) = {corr:.4f} "
-          f"(sanity check -- expect positive but well below 1.0, different windows measuring "
-          f"related but distinct path-roughness horizons)")
+    print(
+        f"\ncorrelation(fractal_dim@30, fractal_dim@400) = {corr:.4f} "
+        f"(sanity check -- expect positive but well below 1.0, different windows measuring "
+        f"related but distinct path-roughness horizons)"
+    )
 
 
 if __name__ == "__main__":

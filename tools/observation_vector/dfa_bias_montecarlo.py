@@ -23,8 +23,10 @@ this script does.)
 Requires: pip install fbm numpy   (installed into the `mts` mamba/conda env
 for this spike; not otherwise a build or runtime dependency of this repo.)
 """
+
 import numpy as np
 from fbm import FBM
+
 
 # ----------------------------------------------------------------------------
 # fBm/fGn generator
@@ -87,7 +89,7 @@ def dfa(log_returns: np.ndarray, min_scale: int = 8) -> float:
 
         for v in range(num_segments):
             start = v * s
-            chunk = profile[start:start + s]
+            chunk = profile[start : start + s]
             k = np.arange(s, dtype=np.float64)
 
             sum_y = np.sum(chunk)
@@ -141,23 +143,28 @@ def main():
     n_samples = 100
     min_scale = 8
 
-    print(f"DFA bias/variance Monte Carlo -- N={n_samples}, minScale={min_scale}, "
-          f"trials={n_trials} per true-H value")
+    print(
+        f"DFA bias/variance Monte Carlo -- N={n_samples}, minScale={min_scale}, "
+        f"trials={n_trials} per true-H value"
+    )
     print(f"{'true H':>8} {'mean est':>10} {'bias':>8} {'std':>8} {'95% CI':>20}")
 
     results = []
     for true_hurst in [0.3, 0.4, 0.5, 0.6, 0.7]:
-        estimates = np.array([
-            dfa(simulate_fgn(n_samples, true_hurst, rng), min_scale=min_scale)
-            for _ in range(n_trials)
-        ])
+        estimates = np.array(
+            [
+                dfa(simulate_fgn(n_samples, true_hurst, rng), min_scale=min_scale)
+                for _ in range(n_trials)
+            ]
+        )
         mean_est = np.mean(estimates)
         bias = mean_est - true_hurst
         std = np.std(estimates)
         ci_lo, ci_hi = np.percentile(estimates, [2.5, 97.5])
         results.append((true_hurst, mean_est, bias, std, ci_lo, ci_hi))
-        print(f"{true_hurst:8.2f} {mean_est:10.4f} {bias:+8.4f} {std:8.4f} "
-              f"[{ci_lo:.3f}, {ci_hi:.3f}]")
+        print(
+            f"{true_hurst:8.2f} {mean_est:10.4f} {bias:+8.4f} {std:8.4f} [{ci_lo:.3f}, {ci_hi:.3f}]"
+        )
 
     return results
 

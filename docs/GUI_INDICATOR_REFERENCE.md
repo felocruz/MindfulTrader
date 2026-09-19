@@ -782,28 +782,33 @@ Price level keys transmit floating-point values (not enums). These are critical 
 # Example Python parsing
 import json
 
+
 def parse_indicators(json_payload: str) -> dict:
     """Parse JSON payload and validate enum ranges."""
     data = json.loads(json_payload)
-    
+
     # Extract Screen 1 long_macd
     long_macd_value = data["screen1"]["long_macd"]
     if not (0 <= long_macd_value <= 10):
         raise ValueError(f"Invalid long_macd value: {long_macd_value}")
-    
+
     # Map to human-readable state
     macd_states = {
-        0: "NEG_TICK_UP", 1: "SPRING", 2: "POS_TICK_DOWN",
-        3: "FALL", 4: "SUMMER", 5: "WINTER", 6: "FLAT",
-        7: "ZERO_FROM_BELOW", 8: "ZERO_FROM_ABOVE",
-        9: "BULLISH_CROSS", 10: "BEARISH_CROSS"
+        0: "NEG_TICK_UP",
+        1: "SPRING",
+        2: "POS_TICK_DOWN",
+        3: "FALL",
+        4: "SUMMER",
+        5: "WINTER",
+        6: "FLAT",
+        7: "ZERO_FROM_BELOW",
+        8: "ZERO_FROM_ABOVE",
+        9: "BULLISH_CROSS",
+        10: "BEARISH_CROSS",
     }
     long_macd_label = macd_states.get(long_macd_value, "UNKNOWN")
-    
-    return {
-        "long_macd_value": long_macd_value,
-        "long_macd_label": long_macd_label
-    }
+
+    return {"long_macd_value": long_macd_value, "long_macd_label": long_macd_label}
 ```
 
 ### 2. Color Coding Recommendations
@@ -939,23 +944,24 @@ If C++ enum definitions change (adding new states, reordering values):
 ```python
 import logging
 
+
 def validate_and_parse(json_payload: str):
     try:
         data = json.loads(json_payload)
     except json.JSONDecodeError as e:
         logging.error(f"Invalid JSON: {e}")
         return None
-    
+
     # Validate schema version
     if data.get("schema_version") != "1.0":
         logging.warning(f"Schema version mismatch: {data.get('schema_version')}")
         return None
-    
+
     # Validate key indicators
     if "screen1" not in data or "long_macd" not in data["screen1"]:
         logging.error("Missing required key: screen1.long_macd")
         return None
-    
+
     return data
 ```
 

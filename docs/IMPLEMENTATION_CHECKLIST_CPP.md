@@ -303,12 +303,12 @@ request = {
         "msg_type": "CONFIG_REQ",
         "version": "1.0.2",
         "timestamp_ns": time.time_ns(),
-        "sender": "PYTHON_GUI"
+        "sender": "PYTHON_GUI",
     },
     "payload": {
         "component_name": "GUI_SUBSCRIBER",
-        "capabilities": ["indicator_display", "manual_trade_entry"]
-    }
+        "capabilities": ["indicator_display", "manual_trade_entry"],
+    },
 }
 
 socket.send_string(json.dumps(request))

@@ -103,34 +103,36 @@ import os
 import re
 from typing import Optional
 
+
 def get_windows_host_ip() -> str:
     """
     Gets Windows host IP from WSL2.
-    
+
     Returns Windows IP that WSL2 can reach.
     Works across all Windows 10/11 versions.
     """
     try:
         # Method 1: Parse /etc/resolv.conf (most reliable)
-        with open('/etc/resolv.conf', 'r') as f:
+        with open("/etc/resolv.conf", "r") as f:
             for line in f:
-                if line.startswith('nameserver'):
+                if line.startswith("nameserver"):
                     ip = line.split()[1]
                     return ip
     except Exception as e:
         print(f"Warning: Could not read /etc/resolv.conf: {e}")
-    
+
     try:
         # Method 2: Parse route table
-        result = subprocess.check_output(['ip', 'route', 'show', 'default'], text=True)
-        match = re.search(r'default via (\d+\.\d+\.\d+\.\d+)', result)
+        result = subprocess.check_output(["ip", "route", "show", "default"], text=True)
+        match = re.search(r"default via (\d+\.\d+\.\d+\.\d+)", result)
         if match:
             return match.group(1)
     except Exception as e:
         print(f"Warning: Could not get default route: {e}")
-    
+
     # Fallback (will fail but provides clear error)
     return "127.0.0.1"
+
 
 def get_wsl_ip() -> str:
     """
@@ -138,12 +140,13 @@ def get_wsl_ip() -> str:
     Useful for C++ to connect back to Python services.
     """
     try:
-        result = subprocess.check_output(['hostname', '-I'], text=True)
+        result = subprocess.check_output(["hostname", "-I"], text=True)
         # First IP is typically the WSL2 IP
         ips = result.strip().split()
         return ips[0] if ips else "127.0.0.1"
     except Exception:
         return "127.0.0.1"
+
 
 def save_network_config():
     """
@@ -151,26 +154,27 @@ def save_network_config():
     Creates config.json in shared location.
     """
     import json
-    
+
     config = {
         "windows_host_ip": get_windows_host_ip(),
         "wsl_ip": get_wsl_ip(),
-        "updated_at": time.time()
+        "updated_at": time.time(),
     }
-    
+
     # Save to shared location accessible from both WSL and Windows
     # /mnt/c/Trading/config.json maps to C:\Trading\config.json
     config_path = "/mnt/c/Trading/config.json"
-    
+
     os.makedirs(os.path.dirname(config_path), exist_ok=True)
-    with open(config_path, 'w') as f:
+    with open(config_path, "w") as f:
         json.dump(config, indent=2, fp=f)
-    
+
     print(f"✅ Network config saved:")
     print(f"   Windows IP: {config['windows_host_ip']}")
     print(f"   WSL IP: {config['wsl_ip']}")
-    
+
     return config
+
 
 # Auto-run on import
 if __name__ == "__main__":
@@ -183,11 +187,13 @@ if __name__ == "__main__":
 
 from wsl_network_utils import get_windows_host_ip
 
+
 class IndicatorSubscriber:
     def __init__(self):
         # Bind to ALL interfaces (accessible from Windows)
         self.socket.bind("tcp://0.0.0.0:5555")  # Changed from 127.0.0.1
         print(f"✅ Bound Port 5555 on all interfaces (Windows can connect)")
+
 
 # src/python/trade_server.py (Port 5556)
 class TradeServer:
@@ -195,11 +201,13 @@ class TradeServer:
         self.socket.bind("tcp://0.0.0.0:5556")  # Changed from 127.0.0.1
         print(f"✅ Bound Port 5556 on all interfaces")
 
+
 # src/python/heartbeat_publisher.py (Port 5559)
 class HeartbeatPublisher:
     def __init__(self):
         self.socket.bind("tcp://0.0.0.0:5559")  # Changed from 127.0.0.1
         print(f"✅ Bound Port 5559 on all interfaces")
+
 
 # src/python/trade_execution_client.py (Port 5558)
 class TradeExecutionClient:

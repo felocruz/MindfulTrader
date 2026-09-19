@@ -187,26 +187,34 @@ import zmq
 
 # CRITICAL: Field order and types MUST match C++ struct exactly
 # 'u4' = uint32, 'f8' = float64/double, 'i8' = int64, 'f4' = float32, 'i4' = int32
-FEATURE_SCHEMA_V1_1 = np.dtype([
-    ('protocol_version', 'u4'),  # Must match C++ uint32_t protocolVersion
-    ('sequence_number', 'u4'),   # uint32_t sequenceNumber (for gap detection)
-    ('sc_time', 'f8'),           # double scDateTime
-    ('unix_ts', 'i8'),           # int64_t unixTimestamp
-    ('open', 'f4'),              # float open
-    ('high', 'f4'),              # float high
-    ('low', 'f4'),               # float low
-    ('close', 'f4'),             # float close
-    ('vol', 'f4'),               # float volume
-    ('delta', 'f4'),             # float cumulativeDelta
-    ('ema21', 'f4'),             # float ema21
-    ('macd_h', 'f4'),            # float macdHistogram
-    ('regime', 'i4'),            # int32_t regimeID
-    ('oscillator_divergence', 'i4'),  # int32_t oscillator310Divergence (1=bullish, 2=bearish, 0=none)
-    ('bar_idx', 'i4'),           # int32_t barIndex
-    ('is_closed', 'i4'),         # int32_t isBarClosed
-])
+FEATURE_SCHEMA_V1_1 = np.dtype(
+    [
+        ("protocol_version", "u4"),  # Must match C++ uint32_t protocolVersion
+        ("sequence_number", "u4"),  # uint32_t sequenceNumber (for gap detection)
+        ("sc_time", "f8"),  # double scDateTime
+        ("unix_ts", "i8"),  # int64_t unixTimestamp
+        ("open", "f4"),  # float open
+        ("high", "f4"),  # float high
+        ("low", "f4"),  # float low
+        ("close", "f4"),  # float close
+        ("vol", "f4"),  # float volume
+        ("delta", "f4"),  # float cumulativeDelta
+        ("ema21", "f4"),  # float ema21
+        ("macd_h", "f4"),  # float macdHistogram
+        ("regime", "i4"),  # int32_t regimeID
+        (
+            "oscillator_divergence",
+            "i4",
+        ),  # int32_t oscillator310Divergence (1=bullish, 2=bearish, 0=none)
+        ("bar_idx", "i4"),  # int32_t barIndex
+        ("is_closed", "i4"),  # int32_t isBarClosed
+    ]
+)
 
-EXPECTED_SIZE = 72  # V1.1: 72 bytes (8 header + 16 timestamps + 20 OHLCV + 12 indicators + 16 context)
+EXPECTED_SIZE = (
+    72  # V1.1: 72 bytes (8 header + 16 timestamps + 20 OHLCV + 12 indicators + 16 context)
+)
+
 
 class BinaryFeatureReceiver:
     def __init__(self, endpoint="tcp://localhost:5555", enable_conflate=False):
@@ -220,21 +228,21 @@ class BinaryFeatureReceiver:
         self.socket = self.context.socket(zmq.SUB)
         self.socket.connect(endpoint)
         self.socket.subscribe("")
-        
+
         # ELITE CHOICE: Conflate OFF by default (don't miss liquidity sweeps)
         if enable_conflate:
             self.socket.setsockopt(zmq.CONFLATE, 1)
             logger.warning("CONFLATE enabled: May drop packets!")
-        
+
         # Set receive high-water mark (buffer size)
         self.socket.setsockopt(zmq.RCVHWM, 100)
-        
+
         # Statistics
         self.packets_received = 0
         self.packets_invalid = 0
         self.packets_dropped = 0
         self.last_sequence = None
-    
+
     def receive_feature_vector(self):
         """
         Elite zero-copy deserialization using np.ndarray view.
@@ -242,33 +250,28 @@ class BinaryFeatureReceiver:
         Returns: numpy structured array (single record)
         """
         raw_bytes = self.socket.recv()
-        
+
         # Validation Step 1: Size check
         if len(raw_bytes) != EXPECTED_SIZE:
             self.packets_invalid += 1
             raise ValueError(
-                f"Invalid packet size: {len(raw_bytes)} bytes "
-                f"(expected {EXPECTED_SIZE})"
+                f"Invalid packet size: {len(raw_bytes)} bytes (expected {EXPECTED_SIZE})"
             )
-        
+
         # ELITE STEP: Zero-copy view (direct memory interpretation)
         # Using ndarray(buffer=...) instead of frombuffer() ensures
         # we get a proper view without intermediate copies
-        data = np.ndarray(
-            shape=(1,),
-            dtype=FEATURE_SCHEMA_V1_1,
-            buffer=raw_bytes
-        )[0]  # Extract single record
-        
+        data = np.ndarray(shape=(1,), dtype=FEATURE_SCHEMA_V1_1, buffer=raw_bytes)[
+            0
+        ]  # Extract single record
+
         # Validation Step 2: Protocol version
-        if data['protocol_version'] != 1:
+        if data["protocol_version"] != 1:
             self.packets_invalid += 1
-            raise ValueError(
-                f"Unsupported protocol version: {data['protocol_version']}"
-            )
-        
+            raise ValueError(f"Unsupported protocol version: {data['protocol_version']}")
+
         # ELITE MONITORING: Sequence gap detection
-        current_seq = data['seq']
+        current_seq = data["seq"]
         if self.last_sequence is not None:
             expected_seq = self.last_sequence + 1
             if current_seq != expected_seq:
@@ -278,7 +281,7 @@ class BinaryFeatureReceiver:
                     f"⚠️  PACKET DROP DETECTED: Missed {gap} packets "
                     f"(seq {expected_seq} → {current_seq})"
                 )
-        
+
         self.last_sequence = current_seq
         self.packets_received += 1
         return data
@@ -287,24 +290,30 @@ class BinaryFeatureReceiver:
         """
         Extract only the features your TensorFlow model needs.
         Modify this based on your model's input layer.
-        
+
         Returns: numpy array shaped for model.predict() input
         """
-        return np.array([[
-            data['close'],
-            data['delta'],
-            data['ema21'],
-            data['atr'],
-            float(data['regime'])  # One-hot encode this if needed
-        ]], dtype=np.float32)
-    
+        return np.array(
+            [
+                [
+                    data["close"],
+                    data["delta"],
+                    data["ema21"],
+                    data["atr"],
+                    float(data["regime"]),  # One-hot encode this if needed
+                ]
+            ],
+            dtype=np.float32,
+        )
+
     def get_statistics(self):
         """Returns reliability metrics for monitoring"""
         return {
-            'packets_received': self.packets_received,
-            'packets_invalid': self.packets_invalid,
-            'packets_dropped': self.packets_dropped,
-            'drop_rate': self.packets_dropped / max(1, self.packets_received + self.packets_dropped)
+            "packets_received": self.packets_received,
+            "packets_invalid": self.packets_invalid,
+            "packets_dropped": self.packets_dropped,
+            "drop_rate": self.packets_dropped
+            / max(1, self.packets_received + self.packets_dropped),
         }
 ```
 
@@ -844,7 +853,7 @@ std::cout << "Packet size: " << sizeof(TradingFeaturePacket) << std::endl;
 - Protocol version in `uint16_t protocolVersion` header field (currently `0x0101` = 1.1)
 - Python checks version on first packet:
   ```python
-  version = (header['version_major'] << 8) | header['version_minor']
+  version = (header["version_major"] << 8) | header["version_minor"]
   if version == 0x0101:
       schema = FEATURE_SCHEMA_V1_1
   elif version == 0x0102:
@@ -871,12 +880,14 @@ std::cout << "Packet size: " << sizeof(TradingFeaturePacket) << std::endl;
 
 **Resolution**: ✅ **FIXED** - Added `int32_t oscillator310Divergence` to struct (now at 72 bytes total). Python schema update:
 ```python
-FEATURE_SCHEMA_V1_1 = np.dtype([
-    # ... existing fields ...
-    ('oscillator_divergence', 'i4'),  # ← NEW FIELD
-    ('bar_index', 'i4'),
-    ('is_bar_closed', 'i4'),
-])
+FEATURE_SCHEMA_V1_1 = np.dtype(
+    [
+        # ... existing fields ...
+        ("oscillator_divergence", "i4"),  # ← NEW FIELD
+        ("bar_index", "i4"),
+        ("is_bar_closed", "i4"),
+    ]
+)
 ```
 
 ### Bidirectional Protocol (Veto Responses)
@@ -884,8 +895,7 @@ FEATURE_SCHEMA_V1_1 = np.dtype([
 
 **Resolution**: ✅ **DEFINED** - See **VetoResponse** struct in FeatureIndex namespace above (24 bytes). Python sends:
 ```python
-veto = np.array([(seq, 1, quality, urgency, inference_ms)], 
-                dtype=VETO_RESPONSE_SCHEMA)
+veto = np.array([(seq, 1, quality, urgency, inference_ms)], dtype=VETO_RESPONSE_SCHEMA)
 socket.send(veto.tobytes())
 ```
 C++ receives with `zmq_recv()` on REQ/REP socket and updates `TradeSignalManager::veto_scores[sequence]`.
@@ -986,7 +996,7 @@ If assertion fails, adjust Python `EXPECTED_SIZE` to match.
 **Fix**:
 ```python
 # Add to Python schema:
-FEATURE_SCHEMA_V1 = np.dtype([...]).newbyteorder('<')  # Force little-endian
+FEATURE_SCHEMA_V1 = np.dtype([...]).newbyteorder("<")  # Force little-endian
 ```
 
 ---
@@ -1065,11 +1075,11 @@ numerical = [normalized_range, normalized_change]  # 2 fields
 **Python Urgency Formula**:
 ```python
 urgency = f(
-    volume_ratio,           # ✅ Available from binary
-    bar_range_percentile,   # ✅ Computable from OHLC
-    close_percentile,       # ✅ Computable from OHLC
+    volume_ratio,  # ✅ Available from binary
+    bar_range_percentile,  # ✅ Computable from OHLC
+    close_percentile,  # ✅ Computable from OHLC
     oscillator_divergence,  # ❌ MISSING
-    market_regime           # ✅ regimeID field
+    market_regime,  # ✅ regimeID field
 )
 ```
 

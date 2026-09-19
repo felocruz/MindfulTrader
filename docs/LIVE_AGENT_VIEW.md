@@ -116,12 +116,12 @@ live_agent_view.py
 ```python
 {
     "action": "ENTER_LONG",  # TradeAction enum
-    "confidence": 0.873,      # 0.0-1.0
+    "confidence": 0.873,  # 0.0-1.0
     "trade_plan": {
         "rationale": "Strong upward momentum with RSI confirmation...",
         "stop_loss_description": "2.5 ATR below entry at 5,235.25",
-        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)"
-    }
+        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)",
+    },
 }
 ```
 
@@ -258,7 +258,7 @@ class TradeExecutionClient:
         self.socket = self.context.socket(zmq.REQ)
         self.socket.connect(f"tcp://{host}:{port}")
         self.socket.setsockopt(zmq.RCVTIMEO, 5000)  # 5-second timeout
-        
+
     def send_request(self, request_dict: dict) -> Optional[dict]:
         """Send JSON request, wait for response with timeout handling."""
         try:
@@ -268,27 +268,25 @@ class TradeExecutionClient:
         except zmq.Again:
             # Timeout occurred
             return None
-            
-    def execute_trade(self, action: str, pattern: str, 
-                     ai_prediction: dict, user_initiated: bool = False) -> Optional[dict]:
+
+    def execute_trade(
+        self, action: str, pattern: str, ai_prediction: dict, user_initiated: bool = False
+    ) -> Optional[dict]:
         """Execute trade with real-time validation in C++."""
         request = {
             "type": "ExecuteTrade",
             "action": action,  # ENTER_LONG, ENTER_SHORT, EXIT_LONG, EXIT_SHORT
             "pattern": pattern,  # Pattern enum string
             "ai_prediction": ai_prediction,  # Full AI context
-            "user_initiated": user_initiated  # Manual vs automated
+            "user_initiated": user_initiated,  # Manual vs automated
         }
         return self.send_request(request)
-        
+
     def send_model_prediction(self, prediction: dict) -> Optional[dict]:
         """Send AI model prediction for auto-execution."""
-        request = {
-            "type": "ModelPrediction",
-            "prediction": prediction
-        }
+        request = {"type": "ModelPrediction", "prediction": prediction}
         return self.send_request(request)
-        
+
     def close(self):
         """Cleanup socket and context."""
         self.socket.close()
@@ -418,13 +416,13 @@ class TradeExecutionClient:
 **Current Prediction Dict (cache[CACHE_KEY_AGENT_PREDICTION]):**
 ```python
 {
-    "action": "ENTER_LONG",        # TradeAction enum string
-    "confidence": 0.873,            # 0.0-1.0
+    "action": "ENTER_LONG",  # TradeAction enum string
+    "confidence": 0.873,  # 0.0-1.0
     "trade_plan": {
         "rationale": "Strong upward momentum with RSI confirmation and volume spike",
         "stop_loss_description": "2.5 ATR below entry at 5,235.25",
-        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)"
-    }
+        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)",
+    },
 }
 ```
 
@@ -437,7 +435,7 @@ class TradeExecutionClient:
     "target_rule": "RiskReward",
     "quantity": 2,
     "timestamp": "2025-12-09T14:35:42",
-    "model_version": "v2.3"
+    "model_version": "v2.3",
 }
 ```
 
@@ -509,7 +507,7 @@ class TradeExecutionClient:
        "stopRule": prediction.get("stop_rule", "ATR"),
        "targetRule": prediction.get("target_rule", "RiskReward"),
        "direction": prediction["action"],  # ENTER_LONG/ENTER_SHORT
-       "quantity": prediction.get("quantity", 2)
+       "quantity": prediction.get("quantity", 2),
    }
    ```
 4. Disable button, show spinner
@@ -582,18 +580,16 @@ if confirm_clicks:
         validation_response["stopPrice"],
         validation_response["targetPrice"],
         validation_response["quantity"],
-        validation_response["direction"]
+        validation_response["direction"],
     )
-    
+
     if response and response.get("success"):
         return dbc.Toast(
-            f"✅ Order placed successfully! ID: {response['orderId']}",
-            color="success"
+            f"✅ Order placed successfully! ID: {response['orderId']}", color="success"
         )
     else:
         return dbc.Toast(
-            f"❌ Order failed: {response.get('message', 'Unknown error')}",
-            color="danger"
+            f"❌ Order failed: {response.get('message', 'Unknown error')}", color="danger"
         )
 ```
 
@@ -604,81 +600,102 @@ class LiveAgentView:
     def __init__(self):
         # Risk metrics field definitions
         self.risk_fields = [
-            EnumField("validation_status", "Validation Status", 
-                     ["WAITING", "APPROVED", "REJECTED"]),
+            EnumField(
+                "validation_status", "Validation Status", ["WAITING", "APPROVED", "REJECTED"]
+            ),
             DoubleField("daily_pnl", "Daily P&L", "$"),
             DoubleField("daily_loss_limit", "Daily Loss Limit", "$"),
             PercentField("daily_pnl_pct", "Daily P&L %"),
             PercentField("portfolio_heat", "Portfolio Heat"),
             IntField("consecutive_losses", "Consecutive Losses"),
-            EnumField("trading_halted", "Trading Halt", 
-                     ["Active", "Halted"])
+            EnumField("trading_halted", "Trading Halt", ["Active", "Halted"]),
         ]
-        
+
     def register_callbacks(self, app):
         """Register field callbacks + validation badge + rejection alert + place trade toggle."""
         for field in self.risk_fields:
             field.register_callback(app)
-            
+
         @app.callback(
             Output("validation-badge", "children"),
             Output("validation-badge", "color"),
-            Input("cache-store", "data")
+            Input("cache-store", "data"),
         )
         def update_validation_badge(cache_data):
             validation = cache_data.get(CACHE_KEY_RISK_STATUS, {})
             return self._format_validation_badge(validation)
-            
+
         @app.callback(
             Output("rejection-alert", "children"),
             Output("rejection-alert", "is_open"),
-            Input("cache-store", "data")
+            Input("cache-store", "data"),
         )
         def show_rejection_reason(cache_data):
             validation = cache_data.get(CACHE_KEY_RISK_STATUS, {})
             return self._format_rejection_alert(validation)
-            
-        @app.callback(
-            Output("place-trade-button", "disabled"),
-            Input("cache-store", "data")
-        )
+
+        @app.callback(Output("place-trade-button", "disabled"), Input("cache-store", "data"))
         def toggle_place_trade_button(cache_data):
             validation = cache_data.get(CACHE_KEY_RISK_STATUS, {})
             return not validation.get("allowed", False)
-            
+
     def render(self) -> dbc.Card:
         """Returns two-panel card layout."""
-        return dbc.Card([
-            dbc.Row([
-                # Panel 1: Predictions
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("TransformerAgent Predictions"),
-                        dbc.CardBody([
-                            html.Div(id="prediction-markdown"),
-                            html.Hr(),
-                            dbc.Button("Request Validation", id="request-validation-btn"),
-                            dbc.Button("Place Trade", id="place-trade-btn", disabled=True)
-                        ])
-                    ])
-                ], width=6),
-                
-                # Panel 2: RiskManager Status
-                dbc.Col([
-                    dbc.Card([
-                        dbc.CardHeader("C++ RiskManager Status"),
-                        dbc.CardBody([
-                            dbc.Badge(id="validation-badge", color="secondary"),
-                            dbc.Alert(id="rejection-alert", is_open=False),
-                            html.Hr(),
-                            html.Div([
-                                field.render() for field in self.risk_fields
-                            ])
-                        ])
-                    ])
-                ], width=6)
-            ])
-        ])
+        return dbc.Card(
+            [
+                dbc.Row(
+                    [
+                        # Panel 1: Predictions
+                        dbc.Col(
+                            [
+                                dbc.Card(
+                                    [
+                                        dbc.CardHeader("TransformerAgent Predictions"),
+                                        dbc.CardBody(
+                                            [
+                                                html.Div(id="prediction-markdown"),
+                                                html.Hr(),
+                                                dbc.Button(
+                                                    "Request Validation",
+                                                    id="request-validation-btn",
+                                                ),
+                                                dbc.Button(
+                                                    "Place Trade",
+                                                    id="place-trade-btn",
+                                                    disabled=True,
+                                                ),
+                                            ]
+                                        ),
+                                    ]
+                                )
+                            ],
+                            width=6,
+                        ),
+                        # Panel 2: RiskManager Status
+                        dbc.Col(
+                            [
+                                dbc.Card(
+                                    [
+                                        dbc.CardHeader("C++ RiskManager Status"),
+                                        dbc.CardBody(
+                                            [
+                                                dbc.Badge(id="validation-badge", color="secondary"),
+                                                dbc.Alert(id="rejection-alert", is_open=False),
+                                                html.Hr(),
+                                                html.Div(
+                                                    [field.render() for field in self.risk_fields]
+                                                ),
+                                            ]
+                                        ),
+                                    ]
+                                )
+                            ],
+                            width=6,
+                        ),
+                    ]
+                )
+            ]
+        )
 ```
 
 ### Migration Path
@@ -711,7 +728,8 @@ def handle_prediction_message(payload):
     # Calculate risk_reward, position_size
     # Update cache[CACHE_KEY_PREDICTION]
     # Triggers LiveAgentView refresh
-    
+
+
 def handle_risk_validation_message(payload):
     """Parse RiskManager validation status from C++."""
     # Extract allowed, reason, riskMetrics
@@ -775,12 +793,12 @@ json validation_result = {
 ```python
 {
     "action": "ENTER_LONG",  # TradeAction enum
-    "confidence": 0.873,      # 0.0-1.0
+    "confidence": 0.873,  # 0.0-1.0
     "trade_plan": {
         "rationale": "Strong upward momentum with RSI confirmation and volume spike",
         "stop_loss_description": "2.5 ATR below entry at 5,235.25",
-        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)"
-    }
+        "profit_target_description": "5.0 ATR above entry at 5,265.75 (2:1 R:R)",
+    },
 }
 ```
 
@@ -791,24 +809,24 @@ prediction = {
     "confidence": 0.873,
     "trade_plan": {
         "rationale": "Strong upward momentum with RSI confirmation and volume spike. "
-                     "240-min Impulse GREEN, ADX > 30 (trending strong). "
-                     "15-min stochastic in oversold bounce zone.",
+        "240-min Impulse GREEN, ADX > 30 (trending strong). "
+        "15-min stochastic in oversold bounce zone.",
         "stop_loss_description": "2.5 ATR below entry at 5,235.25 (10.25 handles = $512.50 risk)",
-        "profit_target_description": "5.0 ATR above entry at 5,265.75 (20.50 handles = $1,025.00 reward, 2:1 R:R)"
-    }
+        "profit_target_description": "5.0 ATR above entry at 5,265.75 (20.50 handles = $1,025.00 reward, 2:1 R:R)",
+    },
 }
 ```
 
 **Future Enhancement Fields:**
 ```python
 {
-    "setup_type": "ElderTripleScreen",      # Setup enum
-    "entry_rule": "Breakout",               # Entry logic
-    "stop_rule": "ATR",                     # Stop placement method
-    "target_rule": "RiskReward",            # Target calculation method
-    "quantity": 2,                          # Contracts
-    "timestamp": "2025-12-09T14:35:42",    # Prediction time
-    "model_version": "v2.3"                 # Model identifier
+    "setup_type": "ElderTripleScreen",  # Setup enum
+    "entry_rule": "Breakout",  # Entry logic
+    "stop_rule": "ATR",  # Stop placement method
+    "target_rule": "RiskReward",  # Target calculation method
+    "quantity": 2,  # Contracts
+    "timestamp": "2025-12-09T14:35:42",  # Prediction time
+    "model_version": "v2.3",  # Model identifier
 }
 ```
 
@@ -951,7 +969,7 @@ class TradeExecutionClient:
     "entryRule": "Breakout",
     "stopRule": "ATR",
     "targetRule": "RiskReward",
-    "direction": "LONG"
+    "direction": "LONG",
 }
 ```
 
@@ -966,11 +984,11 @@ float target_price = entry_price + (2.0 * abs(entry_price - stop_price));  // 2:
 ```python
 {
     "allowed": true,
-    "entryPrice": 5245.50,   # Calculated by C++
-    "stopPrice": 5235.25,    # Calculated by C++
+    "entryPrice": 5245.50,  # Calculated by C++
+    "stopPrice": 5235.25,  # Calculated by C++
     "targetPrice": 5265.75,  # Calculated by C++
-    "riskAmount": 41.0,      # In ticks
-    "rewardAmount": 82.0     # In ticks
+    "riskAmount": 41.0,  # In ticks
+    "rewardAmount": 82.0,  # In ticks
 }
 ```
 
@@ -1063,7 +1081,7 @@ request = {
     "stopRule": "ATR",
     "targetRule": "RiskReward",
     "direction": "LONG",
-    "quantity": 2
+    "quantity": 2,
 }
 ```
 
@@ -1126,22 +1144,22 @@ def test_trade_execution_client_connectivity():
 def test_validate_trade_approval():
     """Test successful trade validation."""
     client = TradeExecutionClient()
-    
+
     response = client.validate_trade(
         setup_type="ElderTripleScreen",
         entry_rule="Breakout",
         stop_rule="ATR",
         target_rule="RiskReward",
         direction="LONG",
-        quantity=2
+        quantity=2,
     )
-    
+
     # Verify response structure
     assert "allowed" in response, "Missing 'allowed' field"
     assert "entryPrice" in response, "Missing 'entryPrice' field"
     assert "riskMetrics" in response, "Missing 'riskMetrics' field"
     assert "dailyPnL" in response["riskMetrics"], "Missing nested dailyPnL"
-    
+
     client.close()
 ```
 
@@ -1151,21 +1169,23 @@ def test_validate_trade_rejection():
     """Test trade rejection due to risk limits."""
     # Trigger daily loss limit (send 10 losing trades first)
     client = TradeExecutionClient()
-    
+
     response = client.validate_trade(
         setup_type="Custom",
         entry_rule="Pullback",
         stop_rule="ATR",
         target_rule="RiskReward",
         direction="SHORT",
-        quantity=5
+        quantity=5,
     )
-    
+
     # Verify rejection
     if not response["allowed"]:
         assert response["reason"] != "", "Missing rejection reason"
-        assert isinstance(response["riskMetrics"]["isTradingHalted"], bool), "isTradingHalted must be bool"
-    
+        assert isinstance(response["riskMetrics"]["isTradingHalted"], bool), (
+            "isTradingHalted must be bool"
+        )
+
     client.close()
 ```
 
@@ -1174,7 +1194,7 @@ def test_validate_trade_rejection():
 def test_execute_trade():
     """Test trade execution after validation approval."""
     client = TradeExecutionClient()
-    
+
     # First validate
     val_response = client.validate_trade(
         setup_type="RaschkeTurtleSoup",
@@ -1182,9 +1202,9 @@ def test_execute_trade():
         stop_rule="SwingPoint",
         target_rule="RiskReward",
         direction="LONG",
-        quantity=1
+        quantity=1,
     )
-    
+
     if val_response["allowed"]:
         # Then execute with validated prices
         exec_response = client.execute_trade(
@@ -1192,12 +1212,12 @@ def test_execute_trade():
             stop_price=val_response["stopPrice"],
             target_price=val_response["targetPrice"],
             quantity=1,
-            direction="LONG"
+            direction="LONG",
         )
-        
+
         assert exec_response.get("success") == True, "Execution failed"
         assert "orderId" in exec_response, "Missing orderId"
-    
+
     client.close()
 ```
 
@@ -1206,19 +1226,19 @@ def test_execute_trade():
 def test_timeout_handling():
     """Test timeout when C++ server not running."""
     client = TradeExecutionClient("localhost", 9999)  # Wrong port
-    
+
     response = client.validate_trade(
         setup_type="Custom",
         entry_rule="Breakout",
         stop_rule="ATR",
         target_rule="FixedTicks",
         direction="LONG",
-        quantity=2
+        quantity=2,
     )
-    
+
     # Should return None on timeout
     assert response is None, "Expected None for timeout"
-    
+
     # GUI should not crash
     client.close()
 ```
@@ -1228,7 +1248,7 @@ def test_timeout_handling():
 #### ❌ Pitfall 1: Calculating Prices in Python
 ```python
 # WRONG: Python doesn't have live market data
-entry_price = df['Close'].iloc[-1] + (1 * tick_size)  # Stale data!
+entry_price = df["Close"].iloc[-1] + (1 * tick_size)  # Stale data!
 ```
 
 **✅ Correct: Let C++ Calculate**
@@ -1236,8 +1256,8 @@ entry_price = df['Close'].iloc[-1] + (1 * tick_size)  # Stale data!
 # Python sends high-level request
 response = client.validate_trade(
     entry_rule="Breakout",  # C++ decides exact entry
-    stop_rule="ATR",        # C++ calculates stop
-    target_rule="RiskReward" # C++ calculates target
+    stop_rule="ATR",  # C++ calculates stop
+    target_rule="RiskReward",  # C++ calculates target
 )
 
 # Python receives validated prices

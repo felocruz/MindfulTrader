@@ -190,26 +190,26 @@ class ZmqClient:
 **✅ CURRENT** (Elite Pattern)
 ```python
 class LiveAgent:
-    def __init__(self, orchestrator, model_path='src/best_agent_model.keras'):
+    def __init__(self, orchestrator, model_path="src/best_agent_model.keras"):
         self.orchestrator = orchestrator
         # No threading/zmq imports needed!
         self.heartbeat_count = 0
         self.last_heartbeat_time = 0
-    
+
     def start_heartbeat(self):
         """Elite: Register with orchestrator I/O loop"""
         if not self.orchestrator.is_connected():
             logger.error("Orchestrator not connected")
             return
-        
+
         self.model_start_time = time.time()
         # Register callback with orchestrator
         self.orchestrator.ai_heartbeat_callback = self._publish_heartbeat
         logger.info("AI Heartbeat registered with Elite Orchestrator")
-    
+
     def _publish_heartbeat(self):
         """Called by orchestrator I/O loop (non-blocking)"""
-        pub_socket = self.orchestrator.sockets.get('ai_heartbeat_pub')
+        pub_socket = self.orchestrator.sockets.get("ai_heartbeat_pub")
         if pub_socket:
             pub_socket.send_string(json.dumps(heartbeat))
 ```
@@ -285,11 +285,12 @@ atexit.register(orchestrator.shutdown)
 class IndicatorProcessor:
     def __init__(self):
         self.latest_data = None
-    
+
     def update(self, data):
         """Called by Elite I/O loop"""
         self.latest_data = data
         print(f"Indicator update: {data}")
+
 
 # Register with orchestrator
 processor = IndicatorProcessor()
@@ -333,6 +334,7 @@ class MyComponent:
     def __init__(self, orchestrator: SystemOrchestrator):
         self.orchestrator = orchestrator
 
+
 # ❌ BAD
 class MyComponent:
     def __init__(self):
@@ -367,10 +369,12 @@ ZMQ sockets are NOT thread-safe:
 # ✅ Safe pattern
 trade_queue = queue.Queue()
 
+
 def worker():
     while True:
         msg = trade_queue.get()
         orchestrator.sockets["trade_req"].send_json(msg)
+
 
 # From GUI thread:
 trade_queue.put(order)
@@ -385,7 +389,7 @@ threading.Thread(target=lambda: orchestrator.sockets["trade_req"].send_json(msg)
 telemetry = orchestrator.get_telemetry()
 network_health_indicator.update(
     value=telemetry.network_jitter_ms,
-    color="green" if telemetry.network_jitter_ms < 10 else "orange"
+    color="green" if telemetry.network_jitter_ms < 10 else "orange",
 )
 ```
 
@@ -570,6 +574,7 @@ def position_callback(msg_data):
     if msg_data["type"] == "POSITION_SYNC":
         update_gui_position(msg_data["data"])
 
+
 orchestrator.ai_heartbeat_callback = position_callback
 ```
 
@@ -599,9 +604,7 @@ orchestrator.ai_heartbeat_callback = position_callback
 #### Query Example
 ```python
 # Find trades with high confidence (>=0.85)
-high_conf_trades = dbms.collection('trades').where(
-    'confidence', '>=', 0.85
-).get()
+high_conf_trades = dbms.collection("trades").where("confidence", ">=", 0.85).get()
 
 # Analyze MAE/MFE patterns
 for trade in high_conf_trades:

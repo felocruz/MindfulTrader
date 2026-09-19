@@ -69,6 +69,7 @@ not assumed).
 
 Run: mamba run -n mts python3 -m pytest schema/scripts/test_generate_contract_header.py -v
 """
+
 import generate_contract_header as gch
 
 FIXTURE_JSONSCHEMA = {
@@ -84,7 +85,11 @@ FIXTURE_JSONSCHEMA = {
             "properties": {
                 "shannon_flow_entropy": {"type": "number"},
                 "hurst_exponent": {"type": "number"},
-                "regime_duration": {"type": "integer", "minimum": -2147483648, "maximum": 2147483647},
+                "regime_duration": {
+                    "type": "integer",
+                    "minimum": -2147483648,
+                    "maximum": 2147483647,
+                },
                 "is_valid": {"type": "boolean"},
                 "snapshot_timestamp_us": {"type": "integer"},
             }
@@ -114,20 +119,26 @@ def test_parse_wire_schema_version_missing_marker_raises():
 
 def test_observation_field_names_preserves_declaration_order():
     assert gch.observation_field_names(FIXTURE_JSONSCHEMA) == (
-        "log_variance_ratio", "burstiness_index", "hurst_exponent",
+        "log_variance_ratio",
+        "burstiness_index",
+        "hurst_exponent",
     )
 
 
 def test_risk_gate_field_names_includes_non_float_fields():
     assert gch.risk_gate_field_names(FIXTURE_JSONSCHEMA) == (
-        "shannon_flow_entropy", "hurst_exponent", "regime_duration", "is_valid",
+        "shannon_flow_entropy",
+        "hurst_exponent",
+        "regime_duration",
+        "is_valid",
         "snapshot_timestamp_us",
     )
 
 
 def test_risk_gate_float_field_names_excludes_int_and_bool():
     assert gch.risk_gate_float_field_names(FIXTURE_JSONSCHEMA) == (
-        "shannon_flow_entropy", "hurst_exponent",
+        "shannon_flow_entropy",
+        "hurst_exponent",
     )
 
 
@@ -165,7 +176,8 @@ def test_substitute_markers_replaces_all_four_and_leaves_rest_untouched():
         "unrelated line 3\n"
     )
     out = gch.substitute_markers(
-        header, schema_version=240,
+        header,
+        schema_version=240,
         observation_fields=("log_variance_ratio", "hurst_exponent"),
         risk_gate_all=("shannon_flow_entropy", "hurst_exponent"),
         risk_gate_float=("shannon_flow_entropy", "hurst_exponent"),
@@ -182,6 +194,7 @@ def test_substitute_markers_replaces_all_four_and_leaves_rest_untouched():
 
 if __name__ == "__main__":
     import sys
+
     failures = 0
     for name, fn in list(globals().items()):
         if name.startswith("test_") and callable(fn):
@@ -224,6 +237,7 @@ Usage: mamba run -n mts python3 generate_contract_header.py \\
     --header <path to already-heredoc-written mts_schema_contract_generated.h,
               rewritten in place>
 """
+
 from __future__ import annotations
 
 import argparse
@@ -234,6 +248,7 @@ from pathlib import Path
 _OBSERVATION_DATA_KEY = "MTS_Schema_ObservationData"
 _RISK_GATE_CONTEXT_KEY = "MTS_Schema_RiskGateContext"
 _VERSION_MARKER_RE = re.compile(r"//\s*WIRE_SCHEMA_VERSION:\s*(\d+)")
+
 
 # CamelCase enum-style suffix used for each field's kObsXxx / positional constant
 # name -- mirrors the hand-typed convention already in the current header
@@ -280,7 +295,8 @@ def render_observation_constants(field_names: tuple[str, ...]) -> str:
 
 
 def render_risk_gate_constants(
-    all_names: tuple[str, ...], float_names: tuple[str, ...],
+    all_names: tuple[str, ...],
+    float_names: tuple[str, ...],
     observation_field_names: tuple[str, ...],
 ) -> str:
     """Output column names computed by SET INTERSECTION against ObservationData's
@@ -288,9 +304,7 @@ def render_risk_gate_constants(
     future naming collision is caught automatically here, never silently missed
     (§10.4's naming-collision fix is itself drift-proof by construction)."""
     colliding = set(float_names) & set(observation_field_names)
-    output_names = tuple(
-        f"{name}_raw" if name in colliding else name for name in float_names
-    )
+    output_names = tuple(f"{name}_raw" if name in colliding else name for name in float_names)
     lines = [
         f"inline constexpr std::size_t kRiskGateFieldCount = {len(all_names)};",
         f"inline constexpr std::size_t kRiskGateFloatFieldCount = {len(float_names)};",
@@ -308,15 +322,9 @@ def render_risk_gate_constants(
         lines.append(f'    "{name}",')
     lines.append("};")
     lines.append("")
-    lines.append(
-        "// Output-column names for RiskGateContext's float fields -- suffixed with"
-    )
-    lines.append(
-        "// _raw ONLY where the plain name collides with an ObservationData column"
-    )
-    lines.append(
-        "// (raw/unscaled here vs. log-z/winsorized there), computed by set"
-    )
+    lines.append("// Output-column names for RiskGateContext's float fields -- suffixed with")
+    lines.append("// _raw ONLY where the plain name collides with an ObservationData column")
+    lines.append("// (raw/unscaled here vs. log-z/winsorized there), computed by set")
     lines.append("// intersection against kObservationFieldNames, not hardcoded (§10.4).")
     lines.append(
         f"inline constexpr std::array<const char*, kRiskGateFloatFieldCount> kRiskGateFloatOutputColumnNames = {{"
@@ -328,9 +336,11 @@ def render_risk_gate_constants(
 
 
 def render_make_observation_data(field_names: tuple[str, ...]) -> str:
-    lines = ["inline MTS::Schema::ObservationData MakeObservationData(",
-             "    const ObservationArray& values) {",
-             "  return MTS::Schema::ObservationData("]
+    lines = [
+        "inline MTS::Schema::ObservationData MakeObservationData(",
+        "    const ObservationArray& values) {",
+        "  return MTS::Schema::ObservationData(",
+    ]
     for i, name in enumerate(field_names):
         suffix = "," if i < len(field_names) - 1 else ");"
         lines.append(f"      values[kObs{_snake_to_pascal(name)}]{suffix}")
@@ -339,9 +349,11 @@ def render_make_observation_data(field_names: tuple[str, ...]) -> str:
 
 
 def render_to_observation_array(field_names: tuple[str, ...]) -> str:
-    lines = ["inline ObservationArray ToObservationArray(",
-             "    const MTS::Schema::ObservationData& observation) {",
-             "  return {"]
+    lines = [
+        "inline ObservationArray ToObservationArray(",
+        "    const MTS::Schema::ObservationData& observation) {",
+        "  return {",
+    ]
     for name in field_names:
         lines.append(f"      observation.{name}(),")
     lines.append("  };")
@@ -350,18 +362,26 @@ def render_to_observation_array(field_names: tuple[str, ...]) -> str:
 
 
 def substitute_markers(
-    header_text: str, *, schema_version: int,
-    observation_fields: tuple[str, ...], risk_gate_all: tuple[str, ...],
-    risk_gate_float: tuple[str, ...], observation_field_names_for_collision: tuple[str, ...],
+    header_text: str,
+    *,
+    schema_version: int,
+    observation_fields: tuple[str, ...],
+    risk_gate_all: tuple[str, ...],
+    risk_gate_float: tuple[str, ...],
+    observation_field_names_for_collision: tuple[str, ...],
 ) -> str:
     replacements = {
         "// __GENERATED_SCHEMA_VERSION__": (
             f"inline constexpr std::uint16_t kSchemaVersion = {schema_version};  "
             "// from mts_schema.fbs's WIRE_SCHEMA_VERSION marker, see brainstorm doc §10.2"
         ),
-        "// __GENERATED_OBSERVATION_FIELD_CONSTANTS__": render_observation_constants(observation_fields),
+        "// __GENERATED_OBSERVATION_FIELD_CONSTANTS__": render_observation_constants(
+            observation_fields
+        ),
         "// __GENERATED_RISK_GATE_FIELD_CONSTANTS__": render_risk_gate_constants(
-            risk_gate_all, risk_gate_float, observation_field_names_for_collision,
+            risk_gate_all,
+            risk_gate_float,
+            observation_field_names_for_collision,
         ),
         "// __GENERATED_MAKE_OBSERVATION_DATA__": render_make_observation_data(observation_fields),
         "// __GENERATED_TO_OBSERVATION_ARRAY__": render_to_observation_array(observation_fields),
@@ -390,8 +410,10 @@ def main() -> None:
 
     header_text = args.header.read_text()
     out = substitute_markers(
-        header_text, schema_version=schema_version,
-        observation_fields=observation_fields, risk_gate_all=risk_gate_all,
+        header_text,
+        schema_version=schema_version,
+        observation_fields=observation_fields,
+        risk_gate_all=risk_gate_all,
         risk_gate_float=risk_gate_float,
         observation_field_names_for_collision=observation_fields,
     )

@@ -26,13 +26,13 @@ Validate that quality/urgency predictions improve trade performance **without co
 ```python
 # Model architecture
 model_outputs = {
-    'action': Dense(3, activation='softmax'),      # LONG/SHORT/FLAT
-    'quality': Dense(1, activation='sigmoid'),      # Setup quality [0-1]
-    'urgency': Dense(1, activation='sigmoid')       # Execution urgency [0-1]
+    "action": Dense(3, activation="softmax"),  # LONG/SHORT/FLAT
+    "quality": Dense(1, activation="sigmoid"),  # Setup quality [0-1]
+    "urgency": Dense(1, activation="sigmoid"),  # Execution urgency [0-1]
 }
 
 # Veto mechanism
-if prediction['quality'] < 0.6:
+if prediction["quality"] < 0.6:
     return "VETO_TRADE"  # Skip low-quality setups
 ```
 

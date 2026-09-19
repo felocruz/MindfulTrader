@@ -92,6 +92,7 @@ def determine_target_label(row: pd.Series) -> TradeActionEnum:
 ```python
 from enum import IntEnum
 
+
 class TradeActionEnum(IntEnum):
     HOLD = 0
     ENTER_LONG = 1
@@ -99,10 +100,11 @@ class TradeActionEnum(IntEnum):
     EXIT_LONG = 3
     EXIT_SHORT = 4
 
+
 def determine_target_label(row: pd.Series) -> TradeActionEnum:
     """Generate target label from indicator values."""
-    raschke_trigger = row['raschke_tactical_trigger']
-    
+    raschke_trigger = row["raschke_tactical_trigger"]
+
     # Map RaschkeTacticalTrigger enum to TradeActionEnum
     LONG_TRIGGERS = {
         1,  # TURTLE_SOUP_BUY
@@ -110,14 +112,14 @@ def determine_target_label(row: pd.Series) -> TradeActionEnum:
         5,  # TWO_B_BUY
         7,  # ANTI_BUY
     }
-    
+
     SHORT_TRIGGERS = {
         2,  # TURTLE_SOUP_SELL
         4,  # PINBALL_SELL
         6,  # TWO_B_SELL
         8,  # ANTI_SELL
     }
-    
+
     if raschke_trigger in LONG_TRIGGERS:
         return TradeActionEnum.ENTER_LONG
     elif raschke_trigger in SHORT_TRIGGERS:
@@ -125,10 +127,11 @@ def determine_target_label(row: pd.Series) -> TradeActionEnum:
     else:
         return TradeActionEnum.HOLD
 
+
 # Apply to exported data
-df = pd.read_json('TransformerData.jsonl', lines=True)
-df['target'] = df.apply(determine_target_label, axis=1)
-df.to_json('TransformerData_labeled.jsonl', orient='records', lines=True)
+df = pd.read_json("TransformerData.jsonl", lines=True)
+df["target"] = df.apply(determine_target_label, axis=1)
+df.to_json("TransformerData_labeled.jsonl", orient="records", lines=True)
 ```
 
 **Pros**:
@@ -307,31 +310,31 @@ TradeActionEnum DetermineTargetLabel(SCStudyInterfaceRef sc, int barIndex) {
 ```python
 def determine_target_label_hybrid(row: pd.Series) -> TradeActionEnum:
     """Recommended: Pattern + Quality + Basic Risk."""
-    
+
     # Step 1: Check tactical trigger
-    raschke_trigger = row['raschke_tactical_trigger']
+    raschke_trigger = row["raschke_tactical_trigger"]
     if raschke_trigger == 0:  # NONE
         return TradeActionEnum.HOLD
-    
+
     # Step 2: Check quality score
-    quality_score = row.get('quality_score', 0)
+    quality_score = row.get("quality_score", 0)
     if quality_score < 0.6:
         return TradeActionEnum.HOLD  # Low quality setup
-    
+
     # Step 3: Check basic risk filters
-    time_of_day = row['time_of_day']
+    time_of_day = row["time_of_day"]
     if time_of_day >= 7:  # AFTER_HOURS or EXTENDED_HOURS
         return TradeActionEnum.HOLD
-    
+
     # Could add more checks here:
     # - Daily loss tracking (requires state)
     # - Consecutive losses (requires state)
     # For now: pattern + quality is sufficient
-    
+
     # Step 4: Map trigger to action
     LONG_TRIGGERS = {1, 3, 5, 7, 9, 11, 13}  # BUY patterns
     SHORT_TRIGGERS = {2, 4, 6, 8, 10, 12, 14}  # SELL patterns
-    
+
     if raschke_trigger in LONG_TRIGGERS:
         return TradeActionEnum.ENTER_LONG
     elif raschke_trigger in SHORT_TRIGGERS:
@@ -339,13 +342,14 @@ def determine_target_label_hybrid(row: pd.Series) -> TradeActionEnum:
     else:
         return TradeActionEnum.HOLD
 
+
 # Apply to exported data
-df = pd.read_json('TransformerData.jsonl', lines=True)
-df['target'] = df.apply(determine_target_label_hybrid, axis=1)
-df.to_json('TransformerData_labeled.jsonl', orient='records', lines=True)
+df = pd.read_json("TransformerData.jsonl", lines=True)
+df["target"] = df.apply(determine_target_label_hybrid, axis=1)
+df.to_json("TransformerData_labeled.jsonl", orient="records", lines=True)
 
 # Validate label distribution
-print(df['target'].value_counts())
+print(df["target"].value_counts())
 # Expected: ~95% HOLD, ~5% ENTER_*
 ```
 
@@ -406,14 +410,15 @@ double PositionManager::CalculateStopPrice(
 # Does NOT calculate stops/targets
 # Just maps: trigger exists → ENTER_* label
 
-# Option B: Lookahead-Based (Complex)  
+# Option B: Lookahead-Based (Complex)
 # Calculates stops/targets in Python using STRATEGIES doc rules
 # Checks future bars for profitability
 # Requires Python reimplementation of PositionManager logic
 
+
 def calculate_stop_price(entry, atr, pattern):
     """Must match STRATEGIES_PARAMETERS_REFERENCE.md"""
-    if pattern == 'TURTLE_SOUP_BUY':
+    if pattern == "TURTLE_SOUP_BUY":
         return entry - (0.5 * atr)  # Same as C++
     # ... implement all patterns
 ```
@@ -478,15 +483,15 @@ void ExecuteBacktest(SCStudyInterfaceRef sc) {
 - [ ] **Create label generation script** (e.g., `generate_training_labels.py`)
   ```python
   import pandas as pd
-  
+
   # Read raw export
-  df = pd.read_json('TransformerData.jsonl', lines=True)
-  
+  df = pd.read_json("TransformerData.jsonl", lines=True)
+
   # Apply labeling logic (choose approach)
-  df['target'] = df.apply(determine_target_label_hybrid, axis=1)
-  
+  df["target"] = df.apply(determine_target_label_hybrid, axis=1)
+
   # Save labeled dataset
-  df.to_json('TransformerData_labeled.jsonl', orient='records', lines=True)
+  df.to_json("TransformerData_labeled.jsonl", orient="records", lines=True)
   ```
 
 - [ ] **Choose labeling approach** (recommend Hybrid: Pattern + Quality)
@@ -496,7 +501,7 @@ void ExecuteBacktest(SCStudyInterfaceRef sc) {
 
 - [ ] **Validate label distribution**
   ```python
-  print(df['target'].value_counts())
+  print(df["target"].value_counts())
   # Expected: ~95% HOLD (0), ~2.5% ENTER_LONG (1), ~2.5% ENTER_SHORT (2)
   ```
 

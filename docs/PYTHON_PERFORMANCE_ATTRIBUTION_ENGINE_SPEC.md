@@ -201,15 +201,15 @@ class ModelHealthStatusManager     # Lines 264-480: Health status determination
 ```python
 # trade_server.py - CloseTrade handler returns:
 {
-  "status": "success",
-  "message": "CloseTrade successful for doc_id: ...",
-  "type": "CloseTradeResponse",
-  "order_id": "...",
-  "model_health": {                    # NEW - Phase 1
-    "status": "INSUFFICIENT_DATA",     # HEALTHY | WARNING | SOFT_LOCKED | INSUFFICIENT_DATA
-    "alpha_slippage_pct": 0.0,
-    "message": "Insufficient data: 0 trades (need 20)"
-  }
+    "status": "success",
+    "message": "CloseTrade successful for doc_id: ...",
+    "type": "CloseTradeResponse",
+    "order_id": "...",
+    "model_health": {  # NEW - Phase 1
+        "status": "INSUFFICIENT_DATA",  # HEALTHY | WARNING | SOFT_LOCKED | INSUFFICIENT_DATA
+        "alpha_slippage_pct": 0.0,
+        "message": "Insufficient data: 0 trades (need 20)",
+    },
 }
 ```
 
@@ -217,13 +217,13 @@ class ModelHealthStatusManager     # Lines 264-480: Health status determination
 ```python
 # config.py - PERFORMANCE_ATTRIBUTION_CONFIG
 {
-    'rolling_window_days': 30,           # 30-day rolling window
-    'risk_free_rate': 0.02,              # 2% annual for Sharpe/Sortino
-    'starting_capital': 10000.0,         # For drawdown calculations
-    'warning_threshold_pct': 20.0,       # WARNING if alpha slippage > 20%
-    'soft_lock_threshold_pct': 30.0,     # SOFT_LOCKED if alpha slippage > 30%
-    'min_sample_size': 20,               # 20 trades (Mark Douglas: statistically significant)
-    'cache_duration_seconds': 60         # Cache health for 60 seconds
+    "rolling_window_days": 30,  # 30-day rolling window
+    "risk_free_rate": 0.02,  # 2% annual for Sharpe/Sortino
+    "starting_capital": 10000.0,  # For drawdown calculations
+    "warning_threshold_pct": 20.0,  # WARNING if alpha slippage > 20%
+    "soft_lock_threshold_pct": 30.0,  # SOFT_LOCKED if alpha slippage > 30%
+    "min_sample_size": 20,  # 20 trades (Mark Douglas: statistically significant)
+    "cache_duration_seconds": 60,  # Cache health for 60 seconds
 }
 ```
 
@@ -355,27 +355,27 @@ These fields are now **available in Firestore** and ready for performance attrib
 ```python
 @dataclass
 class TradeDocument:
-    order_id: int                  # Sierra Chart order ID
-    trade_status: str              # "Open" or "Closed"
-    symbol: str                    # e.g., "ESH25", "NQH25"
-    side: str                      # "LONG" or "SHORT"
-    size: float                    # Number of contracts
-    entry_date: str                # "YYYY-MM-DD HH:MM:SS"
-    entry_price: float             # Entry price
-    exit_date: str                 # "YYYY-MM-DD HH:MM:SS" (empty if open)
-    exit_price: float              # Exit price (0 if open)
-    strategy: str                  # Strategy name (optional)
-    pnl: float                     # Profit/loss in dollars
-    entry_grade: int               # 0-100 objective grade
-    exit_grade: int                # 0-100 objective grade
-    trade_grade: int               # 0-100 objective grade
-    
+    order_id: int  # Sierra Chart order ID
+    trade_status: str  # "Open" or "Closed"
+    symbol: str  # e.g., "ESH25", "NQH25"
+    side: str  # "LONG" or "SHORT"
+    size: float  # Number of contracts
+    entry_date: str  # "YYYY-MM-DD HH:MM:SS"
+    entry_price: float  # Entry price
+    exit_date: str  # "YYYY-MM-DD HH:MM:SS" (empty if open)
+    exit_price: float  # Exit price (0 if open)
+    strategy: str  # Strategy name (optional)
+    pnl: float  # Profit/loss in dollars
+    entry_grade: int  # 0-100 objective grade
+    exit_grade: int  # 0-100 objective grade
+    trade_grade: int  # 0-100 objective grade
+
     # ✅ NEW: Performance attribution fields (Phase 1 - extends existing TradeDocument)
     # These fields extend the existing dataclass with backward-compatible defaults
-    confidence: float = 0.0        # AI signal confidence (0.0-1.0) - from live_agent
-    mae_ticks: float = 0.0         # Maximum Adverse Excursion in ticks
-    mfe_ticks: float = 0.0         # Maximum Favorable Excursion in ticks
-    
+    confidence: float = 0.0  # AI signal confidence (0.0-1.0) - from live_agent
+    mae_ticks: float = 0.0  # Maximum Adverse Excursion in ticks
+    mfe_ticks: float = 0.0  # Maximum Favorable Excursion in ticks
+
     # ... plus fields for screenshots, inner_dialogue, the_plan, notes
 ```
 
@@ -560,93 +560,90 @@ Performance Attribution Engine reads from Firestore ✅
 ```python
 from firestore_manager import FirestoreManager
 
+
 class FirestoreTradeCollector:
     """Collect trades directly from Firestore database."""
-    
+
     def __init__(self, firestore_manager: FirestoreManager):
         self.db_manager = firestore_manager
         self.last_processed_doc_id: Optional[str] = None
         self.last_query_time: Optional[datetime] = None
-    
+
     def collect_new_trades(self) -> list[Trade]:
         """
         Query Firestore for new closed trades since last collection.
-        
+
         Uses existing FirestoreManager.get_trades() method which returns
         a DataFrame with all trades including firestore_doc_id.
         """
         # Get all trades from Firestore
         trades_df = self.db_manager.get_trades()
-        
+
         if trades_df.empty:
             return []
-        
+
         # Filter for closed trades only
-        closed_trades = trades_df[trades_df['trade_status'] == 'Closed'].copy()
-        
+        closed_trades = trades_df[trades_df["trade_status"] == "Closed"].copy()
+
         # Filter for new trades (if tracking last processed ID)
         if self.last_processed_doc_id:
             # Get index of last processed trade
             last_idx = closed_trades[
-                closed_trades['firestore_doc_id'] == self.last_processed_doc_id
+                closed_trades["firestore_doc_id"] == self.last_processed_doc_id
             ].index
-            
+
             if len(last_idx) > 0:
                 # Get trades after last processed
-                closed_trades = closed_trades.loc[last_idx[0] + 1:]
-        
+                closed_trades = closed_trades.loc[last_idx[0] + 1 :]
+
         # Convert DataFrame rows to Trade objects
         new_trades = []
         for _, row in closed_trades.iterrows():
             trade = Trade.from_firestore_row(row)
             new_trades.append(trade)
-        
+
         # Update last processed ID
         if new_trades:
             self.last_processed_doc_id = new_trades[-1].firestore_doc_id
             self.last_query_time = datetime.now(timezone.utc)
             logger.info(f"Collected {len(new_trades)} new closed trades")
-        
+
         return new_trades
-    
+
     def get_trades_in_window(self, days: int = 30) -> list[Trade]:
         """
         Get all closed trades within the specified rolling window.
-        
+
         Args:
             days: Number of days to look back
-        
+
         Returns:
             List of Trade objects within the window
         """
         trades_df = self.db_manager.get_trades()
-        
+
         if trades_df.empty:
             return []
-        
+
         # Filter for closed trades
-        closed_trades = trades_df[trades_df['trade_status'] == 'Closed'].copy()
-        
+        closed_trades = trades_df[trades_df["trade_status"] == "Closed"].copy()
+
         # Convert exit_date string to datetime for filtering
-        closed_trades['exit_datetime'] = pd.to_datetime(
-            closed_trades['exit_date'], 
-            format='%Y-%m-%d %H:%M:%S',
-            errors='coerce'
+        closed_trades["exit_datetime"] = pd.to_datetime(
+            closed_trades["exit_date"], format="%Y-%m-%d %H:%M:%S", errors="coerce"
         )
-        
+
         # Calculate cutoff date
         cutoff_date = datetime.now() - timedelta(days=days)
-        
+
         # Filter by date
-        window_trades = closed_trades[
-            closed_trades['exit_datetime'] >= cutoff_date
-        ]
-        
+        window_trades = closed_trades[closed_trades["exit_datetime"] >= cutoff_date]
+
         # Convert to Trade objects
         trades = []
         for _, row in window_trades.iterrows():
             trades.append(Trade.from_firestore_row(row))
-        
+
         logger.info(f"Retrieved {len(trades)} trades from {days}-day window")
         return trades
 ```
@@ -658,33 +655,33 @@ class FirestoreTradeListener:
     Listen to Firestore changes in real-time using Firestore snapshots.
     This provides immediate updates when trades are closed.
     """
-    
+
     def __init__(self, firestore_manager: FirestoreManager):
         self.db_manager = firestore_manager
         self.callback_fn = None
         self.listener = None
-    
+
     def start_listening(self, on_trade_closed_callback):
         """
         Start listening for trade status changes.
-        
+
         Args:
             on_trade_closed_callback: Function called when trade closes
         """
-        trades_ref = self.db_manager._get_collection_ref('trade')
-        
+        trades_ref = self.db_manager._get_collection_ref("trade")
+
         def on_snapshot(doc_snapshot, changes, read_time):
             for change in changes:
-                if change.type.name == 'MODIFIED':
+                if change.type.name == "MODIFIED":
                     doc_dict = change.document.to_dict()
-                    if doc_dict.get('trade_status') == 'Closed':
+                    if doc_dict.get("trade_status") == "Closed":
                         trade = Trade.from_firestore_dict(doc_dict)
                         on_trade_closed_callback(trade)
-        
+
         # Create snapshot listener
         self.listener = trades_ref.on_snapshot(on_snapshot)
         logger.info("Firestore real-time listener started")
-    
+
     def stop_listening(self):
         """Stop listening to Firestore changes."""
         if self.listener:
@@ -732,7 +729,9 @@ Phase 4: Multi-region Firestore (disaster recovery)
 @dataclass
 class RollingWindowConfig:
     window_days: int = 30  # 30-day rolling window
-    min_sample_size: int = 20   # Minimum trades for valid metrics (Mark Douglas: 20 is statistically significant)
+    min_sample_size: int = (
+        20  # Minimum trades for valid metrics (Mark Douglas: 20 is statistically significant)
+    )
     update_every_n_trades: int = 50  # Recalculate after N new trades
     update_interval_hours: int = 4  # OR recalculate every N hours
 ```
@@ -755,7 +754,7 @@ The `Trade` dataclass shown below is for **specification purposes only** to docu
 @dataclass
 class Trade:
     """Normalized trade model for performance attribution (reference model only)."""
-    
+
     # Firestore fields (directly available)
     order_id: int
     firestore_doc_id: str
@@ -771,98 +770,96 @@ class Trade:
     exit_grade: int  # 0-100
     trade_grade: int  # 0-100
     trade_status: str  # "Open" or "Closed"
-    
+
     # Phase 1 fields (available from C++ CloseTrade message)
     confidence: Optional[float] = None  # Model confidence (0.0-1.0) - from live_agent
-    mae_ticks: Optional[float] = None   # Maximum Adverse Excursion - computed from entry_high/low
-    mfe_ticks: Optional[float] = None   # Maximum Favorable Excursion - computed from entry_high/low
-    
+    mae_ticks: Optional[float] = None  # Maximum Adverse Excursion - computed from entry_high/low
+    mfe_ticks: Optional[float] = None  # Maximum Favorable Excursion - computed from entry_high/low
+
     # Phase 3 fields (future enhancements)
-    regime: Optional[str] = None        # Market regime classification
-    model_version: Optional[str] = None # Model version from .keras metadata
-    exit_reason: Optional[str] = None   # Exit reason category
-    
+    regime: Optional[str] = None  # Market regime classification
+    model_version: Optional[str] = None  # Model version from .keras metadata
+    exit_reason: Optional[str] = None  # Exit reason category
+
     # Computed fields
     trade_duration_mins: Optional[float] = None
     pnl_ticks: Optional[float] = None  # Computed from pnl and tick value
-    
+
     @property
     def is_winner(self) -> bool:
         return self.pnl > 0
-    
+
     @property
     def is_closed(self) -> bool:
         return self.trade_status == "Closed"
-    
+
     @classmethod
-    def from_firestore_row(cls, row: pd.Series) -> 'Trade':
+    def from_firestore_row(cls, row: pd.Series) -> "Trade":
         """
         Create Trade object from Firestore DataFrame row.
-        
+
         Args:
             row: pandas Series from FirestoreManager.get_trades()
-        
+
         Returns:
             Trade object
         """
         # Parse datetime strings
-        entry_date = datetime.strptime(
-            row['entry_date'], 
-            '%Y-%m-%d %H:%M:%S'
-        ) if row.get('entry_date') else None
-        
+        entry_date = (
+            datetime.strptime(row["entry_date"], "%Y-%m-%d %H:%M:%S")
+            if row.get("entry_date")
+            else None
+        )
+
         exit_date = None
-        if row.get('exit_date') and row['exit_date']:
+        if row.get("exit_date") and row["exit_date"]:
             try:
-                exit_date = datetime.strptime(
-                    row['exit_date'], 
-                    '%Y-%m-%d %H:%M:%S'
-                )
+                exit_date = datetime.strptime(row["exit_date"], "%Y-%m-%d %H:%M:%S")
             except (ValueError, TypeError):
                 pass
-        
+
         # Calculate trade duration if both dates available
         duration_mins = None
         if entry_date and exit_date:
             duration_mins = (exit_date - entry_date).total_seconds() / 60.0
-        
+
         # Calculate PnL in ticks (approximate - will need tick value per symbol)
         pnl_ticks = None
-        if row['symbol'].startswith('ES'):
+        if row["symbol"].startswith("ES"):
             # ES: $12.50 per tick
-            pnl_ticks = row['pnl'] / 12.50
-        elif row['symbol'].startswith('NQ'):
+            pnl_ticks = row["pnl"] / 12.50
+        elif row["symbol"].startswith("NQ"):
             # NQ: $5.00 per tick
-            pnl_ticks = row['pnl'] / 5.00
-        elif row['symbol'].startswith('YM'):
+            pnl_ticks = row["pnl"] / 5.00
+        elif row["symbol"].startswith("YM"):
             # YM: $5.00 per tick
-            pnl_ticks = row['pnl'] / 5.00
-        
+            pnl_ticks = row["pnl"] / 5.00
+
         return cls(
-            order_id=int(row.get('order_id', 0)),
-            firestore_doc_id=row['firestore_doc_id'],
-            symbol=row.get('symbol', ''),
-            side=row.get('side', ''),
-            size=float(row.get('size', 0)),
+            order_id=int(row.get("order_id", 0)),
+            firestore_doc_id=row["firestore_doc_id"],
+            symbol=row.get("symbol", ""),
+            side=row.get("side", ""),
+            size=float(row.get("size", 0)),
             entry_date=entry_date,
-            entry_price=float(row.get('entry_price', 0)),
+            entry_price=float(row.get("entry_price", 0)),
             exit_date=exit_date,
-            exit_price=float(row.get('exit_price', 0)),
-            pnl=float(row.get('pnl', 0)),
-            entry_grade=int(row.get('entry_grade', 0)),
-            exit_grade=int(row.get('exit_grade', 0)),
-            trade_grade=int(row.get('trade_grade', 0)),
-            trade_status=row.get('trade_status', 'Open'),
+            exit_price=float(row.get("exit_price", 0)),
+            pnl=float(row.get("pnl", 0)),
+            entry_grade=int(row.get("entry_grade", 0)),
+            exit_grade=int(row.get("exit_grade", 0)),
+            trade_grade=int(row.get("trade_grade", 0)),
+            trade_status=row.get("trade_status", "Open"),
             trade_duration_mins=duration_mins,
             pnl_ticks=pnl_ticks,
             # Phase 1 fields (available from C++)
-            confidence=row.get('confidence'),
-            mae_ticks=row.get('mae_ticks'),
-            mfe_ticks=row.get('mfe_ticks'),
+            confidence=row.get("confidence"),
+            mae_ticks=row.get("mae_ticks"),
+            mfe_ticks=row.get("mfe_ticks"),
             # Phase 3 fields (future enhancements)
-            regime=row.get('regime'),
-            model_version=row.get('model_version'),
-            exit_reason=row.get('exit_reason')
+            regime=row.get("regime"),
+            model_version=row.get("model_version"),
+            exit_reason=row.get("exit_reason"),
         )
 ```
 
@@ -871,61 +868,61 @@ class Trade:
 ```python
 class PerformanceMetrics:
     """Container for calculated performance metrics."""
-    
+
     # Core metrics
     total_trades: int
     winning_trades: int
     losing_trades: int
     win_rate: float  # 0.0 to 1.0
-    
+
     # Returns
     total_pnl_ticks: float
     total_pnl_dollars: float
     avg_win_ticks: float
     avg_loss_ticks: float
     profit_factor: float  # gross_profit / gross_loss
-    
+
     # Risk-adjusted returns
     sharpe_ratio: float
     sortino_ratio: float
     max_drawdown_pct: float
-    
+
     # Slippage metrics
     avg_mae_ticks: float  # Average Maximum Adverse Excursion
     avg_mfe_ticks: float  # Average Maximum Favorable Excursion
     mae_to_pnl_ratio: float  # How much give-back on winners
-    
+
     # Sample statistics
     sample_size: int
     start_date: datetime
     end_date: datetime
     window_days: int
-    
+
     @classmethod
-    def calculate(cls, trades: list[Trade]) -> 'PerformanceMetrics':
+    def calculate(cls, trades: list[Trade]) -> "PerformanceMetrics":
         """Calculate all metrics from trade list."""
         if not trades:
             return cls.empty()
-        
+
         closed_trades = [t for t in trades if t.is_closed]
-        
+
         # Win rate
         winners = [t for t in closed_trades if t.is_winner]
         win_rate = len(winners) / len(closed_trades) if closed_trades else 0.0
-        
+
         # PnL metrics
         total_pnl = sum(t.pnl_ticks for t in closed_trades)
         gross_profit = sum(t.pnl_ticks for t in winners)
         gross_loss = abs(sum(t.pnl_ticks for t in closed_trades if not t.is_winner))
-        
+
         # Sharpe ratio (annualized)
         returns = [t.pnl_ticks for t in closed_trades]
         sharpe = cls._calculate_sharpe(returns)
-        
+
         # MAE/MFE analysis
         mae_values = [t.mae_ticks for t in closed_trades if t.mae_ticks is not None]
         avg_mae = np.mean(mae_values) if mae_values else 0.0
-        
+
         return cls(
             total_trades=len(closed_trades),
             winning_trades=len(winners),
@@ -937,23 +934,23 @@ class PerformanceMetrics:
             sample_size=len(closed_trades),
             # ... other fields
         )
-    
+
     @staticmethod
     def _calculate_sharpe(returns: list[float], risk_free_rate: float = 0.0) -> float:
         """Calculate annualized Sharpe ratio."""
         if len(returns) < 2:
             return 0.0
-        
+
         mean_return = np.mean(returns)
         std_return = np.std(returns, ddof=1)
-        
+
         if std_return == 0:
             return 0.0
-        
+
         # Annualize assuming ~250 trading days
         sharpe = (mean_return - risk_free_rate) / std_return
         annualized_sharpe = sharpe * np.sqrt(252)
-        
+
         return annualized_sharpe
 ```
 
@@ -963,32 +960,34 @@ class PerformanceMetrics:
 # NOTE: ExpectedPerformance and HealthThresholds are defined in config.py
 # This is shown here for reference only
 
+
 @dataclass
 class ExpectedPerformance:
     """Backtested/expected performance benchmarks (defined in config.py)."""
+
     sharpe_ratio: float = 1.85
     win_rate: float = 0.58
     profit_factor: float = 1.75
     avg_win_ticks: float = 15.5
     avg_loss_ticks: float = 10.7
     max_drawdown_pct: float = 8.5
-    
+
     # Metadata
     backtest_period_start: str = "2024-01-01"
     backtest_period_end: str = "2024-12-01"
     sample_size: int = 1000
-    
+
     @classmethod
-    def load_from_keras_metadata(cls, model_path: Path) -> 'ExpectedPerformance':
+    def load_from_keras_metadata(cls, model_path: Path) -> "ExpectedPerformance":
         """Load expected performance from .keras model metadata."""
         import zipfile
-        
-        with zipfile.ZipFile(model_path, 'r') as zf:
-            if 'metadata.json' in zf.namelist():
-                metadata_json = zf.read('metadata.json').decode('utf-8')
+
+        with zipfile.ZipFile(model_path, "r") as zf:
+            if "metadata.json" in zf.namelist():
+                metadata_json = zf.read("metadata.json").decode("utf-8")
                 metadata = json.loads(metadata_json)
-                return cls(**metadata.get('expected_performance', {}))
-        
+                return cls(**metadata.get("expected_performance", {}))
+
         # Fallback to defaults if metadata not found
         logger.warning(f"No metadata found in {model_path}, using defaults")
         return cls()
@@ -996,51 +995,43 @@ class ExpectedPerformance:
 
 class PerformanceComparison:
     """Compare realized vs expected performance."""
-    
-    def __init__(
-        self, 
-        expected: ExpectedPerformance,
-        realized: PerformanceMetrics
-    ):
+
+    def __init__(self, expected: ExpectedPerformance, realized: PerformanceMetrics):
         self.expected = expected
         self.realized = realized
-    
+
     def calculate_alpha_slippage_pct(self) -> float:
         """
         Calculate percentage degradation from expected alpha.
-        
+
         Formula:
             expected_alpha = expected_sharpe * sqrt(252) * portfolio_vol
             realized_alpha = realized_sharpe * sqrt(252) * portfolio_vol
             slippage = ((expected - realized) / expected) * 100
-        
+
         Simplified (portfolio_vol cancels out):
             slippage = ((expected_sharpe - realized_sharpe) / expected_sharpe) * 100
         """
         if self.expected.sharpe_ratio == 0:
             return 0.0
-        
+
         slippage = (
-            (self.expected.sharpe_ratio - self.realized.sharpe_ratio) 
-            / self.expected.sharpe_ratio
+            (self.expected.sharpe_ratio - self.realized.sharpe_ratio) / self.expected.sharpe_ratio
         ) * 100
-        
+
         return slippage
-    
+
     def calculate_winrate_degradation_pct(self) -> float:
         """Calculate percentage degradation in win rate."""
         if self.expected.win_rate == 0:
             return 0.0
-        
-        return (
-            (self.expected.win_rate - self.realized.win_rate) 
-            / self.expected.win_rate
-        ) * 100
-    
+
+        return ((self.expected.win_rate - self.realized.win_rate) / self.expected.win_rate) * 100
+
     def calculate_composite_health_score(self) -> float:
         """
         Calculate composite health score (0-100).
-        
+
         Weights:
         - Alpha slippage: 50%
         - Win rate degradation: 30%
@@ -1048,11 +1039,11 @@ class PerformanceComparison:
         """
         alpha_slip = max(0, 100 - self.calculate_alpha_slippage_pct())
         winrate_slip = max(0, 100 - self.calculate_winrate_degradation_pct())
-        
+
         pf_expected = self.expected.profit_factor
         pf_realized = self.realized.profit_factor
         pf_slip = max(0, 100 - ((pf_expected - pf_realized) / pf_expected * 100))
-        
+
         composite = (alpha_slip * 0.5) + (winrate_slip * 0.3) + (pf_slip * 0.2)
         return max(0, min(100, composite))
 ```
@@ -1146,6 +1137,7 @@ The Performance Attribution Engine supports **two distribution mechanisms** opti
 ```python
 from enum import Enum
 
+
 class ModelHealthStatus(Enum):
     HEALTHY = "HEALTHY"
     WARNING = "WARNING"
@@ -1155,9 +1147,12 @@ class ModelHealthStatus(Enum):
 @dataclass
 class HealthThresholds:
     """Configurable thresholds for health states."""
+
     warning_threshold_pct: float = 20.0  # Alpha slippage for WARNING
     soft_lock_threshold_pct: float = 30.0  # Alpha slippage for SOFT_LOCKED
-    min_sample_size: int = 20   # Minimum trades before calculating (Mark Douglas: 20 is statistically significant)
+    min_sample_size: int = (
+        20  # Minimum trades before calculating (Mark Douglas: 20 is statistically significant)
+    )
     stale_threshold_hours: int = 24  # Consider data stale after this
 
 
@@ -1166,12 +1161,12 @@ class ModelHealthStatusManager:
     Centralized manager for determining and distributing health status.
     Used by both TradeServer (for C++ responses) and file writer (for GUI).
     """
-    
+
     def __init__(
         self,
         thresholds: HealthThresholds,
         expected_performance: ExpectedPerformance,
-        firestore_manager: FirestoreManager
+        firestore_manager: FirestoreManager,
     ):
         self.thresholds = thresholds
         self.expected = expected_performance
@@ -1180,14 +1175,14 @@ class ModelHealthStatusManager:
         self.last_calculation_time: Optional[datetime] = None
         self.cached_metrics: Optional[PerformanceMetrics] = None
         self.cache_ttl_seconds = 60  # Cache for 60 seconds
-    
+
     def calculate_current_health(self, force_refresh: bool = False) -> dict:
         """
         Calculate current model health status.
-        
+
         Args:
             force_refresh: If True, bypass cache and recalculate
-        
+
         Returns:
             dict: Complete health status data ready for JSON serialization
         """
@@ -1198,53 +1193,48 @@ class ModelHealthStatusManager:
             if elapsed < self.cache_ttl_seconds and self.cached_metrics:
                 # Use cached data
                 return self._build_health_response(
-                    self.cached_metrics,
-                    self.last_status or ModelHealthStatus.HEALTHY
+                    self.cached_metrics, self.last_status or ModelHealthStatus.HEALTHY
                 )
-        
+
         # Get trades from Firestore
         trades_df = self.db_manager.get_trades()
-        
+
         if trades_df.empty:
             return self._build_empty_health_response()
-        
+
         # Filter for closed trades in rolling window (30 days)
-        closed_trades = trades_df[trades_df['trade_status'] == 'Closed'].copy()
+        closed_trades = trades_df[trades_df["trade_status"] == "Closed"].copy()
         cutoff_date = now - timedelta(days=30)
-        closed_trades['exit_datetime'] = pd.to_datetime(
-            closed_trades['exit_date'], 
-            format='%Y-%m-%d %H:%M:%S',
-            errors='coerce'
+        closed_trades["exit_datetime"] = pd.to_datetime(
+            closed_trades["exit_date"], format="%Y-%m-%d %H:%M:%S", errors="coerce"
         )
-        window_trades = closed_trades[closed_trades['exit_datetime'] >= cutoff_date]
-        
+        window_trades = closed_trades[closed_trades["exit_datetime"] >= cutoff_date]
+
         # Convert to Trade objects
         trades = [Trade.from_firestore_row(row) for _, row in window_trades.iterrows()]
-        
+
         # Calculate performance metrics
         metrics = PerformanceMetrics.calculate(trades)
-        
+
         # Compare to expected performance
         comparison = PerformanceComparison(self.expected, metrics)
-        
+
         # Determine health status
         status = self._determine_status(comparison, metrics.sample_size)
-        
+
         # Update cache
         self.cached_metrics = metrics
         self.last_calculation_time = now
         self.last_status = status
-        
+
         # Log status changes
         if status != self.last_status:
             self._log_status_change(status, comparison.calculate_alpha_slippage_pct())
-        
+
         return self._build_health_response(metrics, status, comparison)
-    
+
     def _determine_status(
-        self,
-        comparison: PerformanceComparison,
-        sample_size: int
+        self, comparison: PerformanceComparison, sample_size: int
     ) -> ModelHealthStatus:
         """Determine health status based on alpha slippage."""
         # Insufficient data - default to HEALTHY
@@ -1254,14 +1244,14 @@ class ModelHealthStatusManager:
                 "Defaulting to HEALTHY."
             )
             return ModelHealthStatus.HEALTHY
-        
+
         alpha_slippage = comparison.calculate_alpha_slippage_pct()
-        
+
         # Model exceeding expectations (negative slippage)
         if alpha_slippage < 0:
             logger.info(f"Model exceeding expectations (alpha slippage: {alpha_slippage:.2f}%)")
             return ModelHealthStatus.HEALTHY
-        
+
         # Determine status based on thresholds
         if alpha_slippage < self.thresholds.warning_threshold_pct:
             return ModelHealthStatus.HEALTHY
@@ -1269,19 +1259,19 @@ class ModelHealthStatusManager:
             return ModelHealthStatus.WARNING
         else:
             return ModelHealthStatus.SOFT_LOCKED
-    
+
     def _build_health_response(
-        self, 
-        metrics: PerformanceMetrics, 
+        self,
+        metrics: PerformanceMetrics,
         status: ModelHealthStatus,
-        comparison: Optional[PerformanceComparison] = None
+        comparison: Optional[PerformanceComparison] = None,
     ) -> dict:
         """Build complete health status response dict."""
         if comparison is None:
             comparison = PerformanceComparison(self.expected, metrics)
-        
+
         alpha_slippage = comparison.calculate_alpha_slippage_pct()
-        
+
         return {
             "status": status.value,
             "alpha_slippage_pct": round(alpha_slippage, 2),
@@ -1292,15 +1282,17 @@ class ModelHealthStatusManager:
                 "realized_sharpe": round(metrics.sharpe_ratio, 2),
                 "expected_winrate": round(self.expected.win_rate, 3),
                 "realized_winrate": round(metrics.win_rate, 3),
-                "avg_mae_slippage_ticks": round(metrics.avg_mae_ticks, 2) if metrics.avg_mae_ticks else 0
+                "avg_mae_slippage_ticks": round(metrics.avg_mae_ticks, 2)
+                if metrics.avg_mae_ticks
+                else 0,
             },
             "thresholds": {
                 "warning_threshold_pct": self.thresholds.warning_threshold_pct,
                 "soft_lock_threshold_pct": self.thresholds.soft_lock_threshold_pct,
-                "min_sample_size": self.thresholds.min_sample_size
-            }
+                "min_sample_size": self.thresholds.min_sample_size,
+            },
         }
-    
+
     def _build_empty_health_response(self) -> dict:
         """Build response when no trades available."""
         return {
@@ -1308,9 +1300,9 @@ class ModelHealthStatusManager:
             "alpha_slippage_pct": 0.0,
             "sample_size": 0,
             "last_updated": datetime.now(timezone.utc).isoformat(),
-            "note": "No closed trades available"
+            "note": "No closed trades available",
         }
-    
+
     def _log_status_change(self, new_status: ModelHealthStatus, alpha_slippage: float):
         """Log status changes with appropriate severity."""
         if new_status == ModelHealthStatus.SOFT_LOCKED:
@@ -1324,37 +1316,37 @@ class ModelHealthStatusManager:
                 "Only HIGH confidence signals accepted"
             )
         else:
-            logger.info(
-                f"✅ Model Health: HEALTHY (Alpha Slippage: {alpha_slippage:.1f}%)"
-            )
+            logger.info(f"✅ Model Health: HEALTHY (Alpha Slippage: {alpha_slippage:.1f}%)")
 
 
 class ModelHealthStatusWriter:
     """Writes health status to JSON file for GUI dashboard."""
-    
+
     def __init__(self, output_path: Path, health_manager: ModelHealthStatusManager):
         self.output_path = output_path
         self.health_manager = health_manager
-    
+
     def write_status(self, force_refresh: bool = False) -> None:
         """
         Calculate and write model health status to JSON file.
-        
+
         Args:
             force_refresh: If True, bypass cache and recalculate
         """
         health_data = self.health_manager.calculate_current_health(force_refresh)
-        
+
         # Atomic write
-        temp_path = self.output_path.with_suffix('.tmp')
-        with open(temp_path, 'w') as f:
+        temp_path = self.output_path.with_suffix(".tmp")
+        with open(temp_path, "w") as f:
             json.dump(health_data, f, indent=2)
-        
+
         # Atomic rename (POSIX guarantee)
         temp_path.replace(self.output_path)
-        
-        logger.info(f"Health status written: {health_data['status']} "
-                   f"(Slippage: {health_data['alpha_slippage_pct']:.1f}%)")
+
+        logger.info(
+            f"Health status written: {health_data['status']} "
+            f"(Slippage: {health_data['alpha_slippage_pct']:.1f}%)"
+        )
 ```
 
 ### 4.3 Integration with TradeServer - REQ/REP Pattern (RECOMMENDED for C++)
@@ -1367,39 +1359,36 @@ Instead of C++ polling a file, **return health status in the CloseTrade response
 # In trade_server.py
 from src.model_health import ModelHealthStatusManager
 
+
 class TradeServer:
     def __init__(self):
         self.context: zmq.Context = zmq.Context()
         self.socket: zmq.Socket = self.context.socket(zmq.REP)
         # ... existing initialization ...
-        
+
         # NEW: Initialize health status manager
         self.health_manager = self._initialize_health_manager()
-        
+
     def _initialize_health_manager(self) -> ModelHealthStatusManager:
         """Initialize health manager for performance attribution."""
         from src.model_health import ExpectedPerformance, HealthThresholds, ModelHealthStatusManager
         from config import PERFORMANCE_ATTRIBUTION_CONFIG
-        
+
         # Load from config.py
-        expected = ExpectedPerformance(
-            sharpe_ratio=1.85,
-            win_rate=0.58,
-            profit_factor=1.75
-        )
-        
+        expected = ExpectedPerformance(sharpe_ratio=1.85, win_rate=0.58, profit_factor=1.75)
+
         thresholds = HealthThresholds(
-            warning_threshold_pct=PERFORMANCE_ATTRIBUTION_CONFIG['warning_threshold_pct'],
-            soft_lock_threshold_pct=PERFORMANCE_ATTRIBUTION_CONFIG['soft_lock_threshold_pct'],
-            min_sample_size=PERFORMANCE_ATTRIBUTION_CONFIG['min_sample_size']
+            warning_threshold_pct=PERFORMANCE_ATTRIBUTION_CONFIG["warning_threshold_pct"],
+            soft_lock_threshold_pct=PERFORMANCE_ATTRIBUTION_CONFIG["soft_lock_threshold_pct"],
+            min_sample_size=PERFORMANCE_ATTRIBUTION_CONFIG["min_sample_size"],
         )
-        
+
         return ModelHealthStatusManager(thresholds, expected, firestore_manager)
-    
+
     def handle_request(self, request):
         """Processes a single incoming request from the C++ client."""
         try:
-            message = json.loads(request.decode('utf-8'))
+            message = json.loads(request.decode("utf-8"))
             message_type = message.get("type")
             logger.info(f"TradeServer:: Received message type: {message_type}")
 
@@ -1422,23 +1411,31 @@ class TradeServer:
                     update_data = {
                         key: message[key]
                         for key in [
-                            "exit_date", "exit_grade", "exit_price", "pnl",
-                            "trade_grade", "trade_status",
-                            "confidence", "mae_ticks", "mfe_ticks"  # Phase 1 fields
+                            "exit_date",
+                            "exit_grade",
+                            "exit_price",
+                            "pnl",
+                            "trade_grade",
+                            "trade_status",
+                            "confidence",
+                            "mae_ticks",
+                            "mfe_ticks",  # Phase 1 fields
                         ]
                         if key in message
                     }
 
                     if firestore_manager.update_trade(firestore_doc_id, update_data):
-                        response_data["message"] = f"CloseTrade successful for doc_id: {firestore_doc_id}."
+                        response_data["message"] = (
+                            f"CloseTrade successful for doc_id: {firestore_doc_id}."
+                        )
                         response_data["type"] = "CloseTradeResponse"
                         response_data["order_id"] = message.get("order_id")
-                        
+
                         # ========== NEW: Calculate and return health status ==========
                         try:
                             health_status = self.health_manager.calculate_current_health()
                             response_data["model_health"] = health_status
-                            
+
                             logger.info(
                                 f"Model health calculated: {health_status['status']} "
                                 f"(Slippage: {health_status['alpha_slippage_pct']:.1f}%)"
@@ -1446,15 +1443,14 @@ class TradeServer:
                         except Exception as e:
                             logger.error(f"Failed to calculate health status: {e}", exc_info=True)
                             # Include error but don't fail the trade close
-                            response_data["model_health"] = {
-                                "status": "UNKNOWN",
-                                "error": str(e)
-                            }
+                            response_data["model_health"] = {"status": "UNKNOWN", "error": str(e)}
                         # =============================================================
-                        
+
                     else:
                         response_data["status"] = "error"
-                        response_data["message"] = f"Failed to edit trade for doc_id: {firestore_doc_id}."
+                        response_data["message"] = (
+                            f"Failed to edit trade for doc_id: {firestore_doc_id}."
+                        )
                 else:
                     response_data["status"] = "error"
                     response_data["message"] = "CloseTrade message is missing 'firestore_doc_id'."
@@ -1467,14 +1463,14 @@ class TradeServer:
                 response_data["status"] = "error"
                 response_data["message"] = f"Unknown message type: {message_type}"
 
-            return json.dumps(response_data).encode('utf-8')
+            return json.dumps(response_data).encode("utf-8")
 
         except json.JSONDecodeError:
             logger.error("Failed to decode JSON message.")
-            return json.dumps({"status": "error", "message": "Invalid JSON"}).encode('utf-8')
+            return json.dumps({"status": "error", "message": "Invalid JSON"}).encode("utf-8")
         except Exception as e:
             logger.error(f"An unexpected error occurred: {e}", exc_info=True)
-            return json.dumps({"status": "error", "message": str(e)}).encode('utf-8')
+            return json.dumps({"status": "error", "message": str(e)}).encode("utf-8")
 ```
 
 **Example Response to C++:**
@@ -1588,6 +1584,7 @@ bool MindfulTrader::ShouldAcceptSignal(float confidence) {
 ```python
 from enum import Enum
 
+
 class ModelHealthStatus(Enum):
     HEALTHY = "HEALTHY"
     WARNING = "WARNING"
@@ -1597,34 +1594,35 @@ class ModelHealthStatus(Enum):
 @dataclass
 class HealthThresholds:
     """Configurable thresholds for health states."""
+
     warning_threshold_pct: float = 20.0  # Alpha slippage for WARNING
     soft_lock_threshold_pct: float = 30.0  # Alpha slippage for SOFT_LOCKED
-    min_sample_size: int = 20   # Minimum trades before calculating (Mark Douglas: 20 is statistically significant)
+    min_sample_size: int = (
+        20  # Minimum trades before calculating (Mark Douglas: 20 is statistically significant)
+    )
     stale_threshold_hours: int = 24  # Consider data stale after this
 
 
 class ModelHealthStatusWriter:
     """Determines health status and writes JSON file."""
-    
+
     def __init__(
         self,
         output_path: Path,
         thresholds: HealthThresholds,
-        expected_performance: ExpectedPerformance
+        expected_performance: ExpectedPerformance,
     ):
         self.output_path = output_path
         self.thresholds = thresholds
         self.expected = expected_performance
         self.last_status: Optional[ModelHealthStatus] = None
-    
+
     def determine_status(
-        self,
-        comparison: PerformanceComparison,
-        sample_size: int
+        self, comparison: PerformanceComparison, sample_size: int
     ) -> ModelHealthStatus:
         """
         Determine health status based on alpha slippage.
-        
+
         Rules:
         1. If sample_size < min_sample_size: Return HEALTHY (insufficient data)
         2. If alpha_slippage < warning_threshold: HEALTHY
@@ -1639,14 +1637,14 @@ class ModelHealthStatusWriter:
                 "Defaulting to HEALTHY."
             )
             return ModelHealthStatus.HEALTHY
-        
+
         alpha_slippage = comparison.calculate_alpha_slippage_pct()
-        
+
         # Model exceeding expectations (negative slippage)
         if alpha_slippage < 0:
             logger.info(f"Model exceeding expectations (alpha slippage: {alpha_slippage:.2f}%)")
             return ModelHealthStatus.HEALTHY
-        
+
         # Determine status based on thresholds
         if alpha_slippage < self.thresholds.warning_threshold_pct:
             return ModelHealthStatus.HEALTHY
@@ -1654,22 +1652,22 @@ class ModelHealthStatusWriter:
             return ModelHealthStatus.WARNING
         else:
             return ModelHealthStatus.SOFT_LOCKED
-    
+
     def write_status(
         self,
         status: ModelHealthStatus,
         comparison: PerformanceComparison,
-        metrics: PerformanceMetrics
+        metrics: PerformanceMetrics,
     ) -> None:
         """
         Write model health status to JSON file (atomic write).
-        
+
         Atomic write strategy:
         1. Write to temporary file
         2. Rename to target file (atomic on POSIX systems)
         """
         alpha_slippage = comparison.calculate_alpha_slippage_pct()
-        
+
         health_data = {
             "status": status.value,
             "alpha_slippage_pct": round(alpha_slippage, 2),
@@ -1680,28 +1678,28 @@ class ModelHealthStatusWriter:
                 "realized_sharpe": round(metrics.sharpe_ratio, 2),
                 "expected_winrate": round(self.expected.win_rate, 3),
                 "realized_winrate": round(metrics.win_rate, 3),
-                "avg_mae_slippage_ticks": round(metrics.avg_mae_ticks, 2)
+                "avg_mae_slippage_ticks": round(metrics.avg_mae_ticks, 2),
             },
             "thresholds": {
                 "warning_threshold_pct": self.thresholds.warning_threshold_pct,
                 "soft_lock_threshold_pct": self.thresholds.soft_lock_threshold_pct,
-                "min_sample_size": self.thresholds.min_sample_size
-            }
+                "min_sample_size": self.thresholds.min_sample_size,
+            },
         }
-        
+
         # Atomic write
-        temp_path = self.output_path.with_suffix('.tmp')
-        with open(temp_path, 'w') as f:
+        temp_path = self.output_path.with_suffix(".tmp")
+        with open(temp_path, "w") as f:
             json.dump(health_data, f, indent=2)
-        
+
         # Atomic rename (POSIX guarantee)
         temp_path.replace(self.output_path)
-        
+
         # Log status changes
         if status != self.last_status:
             self._log_status_change(status, alpha_slippage)
             self.last_status = status
-    
+
     def _log_status_change(self, new_status: ModelHealthStatus, alpha_slippage: float):
         """Log status changes with appropriate severity."""
         if new_status == ModelHealthStatus.SOFT_LOCKED:
@@ -1715,9 +1713,7 @@ class ModelHealthStatusWriter:
                 "Only HIGH confidence signals accepted"
             )
         else:
-            logger.info(
-                f"✅ Model Health: HEALTHY (Alpha Slippage: {alpha_slippage:.1f}%)"
-            )
+            logger.info(f"✅ Model Health: HEALTHY (Alpha Slippage: {alpha_slippage:.1f}%)")
 ```
 
 ---
@@ -1732,108 +1728,111 @@ class ModelHealthStatusWriter:
 @dataclass
 class UpdatePolicy:
     """Policy for when to recalculate and update health status."""
+
     update_every_n_trades: int = 50  # Update after N new trades
     update_interval_seconds: int = 14400  # Update every 4 hours (14400 sec)
     force_update_on_status_change: bool = True  # Immediate update on status change
-    
+
 
 class PerformanceAttributionEngine:
     """Main orchestration engine."""
-    
+
     def __init__(
         self,
         trade_collector: TradeCollector,
         expected_performance: ExpectedPerformance,
         health_writer: ModelHealthStatusWriter,
         update_policy: UpdatePolicy,
-        rolling_window_days: int = 30
+        rolling_window_days: int = 30,
     ):
         self.trade_collector = trade_collector
         self.expected = expected_performance
         self.health_writer = health_writer
         self.update_policy = update_policy
         self.rolling_window_days = rolling_window_days
-        
+
         # State tracking
         self.trades_since_last_update = 0
         self.last_update_time: Optional[datetime] = None
         self.all_trades: list[Trade] = []
-    
+
     def should_update(self) -> bool:
         """Determine if health status should be recalculated."""
         # First run
         if self.last_update_time is None:
             return True
-        
+
         # Trade count trigger
         if self.trades_since_last_update >= self.update_policy.update_every_n_trades:
             logger.info(f"Update triggered by trade count ({self.trades_since_last_update} trades)")
             return True
-        
+
         # Time interval trigger
         elapsed_seconds = (datetime.now(timezone.utc) - self.last_update_time).total_seconds()
         if elapsed_seconds >= self.update_policy.update_interval_seconds:
-            logger.info(f"Update triggered by time interval ({elapsed_seconds/3600:.1f} hours)")
+            logger.info(f"Update triggered by time interval ({elapsed_seconds / 3600:.1f} hours)")
             return True
-        
+
         return False
-    
+
     def get_rolling_window_trades(self) -> list[Trade]:
         """Get trades within rolling window (last N days)."""
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.rolling_window_days)
         return [t for t in self.all_trades if t.timestamp >= cutoff_date]
-    
+
     def run_update_cycle(self) -> None:
         """Execute one update cycle: collect, calculate, write."""
         try:
             # Step 1: Collect new trades
             new_trades = self.trade_collector.collect_new_trades()
-            
+
             if new_trades:
                 logger.info(f"Collected {len(new_trades)} new trades")
                 self.all_trades.extend(new_trades)
                 self.trades_since_last_update += len(new_trades)
-            
+
             # Step 2: Check if update needed
             if not self.should_update():
                 return
-            
+
             # Step 3: Get rolling window trades
             window_trades = self.get_rolling_window_trades()
             logger.info(
                 f"Rolling window: {len(window_trades)} trades "
                 f"(last {self.rolling_window_days} days)"
             )
-            
+
             # Step 4: Calculate performance metrics
             metrics = PerformanceMetrics.calculate(window_trades)
-            
+
             # Step 5: Compare to expected performance
             comparison = PerformanceComparison(self.expected, metrics)
-            
+
             # Step 6: Determine health status
             status = self.health_writer.determine_status(comparison, metrics.sample_size)
-            
+
             # Step 7: Write health status file
             self.health_writer.write_status(status, comparison, metrics)
-            
+
             # Step 8: Reset counters
             self.trades_since_last_update = 0
             self.last_update_time = datetime.now(timezone.utc)
-            
+
             logger.info(
                 f"Health status updated: {status.value} "
                 f"(Alpha Slippage: {comparison.calculate_alpha_slippage_pct():.2f}%)"
             )
-            
+
         except Exception as e:
             logger.error(f"Error in update cycle: {e}", exc_info=True)
             # Don't crash - continue on next cycle
-    
+
     def run_daemon(self, poll_interval_seconds: int = 60) -> None:
         """Run engine as a daemon (continuous loop)."""
-        logger.info(f"Starting Performance Attribution Engine daemon (poll every {poll_interval_seconds}s)")
-        
+        logger.info(
+            f"Starting Performance Attribution Engine daemon (poll every {poll_interval_seconds}s)"
+        )
+
         while True:
             try:
                 self.run_update_cycle()
@@ -1934,70 +1933,74 @@ tick_values:
 from dataclasses import dataclass
 import yaml
 
+
 @dataclass
 class PAEConfig:
     """Performance Attribution Engine configuration."""
-    
+
     # Firestore (reuse existing manager)
     use_existing_firestore: bool
-    
+
     # Output
     health_status_file: Path
     log_file: Path
     log_level: str
-    
+
     # Expected performance
     expected_performance: ExpectedPerformance
-    
+
     # Thresholds
     thresholds: HealthThresholds
-    
+
     # Rolling window
     rolling_window_days: int
-    
+
     # Update policy
     update_policy: UpdatePolicy
-    
+
     # Daemon
     poll_interval_seconds: int
-    
+
     # Tick values
     tick_values: Dict[str, float]
-    
+
     # Model path for loading embedded config
     model_path: Path
-    
+
     @classmethod
-    def load(cls, config_path: Path, model_path: Path) -> 'PAEConfig':
+    def load(cls, config_path: Path, model_path: Path) -> "PAEConfig":
         """Load configuration from YAML file and .keras model metadata.
-        
+
         Args:
             config_path: Path to YAML config (for infrastructure settings)
             model_path: Path to .keras model file (for expected performance)
         """
         with open(config_path) as f:
             config_dict = yaml.safe_load(f)
-        
+
         # Load expected performance from .keras metadata
         expected_perf = ExpectedPerformance.load_from_keras_metadata(model_path)
-        
+
         return cls(
-            use_existing_firestore=config_dict['firestore'].get('use_existing_manager', True),
-            log_file=Path(config_dict['output']['log_file']),
-            log_level=config_dict['output']['log_level'],
+            use_existing_firestore=config_dict["firestore"].get("use_existing_manager", True),
+            log_file=Path(config_dict["output"]["log_file"]),
+            log_level=config_dict["output"]["log_level"],
             expected_performance=expected_perf,  # From .keras metadata
-            thresholds=HealthThresholds(**config_dict['thresholds']),
-            rolling_window_days=config_dict['rolling_window']['window_days'],
+            thresholds=HealthThresholds(**config_dict["thresholds"]),
+            rolling_window_days=config_dict["rolling_window"]["window_days"],
             update_policy=UpdatePolicy(
-                update_every_n_trades=config_dict['update_policy']['update_every_n_trades'],
-                update_interval_seconds=config_dict['update_policy']['update_interval_hours'] * 3600,
-                force_update_on_status_change=config_dict['update_policy']['force_update_on_status_change']
+                update_every_n_trades=config_dict["update_policy"]["update_every_n_trades"],
+                update_interval_seconds=config_dict["update_policy"]["update_interval_hours"]
+                * 3600,
+                force_update_on_status_change=config_dict["update_policy"][
+                    "force_update_on_status_change"
+                ],
             ),
-            poll_interval_seconds=config_dict['daemon']['poll_interval_seconds'],
-            tick_values=config_dict.get('tick_values', {
-                'ES': 12.50, 'NQ': 5.00, 'YM': 5.00, 'RTY': 5.00
-            }),
-            model_path=model_path
+            poll_interval_seconds=config_dict["daemon"]["poll_interval_seconds"],
+            tick_values=config_dict.get(
+                "tick_values", {"ES": 12.50, "NQ": 5.00, "YM": 5.00, "RTY": 5.00}
+            ),
+            model_path=model_path,
         )
 ```
 
@@ -2024,7 +2027,7 @@ class PAEConfig:
 ```python
 class EdgeCaseHandler:
     """Handle edge cases in performance calculation."""
-    
+
     @staticmethod
     def handle_insufficient_sample(sample_size: int, min_size: int) -> dict:
         """Handle case where sample size is too small."""
@@ -2033,10 +2036,10 @@ class EdgeCaseHandler:
                 "status": "HEALTHY",
                 "alpha_slippage_pct": 0.0,
                 "sample_size": sample_size,
-                "note": f"Insufficient data ({sample_size}/{min_size} trades)"
+                "note": f"Insufficient data ({sample_size}/{min_size} trades)",
             }
         return None
-    
+
     @staticmethod
     def handle_zero_variance(returns: list[float]) -> float:
         """Handle case where all returns are identical."""
@@ -2048,7 +2051,7 @@ class EdgeCaseHandler:
             else:
                 return -5.0  # Arbitrary low Sharpe for consistent losses
         return None
-    
+
     @staticmethod
     def handle_negative_expected_sharpe(expected: float, realized: float) -> float:
         """Handle case where expected Sharpe is negative (shouldn't happen)."""
@@ -2057,22 +2060,22 @@ class EdgeCaseHandler:
             # Invert comparison logic
             return ((abs(expected) - abs(realized)) / abs(expected)) * 100
         return None
-    
+
     @staticmethod
     def handle_file_write_failure(path: Path, data: dict, retries: int = 3) -> bool:
         """Retry file write with exponential backoff."""
         for attempt in range(retries):
             try:
-                temp_path = path.with_suffix('.tmp')
-                with open(temp_path, 'w') as f:
+                temp_path = path.with_suffix(".tmp")
+                with open(temp_path, "w") as f:
                     json.dump(data, f, indent=2)
                 temp_path.replace(path)
                 return True
             except Exception as e:
-                wait_time = 2 ** attempt
-                logger.warning(f"Write failed (attempt {attempt+1}/{retries}): {e}")
+                wait_time = 2**attempt
+                logger.warning(f"Write failed (attempt {attempt + 1}/{retries}): {e}")
                 time.sleep(wait_time)
-        
+
         logger.critical(f"Failed to write health status after {retries} attempts!")
         return False
 ```
@@ -2091,32 +2094,34 @@ def test_calculate_sharpe_ratio():
     sharpe = PerformanceMetrics._calculate_sharpe(returns)
     assert 0 < sharpe < 5  # Reasonable range
 
+
 def test_alpha_slippage_calculation():
     """Test alpha slippage with degraded performance."""
     expected = ExpectedPerformance(sharpe_ratio=2.0)
     realized = PerformanceMetrics(sharpe_ratio=1.4, sample_size=100)  # 30% degradation
-    
+
     comparison = PerformanceComparison(expected, realized)
     slippage = comparison.calculate_alpha_slippage_pct()
-    
+
     assert abs(slippage - 30.0) < 0.01
+
 
 def test_health_status_determination():
     """Test status transitions at threshold boundaries."""
     thresholds = HealthThresholds(warning=20.0, soft_lock=30.0)
     writer = ModelHealthStatusWriter(Path("/tmp/health.json"), thresholds, expected)
-    
+
     # Test HEALTHY (19% slippage)
     comparison = PerformanceComparison(
         ExpectedPerformance(sharpe_ratio=2.0),
-        PerformanceMetrics(sharpe_ratio=1.62, sample_size=100)
+        PerformanceMetrics(sharpe_ratio=1.62, sample_size=100),
     )
     assert writer.determine_status(comparison, 100) == ModelHealthStatus.HEALTHY
-    
+
     # Test WARNING (25% slippage)
     comparison = PerformanceComparison(
         ExpectedPerformance(sharpe_ratio=2.0),
-        PerformanceMetrics(sharpe_ratio=1.50, sample_size=100)
+        PerformanceMetrics(sharpe_ratio=1.50, sample_size=100),
     )
     assert writer.determine_status(comparison, 100) == ModelHealthStatus.WARNING
 ```
@@ -2130,10 +2135,10 @@ def test_end_to_end_pipeline(tmp_path):
     # Setup
     trades_file = tmp_path / "trades.csv"
     health_file = tmp_path / "health.json"
-    
+
     # Create sample trades CSV
     create_sample_trades_csv(trades_file, num_trades=150, avg_sharpe=1.5)
-    
+
     # Create engine
     config = PAEConfig(
         trades_file=trades_file,
@@ -2142,20 +2147,20 @@ def test_end_to_end_pipeline(tmp_path):
         # ... other config
     )
     engine = PerformanceAttributionEngine.from_config(config)
-    
+
     # Run one cycle
     engine.run_update_cycle()
-    
+
     # Verify health status file created
     assert health_file.exists()
-    
+
     # Verify JSON content
     with open(health_file) as f:
         health_data = json.load(f)
-    
-    assert health_data['status'] in ['HEALTHY', 'WARNING', 'SOFT_LOCKED']
-    assert health_data['sample_size'] == 150
-    assert 'alpha_slippage_pct' in health_data
+
+    assert health_data["status"] in ["HEALTHY", "WARNING", "SOFT_LOCKED"]
+    assert health_data["sample_size"] == 150
+    assert "alpha_slippage_pct" in health_data
 ```
 
 ### 8.3 Manual Testing with Stub Data
@@ -2169,10 +2174,12 @@ def create_healthy_model_trades(output_path: Path):
     # Generate 200 trades with Sharpe ~1.8 (close to expected 1.85)
     pass
 
+
 def create_warning_model_trades(output_path: Path):
     """Generate trades for WARNING state (20-30% slippage)."""
     # Generate 200 trades with Sharpe ~1.4 (24% degradation from 1.85)
     pass
+
 
 def create_soft_locked_model_trades(output_path: Path):
     """Generate trades for SOFT_LOCKED state (>30% slippage)."""
@@ -2239,15 +2246,18 @@ from flask import Flask, jsonify
 
 app = Flask(__name__)
 
-@app.route('/health')
+
+@app.route("/health")
 def health_check():
     """Return engine health status."""
-    return jsonify({
-        "engine_status": "running",
-        "last_update": engine.last_update_time.isoformat(),
-        "trades_collected": len(engine.all_trades),
-        "current_health": engine.health_writer.last_status.value
-    })
+    return jsonify(
+        {
+            "engine_status": "running",
+            "last_update": engine.last_update_time.isoformat(),
+            "trades_collected": len(engine.all_trades),
+            "current_health": engine.health_writer.last_status.value,
+        }
+    )
 ```
 
 ---
@@ -2362,9 +2372,9 @@ def health_check():
 # C++ sends in CloseTrade message:
 {
     "firestore_doc_id": "abc123",
-    "confidence": 0.87,        # NEW - Phase 1
-    "mae_ticks": 4.5,          # NEW - Phase 1  
-    "mfe_ticks": 12.3,         # NEW - Phase 1
+    "confidence": 0.87,  # NEW - Phase 1
+    "mae_ticks": 4.5,  # NEW - Phase 1
+    "mfe_ticks": 12.3,  # NEW - Phase 1
     "pnl": 125.50,
     "exit_price": 5015.25,
     # ... existing fields
@@ -2481,9 +2491,11 @@ import json
 from pathlib import Path
 from dataclasses import dataclass, asdict
 
+
 @dataclass
 class ExpectedPerformance:
     """Expected performance metrics from backtest - matches MTS format exactly."""
+
     sharpe_ratio: float
     win_rate: float
     profit_factor: float
@@ -2491,16 +2503,16 @@ class ExpectedPerformance:
     avg_loss_ticks: float
     max_drawdown_pct: float
     backtest_period_start: str  # "YYYY-MM-DD"
-    backtest_period_end: str    # "YYYY-MM-DD"
-    sample_size: int            # Number of backtest trades
+    backtest_period_end: str  # "YYYY-MM-DD"
+    sample_size: int  # Number of backtest trades
 
-def embed_performance_metadata(model, expected_perf: ExpectedPerformance, 
-                                model_path: Path) -> None:
+
+def embed_performance_metadata(model, expected_perf: ExpectedPerformance, model_path: Path) -> None:
     """
     Save expected performance metrics to companion JSON file alongside .keras model.
-    
+
     CRITICAL: This must be called AFTER training, BEFORE deploying model to live trading.
-    
+
     Args:
         model: Trained Keras model (used for validation only)
         expected_perf: ExpectedPerformance calculated from backtest trades
@@ -2513,15 +2525,15 @@ def embed_performance_metadata(model, expected_perf: ExpectedPerformance,
             "warning_threshold_pct": 20.0,
             "soft_lock_threshold_pct": 30.0,
             "hard_lock_threshold_pct": 50.0,
-            "min_sample_size": 20
-        }
+            "min_sample_size": 20,
+        },
     }
-    
+
     # Save metadata to companion JSON file
-    metadata_path = str(model_path).replace('.keras', '_metadata.json')
-    with open(metadata_path, 'w') as f:
+    metadata_path = str(model_path).replace(".keras", "_metadata.json")
+    with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
-    
+
     print(f"✅ Performance metadata saved: {metadata_path}")
     print(f"   Sharpe Ratio: {expected_perf.sharpe_ratio:.2f}")
     print(f"   Win Rate: {expected_perf.win_rate:.1%}")
@@ -2541,8 +2553,8 @@ expected_perf = ExpectedPerformance(
     avg_loss_ticks=metrics.avg_loss_ticks,
     max_drawdown_pct=metrics.max_drawdown_pct,
     backtest_period_start="2024-01-01",  # Your backtest start
-    backtest_period_end="2024-12-01",    # Your backtest end
-    sample_size=len(backtest_trades)
+    backtest_period_end="2024-12-01",  # Your backtest end
+    sample_size=len(backtest_trades),
 )
 
 # Embed and save metadata
@@ -2554,26 +2566,28 @@ embed_performance_metadata(trained_model, expected_perf, Path("src/best_agent_mo
 import json
 from pathlib import Path
 
+
 def load_model_config(model_path: Path) -> dict:
     """Extract model config from .keras metadata."""
-    with zipfile.ZipFile(model_path, 'r') as zf:
-        if 'metadata.json' in zf.namelist():
-            metadata_json = zf.read('metadata.json').decode('utf-8')
+    with zipfile.ZipFile(model_path, "r") as zf:
+        if "metadata.json" in zf.namelist():
+            metadata_json = zf.read("metadata.json").decode("utf-8")
             return json.loads(metadata_json)
     return {}  # Fallback to defaults
+
 
 def load_expected_performance_from_keras(model_path: Path) -> ExpectedPerformance:
     """
     Load ExpectedPerformance from .keras model metadata.
-    
+
     Returns hardcoded defaults if metadata missing (backward compatibility).
     """
     config = load_model_config(model_path)
-    
-    if 'model_config' in config and 'expected_performance' in config['model_config']:
-        perf_dict = config['model_config']['expected_performance']
+
+    if "model_config" in config and "expected_performance" in config["model_config"]:
+        perf_dict = config["model_config"]["expected_performance"]
         return ExpectedPerformance(**perf_dict)
-    
+
     # Fallback defaults (remove after all models have metadata)
     print("⚠️ Model metadata missing - using default ExpectedPerformance")
     return ExpectedPerformance(
@@ -2585,7 +2599,7 @@ def load_expected_performance_from_keras(model_path: Path) -> ExpectedPerformanc
         max_drawdown_pct=8.5,
         backtest_period_start="2024-01-01",
         backtest_period_end="2024-12-01",
-        sample_size=1000
+        sample_size=1000,
     )
 ```
 
@@ -2606,19 +2620,28 @@ def load_expected_performance_from_keras(model_path: Path) -> ExpectedPerformanc
 def validate_embedded_metadata(model_path: Path):
     """Verify metadata was embedded correctly."""
     config = load_model_config(model_path)
-    
-    assert 'model_config' in config, "Missing model_config"
-    assert 'expected_performance' in config['model_config'], "Missing expected_performance"
-    
-    perf = config['model_config']['expected_performance']
-    required_fields = ['sharpe_ratio', 'win_rate', 'profit_factor', 
-                       'avg_win_ticks', 'avg_loss_ticks', 'max_drawdown_pct',
-                       'backtest_period_start', 'backtest_period_end', 'sample_size']
-    
+
+    assert "model_config" in config, "Missing model_config"
+    assert "expected_performance" in config["model_config"], "Missing expected_performance"
+
+    perf = config["model_config"]["expected_performance"]
+    required_fields = [
+        "sharpe_ratio",
+        "win_rate",
+        "profit_factor",
+        "avg_win_ticks",
+        "avg_loss_ticks",
+        "max_drawdown_pct",
+        "backtest_period_start",
+        "backtest_period_end",
+        "sample_size",
+    ]
+
     for field in required_fields:
         assert field in perf, f"Missing required field: {field}"
-    
+
     print("✅ Metadata validation passed")
+
 
 # Call after embedding:
 embed_performance_metadata(model, expected_perf, model_path)
@@ -2728,149 +2751,212 @@ validate_embedded_metadata(model_path)
 def _create_model_health_card(self, stats_data: dict, health_status: dict) -> dbc.Card:
     """
     Create Model Health Status card for display in TradeAnalytics dashboard.
-    
+
     Args:
         stats_data: Current realized performance metrics from Firestore
         health_status: Health status dict from ModelHealthStatusManager
-    
+
     Returns:
         Dash Bootstrap Card component
     """
-    status = health_status.get('status', 'UNKNOWN')
-    alpha_slippage = health_status.get('alpha_slippage_pct', 0)
-    sample_size = health_status.get('sample_size', 0)
-    last_updated = health_status.get('last_updated', 'Never')
-    
+    status = health_status.get("status", "UNKNOWN")
+    alpha_slippage = health_status.get("alpha_slippage_pct", 0)
+    sample_size = health_status.get("sample_size", 0)
+    last_updated = health_status.get("last_updated", "Never")
+
     # Status badge styling
     status_colors = {
-        'HEALTHY': {'bg': 'success', 'icon': '🟢', 'text': 'Model Performing Well'},
-        'WARNING': {'bg': 'warning', 'icon': '🟡', 'text': 'Performance Degraded'},
-        'SOFT_LOCKED': {'bg': 'danger', 'icon': '🔴', 'text': 'AI Signals Disabled'}
+        "HEALTHY": {"bg": "success", "icon": "🟢", "text": "Model Performing Well"},
+        "WARNING": {"bg": "warning", "icon": "🟡", "text": "Performance Degraded"},
+        "SOFT_LOCKED": {"bg": "danger", "icon": "🔴", "text": "AI Signals Disabled"},
     }
-    
-    style_info = status_colors.get(status, {'bg': 'secondary', 'icon': '⚪', 'text': 'Unknown'})
-    
-    return dbc.Card([
-        dbc.CardHeader([
-            html.Div([
-                html.H5([
-                    html.Span(style_info['icon'], className="me-2"),
-                    "AI Model Health Status"
-                ], className="mb-0 d-inline"),
-                dbc.Badge(
-                    status,
-                    color=style_info['bg'],
-                    className="float-end",
-                    style={'fontSize': '1rem'}
-                )
-            ])
-        ], className="bg-gradient-to-r from-gray-50 to-white border-b py-3"),
-        
-        dbc.CardBody([
-            dbc.Row([
-                # Status Description
-                dbc.Col([
-                    html.Div([
-                        html.H6("Current Status", className="text-muted mb-2"),
-                        html.H4(style_info['text'], className="mb-0")
-                    ])
-                ], width=4),
-                
-                # Alpha Slippage
-                dbc.Col([
-                    html.Div([
-                        html.H6("Alpha Slippage", className="text-muted mb-2"),
-                        html.H4([
-                            html.Span(f"{alpha_slippage:.1f}%", 
-                                     className=f"text-{style_info['bg']}")
-                        ], className="mb-0")
-                    ])
-                ], width=2),
-                
-                # Expected vs Realized Sharpe
-                dbc.Col([
-                    html.Div([
-                        html.H6("Sharpe Ratio", className="text-muted mb-2"),
-                        html.Div([
-                            html.Span(
-                                f"Expected: {health_status.get('metrics', {}).get('expected_sharpe', 0):.2f}",
-                                className="d-block text-sm"
+
+    style_info = status_colors.get(status, {"bg": "secondary", "icon": "⚪", "text": "Unknown"})
+
+    return dbc.Card(
+        [
+            dbc.CardHeader(
+                [
+                    html.Div(
+                        [
+                            html.H5(
+                                [
+                                    html.Span(style_info["icon"], className="me-2"),
+                                    "AI Model Health Status",
+                                ],
+                                className="mb-0 d-inline",
                             ),
-                            html.Span(
-                                f"Realized: {health_status.get('metrics', {}).get('realized_sharpe', 0):.2f}",
-                                className=f"d-block text-sm text-{style_info['bg']}"
-                            )
-                        ])
-                    ])
-                ], width=2),
-                
-                # Expected vs Realized Win Rate
-                dbc.Col([
-                    html.Div([
-                        html.H6("Win Rate", className="text-muted mb-2"),
-                        html.Div([
-                            html.Span(
-                                f"Expected: {health_status.get('metrics', {}).get('expected_winrate', 0):.1%}",
-                                className="d-block text-sm"
+                            dbc.Badge(
+                                status,
+                                color=style_info["bg"],
+                                className="float-end",
+                                style={"fontSize": "1rem"},
                             ),
-                            html.Span(
-                                f"Realized: {health_status.get('metrics', {}).get('realized_winrate', 0):.1%}",
-                                className=f"d-block text-sm text-{style_info['bg']}"
-                            )
-                        ])
-                    ])
-                ], width=2),
-                
-                # Sample Size & Last Updated
-                dbc.Col([
-                    html.Div([
-                        html.H6("Monitoring", className="text-muted mb-2"),
-                        html.Div([
-                            html.Span(f"{sample_size} trades", className="d-block text-sm"),
-                            html.Span(
-                                f"Updated: {last_updated[:19] if last_updated != 'Never' else 'Never'}",
-                                className="d-block text-sm text-muted"
-                            )
-                        ])
-                    ])
-                ], width=2)
-            ], className="align-items-center")
-        ], className="py-4"),
-        
-        # Optional: Alert message based on status
-        dbc.CardFooter([
-            _get_status_message(status, alpha_slippage)
-        ], className="bg-light border-top")
-    ], className="mb-4 shadow-lg border-l-4 border-{style_info['bg']}-500")
+                        ]
+                    )
+                ],
+                className="bg-gradient-to-r from-gray-50 to-white border-b py-3",
+            ),
+            dbc.CardBody(
+                [
+                    dbc.Row(
+                        [
+                            # Status Description
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H6("Current Status", className="text-muted mb-2"),
+                                            html.H4(style_info["text"], className="mb-0"),
+                                        ]
+                                    )
+                                ],
+                                width=4,
+                            ),
+                            # Alpha Slippage
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H6("Alpha Slippage", className="text-muted mb-2"),
+                                            html.H4(
+                                                [
+                                                    html.Span(
+                                                        f"{alpha_slippage:.1f}%",
+                                                        className=f"text-{style_info['bg']}",
+                                                    )
+                                                ],
+                                                className="mb-0",
+                                            ),
+                                        ]
+                                    )
+                                ],
+                                width=2,
+                            ),
+                            # Expected vs Realized Sharpe
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H6("Sharpe Ratio", className="text-muted mb-2"),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        f"Expected: {health_status.get('metrics', {}).get('expected_sharpe', 0):.2f}",
+                                                        className="d-block text-sm",
+                                                    ),
+                                                    html.Span(
+                                                        f"Realized: {health_status.get('metrics', {}).get('realized_sharpe', 0):.2f}",
+                                                        className=f"d-block text-sm text-{style_info['bg']}",
+                                                    ),
+                                                ]
+                                            ),
+                                        ]
+                                    )
+                                ],
+                                width=2,
+                            ),
+                            # Expected vs Realized Win Rate
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H6("Win Rate", className="text-muted mb-2"),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        f"Expected: {health_status.get('metrics', {}).get('expected_winrate', 0):.1%}",
+                                                        className="d-block text-sm",
+                                                    ),
+                                                    html.Span(
+                                                        f"Realized: {health_status.get('metrics', {}).get('realized_winrate', 0):.1%}",
+                                                        className=f"d-block text-sm text-{style_info['bg']}",
+                                                    ),
+                                                ]
+                                            ),
+                                        ]
+                                    )
+                                ],
+                                width=2,
+                            ),
+                            # Sample Size & Last Updated
+                            dbc.Col(
+                                [
+                                    html.Div(
+                                        [
+                                            html.H6("Monitoring", className="text-muted mb-2"),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        f"{sample_size} trades",
+                                                        className="d-block text-sm",
+                                                    ),
+                                                    html.Span(
+                                                        f"Updated: {last_updated[:19] if last_updated != 'Never' else 'Never'}",
+                                                        className="d-block text-sm text-muted",
+                                                    ),
+                                                ]
+                                            ),
+                                        ]
+                                    )
+                                ],
+                                width=2,
+                            ),
+                        ],
+                        className="align-items-center",
+                    )
+                ],
+                className="py-4",
+            ),
+            # Optional: Alert message based on status
+            dbc.CardFooter(
+                [_get_status_message(status, alpha_slippage)], className="bg-light border-top"
+            ),
+        ],
+        className="mb-4 shadow-lg border-l-4 border-{style_info['bg']}-500",
+    )
 
 
 def _get_status_message(status: str, alpha_slippage: float) -> html.Div:
     """Generate contextual message based on health status."""
     messages = {
-        'HEALTHY': html.Div([
-            html.I(className="fas fa-check-circle text-success me-2"),
-            html.Span("Model is performing within expected parameters. All AI signals are active.")
-        ], className="text-success"),
-        
-        'WARNING': html.Div([
-            html.I(className="fas fa-exclamation-triangle text-warning me-2"),
-            html.Span([
-                f"Performance has degraded by {alpha_slippage:.1f}%. ",
-                html.Strong("Only HIGH confidence signals (≥0.70) are being accepted. "),
-                "Position sizing reduced by 50%. Monitor closely for further degradation."
-            ])
-        ], className="text-warning"),
-        
-        'SOFT_LOCKED': html.Div([
-            html.I(className="fas fa-ban text-danger me-2"),
-            html.Span([
-                html.Strong(f"CRITICAL: Performance degraded {alpha_slippage:.1f}%. "),
-                "All AI signals are being rejected. Manual trading only. ",
-                "Model requires immediate review and potential retraining."
-            ])
-        ], className="text-danger")
+        "HEALTHY": html.Div(
+            [
+                html.I(className="fas fa-check-circle text-success me-2"),
+                html.Span(
+                    "Model is performing within expected parameters. All AI signals are active."
+                ),
+            ],
+            className="text-success",
+        ),
+        "WARNING": html.Div(
+            [
+                html.I(className="fas fa-exclamation-triangle text-warning me-2"),
+                html.Span(
+                    [
+                        f"Performance has degraded by {alpha_slippage:.1f}%. ",
+                        html.Strong("Only HIGH confidence signals (≥0.70) are being accepted. "),
+                        "Position sizing reduced by 50%. Monitor closely for further degradation.",
+                    ]
+                ),
+            ],
+            className="text-warning",
+        ),
+        "SOFT_LOCKED": html.Div(
+            [
+                html.I(className="fas fa-ban text-danger me-2"),
+                html.Span(
+                    [
+                        html.Strong(f"CRITICAL: Performance degraded {alpha_slippage:.1f}%. "),
+                        "All AI signals are being rejected. Manual trading only. ",
+                        "Model requires immediate review and potential retraining.",
+                    ]
+                ),
+            ],
+            className="text-danger",
+        ),
     }
-    
+
     return messages.get(status, html.Div("Status unknown"))
 ```
 
@@ -2909,22 +2995,20 @@ The TradeAnalytics dashboard **updates when the user selects the tab**. No need 
 ```python
 # In trade_analytics.py - Model Health Card
 
+
 def load_health_status() -> dict:
     """Load health status from JSON file."""
     health_path = Path("data/model_health_status.json")
     if not health_path.exists():
-        return {
-            "status": "UNKNOWN",
-            "note": "Health status file not found"
-        }
-    
+        return {"status": "UNKNOWN", "note": "Health status file not found"}
+
     with open(health_path) as f:
         return json.load(f)
 
 
 @app.callback(
-    Output('model-health-card', 'children'),
-    [Input('interval-component', 'n_intervals')]  # Optional: 60-second refresh
+    Output("model-health-card", "children"),
+    [Input("interval-component", "n_intervals")],  # Optional: 60-second refresh
 )
 def update_health_card(n_intervals):
     """
@@ -2943,22 +3027,17 @@ If users want to force a refresh without switching tabs:
 
 ```python
 @app.callback(
-    Output('model-health-card', 'children'),
-    [Input('refresh-health-button', 'n_clicks'),
-     Input('interval-component', 'n_intervals')]
+    Output("model-health-card", "children"),
+    [Input("refresh-health-button", "n_clicks"), Input("interval-component", "n_intervals")],
 )
 def update_health_card(n_clicks, n_intervals):
     """Update health card on button click or interval."""
     health_data = load_health_status()
     return create_health_card(health_data)
 
+
 # Add button to layout
-dbc.Button(
-    "🔄 Refresh Health Status",
-    id="refresh-health-button",
-    color="secondary",
-    size="sm"
-)
+dbc.Button("🔄 Refresh Health Status", id="refresh-health-button", color="secondary", size="sm")
 ```
 
 **Why This Works:**
@@ -3120,28 +3199,29 @@ If you don't want Redis/ZMQ complexity, use a **file-based flag**:
 # TradeServer writes flag on trade close
 def handle_close_trade(self, message):
     # ... update Firestore ...
-    
+
     # Write event flag (atomic)
-    flag_file = Path('/tmp/trade_closed_event.flag')
+    flag_file = Path("/tmp/trade_closed_event.flag")
     flag_file.write_text(str(time.time()))  # Timestamp
+
 
 # Dashboard checks flag every second
 @app.callback(
-    Output('trade-close-event-counter', 'data'),
-    Input('fast-poll-interval', 'n_intervals'),  # 1 second
-    State('trade-close-event-counter', 'data')
+    Output("trade-close-event-counter", "data"),
+    Input("fast-poll-interval", "n_intervals"),  # 1 second
+    State("trade-close-event-counter", "data"),
 )
 def check_trade_close_flag(n, current_count):
-    flag_file = Path('/tmp/trade_closed_event.flag')
-    
+    flag_file = Path("/tmp/trade_closed_event.flag")
+
     if flag_file.exists():
         flag_time = float(flag_file.read_text())
-        
+
         # Check if flag is new (within last 2 seconds)
         if time.time() - flag_time < 2:
             flag_file.unlink()  # Consume flag
             return current_count + 1
-    
+
     return current_count
 ```
 
@@ -3166,49 +3246,60 @@ def check_trade_close_flag(n, current_count):
 import os
 from pathlib import Path
 
+
 class TradeServer:
     def __init__(self):
         # ... existing code ...
-        self.event_flag_dir = Path('/tmp')  # Or configurable path
-    
+        self.event_flag_dir = Path("/tmp")  # Or configurable path
+
     def _publish_trade_closed_event(self):
         """Write event flag to notify dashboard of trade close."""
         try:
-            flag_file = self.event_flag_dir / 'trade_closed_event.flag'
+            flag_file = self.event_flag_dir / "trade_closed_event.flag"
             # Write current timestamp
             flag_file.write_text(str(time.time()))
             logger.debug(f"Published trade closed event: {flag_file}")
         except Exception as e:
             logger.error(f"Failed to publish trade close event: {e}")
-    
+
     def handle_request(self, request):
         # ... existing code ...
-        
+
         if message_type == "CloseTrade":
             firestore_doc_id = message.get("firestore_doc_id")
             if firestore_doc_id:
                 update_data = {
                     key: message[key]
                     for key in [
-                        "exit_date", "exit_grade", "exit_price", "pnl",
-                        "trade_grade", "trade_status"
+                        "exit_date",
+                        "exit_grade",
+                        "exit_price",
+                        "pnl",
+                        "trade_grade",
+                        "trade_status",
                     ]
                     if key in message
                 }
 
                 if firestore_manager.update_trade(firestore_doc_id, update_data):
-                    response_data["message"] = f"CloseTrade successful for doc_id: {firestore_doc_id}."
+                    response_data["message"] = (
+                        f"CloseTrade successful for doc_id: {firestore_doc_id}."
+                    )
                     response_data["type"] = "CloseTradeResponse"
                     response_data["order_id"] = message.get("order_id")
-                    logger.info(f"TradeServer:: CloseTrade message processed for doc_id: {firestore_doc_id}.")
-                    
+                    logger.info(
+                        f"TradeServer:: CloseTrade message processed for doc_id: {firestore_doc_id}."
+                    )
+
                     # PUBLISH EVENT - This is the new line!
                     self._publish_trade_closed_event()
-                    
+
                 else:
                     response_data["status"] = "error"
-                    response_data["message"] = f"Failed to edit trade for doc_id: {firestore_doc_id}."
-        
+                    response_data["message"] = (
+                        f"Failed to edit trade for doc_id: {firestore_doc_id}."
+                    )
+
         # ... rest of code ...
 ```
 
@@ -3219,14 +3310,15 @@ class TradeServer:
 import time
 from pathlib import Path
 
+
 def check_for_trade_close_event(flag_path: Path, max_age_seconds: float = 2.0) -> bool:
     """
     Check if trade close event flag exists and is recent.
-    
+
     Args:
         flag_path: Path to event flag file
         max_age_seconds: Maximum age of flag to consider valid (default 2 seconds)
-    
+
     Returns:
         True if event detected, False otherwise
     """
@@ -3235,7 +3327,7 @@ def check_for_trade_close_event(flag_path: Path, max_age_seconds: float = 2.0) -
             # Read timestamp from flag
             flag_timestamp = float(flag_path.read_text().strip())
             current_time = time.time()
-            
+
             # Check if flag is recent
             if current_time - flag_timestamp < max_age_seconds:
                 # Consume the flag (delete it)
@@ -3243,7 +3335,7 @@ def check_for_trade_close_event(flag_path: Path, max_age_seconds: float = 2.0) -
                 return True
     except Exception as e:
         logger.warning(f"Error checking trade close event: {e}")
-    
+
     return False
 
 
@@ -3251,18 +3343,18 @@ def check_for_trade_close_event(flag_path: Path, max_age_seconds: float = 2.0) -
 class TradeAnalytics:
     def __init__(self):
         # ... existing code ...
-        self.event_flag_path = Path('/tmp/trade_closed_event.flag')
+        self.event_flag_path = Path("/tmp/trade_closed_event.flag")
         self.last_event_check = 0
-    
+
     def register_callbacks(self, app: dash.Dash):
         # ... existing callbacks ...
-        
+
         # Fast poll for event flags (1 second interval)
         @app.callback(
-            Output('trade-close-event-counter', 'data'),
-            Input('trade-event-poll', 'n_intervals'),
-            State('trade-close-event-counter', 'data'),
-            prevent_initial_call=True
+            Output("trade-close-event-counter", "data"),
+            Input("trade-event-poll", "n_intervals"),
+            State("trade-close-event-counter", "data"),
+            prevent_initial_call=True,
         )
         def poll_for_trade_events(n_intervals: int, current_count: int) -> int:
             """
@@ -3272,81 +3364,74 @@ class TradeAnalytics:
             if check_for_trade_close_event(self.event_flag_path):
                 logger.info("Trade close event detected - triggering health update")
                 return (current_count or 0) + 1
-            
+
             return current_count or 0
-        
+
         # Health card updates on event counter change OR periodic fallback
         @app.callback(
-            Output('model-health-card', 'children'),
-            [Input(ANALYTICS_STATS_CACHE_STORE_ID, 'data'),
-             Input('trade-close-event-counter', 'data'),       # Event-driven (primary)
-             Input('health-fallback-refresh', 'n_intervals')], # 5-min fallback
-            prevent_initial_call=False
+            Output("model-health-card", "children"),
+            [
+                Input(ANALYTICS_STATS_CACHE_STORE_ID, "data"),
+                Input("trade-close-event-counter", "data"),  # Event-driven (primary)
+                Input("health-fallback-refresh", "n_intervals"),
+            ],  # 5-min fallback
+            prevent_initial_call=False,
         )
-        def update_model_health_card(stats_data: dict, 
-                                     event_count: int, 
-                                     fallback_count: int):
+        def update_model_health_card(stats_data: dict, event_count: int, fallback_count: int):
             """
             Update model health status card.
             Triggers on trade close events (1-2s latency) or every 5 minutes (fallback).
             """
             ctx = dash.callback_context
-            
+
             if ctx.triggered:
-                trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+                trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
                 logger.debug(f"Health card update triggered by: {trigger_id}")
-            
+
             # Read health status file
-            health_file = Path('/home/trader/data/model_health_status.json')
-            
+            health_file = Path("/home/trader/data/model_health_status.json")
+
             if health_file.exists():
                 try:
                     with open(health_file) as f:
                         health_status = json.load(f)
                 except Exception as e:
                     logger.error(f"Failed to read health status: {e}")
-                    health_status = {'status': 'UNKNOWN'}
+                    health_status = {"status": "UNKNOWN"}
             else:
                 health_status = {
-                    'status': 'UNKNOWN',
-                    'alpha_slippage_pct': 0,
-                    'sample_size': 0,
-                    'last_updated': 'Never'
+                    "status": "UNKNOWN",
+                    "alpha_slippage_pct": 0,
+                    "sample_size": 0,
+                    "last_updated": "Never",
                 }
-            
+
             return _create_model_health_card(stats_data or {}, health_status)
-    
+
     def render(self) -> html.Div:
         """Updated render with event-driven components."""
-        return html.Div([
-            # ... existing header and cards ...
-            
-            # Event tracking storage
-            dcc.Store(id='trade-close-event-counter', data=0),
-            
-            # Fast polling for event flags (1 second)
-            dcc.Interval(
-                id='trade-event-poll',
-                interval=1*1000,  # 1 second
-                n_intervals=0
-            ),
-            
-            # Slow fallback polling (5 minutes)
-            dcc.Interval(
-                id='health-fallback-refresh',
-                interval=5*60*1000,  # 5 minutes
-                n_intervals=0
-            ),
-            
-            # Model health card (populated by callback)
-            dbc.Row([
-                dbc.Col([
-                    html.Div(id='model-health-card')
-                ], width=12)
-            ], className="mb-4"),
-            
-            # ... rest of layout ...
-        ])
+        return html.Div(
+            [
+                # ... existing header and cards ...
+                # Event tracking storage
+                dcc.Store(id="trade-close-event-counter", data=0),
+                # Fast polling for event flags (1 second)
+                dcc.Interval(
+                    id="trade-event-poll",
+                    interval=1 * 1000,  # 1 second
+                    n_intervals=0,
+                ),
+                # Slow fallback polling (5 minutes)
+                dcc.Interval(
+                    id="health-fallback-refresh",
+                    interval=5 * 60 * 1000,  # 5 minutes
+                    n_intervals=0,
+                ),
+                # Model health card (populated by callback)
+                dbc.Row([dbc.Col([html.Div(id="model-health-card")], width=12)], className="mb-4"),
+                # ... rest of layout ...
+            ]
+        )
 ```
 
 **Step 3: Configuration**
@@ -3382,14 +3467,16 @@ event_notification:
 ```python
 # Add to TradeAnalytics.register_callbacks()
 @app.callback(
-    Output('model-health-card', 'children'),
-    [Input(ANALYTICS_STATS_CACHE_STORE_ID, 'data'),
-     Input('health-status-refresh-interval', 'n_intervals')]  # Auto-refresh every 60s
+    Output("model-health-card", "children"),
+    [
+        Input(ANALYTICS_STATS_CACHE_STORE_ID, "data"),
+        Input("health-status-refresh-interval", "n_intervals"),
+    ],  # Auto-refresh every 60s
 )
 def update_model_health_card(stats_data: dict, n_intervals: int):
     """
     Update model health status card with latest data.
-    
+
     Queries Firestore directly and calculates metrics on-demand.
     """
     try:
@@ -3397,36 +3484,30 @@ def update_model_health_card(stats_data: dict, n_intervals: int):
         from performance_attribution.models import ExpectedPerformance, HealthThresholds
         from performance_attribution.health_manager import ModelHealthStatusManager
         from firestore_manager import firestore_manager
-        
+
         # Initialize health manager (same config as TradeServer)
-        expected = ExpectedPerformance(
-            sharpe_ratio=1.85,
-            win_rate=0.58,
-            profit_factor=1.75
-        )
-        
+        expected = ExpectedPerformance(sharpe_ratio=1.85, win_rate=0.58, profit_factor=1.75)
+
         thresholds = HealthThresholds(
-            warning_threshold_pct=20.0,
-            soft_lock_threshold_pct=30.0,
-            min_sample_size=20
+            warning_threshold_pct=20.0, soft_lock_threshold_pct=30.0, min_sample_size=20
         )
-        
+
         health_manager = ModelHealthStatusManager(thresholds, expected, firestore_manager)
-        
+
         # Calculate current health (queries Firestore, calculates metrics)
         health_status = health_manager.calculate_current_health()
-        
+
     except Exception as e:
         logger.error(f"Failed to calculate health status: {e}", exc_info=True)
         # Fallback to unknown status
         health_status = {
-            'status': 'UNKNOWN',
-            'alpha_slippage_pct': 0,
-            'sample_size': 0,
-            'last_updated': 'Error',
-            'error': str(e)
+            "status": "UNKNOWN",
+            "alpha_slippage_pct": 0,
+            "sample_size": 0,
+            "last_updated": "Error",
+            "error": str(e),
         }
-    
+
     return _create_model_health_card(stats_data or {}, health_status)
 ```
 
@@ -3436,18 +3517,28 @@ def update_model_health_card(stats_data: dict, n_intervals: int):
 
 ```python
 # After the header section, before key metrics cards
-dbc.Row([
-    dbc.Col([
-        html.Div(id='model-health-card')  # Populated by callback
-    ], width=12)
-], className="mb-4"),
+(
+    dbc.Row(
+        [
+            dbc.Col(
+                [
+                    html.Div(id="model-health-card")  # Populated by callback
+                ],
+                width=12,
+            )
+        ],
+        className="mb-4",
+    ),
+)
 
 # Add auto-refresh interval
-dcc.Interval(
-    id='health-status-refresh-interval',
-    interval=60*1000,  # Refresh every 60 seconds
-    n_intervals=0
-),
+(
+    dcc.Interval(
+        id="health-status-refresh-interval",
+        interval=60 * 1000,  # Refresh every 60 seconds
+        n_intervals=0,
+    ),
+)
 ```
 
 ### 13.7 Benefits of GUI Integration
@@ -3563,9 +3654,11 @@ from pathlib import Path
 from typing import Dict, Any
 import numpy as np
 
+
 @dataclass
 class ExpectedPerformance:
     """Expected performance metrics from backtesting (same structure as MTS)."""
+
     sharpe_ratio: float
     win_rate: float
     profit_factor: float
@@ -3576,21 +3669,19 @@ class ExpectedPerformance:
     total_trades: int = 0
     total_pnl: float = 0.0
 
-def embed_performance_metadata(
-    model_path: str,
-    backtest_results: Dict[str, Any]
-) -> None:
+
+def embed_performance_metadata(model_path: str, backtest_results: Dict[str, Any]) -> None:
     """
     Save performance metadata to a companion JSON file alongside the .keras model.
     Creates: src/best_agent_model_metadata.json
-    
+
     Args:
         model_path: Path to the .keras model file (e.g., 'src/best_agent_model.keras')
         backtest_results: Dictionary with backtest performance metrics
-        
+
     Usage:
         After training completes and backtest runs:
-        
+
         backtest_results = {
             'sharpe_ratio': 1.85,
             'win_rate': 0.58,
@@ -3606,33 +3697,35 @@ def embed_performance_metadata(
     """
     # Load the trained model (not modified, just for validation)
     model = keras.models.load_model(model_path)
-    
+
     # Create metadata dictionary
     model_metadata = {
         "expected_performance": {
-            "sharpe_ratio": float(backtest_results['sharpe_ratio']),
-            "win_rate": float(backtest_results['win_rate']),
-            "profit_factor": float(backtest_results['profit_factor']),
-            "sortino_ratio": float(backtest_results.get('sortino_ratio', 0.0)),
-            "max_drawdown_pct": float(backtest_results.get('max_drawdown_pct', 0.0)),
-            "avg_win_ticks": float(backtest_results.get('avg_win_ticks', 0.0)),
-            "avg_loss_ticks": float(backtest_results.get('avg_loss_ticks', 0.0)),
-            "total_trades": int(backtest_results.get('total_trades', 0)),
-            "total_pnl": float(backtest_results.get('total_pnl', 0.0))
+            "sharpe_ratio": float(backtest_results["sharpe_ratio"]),
+            "win_rate": float(backtest_results["win_rate"]),
+            "profit_factor": float(backtest_results["profit_factor"]),
+            "sortino_ratio": float(backtest_results.get("sortino_ratio", 0.0)),
+            "max_drawdown_pct": float(backtest_results.get("max_drawdown_pct", 0.0)),
+            "avg_win_ticks": float(backtest_results.get("avg_win_ticks", 0.0)),
+            "avg_loss_ticks": float(backtest_results.get("avg_loss_ticks", 0.0)),
+            "total_trades": int(backtest_results.get("total_trades", 0)),
+            "total_pnl": float(backtest_results.get("total_pnl", 0.0)),
         },
         "training_metadata": {
-            "training_date": backtest_results.get('training_date', ''),
-            "model_version": backtest_results.get('model_version', 'unknown'),
-            "backtest_period": backtest_results.get('backtest_period', '')
-        }
+            "training_date": backtest_results.get("training_date", ""),
+            "model_version": backtest_results.get("model_version", "unknown"),
+            "backtest_period": backtest_results.get("backtest_period", ""),
+        },
     }
-    
+
     # Re-save with metadata
     model.save(model_path, save_metadata=model_metadata)
     print(f"✅ Embedded performance metrics in {model_path}")
-    print(f"   Sharpe: {backtest_results['sharpe_ratio']:.2f}, "
-          f"Win Rate: {backtest_results['win_rate']:.1%}, "
-          f"PF: {backtest_results['profit_factor']:.2f}")
+    print(
+        f"   Sharpe: {backtest_results['sharpe_ratio']:.2f}, "
+        f"Win Rate: {backtest_results['win_rate']:.1%}, "
+        f"PF: {backtest_results['profit_factor']:.2f}"
+    )
 ```
 
 **During deployment (Performance Attribution Engine - MTS project):**
@@ -3641,43 +3734,36 @@ def embed_performance_metadata(
 def load_expected_performance_from_keras(model_path: Path) -> ExpectedPerformance:
     """
     Load expected performance metrics from .keras model metadata.
-    
+
     Returns ExpectedPerformance with hardcoded defaults if metadata missing.
     """
     try:
         import keras
+
         model = keras.models.load_model(model_path)
-        
+
         # Extract metadata
-        metadata = model.metadata if hasattr(model, 'metadata') else {}
-        expected_data = metadata.get('expected_performance', {})
-        
+        metadata = model.metadata if hasattr(model, "metadata") else {}
+        expected_data = metadata.get("expected_performance", {})
+
         if not expected_data:
             logger.warning(f"No expected_performance metadata in {model_path}. Using defaults.")
-            return ExpectedPerformance(
-                sharpe_ratio=1.85,
-                win_rate=0.58,
-                profit_factor=1.75
-            )
-        
+            return ExpectedPerformance(sharpe_ratio=1.85, win_rate=0.58, profit_factor=1.75)
+
         return ExpectedPerformance(
-            sharpe_ratio=expected_data['sharpe_ratio'],
-            win_rate=expected_data['win_rate'],
-            profit_factor=expected_data['profit_factor'],
-            sortino_ratio=expected_data.get('sortino_ratio', 0.0),
-            max_drawdown_pct=expected_data.get('max_drawdown_pct', 0.0),
-            avg_win_ticks=expected_data.get('avg_win_ticks', 0.0),
-            avg_loss_ticks=expected_data.get('avg_loss_ticks', 0.0),
-            total_trades=expected_data.get('total_trades', 0),
-            total_pnl=expected_data.get('total_pnl', 0.0)
+            sharpe_ratio=expected_data["sharpe_ratio"],
+            win_rate=expected_data["win_rate"],
+            profit_factor=expected_data["profit_factor"],
+            sortino_ratio=expected_data.get("sortino_ratio", 0.0),
+            max_drawdown_pct=expected_data.get("max_drawdown_pct", 0.0),
+            avg_win_ticks=expected_data.get("avg_win_ticks", 0.0),
+            avg_loss_ticks=expected_data.get("avg_loss_ticks", 0.0),
+            total_trades=expected_data.get("total_trades", 0),
+            total_pnl=expected_data.get("total_pnl", 0.0),
         )
     except Exception as e:
         logger.error(f"Failed to load metadata from {model_path}: {e}")
-        return ExpectedPerformance(
-            sharpe_ratio=1.85,
-            win_rate=0.58,
-            profit_factor=1.75
-        )
+        return ExpectedPerformance(sharpe_ratio=1.85, win_rate=0.58, profit_factor=1.75)
 ```
 
 ### Migration Path
@@ -3710,14 +3796,17 @@ Generates ExpectedPerformance baseline for model health monitoring.
 This module is used by the TransformerAgent training project to calculate
 performance metrics that will be embedded in the .keras model file.
 """
+
 from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 from typing import List, Dict, Any
 
+
 @dataclass
 class BacktestTrade:
     """Simple trade record for backtest performance calculation."""
+
     entry_price: float
     exit_price: float
     pnl: float
@@ -3727,12 +3816,14 @@ class BacktestTrade:
     mae_ticks: float = 0.0  # Maximum Adverse Excursion
     mfe_ticks: float = 0.0  # Maximum Favorable Excursion
 
-@dataclass  
+
+@dataclass
 class ExpectedPerformance:
     """
     Expected performance metrics from backtesting.
     These become the baseline for live performance monitoring.
     """
+
     sharpe_ratio: float
     win_rate: float
     profit_factor: float
@@ -3743,72 +3834,84 @@ class ExpectedPerformance:
     total_trades: int = 0
     total_pnl: float = 0.0
 
+
 class BacktestMetricsCalculator:
     """Calculate performance metrics from backtest trade history."""
-    
+
     def __init__(self, risk_free_rate: float = 0.02):
         self.risk_free_rate = risk_free_rate
-    
+
     def calculate_metrics(self, trades: List[BacktestTrade]) -> ExpectedPerformance:
         """
         Calculate all performance metrics from backtest trades.
-        
+
         Args:
             trades: List of completed backtest trades
-            
+
         Returns:
             ExpectedPerformance with calculated metrics
         """
         if not trades:
-            return ExpectedPerformance(
-                sharpe_ratio=0.0,
-                win_rate=0.0,
-                profit_factor=0.0
-            )
-        
+            return ExpectedPerformance(sharpe_ratio=0.0, win_rate=0.0, profit_factor=0.0)
+
         # Convert to DataFrame for easier calculations
-        df = pd.DataFrame([{
-            'pnl': t.pnl,
-            'entry_date': t.entry_date,
-            'exit_date': t.exit_date,
-            'mae_ticks': t.mae_ticks,
-            'mfe_ticks': t.mfe_ticks
-        } for t in trades])
-        
+        df = pd.DataFrame(
+            [
+                {
+                    "pnl": t.pnl,
+                    "entry_date": t.entry_date,
+                    "exit_date": t.exit_date,
+                    "mae_ticks": t.mae_ticks,
+                    "mfe_ticks": t.mfe_ticks,
+                }
+                for t in trades
+            ]
+        )
+
         # Basic metrics
-        total_pnl = df['pnl'].sum()
+        total_pnl = df["pnl"].sum()
         total_trades = len(trades)
-        winners = df[df['pnl'] > 0]
-        losers = df[df['pnl'] < 0]
-        
+        winners = df[df["pnl"] > 0]
+        losers = df[df["pnl"] < 0]
+
         win_rate = len(winners) / total_trades if total_trades > 0 else 0.0
-        
+
         # Profit Factor
-        total_wins = winners['pnl'].sum() if not winners.empty else 0.0
-        total_losses = abs(losers['pnl'].sum()) if not losers.empty else 0.0
+        total_wins = winners["pnl"].sum() if not winners.empty else 0.0
+        total_losses = abs(losers["pnl"].sum()) if not losers.empty else 0.0
         profit_factor = total_wins / total_losses if total_losses > 0 else 0.0
-        
+
         # Sharpe Ratio (annualized)
-        returns = df['pnl']
+        returns = df["pnl"]
         mean_return = returns.mean()
         std_return = returns.std()
-        sharpe = ((mean_return - self.risk_free_rate) / std_return * np.sqrt(252)) if std_return > 0 else 0.0
-        
+        sharpe = (
+            ((mean_return - self.risk_free_rate) / std_return * np.sqrt(252))
+            if std_return > 0
+            else 0.0
+        )
+
         # Sortino Ratio (downside deviation only)
         downside_returns = returns[returns < 0]
         downside_std = downside_returns.std() if not downside_returns.empty else std_return
-        sortino = ((mean_return - self.risk_free_rate) / downside_std * np.sqrt(252)) if downside_std > 0 else 0.0
-        
+        sortino = (
+            ((mean_return - self.risk_free_rate) / downside_std * np.sqrt(252))
+            if downside_std > 0
+            else 0.0
+        )
+
         # Max Drawdown (simplified - needs equity curve)
-        cumulative_pnl = df['pnl'].cumsum()
+        cumulative_pnl = df["pnl"].cumsum()
         running_max = cumulative_pnl.expanding().max()
         drawdown = cumulative_pnl - running_max
-        max_drawdown_pct = (drawdown.min() / running_max.max() * 100) if running_max.max() > 0 else 0.0
-        
+        max_drawdown_pct = (
+            (drawdown.min() / running_max.max() * 100) if running_max.max() > 0 else 0.0
+        )
+
         # MAE/MFE averages
-        avg_win_ticks = winners['mfe_ticks'].mean() if not winners.empty else 0.0
-        avg_loss_ticks = abs(losers['mae_ticks'].mean()) if not losers.empty else 0.0
-        
+        avg_win_ticks = winners["mfe_ticks"].mean() if not winners.empty else 0.0
+        avg_loss_ticks = abs(losers["mae_ticks"].mean()) if not losers.empty else 0.0
+
         return ExpectedPerformance(
             sharpe_ratio=sharpe,
             win_rate=win_rate,
@@ -3818,8 +3921,9 @@ class BacktestMetricsCalculator:
             avg_win_ticks=avg_win_ticks,
             avg_loss_ticks=avg_loss_ticks,
             total_trades=total_trades,
-            total_pnl=total_pnl
+            total_pnl=total_pnl,
         )
+
 
 def embed_performance_metadata(model_path: str, backtest_results: Dict[str, Any]) -> None:
     """Embed backtest performance metrics in .keras model file."""
@@ -3834,40 +3938,40 @@ def embed_performance_metadata(model_path: str, backtest_results: Dict[str, Any]
 # At the end of train_transformer_agent()
 def train_transformer_agent(X_train, y_train, epochs=10, batch_size=32):
     # ... existing training code ...
-    
+
     print("\n--- Training Complete ---")
-    
+
     # NEW: Run backtest and embed metrics
     print("\n--- Running Backtest to Calculate Expected Performance ---")
     from backtest import Backtester  # Your existing backtester
     from backtest_metrics import BacktestMetricsCalculator, embed_performance_metadata
-    
+
     # Run backtest (you already have this logic somewhere)
-    backtester = Backtester(model_path='src/best_agent_model.keras')
+    backtester = Backtester(model_path="src/best_agent_model.keras")
     backtest_trades = backtester.run()  # Returns list of trades
-    
+
     # Calculate metrics
     calculator = BacktestMetricsCalculator()
     expected_perf = calculator.calculate_metrics(backtest_trades)
-    
+
     # Convert to dict for embedding
     backtest_results = {
-        'sharpe_ratio': expected_perf.sharpe_ratio,
-        'win_rate': expected_perf.win_rate,
-        'profit_factor': expected_perf.profit_factor,
-        'sortino_ratio': expected_perf.sortino_ratio,
-        'max_drawdown_pct': expected_perf.max_drawdown_pct,
-        'avg_win_ticks': expected_perf.avg_win_ticks,
-        'avg_loss_ticks': expected_perf.avg_loss_ticks,
-        'total_trades': expected_perf.total_trades,
-        'total_pnl': expected_perf.total_pnl,
-        'training_date': datetime.now().strftime('%Y-%m-%d'),
-        'model_version': RUN_VERSION  # From config.py
+        "sharpe_ratio": expected_perf.sharpe_ratio,
+        "win_rate": expected_perf.win_rate,
+        "profit_factor": expected_perf.profit_factor,
+        "sortino_ratio": expected_perf.sortino_ratio,
+        "max_drawdown_pct": expected_perf.max_drawdown_pct,
+        "avg_win_ticks": expected_perf.avg_win_ticks,
+        "avg_loss_ticks": expected_perf.avg_loss_ticks,
+        "total_trades": expected_perf.total_trades,
+        "total_pnl": expected_perf.total_pnl,
+        "training_date": datetime.now().strftime("%Y-%m-%d"),
+        "model_version": RUN_VERSION,  # From config.py
     }
-    
+
     # Save metadata to companion JSON file
-    embed_performance_metadata('src/best_agent_model.keras', backtest_results)
-    
+    embed_performance_metadata("src/best_agent_model.keras", backtest_results)
+
     return history
 ```
 
@@ -3905,8 +4009,8 @@ When `PerformanceMetricsCalculator.calculate_metrics()` attempted to access Phas
 
 ```python
 # Original code (fails with KeyError when columns missing):
-avg_win_ticks = winners['mfe_ticks'].mean() if not winners.empty else 0.0
-avg_loss_ticks = abs(losers['mae_ticks'].mean()) if not losers.empty else 0.0
+avg_win_ticks = winners["mfe_ticks"].mean() if not winners.empty else 0.0
+avg_loss_ticks = abs(losers["mae_ticks"].mean()) if not losers.empty else 0.0
 ```
 
 ### Solution
@@ -3914,13 +4018,13 @@ Added defensive column checks to handle missing Phase 1 fields gracefully:
 
 ```python
 # Defensive code (handles missing columns):
-if 'mfe_ticks' in winners.columns and not winners.empty:
-    avg_win_ticks = winners['mfe_ticks'].mean()
+if "mfe_ticks" in winners.columns and not winners.empty:
+    avg_win_ticks = winners["mfe_ticks"].mean()
 else:
     avg_win_ticks = 0.0
 
-if 'mae_ticks' in losers.columns and not losers.empty:
-    avg_loss_ticks = abs(losers['mae_ticks'].mean())
+if "mae_ticks" in losers.columns and not losers.empty:
+    avg_loss_ticks = abs(losers["mae_ticks"].mean())
 else:
     avg_loss_ticks = 0.0
 ```
@@ -3940,8 +4044,8 @@ Once the C++ trading engine has been running long enough that all active trades 
 ```python
 # TODO: Remove defensive checks once all Firestore trades have Phase 1 fields
 # Original simplified version (restore after migration complete):
-avg_win_ticks = winners['mfe_ticks'].mean() if not winners.empty else 0.0
-avg_loss_ticks = abs(losers['mae_ticks'].mean()) if not losers.empty else 0.0
+avg_win_ticks = winners["mfe_ticks"].mean() if not winners.empty else 0.0
+avg_loss_ticks = abs(losers["mae_ticks"].mean()) if not losers.empty else 0.0
 ```
 
 **Timeline:**

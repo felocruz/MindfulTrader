@@ -37,6 +37,7 @@ Usage:
         --data-dir /mnt/c/SierraChart2/Data --pattern "MES-*-CME-USD.scid" \
         --out /tmp/paired_kurtosis_sample.csv
 """
+
 import argparse
 import glob
 import os
@@ -45,6 +46,7 @@ import sys
 
 import numpy as np
 import pandas as pd
+
 
 KURT_WINDOW = 100
 KURT_VARIANCE_EPS = 1e-10
@@ -55,10 +57,19 @@ BAR_SECONDS = 900  # 15 minutes -- see IMPORTANT note above
 # .scid format (Sierra Chart Intraday Data): 56-byte header, then fixed-size
 # records: int64 SCDateTime(us since 1899-12-30), float32 O,H,L,C,
 # int32 NumTrades, TotalVolume, BidVolume, AskVolume.
-SCID_RECORD_DTYPE = np.dtype([
-    ("dt", "<i8"), ("o", "<f4"), ("h", "<f4"), ("l", "<f4"), ("c", "<f4"),
-    ("numtrades", "<i4"), ("totalvolume", "<i4"), ("bidvolume", "<i4"), ("askvolume", "<i4"),
-])
+SCID_RECORD_DTYPE = np.dtype(
+    [
+        ("dt", "<i8"),
+        ("o", "<f4"),
+        ("h", "<f4"),
+        ("l", "<f4"),
+        ("c", "<f4"),
+        ("numtrades", "<i4"),
+        ("totalvolume", "<i4"),
+        ("bidvolume", "<i4"),
+        ("askvolume", "<i4"),
+    ]
+)
 
 
 def read_scid(path: str) -> np.ndarray:
@@ -77,17 +88,29 @@ def aggregate_to_bars(records: np.ndarray, bar_seconds: int) -> pd.DataFrame:
     """30s (or whatever native granularity) records -> OHLCV bars of bar_seconds."""
     if len(records) == 0:
         return pd.DataFrame(columns=["bucket", "open", "high", "low", "close", "volume"])
-    df = pd.DataFrame({
-        "dt_us": records["dt"],
-        "o": records["o"], "h": records["h"], "l": records["l"], "c": records["c"],
-        "v": records["totalvolume"],
-    })
+    df = pd.DataFrame(
+        {
+            "dt_us": records["dt"],
+            "o": records["o"],
+            "h": records["h"],
+            "l": records["l"],
+            "c": records["c"],
+            "v": records["totalvolume"],
+        }
+    )
     bucket_us = bar_seconds * 1_000_000
     df["bucket"] = df["dt_us"] // bucket_us
-    bars = df.groupby("bucket").agg(
-        open=("o", "first"), high=("h", "max"), low=("l", "min"),
-        close=("c", "last"), volume=("v", "sum"),
-    ).reset_index()
+    bars = (
+        df.groupby("bucket")
+        .agg(
+            open=("o", "first"),
+            high=("h", "max"),
+            low=("l", "min"),
+            close=("c", "last"),
+            volume=("v", "sum"),
+        )
+        .reset_index()
+    )
     return bars
 
 
@@ -123,7 +146,7 @@ def old_moment_kurtosis(returns: np.ndarray, mean_ret: float, variance: float) -
     sample-kurtosis estimator over the fixed 100-bar window)."""
     n = float(KURT_WINDOW)
     diffs = returns - mean_ret
-    m4 = float(np.mean(diffs ** 4))
+    m4 = float(np.mean(diffs**4))
     adjustment = ((n - 1.0) * (n + 1.0)) / ((n - 2.0) * (n - 3.0))
     bias_correction = 3.0 * (n - 1.0) * (n - 1.0) / ((n - 2.0) * (n - 3.0))
     var_squared = variance * variance
@@ -164,7 +187,7 @@ def process_contract(path: str) -> pd.DataFrame:
     for idx in range(KURT_WINDOW, n_bars):
         # returns[i] = log(Close[idx-i] / Close[idx-i-1]) for i in 0..99, matching
         # CalculateRealizedKurtosis's std::array fill order exactly.
-        window_closes = closes[idx - KURT_WINDOW: idx + 1].astype(np.float64)
+        window_closes = closes[idx - KURT_WINDOW : idx + 1].astype(np.float64)
         prevs = np.maximum(window_closes[:-1], 0.001)
         curs = window_closes[1:]
         returns = np.log(curs / prevs)[::-1]  # i=0 -> most recent, matching C++ loop
@@ -182,7 +205,7 @@ def process_contract(path: str) -> pd.DataFrame:
         # Shared ATR-regime multiplier (identical mechanism, applied to both
         # formulas' output, matching CalculateRealizedKurtosis lines 2683-2700).
         if idx >= VOL_COMPARE_WINDOW:
-            atr_avg = float(np.mean(atr[idx - VOL_COMPARE_WINDOW + 1: idx + 1]))
+            atr_avg = float(np.mean(atr[idx - VOL_COMPARE_WINDOW + 1 : idx + 1]))
             vol_ratio = atr[idx] / max(atr_avg, 0.0001)
             regime_mult = 1.0
             if vol_ratio > 1.3:
@@ -196,12 +219,14 @@ def process_contract(path: str) -> pd.DataFrame:
         new_k = float(np.clip(new_k, -5.0, 50.0))
         prev_old, prev_new = old_k, new_k
 
-        rows.append({
-            "contract": os.path.basename(path),
-            "bar_index": idx,
-            "old_kurtosis": old_k,
-            "moors_kurtosis": new_k,
-        })
+        rows.append(
+            {
+                "contract": os.path.basename(path),
+                "bar_index": idx,
+                "old_kurtosis": old_k,
+                "moors_kurtosis": new_k,
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -210,14 +235,21 @@ def main() -> None:
     ap.add_argument("--data-dir", default="/mnt/c/SierraChart2/Data")
     ap.add_argument("--pattern", default="MES-*-CME-USD.scid")
     ap.add_argument("--out", default="/tmp/paired_kurtosis_sample.csv")
-    ap.add_argument("--min-bytes", type=int, default=1_000_000,
-                     help="skip .scid files smaller than this (empty/placeholder contracts)")
+    ap.add_argument(
+        "--min-bytes",
+        type=int,
+        default=1_000_000,
+        help="skip .scid files smaller than this (empty/placeholder contracts)",
+    )
     args = ap.parse_args()
 
     paths = sorted(glob.glob(os.path.join(args.data_dir, args.pattern)))
     paths = [p for p in paths if os.path.getsize(p) >= args.min_bytes]
     if not paths:
-        print(f"No .scid files >= {args.min_bytes} bytes matching {args.pattern} in {args.data_dir}", file=sys.stderr)
+        print(
+            f"No .scid files >= {args.min_bytes} bytes matching {args.pattern} in {args.data_dir}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     print(f"Processing {len(paths)} contract files:", file=sys.stderr)

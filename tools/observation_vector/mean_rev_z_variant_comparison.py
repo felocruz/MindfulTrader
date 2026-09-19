@@ -29,6 +29,7 @@ Pipeline:
 Usage: mamba run -n mts python tools/observation_vector/mean_rev_z_variant_comparison.py \
            [--horizon-minutes 60] [--imbalance-threshold 15.0] [--calibrate-only]
 """
+
 import argparse
 import math
 import struct
@@ -38,6 +39,7 @@ from pathlib import Path
 
 import numpy as np
 import polars as pl
+
 
 WORKSPACE = Path("/home/rcruz/devel/VSCode")
 TICKS_PARQUET = WORKSPACE / "lbrnet/data/raw/mes_continuous_ticks.parquet"
@@ -49,9 +51,20 @@ DRIVER_BIN = MINDFULTRADER / "tools/bin/mean_rev_z_variant_comparison"
 
 def build_driver():
     DRIVER_BIN.parent.mkdir(parents=True, exist_ok=True)
-    print(f"building driver: g++ -O2 -std=c++17 -I{MINDFULTRADER / 'include'} {DRIVER_SRC} -o {DRIVER_BIN}")
+    print(
+        f"building driver: g++ -O2 -std=c++17 -I{MINDFULTRADER / 'include'} {DRIVER_SRC} -o {DRIVER_BIN}"
+    )
     subprocess.run(
-        ["g++", "-O2", "-std=c++17", "-I", str(MINDFULTRADER / "include"), str(DRIVER_SRC), "-o", str(DRIVER_BIN)],
+        [
+            "g++",
+            "-O2",
+            "-std=c++17",
+            "-I",
+            str(MINDFULTRADER / "include"),
+            str(DRIVER_SRC),
+            "-o",
+            str(DRIVER_BIN),
+        ],
         check=True,
     )
 
@@ -96,7 +109,9 @@ def export_binaries(scratch_dir: Path):
     return ticks, ticks_bin, bars_bin
 
 
-def compute_forward_returns(signals: pl.DataFrame, ticks: pl.DataFrame, horizon_minutes: int) -> pl.DataFrame:
+def compute_forward_returns(
+    signals: pl.DataFrame, ticks: pl.DataFrame, horizon_minutes: int
+) -> pl.DataFrame:
     horizon_us = horizon_minutes * 60 * 1_000_000
     ts = ticks["timestamp_us"].to_numpy()
     px = ticks["close"].to_numpy()
@@ -146,22 +161,39 @@ def report(signals: pl.DataFrame, variant: str):
     z = (hit_rate - 0.5) / se_null
     p_value = float(2 * (1 - 0.5 * (1 + math.erf(abs(z) / math.sqrt(2)))))
     lo, hi = wilson_ci(k, n)
-    print(f"  {variant}: n={n}  hit_rate={hit_rate:.4f}  95%CI=[{lo:.4f}, {hi:.4f}]  "
-          f"z={z:+.2f}  p={p_value:.3f} (vs null=0.5)  "
-          f"mean_fwd_ret={np.mean(fwd):.6f}  median_fwd_ret={np.median(fwd):.6f}  "
-          f"std_fwd_ret={np.std(fwd):.6f}")
+    print(
+        f"  {variant}: n={n}  hit_rate={hit_rate:.4f}  95%CI=[{lo:.4f}, {hi:.4f}]  "
+        f"z={z:+.2f}  p={p_value:.3f} (vs null=0.5)  "
+        f"mean_fwd_ret={np.mean(fwd):.6f}  median_fwd_ret={np.median(fwd):.6f}  "
+        f"std_fwd_ret={np.std(fwd):.6f}"
+    )
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--horizon-minutes", type=int, default=60,
-                         help="Forward-return horizon in minutes, applied identically to both variants")
-    parser.add_argument("--imbalance-threshold", type=float, default=None,
-                         help="Override the activity-clock imbalance threshold (calibrate bar-formation rate first)")
-    parser.add_argument("--calibrate-only", action="store_true",
-                         help="Just run the driver and print bar-formation/signal counts, skip forward-return stats")
-    parser.add_argument("--reuse-binaries", type=str, default=None,
-                         help="Path to a scratch dir with already-exported ticks_1s.bin/bars_15m.bin (skip re-export)")
+    parser.add_argument(
+        "--horizon-minutes",
+        type=int,
+        default=60,
+        help="Forward-return horizon in minutes, applied identically to both variants",
+    )
+    parser.add_argument(
+        "--imbalance-threshold",
+        type=float,
+        default=None,
+        help="Override the activity-clock imbalance threshold (calibrate bar-formation rate first)",
+    )
+    parser.add_argument(
+        "--calibrate-only",
+        action="store_true",
+        help="Just run the driver and print bar-formation/signal counts, skip forward-return stats",
+    )
+    parser.add_argument(
+        "--reuse-binaries",
+        type=str,
+        default=None,
+        help="Path to a scratch dir with already-exported ticks_1s.bin/bars_15m.bin (skip re-export)",
+    )
     args = parser.parse_args()
 
     build_driver()
@@ -171,7 +203,12 @@ def main():
 
     if args.reuse_binaries and (scratch_dir / "ticks_1s.bin").exists():
         print(f"reusing existing binaries in {scratch_dir}")
-        ticks = pl.scan_parquet(TICKS_PARQUET).select("timestamp_us", "close").sort("timestamp_us").collect()
+        ticks = (
+            pl.scan_parquet(TICKS_PARQUET)
+            .select("timestamp_us", "close")
+            .sort("timestamp_us")
+            .collect()
+        )
         ticks_bin = scratch_dir / "ticks_1s.bin"
         bars_bin = scratch_dir / "bars_15m.bin"
     else:
@@ -200,11 +237,13 @@ def main():
     report(signals, "time_bar")
     report(signals, "activity_clock")
 
-    print("\n[note] no same-timestamp score correlation computed here -- the two variants fire "
-          "signals on different native clocks (15-min bars vs imbalance bars), so a naive "
-          "paired correlation would require resampling one onto the other's grid, which this "
-          "script deliberately does not do implicitly. The forward-return/hit-rate comparison "
-          "above is the decision-relevant test per the sibling's verdict.")
+    print(
+        "\n[note] no same-timestamp score correlation computed here -- the two variants fire "
+        "signals on different native clocks (15-min bars vs imbalance bars), so a naive "
+        "paired correlation would require resampling one onto the other's grid, which this "
+        "script deliberately does not do implicitly. The forward-return/hit-rate comparison "
+        "above is the decision-relevant test per the sibling's verdict."
+    )
 
     if not args.reuse_binaries:
         scratch_ctx.cleanup()

@@ -31,12 +31,13 @@ Usage (mts env):
     source /home/rcruz/anaconda3/etc/profile.d/conda.sh && mamba activate mts
     python3 tools/observation_vector/window_autocorrelation_diagnostic.py
 """
-import sys
+
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from arch.bootstrap import optimal_block_length
+
 
 WAVE_60M = Path("/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_wave_60m.parquet")
 RIPPLE_15M = Path("/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ripple_15m.parquet")
@@ -83,14 +84,18 @@ def report_block_length(label: str, series: np.ndarray) -> None:
     # ['stationary', 'circular'] for the single input series (row 0).
     stationary = float(result["stationary"].iloc[0])
     circular = float(result["circular"].iloc[0])
-    print(f"  {label:<45} n={len(series):>7}  "
-          f"stationary={stationary:>8.2f} bars  circular={circular:>8.2f} bars")
+    print(
+        f"  {label:<45} n={len(series):>7}  "
+        f"stationary={stationary:>8.2f} bars  circular={circular:>8.2f} bars"
+    )
 
 
 def main() -> None:
     roll_timestamps = load_roll_timestamps()
-    print(f"Identified {len(roll_timestamps)} real contract-roll timestamps "
-          f"(unadjusted splice, from mes_continuous_ticks.parquet).\n")
+    print(
+        f"Identified {len(roll_timestamps)} real contract-roll timestamps "
+        f"(unadjusted splice, from mes_continuous_ticks.parquet).\n"
+    )
 
     for label, path, screen in [
         ("TS2 (60min) -- recurrence_rate/fractal_dim", WAVE_60M, "TS2"),
@@ -99,8 +104,10 @@ def main() -> None:
         print(f"=== {label} ===")
         df = load_bars(path)
         roll_mask = flag_roll_bars(df, roll_timestamps)
-        print(f"  {len(df)} bars total, {roll_mask.sum()} flagged as roll-affected "
-              f"({roll_mask.sum() / len(df) * 100:.4f}% of bars)")
+        print(
+            f"  {len(df)} bars total, {roll_mask.sum()} flagged as roll-affected "
+            f"({roll_mask.sum() / len(df) * 100:.4f}% of bars)"
+        )
 
         close = df["close"].to_numpy(dtype=np.float64)
         log_ret = np.diff(np.log(close))
@@ -109,20 +116,23 @@ def main() -> None:
         ret_roll_mask = roll_mask[1:] | roll_mask[:-1]
 
         report_block_length("log-returns (raw, includes roll bars)", log_ret)
-        report_block_length("log-returns (roll-affected bars excluded)",
-                             log_ret[~ret_roll_mask])
-        report_block_length("|log-returns| (volatility clustering, raw)",
-                             np.abs(log_ret))
-        report_block_length("|log-returns| (roll-affected bars excluded)",
-                             np.abs(log_ret[~ret_roll_mask]))
+        report_block_length("log-returns (roll-affected bars excluded)", log_ret[~ret_roll_mask])
+        report_block_length("|log-returns| (volatility clustering, raw)", np.abs(log_ret))
+        report_block_length(
+            "|log-returns| (roll-affected bars excluded)", np.abs(log_ret[~ret_roll_mask])
+        )
         print()
 
-    print(f"Reference point (NOT an input to the above, printed for comparison): "
-          f"this HMM's own fitted mean regime tenure is "
-          f"~{HMM_MEAN_REGIME_TENURE_BARS_TS3:.1f} bars at TS3/15min "
-          f"(~{HMM_MEAN_REGIME_TENURE_BARS_TS3 * 15 / 60 / 24:.2f} real days).")
-    print(f"Spec's own proposed (unvalidated) targets: recurrence_rate/fractal_dim "
-          f"~150 bars (TS2), mean_rev_z ~600 bars (TS3).")
+    print(
+        f"Reference point (NOT an input to the above, printed for comparison): "
+        f"this HMM's own fitted mean regime tenure is "
+        f"~{HMM_MEAN_REGIME_TENURE_BARS_TS3:.1f} bars at TS3/15min "
+        f"(~{HMM_MEAN_REGIME_TENURE_BARS_TS3 * 15 / 60 / 24:.2f} real days)."
+    )
+    print(
+        "Spec's own proposed (unvalidated) targets: recurrence_rate/fractal_dim "
+        "~150 bars (TS2), mean_rev_z ~600 bars (TS3)."
+    )
 
 
 if __name__ == "__main__":

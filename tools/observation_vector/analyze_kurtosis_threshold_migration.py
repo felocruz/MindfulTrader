@@ -40,9 +40,12 @@ turned up three more live consumers the brief's 5-site list missed:
     (9.697616023284109) -- mapped separately below since it's a distinct
     exact value.
 """
-import sys
+
 import csv
+import sys
+
 import numpy as np
+
 
 OLD_THRESHOLDS = {
     "isFragile (Indicator.cpp:508)": 4.0,
@@ -78,10 +81,14 @@ def main(csv_path: str) -> None:
     new_arr = np.array(new_vals)
 
     print(f"Paired sample size: {len(old_arr)}")
-    print(f"old_kurtosis:   mean={old_arr.mean():.3f} median={np.median(old_arr):.3f} "
-          f"p90={np.percentile(old_arr,90):.3f} p99={np.percentile(old_arr,99):.3f}")
-    print(f"moors_kurtosis: mean={new_arr.mean():.3f} median={np.median(new_arr):.3f} "
-          f"p90={np.percentile(new_arr,90):.3f} p99={np.percentile(new_arr,99):.3f}")
+    print(
+        f"old_kurtosis:   mean={old_arr.mean():.3f} median={np.median(old_arr):.3f} "
+        f"p90={np.percentile(old_arr, 90):.3f} p99={np.percentile(old_arr, 99):.3f}"
+    )
+    print(
+        f"moors_kurtosis: mean={new_arr.mean():.3f} median={np.median(new_arr):.3f} "
+        f"p90={np.percentile(new_arr, 90):.3f} p99={np.percentile(new_arr, 99):.3f}"
+    )
     print()
     for name, old_threshold in OLD_THRESHOLDS.items():
         percentile = float((old_arr <= old_threshold).mean() * 100.0)

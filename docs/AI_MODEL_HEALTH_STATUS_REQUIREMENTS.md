@@ -283,25 +283,23 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+
 class ModelHealthMonitor:
     def __init__(self, data_dir: str):
         self.health_file = Path(data_dir) / "model_health_status.json"
         self.warning_threshold = 20.0
         self.soft_lock_threshold = 30.0
-        
+
     def update_health_status(
-        self,
-        expected_sharpe: float,
-        realized_sharpe: float,
-        sample_size: int
+        self, expected_sharpe: float, realized_sharpe: float, sample_size: int
     ):
         """Calculate alpha slippage and write status file."""
-        
+
         # Calculate alpha slippage (simplified)
         expected_alpha = expected_sharpe * 15.87  # sqrt(252)
         realized_alpha = realized_sharpe * 15.87
         alpha_slippage_pct = ((expected_alpha - realized_alpha) / expected_alpha) * 100
-        
+
         # Determine status
         if alpha_slippage_pct < self.warning_threshold:
             status = "HEALTHY"
@@ -309,7 +307,7 @@ class ModelHealthMonitor:
             status = "WARNING"
         else:
             status = "SOFT_LOCKED"
-        
+
         # Write JSON file (atomic write)
         health_data = {
             "status": status,
@@ -318,29 +316,26 @@ class ModelHealthMonitor:
             "last_updated": datetime.now(timezone.utc).isoformat(),
             "metrics": {
                 "expected_sharpe": round(expected_sharpe, 2),
-                "realized_sharpe": round(realized_sharpe, 2)
+                "realized_sharpe": round(realized_sharpe, 2),
             },
             "thresholds": {
                 "warning_threshold_pct": self.warning_threshold,
                 "soft_lock_threshold_pct": self.soft_lock_threshold,
-                "min_sample_size": 100
-            }
+                "min_sample_size": 100,
+            },
         }
-        
+
         # Atomic write (write to temp, then rename)
         temp_file = self.health_file.with_suffix(".tmp")
         temp_file.write_text(json.dumps(health_data, indent=2))
         temp_file.replace(self.health_file)
-        
+
         return status
+
 
 # Usage
 monitor = ModelHealthMonitor("/path/to/data")
-status = monitor.update_health_status(
-    expected_sharpe=1.85,
-    realized_sharpe=1.62,
-    sample_size=847
-)
+status = monitor.update_health_status(expected_sharpe=1.85, realized_sharpe=1.62, sample_size=847)
 print(f"Model Health: {status}")
 ```
 

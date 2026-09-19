@@ -44,6 +44,7 @@ Usage (mamba mts env):
     g++ -O2 -std=c++17 -I../include hill_intraday_seasonality.cpp -o hill_intraday_seasonality
     python3 hill_intraday_seasonality.py
 """
+
 import subprocess
 import sys
 from pathlib import Path
@@ -51,13 +52,16 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+
 PARQUET_PATH = Path("/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ripple_15m.parquet")
 TOOLS_DIR = Path(__file__).resolve().parent
 DRIVER_SRC = TOOLS_DIR / "hill_intraday_seasonality.cpp"
 DRIVER_BIN = TOOLS_DIR / "hill_intraday_seasonality"
 INCLUDE_DIR = TOOLS_DIR.parent / "include"
-SCRATCH_DIR = Path("/tmp/claude-1000/-home-rcruz-devel-VSCode-MindfulTrader/"
-                    "ad99fc40-0731-4b5e-8b28-7baafc05d38c/scratchpad")
+SCRATCH_DIR = Path(
+    "/tmp/claude-1000/-home-rcruz-devel-VSCode-MindfulTrader/"
+    "ad99fc40-0731-4b5e-8b28-7baafc05d38c/scratchpad"
+)
 CLOSES_CSV = SCRATCH_DIR / "closes.csv"
 ALPHAS_CSV = SCRATCH_DIR / "alphas.csv"
 
@@ -73,7 +77,7 @@ ALPHAS_CSV = SCRATCH_DIR / "alphas.csv"
 #                             the settlement window into the 17:00 maintenance
 #                             break
 BUCKET_BOUNDS = [
-    (18.0, 27.0, "overnight"),   # wraps past midnight, handled via +24 below
+    (18.0, 27.0, "overnight"),  # wraps past midnight, handled via +24 below
     (3.0, 8.5, "pre_open"),
     (8.5, 10.5, "us_open"),
     (10.5, 14.0, "midday"),
@@ -127,8 +131,11 @@ def verify_timestamp_semantics(dt_et: pd.Series) -> None:
         "Expected zero Saturday (weekday=5) bars for a CME futures product -- "
         "timestamp/timezone interpretation may be wrong."
     )
-    print("timestamp/timezone sanity check passed: no 17:00-18:00 ET bars "
-          "(CME maintenance break), zero Saturday bars.", file=sys.stderr)
+    print(
+        "timestamp/timezone sanity check passed: no 17:00-18:00 ET bars "
+        "(CME maintenance break), zero Saturday bars.",
+        file=sys.stderr,
+    )
 
 
 def main() -> None:
@@ -153,13 +160,17 @@ def main() -> None:
     for bucket in order:
         vals = df.loc[df["bucket"] == bucket, "alpha"].to_numpy()
         groups.append(vals)
-        print(f"{bucket:<12} {len(vals):>8} {vals.mean():>10.4f} {vals.std():>10.4f} "
-              f"{np.median(vals):>10.4f}")
+        print(
+            f"{bucket:<12} {len(vals):>8} {vals.mean():>10.4f} {vals.std():>10.4f} "
+            f"{np.median(vals):>10.4f}"
+        )
 
     grand_mean = df["alpha"].mean()
     grand_std = df["alpha"].std()
-    print(f"\n{'grand':<12} {len(df):>8} {grand_mean:>10.4f} {grand_std:>10.4f} "
-          f"{df['alpha'].median():>10.4f}")
+    print(
+        f"\n{'grand':<12} {len(df):>8} {grand_mean:>10.4f} {grand_std:>10.4f} "
+        f"{df['alpha'].median():>10.4f}"
+    )
 
     # Effect-size framing: how far apart are bucket means relative to the
     # pooled within-bucket spread (a rough ANOVA-style eta-squared), plus a
@@ -168,17 +179,22 @@ def main() -> None:
     # investigation, min~1.3, max~8.0, heavy right tail).
     try:
         from scipy import stats
+
         h_stat, p_value = stats.kruskal(*groups)
-        print(f"\nKruskal-Wallis H={h_stat:.2f}, p={p_value:.3e} "
-              f"(H0: all buckets drawn from the same distribution)")
+        print(
+            f"\nKruskal-Wallis H={h_stat:.2f}, p={p_value:.3e} "
+            f"(H0: all buckets drawn from the same distribution)"
+        )
     except ImportError:
         print("\n(scipy not available -- skipping Kruskal-Wallis test)", file=sys.stderr)
 
     bucket_means = np.array([g.mean() for g in groups])
     max_gap = bucket_means.max() - bucket_means.min()
-    print(f"max bucket-mean gap: {max_gap:.4f} alpha units "
-          f"({max_gap / grand_std:.2f} pooled-SD units, "
-          f"{max_gap / grand_mean * 100:.1f}% of grand mean)")
+    print(
+        f"max bucket-mean gap: {max_gap:.4f} alpha units "
+        f"({max_gap / grand_std:.2f} pooled-SD units, "
+        f"{max_gap / grand_mean * 100:.1f}% of grand mean)"
+    )
 
     # Critical caveat: the alpha series is a 500-sample-window Hill estimate
     # further EWMA-smoothed (Task 4, alpha=0.2), so consecutive readings are
@@ -188,9 +204,11 @@ def main() -> None:
     # sampled at roughly the decorrelation lag, which is the honest test.
     alpha_arr = df["alpha"].to_numpy()
     lag1 = np.corrcoef(alpha_arr[:-1], alpha_arr[1:])[0, 1]
-    print(f"\nlag-1 autocorrelation of the alpha series: {lag1:.4f} "
-          f"(near 1.0 -- consecutive readings are highly non-independent; "
-          f"the Kruskal-Wallis p-value above is NOT valid as reported)")
+    print(
+        f"\nlag-1 autocorrelation of the alpha series: {lag1:.4f} "
+        f"(near 1.0 -- consecutive readings are highly non-independent; "
+        f"the Kruskal-Wallis p-value above is NOT valid as reported)"
+    )
 
     decorrelation_lag = None
     for lag in range(50, 500, 25):
@@ -201,10 +219,13 @@ def main() -> None:
     if decorrelation_lag is not None:
         thinned = df.iloc[::decorrelation_lag]
         thinned_groups = [thinned.loc[thinned["bucket"] == b, "alpha"].to_numpy() for b in order]
-        print(f"decorrelation lag (first lag with autocorr < 0.2): {decorrelation_lag} bars "
-              f"-> thinned to {len(thinned)} approximately-independent samples")
+        print(
+            f"decorrelation lag (first lag with autocorr < 0.2): {decorrelation_lag} bars "
+            f"-> thinned to {len(thinned)} approximately-independent samples"
+        )
         try:
             from scipy import stats
+
             h2, p2 = stats.kruskal(*thinned_groups)
             print(f"thinned (honest) Kruskal-Wallis H={h2:.2f}, p={p2:.3f}")
         except ImportError:
