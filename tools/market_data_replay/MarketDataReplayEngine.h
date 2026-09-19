@@ -304,6 +304,21 @@ public:
     // forwarding accessor for AllDimsReady(), which is otherwise private.
     bool IsAllDimsReady() const { return AllDimsReady(); }
 
+    // 2026-09-19 fix (docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md
+    // finding, docs/HMM_REGIME_MANAGER_COORDINATION.md): IsAllDimsReady() above was ALSO being
+    // reused as the Locks D/E substitute for alpha emission -- wrong semantic. Live's real Locks
+    // D/E (AreTs1DimsReady/AreTs2StructuralDimsReady, ContextManager.cpp) are STALENESS checks
+    // ("has TS1/TS2 been written recently"), not window-maturity checks -- a live alpha row gets
+    // written using each dim's own documented cold-start/carry-forward default well before its
+    // internal window is full. AllDimsReady()'s full-window requirement (TS1's 100 240-min bars
+    // alone = ~17 trading days) was silently excluding the first ~17 days of every offline replay
+    // from ANY alpha capture, live never has this restriction. This is the genuine freshness
+    // substitute: "has TS1/TS2 seen at least one real bar since reset" -- for a continuous,
+    // gap-free offline tick replay, staleness/age never applies once written (the tool's own
+    // existing comment on this exact point, when AllDimsReady() was wrongly reused for this role),
+    // so "seen at least once" is the whole check, not an approximation of it.
+    bool IsTs1Ts2FreshForAlpha() const { return !m_ts1Closes.empty() && !m_ts2Closes.empty(); }
+
     // Diagnostic accessor (calibration investigation, 2026-09-09) -- mirrors
     // ContextManager::GetLastTriggerDiagnostics()'s own precedent. Only valid
     // after a call to OnTick() that reached the trigger-decision step (i.e.

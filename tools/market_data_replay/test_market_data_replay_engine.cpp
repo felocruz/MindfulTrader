@@ -1403,6 +1403,28 @@ int main() {
         check("task10_is_valid_is_false_before_feature_scaler_warms_up", rgc.is_valid == false);
     }
 
+    // --- 2026-09-19 fix: IsTs1Ts2FreshForAlpha() (Locks D/E's corrected offline
+    // substitute) must go true as soon as TS1/TS2 have each closed one real bar --
+    // NOT wait for AllDimsReady()'s full window (100 TS1 bars / 400 TS2 bars, ~17
+    // trading days). Feed enough ticks to close at least one 240-min TS1 bar (also
+    // closes several 60-min TS2 bars along the way) and confirm the two accessors
+    // now genuinely disagree, proving the fix relaxes the gate as intended. ---
+    {
+        MarketDataReplayEngine engine;
+        check("locks_d_e_fresh_is_false_before_any_bar_closes", !engine.IsTs1Ts2FreshForAlpha());
+
+        int64_t t = kBar1OpenUs;
+        constexpr int64_t kTs3PeriodUs = 900LL * 1'000'000LL;  // 15 min
+        // 17 TS3 bars = 255 min > 240 min -- guarantees at least one TS1 bar closes.
+        for (int i = 0; i < 17; ++i) {
+            engine.OnTick(t, 100.0, 1, 1, 1);
+            t += kTs3PeriodUs;
+        }
+        check("locks_d_e_fresh_is_true_after_one_ts1_ts2_bar_close", engine.IsTs1Ts2FreshForAlpha());
+        check("locks_d_e_fresh_diverges_from_all_dims_ready_this_early",
+              engine.IsTs1Ts2FreshForAlpha() && !engine.IsAllDimsReady());
+    }
+
     std::printf("%s\n", g_failures == 0 ? "ALL PASS" : "FAILURES PRESENT");
     return g_failures == 0 ? 0 : 1;
 }

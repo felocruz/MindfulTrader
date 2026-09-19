@@ -61,15 +61,15 @@ bool AlphaLocksPass(const MarketDataReplayEngine& engine) {
     // (src/IndicatorManager.cpp's own m_warmupBarCount>=200 && RSI!=0 pair).
     if (engine.GetTs3BarsClosed() < kLockBBarCountThreshold) return false;
     if (engine.GetRsiTopResult() == RSI::UNDEFINED) return false;
-    // Locks D/E: TS1 macro / TS2 structural freshness. Production's real
-    // gates are time-since-last-update staleness checks (6h/3h max age) --
-    // meaningless for a continuous, gap-free offline tick replay (no live
-    // disconnect can occur), so this tool's own documented substitute is
-    // engine.IsAllDimsReady()'s existing per-timeframe bar-count sufficiency
-    // check (already the "are TS1/TS2/TS3's own windows genuinely filled"
-    // gate this engine relies on for trigger 1) -- a deliberate, documented
-    // simplification, not a silent gap.
-    if (!engine.IsAllDimsReady()) return false;
+    // Locks D/E: TS1 macro / TS2 structural freshness. Production's real gates are
+    // time-since-last-update staleness checks (6h/3h max age) -- meaningless for a continuous,
+    // gap-free offline tick replay (no live disconnect can occur), so the genuine substitute is
+    // "has TS1/TS2 seen at least one real bar since reset" (IsTs1Ts2FreshForAlpha()), not
+    // AllDimsReady()'s full-window-population check. FIXED 2026-09-19 (was wrongly reusing
+    // IsAllDimsReady() here -- that requires TS1's 100 240-min bars / TS2's 400 60-min bars fully
+    // filled, ~17 trading days, silently excluding the first ~17 days of every offline replay from
+    // ANY alpha capture; live never has this restriction, per docs/HMM_REGIME_MANAGER_COORDINATION.md).
+    if (!engine.IsTs1Ts2FreshForAlpha()) return false;
     return true;
 }
 
