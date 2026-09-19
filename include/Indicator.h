@@ -951,12 +951,27 @@ class RaschkeStrategyIndicator : public Indicator<RaschkeStrategySetup>
 {
 public:
     RaschkeStrategyIndicator(IndicatorKey key_) : Indicator(key_, RaschkeStrategySetup::NONE) { }
+
+    // 2026-09-19 fix (same gap class as StructureTestIndicator): was passive-by-default
+    // (base class `return false`), so none of this enum's ~17 non-NONE setup states
+    // (e.g. WHIPLASH, GHOST, SLINGSHOT) had any other IndicatorKey representation and
+    // could never independently cause an event/.alpha write.
+    bool ShouldTrigger() const override {
+        return EnteredOrExitedNeutral(m_prevValue, m_value, RaschkeStrategySetup::NONE);
+    }
 };
 
 class RaschkeTacticalIndicator : public Indicator<RaschkeTacticalTrigger>
 {
 public:
     RaschkeTacticalIndicator(IndicatorKey key_) : Indicator(key_, RaschkeTacticalTrigger::NONE) { }
+
+    // 2026-09-19 fix (same gap class as StructureTestIndicator): was passive-by-default.
+    // ITR_BREAKOUT_BUY/SELL and ITR_FADE_BUY/SELL in particular have no other
+    // IndicatorKey representation anywhere in the system.
+    bool ShouldTrigger() const override {
+        return EnteredOrExitedNeutral(m_prevValue, m_value, RaschkeTacticalTrigger::NONE);
+    }
 };
 
 // Working-state exception (indicator-manager-dod-soa plan, Task 8; design spec
@@ -1376,6 +1391,11 @@ public:
         event.volume_imbalance = m_volumeImbalance;
     }
 
+    // 2026-09-19 fix (same gap class as StructureTestIndicator): was passive-by-default.
+    bool ShouldTrigger() const override {
+        return EnteredOrExitedNeutral(m_prevValue, m_value, VolumeEnum::NORMAL);
+    }
+
 private:
     // Running state (session-segregated log-vol history + z-score), extracted
     // to VolumeState (IndicatorComputations.h) so ComputeVolumeBarSample()/
@@ -1542,6 +1562,13 @@ public:
 class DailyBiasIndicator : public Indicator<DailyBiasEnum> {
 public:
     DailyBiasIndicator(IndicatorKey key) : Indicator(key, DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK) {}
+
+    // 2026-09-19 fix (same gap class as StructureTestIndicator): was passive-by-default.
+    // PHYSICS_VETO_RANDOM_WALK is the neutral/no-signal state; any transition into or
+    // out of it (entering/leaving an actionable directional bias) is significant.
+    bool ShouldTrigger() const override {
+        return EnteredOrExitedNeutral(m_prevValue, m_value, DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK);
+    }
 };
 
 // Elite v2.6: Hurst Exponent (Market Physics Memory)

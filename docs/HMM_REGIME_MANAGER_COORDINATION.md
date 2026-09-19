@@ -925,3 +925,35 @@ clean.
 fix is missing roughly its first 17 trading days of potential alpha capture entirely (not just
 missing `changed_mask` values — those rows never existed at all). Worth a fresh regeneration once
 convenient, same as Entry 26's ask.
+
+## Entry 28 — MindfulTrader-session — 2026-09-19
+
+**Gap-hunt found and fixed 4 more instances of `STRUCTURE_TEST`'s exact bug class**: `IndicatorManager::
+CheckTrigger()` had 4 more `PRIMARY_TRIGGER_MASK` keys hardcoded to `return false;` with no
+corresponding leaf-class `ShouldTrigger()` override — `RASCHKE_STRATEGY_SETUP`,
+`RASCHKE_TACTICAL_TRIGGER`, `VOLUME_SIGNAL`, `DAILY_BIAS`. Highest-stakes finding:
+`RASCHKE_TACTICAL_TRIGGER`'s `ITR_BREAKOUT_BUY/SELL` and `ITR_FADE_BUY/SELL` states (and most of
+`RASCHKE_STRATEGY_SETUP`'s ~17 non-`NONE` states, e.g. `WHIPLASH`/`GHOST`/`SLINGSHOT`) have **no
+other `IndicatorKey` representation anywhere in the system** — these setups could never
+independently cause an event/`.alpha` write, the same invisibility bug `STRUCTURE_TEST` had for
+TRAP/REGIME_INVALIDATION, just for entry-side tactical/strategy setups instead of exits.
+
+**Fixed on both code paths, same day**: unlike `StructureTest`'s 3-state neutral set, all 4 have a
+single clean neutral value (`NONE`/`NONE`/`NORMAL`/`PHYSICS_VETO_RANDOM_WALK`), so no new custom
+function was needed — reused the existing `EnteredOrExitedNone` idiom already live for 5 patterns.
+That idiom is now available as a shared, enum-typed `EnteredOrExitedNeutral<Enum>()`
+(`include/IndicatorComputations.h`) for both code paths to call directly. `CheckTrigger()`'s 4 dead
+cases, the 4 leaf classes' `ShouldTrigger()` overrides (`include/Indicator.h`), and
+`MarketDataReplayEngine.h`'s 4 dirty-bit-setting sites (previously a plain "any change" comparison,
+strictly more permissive than the now-correct semantic — a narrowing, unlike `STRUCTURE_TEST`'s
+widening) were all updated together. 15 new native tests
+(`tests/cpp/test_entered_or_exited_neutral.cpp`), full existing `market_data_replay` test suite
+re-run clean, full clean `./build_dll.sh` passes.
+
+**Concretely for you**: any `.alpha`/`.context` data generated before this fix is missing
+independent capture of `RASCHKE_STRATEGY_SETUP`/`RASCHKE_TACTICAL_TRIGGER` entry-setup transitions
+(and `VOLUME_SIGNAL`/`DAILY_BIAS` context transitions) unless a co-occurring pattern trigger also
+fired that bar — same caveat shape as Entries 26/27, worth folding into the same eventual
+regeneration. Real-data effect-size measurement not yet done for these 4 (same open item as the
+`STRUCTURE_TEST` measurement in the spec).
+

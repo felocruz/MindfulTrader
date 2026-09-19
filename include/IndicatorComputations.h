@@ -1651,6 +1651,18 @@ inline bool IsStructureTestSignificantTransition(StructureTest prev, StructureTe
     return !(isNeutral(prev) && isNeutral(cur));
 }
 
+// Generalized, enum-typed form of IndicatorManager.cpp's EnteredOrExitedNone
+// (which operates on int8_t read from the packed array) -- extracted here so
+// the offline market_data_replay engine, which has no packed-array/int8_t
+// representation, can share the exact same "entered or exited the single
+// neutral value" idiom used live for KangarooTail/TurtleSoup/MomentumPinball/
+// ElderBreakout/NR7, rather than reimplementing it. IndicatorManager.cpp's
+// int8_t-based EnteredOrExitedNone delegates to this for its actual logic.
+template <typename Enum>
+inline bool EnteredOrExitedNeutral(Enum prev, Enum cur, Enum neutralValue) {
+    return (prev == neutralValue) != (cur == neutralValue);
+}
+
 enum class ATRProximityEnum : int8_t
 {
     LOW_VOLATILITY = 0,

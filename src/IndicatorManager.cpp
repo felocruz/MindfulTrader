@@ -84,10 +84,7 @@ namespace {
     // number, so this stays correct if any enum's NONE value ever changes).
     template <typename Enum>
     bool EnteredOrExitedNone(int8_t cur, int8_t prev, Enum noneValue) {
-        const int8_t none = static_cast<int8_t>(noneValue);
-        const bool entered = (prev == none && cur != none);
-        const bool exited = (prev != none && cur == none);
-        return entered || exited;
+        return EnteredOrExitedNeutral(static_cast<Enum>(prev), static_cast<Enum>(cur), noneValue);
     }
 
     // Stochastic::ShouldTrigger() (Indicator.h:859-872)
@@ -326,6 +323,17 @@ IndicatorManager::IndicatorManager()
 //     Phase 1. Now calls IsStructureTestSignificantTransition()
 //     (IndicatorComputations.h), matching StructureTestIndicator's own real
 //     ShouldTrigger() override.
+//   - RASCHKE_STRATEGY_SETUP/RASCHKE_TACTICAL_TRIGGER/VOLUME_SIGNAL/DAILY_BIAS
+//     (2026-09-19 fix, same spec, follow-up gap-hunt): same "no override,
+//     always false" bucket as STRUCTURE_TEST had been -- several of
+//     RASCHKE_TACTICAL_TRIGGER's states (ITR_BREAKOUT_BUY/SELL,
+//     ITR_FADE_BUY/SELL) and most of RASCHKE_STRATEGY_SETUP's ~17 non-NONE
+//     states have no other IndicatorKey representation anywhere in the
+//     system, so they could never independently cause an event/.alpha write.
+//     All four have a single clean NONE/NORMAL/PHYSICS_VETO_RANDOM_WALK
+//     neutral value (unlike StructureTest's three-state neutral set), so
+//     they reuse EnteredOrExitedNone() directly -- see each leaf class's own
+//     ShouldTrigger() override (Indicator.h) for the matching rationale.
 //   - LONG_IMP/INTERM_IMP/SIDE's ShouldTrigger() is `return IsDirty();`
 //     (Indicator.h:779,904). CheckTrigger(index) is only ever invoked from
 //     HasSignificantChange() with an index bit already known set in
@@ -353,8 +361,19 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
             constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::INTERM_STOCHASTIC).position;
             return StochasticTrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
         }
-        case IndicatorKey::RASCHKE_STRATEGY_SETUP: return false;
-        case IndicatorKey::RASCHKE_TACTICAL_TRIGGER: return false;
+        case IndicatorKey::RASCHKE_STRATEGY_SETUP: {
+            // 2026-09-19 fix (docs/superpowers/specs/2026-09-19-meaningful-event-trigger-and-
+            // asymmetry-context-significance-spec.md): was in the "no override, always false"
+            // bucket -- see RaschkeStrategyIndicator::ShouldTrigger() (Indicator.h) for the
+            // full rationale. Matches that same idiom, keyed to the packed row.
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::RASCHKE_STRATEGY_SETUP).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), RaschkeStrategySetup::NONE);
+        }
+        case IndicatorKey::RASCHKE_TACTICAL_TRIGGER: {
+            // 2026-09-19 fix -- see RaschkeTacticalIndicator::ShouldTrigger() (Indicator.h).
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::RASCHKE_TACTICAL_TRIGGER).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), RaschkeTacticalTrigger::NONE);
+        }
         case IndicatorKey::RSI: {
             constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::RSI).position;
             return RSITrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
@@ -386,12 +405,20 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
                 static_cast<enum StructureTest>(m_packed.GetPrevI8(pos)),
                 static_cast<enum StructureTest>(m_packed.GetI8(pos)));
         }
-        case IndicatorKey::VOLUME_SIGNAL: return false;
+        case IndicatorKey::VOLUME_SIGNAL: {
+            // 2026-09-19 fix -- see VolumeIndicator::ShouldTrigger() (Indicator.h).
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::VOLUME_SIGNAL).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), VolumeEnum::NORMAL);
+        }
         case IndicatorKey::ATR_PROXIMITY: {
             constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::ATR_PROXIMITY).position;
             return ATRProximityTrigger(m_packed.GetI8(pos), m_packed.GetPrevI8(pos));
         }
-        case IndicatorKey::DAILY_BIAS: return false;
+        case IndicatorKey::DAILY_BIAS: {
+            // 2026-09-19 fix -- see DailyBiasIndicator::ShouldTrigger() (Indicator.h).
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::DAILY_BIAS).position;
+            return EnteredOrExitedNone(m_packed.GetI8(pos), m_packed.GetPrevI8(pos), DailyBiasEnum::PHYSICS_VETO_RANDOM_WALK);
+        }
         case IndicatorKey::KANGAROO_TAIL: {
             // Finding 1 fix (Task 9 review): KANGAROO_TAIL has TWO kIndicatorLayout
             // rows (Int8 primary + Float32 quality companion) — UniqueDescriptorFor

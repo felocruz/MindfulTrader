@@ -1440,7 +1440,9 @@ private:
                 }
             }
 
-            if (strategyResult != m_lastRaschkeStrategy) {
+            // 2026-09-19 fix: matches RaschkeStrategyIndicator::ShouldTrigger()'s
+            // entered/exited-NONE idiom (Indicator.h) instead of any-change.
+            if (EnteredOrExitedNeutral(m_lastRaschkeStrategy, strategyResult, RaschkeStrategySetup::NONE)) {
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::RASCHKE_STRATEGY_SETUP);
             }
             m_lastRaschkeStrategy = strategyResult;
@@ -1910,9 +1912,7 @@ private:
         // condition is true wins. ---
         {
             RaschkeTacticalTrigger tactical = m_lastRaschkeTactical;
-            bool tacticalDirty = false;
             const auto setTactical = [&](RaschkeTacticalTrigger v) {
-                if (v != tactical) tacticalDirty = true;
                 tactical = v;
             };
 
@@ -2071,7 +2071,12 @@ private:
                 }
             }
 
-            if (tacticalDirty) {
+            // 2026-09-19 fix: was "did any writer stage fire" (monotonic OR across the
+            // 5-writer cascade, so a writer that reverted the value back to its prior
+            // state still counted as dirty); now matches RaschkeTacticalIndicator::
+            // ShouldTrigger()'s entered/exited-NONE idiom on the FINAL resolved value
+            // vs the previous bar's.
+            if (EnteredOrExitedNeutral(m_lastRaschkeTactical, tactical, RaschkeTacticalTrigger::NONE)) {
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::RASCHKE_TACTICAL_TRIGGER);
             }
             m_lastRaschkeTactical = tactical;
@@ -2141,7 +2146,9 @@ private:
             ComputeVolumeBarSample(m_volumeState, static_cast<float>(bar.volume), isRth);
             const VolumeClassification vc = ComputeVolumeClassification(
                 m_volumeState.volumeZScore, static_cast<float>(bar.bidVolume), static_cast<float>(bar.askVolume));
-            if (vc.signal != m_lastVolumeSignal) {
+            // 2026-09-19 fix: matches VolumeIndicator::ShouldTrigger()'s
+            // entered/exited-NORMAL idiom (Indicator.h) instead of any-change.
+            if (EnteredOrExitedNeutral(m_lastVolumeSignal, vc.signal, VolumeEnum::NORMAL)) {
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::VOLUME_SIGNAL);
             }
             m_lastVolumeSignal = vc.signal;
@@ -2166,7 +2173,9 @@ private:
             const dbe::Bias result = dbe::ComputeDailyBias({
                 close, m_prevDayHigh, m_prevDayLow, m_lastElderBreakoutTs3Hurst,
                 0.0f, 0.0f});
-            if (result != m_lastDailyBias) {
+            // 2026-09-19 fix: matches DailyBiasIndicator::ShouldTrigger()'s
+            // entered/exited-PHYSICS_VETO_RANDOM_WALK idiom (Indicator.h) instead of any-change.
+            if (EnteredOrExitedNeutral(m_lastDailyBias, result, dbe::Bias::PHYSICS_VETO_RANDOM_WALK)) {
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::DAILY_BIAS);
             }
             m_lastDailyBias = result;

@@ -279,6 +279,43 @@ PROTOTYPED, 2026-09-19**:
    now complete** on both code paths — only the real-data effect-size measurement (item 3) remains
    open, as a measurement task, not an implementation one.
 
+**Phase 1b — gap-hunt across the other 3 remaining `PRIMARY_TRIGGER_MASK` "always false" keys,
+DECIDED AND IMPLEMENTED, 2026-09-19** (`RASCHKE_STRATEGY_SETUP`/`RASCHKE_TACTICAL_TRIGGER` were the
+4th/5th; `DAILY_BIAS`/`VOLUME_SIGNAL` complete the set — same class of bug as `STRUCTURE_TEST`,
+found by auditing every remaining `CheckTrigger()` case that still read `return false;` with no
+corresponding leaf-class `ShouldTrigger()` override):
+1. **`RASCHKE_TACTICAL_TRIGGER`** — the highest-stakes of the four: several of its 18 non-`NONE`
+   states (`ITR_BREAKOUT_BUY/SELL`, `ITR_FADE_BUY/SELL`) have no other `IndicatorKey`
+   representation anywhere in the system, meaning these setups could never independently cause a
+   training/live event capture. Same finding for **`RASCHKE_STRATEGY_SETUP`** (~17 non-`NONE`
+   states, e.g. `WHIPLASH`/`GHOST`/`SLINGSHOT`/`FIRST_CROSS`, none represented elsewhere).
+   `VOLUME_SIGNAL` (`NORMAL`=neutral) and `DAILY_BIAS` (`PHYSICS_VETO_RANDOM_WALK`=neutral) are the
+   same shape but lower stakes (context/gating signals, not standalone entry setups).
+2. **Cheaper fix than `STRUCTURE_TEST`**: unlike `StructureTest`'s three-state neutral set, all four
+   have a single clean neutral value, so no new custom function was needed — reused the existing
+   `EnteredOrExitedNone` idiom. That idiom was generalized to `EnteredOrExitedNeutral<Enum>(prev,
+   cur, neutralValue)` (`include/IndicatorComputations.h`, enum-typed, no packed-array/int8_t
+   dependency) so both the offline (`MarketDataReplayEngine.h`, enum-typed values) and
+   ACSIL-coupled (`IndicatorManager::CheckTrigger()`, int8_t from `m_packed`) paths share one
+   implementation; `IndicatorManager.cpp`'s original int8_t-based `EnteredOrExitedNone` now
+   delegates to it instead of duplicating the entered/exited logic.
+3. **Both code paths fixed together** (not offline-first-then-port, since the idiom was already
+   proven live for 5 other patterns — no new semantic to validate offline first): `CheckTrigger()`'s
+   4 dead cases now call `EnteredOrExitedNone()`; the 4 leaf classes
+   (`RaschkeStrategyIndicator`/`RaschkeTacticalIndicator`/`VolumeIndicator`/`DailyBiasIndicator`,
+   `include/Indicator.h`) gained real `ShouldTrigger()` overrides; `MarketDataReplayEngine.h`'s 4
+   dirty-bit-setting sites switched from a plain "any change" comparison to
+   `EnteredOrExitedNeutral()`. Note this is a **narrowing** for the offline path (previously more
+   permissive than the correct semantic, unlike `STRUCTURE_TEST` which was a widening) —
+   `RASCHKE_TACTICAL_TRIGGER`'s 5-writer cascade's own `tacticalDirty` flag (monotonic OR across
+   writer stages, so a writer that reverted the value back to its prior state still counted as
+   dirty) was replaced with a check against the cascade's final resolved value.
+4. **Tests**: 15 new native tests (`tests/cpp/test_entered_or_exited_neutral.cpp`) for the shared
+   function across all 4 enum types; full existing `market_data_replay` engine test suite (75+
+   tests) re-run clean; full clean `./build_dll.sh` passes.
+5. **Not yet done**: a real-data effect-size measurement (same open item as Phase 1's item 3) for
+   these 4 keys specifically.
+
 **Phase 2 — Trigger 3 (`AsymmetryContext` significance), separate initiative, not rushed**:
 1. Measure real per-dim distributions on the existing 471.9M-tick dataset.
 2. Reuse `FeatureScaler`'s existing calibration for the 3 confirmed-identical-quantity dims
