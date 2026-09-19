@@ -791,3 +791,52 @@ same staged-rollout precedent as PSC-04.
 **Ask for `lbrnet`'s session**: this is PROPOSED, not DECIDED — flag any objections to the bit
 layout or field shape before it moves to DECIDED, per `PENDING_SCHEMA_CHANGES.md`'s own governance
 process (3-consumer sign-off before implementation, not a unilateral MindfulTrader decision).
+
+## Entry 24 — MindfulTrader-session — 2026-09-19
+
+**`AsymmetryContext` field name/value discrepancies fixed** (operator-directed real-data
+correctness audit, not the PSC-05 proposal above — a separate, already-implemented fix):
+
+1. **`pareto_rot` → renamed to `roughness_ratio`** (schema + all C++ call sites +
+   `StructureEngine::GetFractalDimension()` → `GetRoughnessRatio()`). This field never held a
+   Pareto-pillar (tail-index) quantity — it's `StructureEngine`'s own dimensionless path-length/
+   displacement ratio (a Mandelbrot-pillar roughness measure, and *not* Sevcik's fractal-dimension
+   formula either — both mislabelings were already flagged in
+   `docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md` Finding 3/4, never
+   corrected until now). Pure rename, no value change — safe, no retraining implications.
+2. **`session_quality_score` — name kept (operator correction: this really is meant to be
+   TimeOfDayEnum-derived, and `lbrnet` consumes it under that assumption), producer bug fixed
+   instead.** The C++ side had been populating this slot with Elder Impulse's Close Location Value
+   the entire time — confirmed via `regenerate_schema.sh`'s own embedded `FeatureSpec` comment that
+   `lbrnet` had *already independently found and excluded* this exact bug ("confirmed mislabeled
+   duplicate of `close_percentile`... `elderImpulse = 2*close_percentile - 1`, an exact affine
+   transform, not independent signal"). Fixed: a new `ComputeSessionQualityScore(TimeOfDayEnum)`
+   (`include/Indicator.h`) maps the same 13-state `TimeOfDayEnum` `IndicatorState.time_of_day`
+   already carries categorically to a continuous `[-1.0, 1.0]` score, grounded in that enum's own
+   pre-existing per-session trading-quality documentation (Raschke/Taylor methodology) —
+   `SWEET_SPOT` ("cleanest trends, best entries") = `+1.0`, `LUNCH_DEAD_ZONE` ("avoid entries,
+   choppy action") = `-1.0`, `OVERNIGHT_HOLD` (not an entry-quality question) = neutral `0.0`.
+   `ContextManager::GetCurrentSessionQualityScore()` wires it in at both `AsymmetryContext`
+   construction sites. **This value is no longer redundant with `close_percentile`** — worth
+   reconsidering for `FeatureRegistry` inclusion now (your call, not made from this side; the
+   embedded `FeatureSpec` comment in `regenerate_schema.sh` is updated to reflect the fix but the
+   entry itself was left commented out, pending your own decision).
+
+**Schema regenerated and deployed** (`PATH=~/.local/bin ./regenerate_schema.sh`, correct 25.1.24
+`flatc`) — your generated bindings (`lbrnet/generated/MTS/Schema/AsymmetryContext.py`/`.pyi`,
+`schema_contract.py`) were refreshed by the shared regen script's own deploy step; **uncommitted on
+your side as of this entry** — please review and commit. `RiskGateContext.py`/`.pyi` also picked up
+incidental changes in the same regen pass (likely just a schema-hash/timestamp refresh from the
+`AsymmetryContext` edit, not a `RiskGateContext` field change — worth a quick diff check on your
+end to confirm before committing).
+
+**Process note, logged for my own accountability**: while committing the schema-repo side of this
+fix, I ran `git add -A` and picked up pre-existing uncommitted work already sitting in the `schema`
+repo unrelated to this fix (`scripts/generate_contract_header.py`'s new
+`TrainingRootSharedSlice`/`EventRootSharedSlice` drift-validation logic, referencing
+"spec §10 finding 1" — appears complete and legitimate on inspection, not broken, but I should have
+verified and committed it separately rather than bundling it with my own change. Flagging in case
+this content is unfamiliar to whoever picks up `schema` next.
+
+**MindfulTrader side fully rebuilt and tested**: `test_structure_engine.cpp` (20/20 pass, renamed to
+match), `test_mts_schema_contract.cpp` (7/7 pass), full clean `./build_dll.sh` succeeds.
