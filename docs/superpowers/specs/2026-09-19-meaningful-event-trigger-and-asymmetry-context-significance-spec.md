@@ -1,20 +1,32 @@
 # Meaningful Event-Trigger Definition + `AsymmetryContext` Transformer-Significance Gate — Spec
 
-**Status**: design/brainstorm only, nothing implemented. Opened 2026-09-19 from a live-trading
-fidelity audit (started as an offline-vs-live `.alpha` trigger comparison, escalated once the same
-gap was confirmed to affect **live trading itself**, not just training-data density).
+**Status**: design/brainstorm only, nothing implemented. Opened 2026-09-19 from an offline-vs-
+ACSIL-path `.alpha`/event trigger comparison, escalated once the same gap was confirmed to exist in
+**both** C++ code paths this repo has, not just the offline generator.
 
-**Severity reframing, read this first**: this is not a training-data-quality nice-to-have. §2 below
-confirms the exact same gap that starves `TRAP_*`/`EXIT_*` training labels also means the **live
-Transformer can operate on a stale `AsymmetryContext` snapshot during real trading** — it only
-receives a fresh one when an unrelated discrete indicator happens to transition on the same tick.
+**Status correction (operator, 2026-09-19): this system has never been deployed to production, at
+any point.** Nothing here is being framed against "live trading risk" — there is no real trading
+to risk. `SCStudies.cpp`'s ACSIL-coupled call chain is **not a source of truth** just because it's
+the code path Sierra Chart would eventually run; it is exactly as much a work-in-progress as the
+offline `market_data_replay` tool, and both currently share the same design gap. The offline path
+is, if anything, the **better** place to design and validate the fix first — it replays real MES
+tick history at full scale, fast, with no Sierra Chart/ZMQ counterpart required — and the validated
+result then gets ported into the ACSIL-coupled path as the implementation eventually destined for
+production, not the other way around.
+
+**Why this still matters, reframed**: §2 below confirms the same gap (`AsymmetryContext` has zero
+dirty-mask integration, so its own changes never independently cause an event/`.alpha` write) exists
+in the ACSIL-coupled code path's call chain too — meaning whichever version of this code eventually
+ships to production would inherit this same gap unless it's fixed now, in whichever path is fastest
+to validate it in (the offline one).
 
 ---
 
 ## 1. What "meaningful change" currently means, and where it's incomplete
 
-Two live/offline mechanisms currently decide "does this tick warrant capturing a
-training/live event" — both are keyed off `IndicatorManager::HasSignificantChange()`
+Both C++ code paths currently decide "does this tick warrant capturing a training/inference event"
+off the same underlying design (the ACSIL-coupled path literally shares one function;
+the offline path has its own separate analog) — see `IndicatorManager::HasSignificantChange()`
 (`src/IndicatorManager.cpp:1089`):
 
 - **Categorical/enum `IndicatorState` fields** (patterns, RSI/Stochastic/ATR/EMA proximity):
@@ -37,33 +49,40 @@ training/live event" — both are keyed off `IndicatorManager::HasSignificantCha
   never even considered as a trigger candidate, structurally, not as an oversight-within-the-mask
   system.
 
-## 2. Confirmed: this is a live-trading issue, not just a training-data issue
+## 2. Confirmed: the gap exists in the ACSIL-coupled code path too, not just the offline generator
 
 Checked `docs/ADR/risk_gate_context_wire_spec.md`: `asymmetry_context (AsymmetryContext) →
 transformer embedding` — confirmed direct Transformer input, and confirmed **disjoint** from the
 HMM's own input (`HMMClient.cpp:416`'s own comment: `asymmetry_context` is omitted from the
 `MarketObservation` sent to the HMM — `"8D Context is Transformer-Only (via Event stream)"`).
 
-Traced the live production call chain directly:
-- `src/SCStudies.cpp:447` (the main live ACSIL entry point, every tick) calls
+Traced the ACSIL-coupled call chain directly (this is the code path Sierra Chart would run — not
+currently deployed anywhere, but still worth tracing precisely since it's what the fix eventually
+needs to land in):
+- `src/SCStudies.cpp:447` (the main ACSIL entry point, every tick) calls
   `IndicatorManager::Instance().PublishEventOnChange(sc)`.
 - `PublishEventOnChange()` (`IndicatorManager.cpp:984`): `if (!HasSignificantChange()) return false;`
   — then calls `SendEventFlatBuffer(sc, false)`.
 - `SendEventFlatBuffer()` builds `auto asym_ctx = ContextManager::Instance().GetAsymmetryContext();`
-  and serializes it directly into the live Event sent over port 5555 to Python for **real-time
-  Transformer inference** — the actual trading decision path, not a training artifact.
+  and serializes it directly into the Event sent over port 5555 — the path intended to eventually
+  carry real-time Transformer inference, whenever this system is deployed.
 
-**So `HasSignificantChange()` is a single, shared gate for three consumers**: (a) the live Event
-publish to the Transformer (port 5555, real trading), (b) `EventDataCollectorStudy.cpp`'s
-`.alpha`/`TrainingEvent` capture (via the same call, behind Locks A/B/D/E), and (c) nothing else —
-the offline `market_data_replay` tool has its own separate, non-shared `ConsumePatternDirtyMask()`
-analog. **A fix to `HasSignificantChange()` itself automatically fixes both (a) and (b)** — that's
-the leverage point. The offline tool needs its own mirrored update afterward to stay in parity.
+**So `HasSignificantChange()` is a single, shared gate for two consumers today**: (a) the
+ACSIL-coupled Event publish (port 5555, the eventual real-time-inference path), and (b)
+`EventDataCollectorStudy.cpp`'s `.alpha`/`TrainingEvent` capture (via the same call, behind Locks
+A/B/D/E). The offline `market_data_replay` tool has its own separate, non-shared
+`ConsumePatternDirtyMask()` analog. **A fix to `HasSignificantChange()` itself automatically fixes
+both (a) and (b)** — that's the leverage point on the ACSIL-coupled side. But per the status
+correction above, the better order of operations is to prototype and validate the fix in the
+offline path first (fast, real-data-validated, no Sierra Chart needed), then port the validated
+logic into `HasSignificantChange()` for the ACSIL-coupled path.
 
-**Concrete consequence, live trading today**: if `AsymmetryContext` moves meaningfully (a real
-kurtosis spike, a real entropy regime shift) but no discrete `IndicatorState` transition happens to
-co-occur on that exact tick, the live Transformer keeps operating on a **stale** `AsymmetryContext`
-snapshot until the next unrelated trigger fires — an unbounded, unmeasured staleness window.
+**Concrete consequence, once this system is eventually deployed**: if `AsymmetryContext` moves
+meaningfully (a real kurtosis spike, a real entropy regime shift) but no discrete `IndicatorState`
+transition happens to co-occur on that exact tick, the Transformer would keep operating on a
+**stale** `AsymmetryContext` snapshot until the next unrelated trigger fires — an unbounded,
+unmeasured staleness window. Worth fixing now, before deployment, precisely because it's cheap to
+fix in the offline path today and expensive to discover after the fact.
 
 ## 3. The refined principle (operator's proposed test, refined for continuous fields)
 
@@ -95,11 +114,12 @@ HasSignificantChange() =
     OR TriggerViaAsymmetryContextMagnitude()   // NEW: Trigger 3
 ```
 
-A short-circuit OR at the top of `HasSignificantChange()` is the minimal-surface-area change —
-both live (`SendEventFlatBuffer`) and training-collection (`EventDataCollectorStudy.cpp`) call
-this one function, so neither call site needs its own new logic. The offline `market_data_replay`
-tool's `ConsumePatternDirtyMask() != 0` check needs its own mirrored addition afterward (it does not
-share this function at all today).
+A short-circuit OR at the top of `HasSignificantChange()` is the minimal-surface-area change for
+the ACSIL-coupled path — both its Event publish (`SendEventFlatBuffer`) and
+`EventDataCollectorStudy.cpp`'s training-collection call this one function, so neither call site
+needs its own new logic. The offline `market_data_replay` tool's `ConsumePatternDirtyMask() != 0`
+check needs its own mirrored addition — and per §6 below, is actually the recommended place to
+prototype this logic FIRST, before porting it into `HasSignificantChange()`.
 
 ### 4b. Baseline/reset semantics
 
@@ -164,28 +184,37 @@ repo (`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s ow
 
 1. Decide and implement a real, transition-based `ShouldTrigger()` for `STRUCTURE_TEST` at minimum
    (narrowest, most directly TRAP-relevant fix; the other 4 dead keys are a secondary decision).
+   Prototype in the offline `market_data_replay` tool first (§6), not the ACSIL-coupled path.
 2. Design + calibrate Trigger 3 for `AsymmetryContext` (§4), reusing existing calibration where a
-   genuine quantity overlap is confirmed, deriving fresh thresholds elsewhere.
-3. Update the offline `market_data_replay` tool's alpha-emission gate to mirror both fixes — it does
-   not share `HasSignificantChange()` today and needs its own parallel update.
+   genuine quantity overlap is confirmed, deriving fresh thresholds elsewhere. Same offline-first
+   discipline.
+3. Port both validated fixes into the ACSIL-coupled path's `HasSignificantChange()` — the code path
+   Sierra Chart would eventually run, not currently deployed anywhere.
 4. Flag to `lbrnet`'s own coordination log once implemented — this changes the density/freshness
    characteristics of `asymmetry_context`, a value they already train the Transformer on; worth a
    heads-up before they draw conclusions from data collected under the old, gap-having behavior.
 
-## 6. Institutional rollout plan (operator directive, 2026-09-19: decouple by risk, measure before/after)
+## 6. Rollout plan (operator directive, 2026-09-19: prototype offline first, decouple by risk)
 
-The two fixes in this spec have different risk profiles and must not ship as one change.
+The two fixes in this spec have different risk/effort profiles and must not ship as one change.
+Given the system has never been deployed to production, "rollout" here means "which C++ code path
+to prototype and validate in first, before porting to the ACSIL-coupled path" — not production
+deployment risk management.
 
-**Phase 1 — `STRUCTURE_TEST` categorical fix (low-risk, well-understood idiom, ship first)**:
+**Phase 1 — `STRUCTURE_TEST` categorical fix (low-risk, well-understood idiom)**:
 1. Decide the exact semantic before writing code: `FAILED_*`-only, or `FAILED_*` + `DECISIVE_*`
    (§ "Where I'd like your call" from the prior discussion — still open).
-2. Golden-vector/parity test proving every existing trigger path is unaffected (this is an
-   addition, not a refactor, but "should be unaffected" still gets verified, not assumed).
-3. New, dedicated test for the actual new behavior.
-4. Full rebuild, then measure on a real replay run (`tools/market_data_replay` or a backtest pass
-   over real tick history) — quantify the actual event/`.alpha` rate change and whether `TRAP_*`
-   label density moves the way the hypothesis predicts. Do not declare this done from compilation
-   alone.
+2. Implement and validate in the **offline `market_data_replay` tool first** — fast iteration, real
+   MES tick history, no Sierra Chart dependency. Golden-vector/parity test proving every existing
+   trigger path is unaffected (this is an addition, not a refactor, but "should be unaffected"
+   still gets verified, not assumed), plus a new dedicated test for the actual new behavior.
+3. Measure on a real replay run before deciding the fix is right — quantify the actual
+   event/`.alpha` rate change and whether `TRAP_*` label density moves the way the hypothesis
+   predicts. Do not declare this done from compilation alone.
+4. Once validated offline, port the same logic into the ACSIL-coupled path's `CheckTrigger()`/
+   `HasSignificantChange()` (`src/IndicatorManager.cpp`) — this is where it eventually needs to
+   live for whenever the system is deployed, but it is not the place to have designed or debugged
+   it in the first place.
 
 **Phase 2 — Trigger 3 (`AsymmetryContext` significance), separate initiative, not rushed**:
 1. Measure real per-dim distributions on the existing 471.9M-tick dataset.
@@ -194,18 +223,16 @@ The two fixes in this spec have different risk profiles and must not ship as one
 3. Fresh EVT/GPD or percentile-matching derivation for the remaining dims — no invented constants.
 4. Calibrate to a target base rate (this repo's ~10% precedent, `CandidateTriggerGate::
    kBaseEpsilon`'s chi-squared derivation), not a guessed threshold.
-5. Implement, test, validate against real data — same empirical-close-the-loop discipline as
-   Phase 1.
+5. Prototype and validate in the offline tool first, same as Phase 1; port into the ACSIL-coupled
+   path only once validated.
 
 **Cross-cutting, both phases**:
-- Offline `market_data_replay` parity is a follow-on after each live fix ships and is validated —
-  not parallel work, to avoid re-drifting out of parity a second time before the live behavior
-  itself is even settled.
 - Flag to `lbrnet`'s coordination log both before (heads-up on the coming distributional shift in
   `asymmetry_context`/event density) and after (what actually changed) — they train on data whose
   statistical character this changes.
 - `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1`/`NORTH_STAR_STATUS` gets updated in the same edit that ships
-  either phase, per the Triage Protocol — not as a follow-up.
+  either phase, per the Triage Protocol, as a readiness/correctness-finding record — not framed as
+  managing real trading risk, since none exists yet.
 
 ## 7. Relationship to other open specs
 
