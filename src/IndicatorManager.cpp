@@ -764,6 +764,13 @@ MTS::Training::TrainingEventT* IndicatorManager::GetTrainingEventT(SCStudyInterf
 
     WriteCrashProbe(12);  // Before indicator population
 
+    // 2026-09-19: mirrors EventSerializer.cpp's own changed_mask snapshot for
+    // the live Event path -- TrainingEvent never had this field until now.
+    // Ordering relative to PopulateIndicatorState() below is not load-bearing
+    // (Task 9's devirtualization gave it no dirty-clearing side effect), but
+    // kept before it anyway for consistency with EventSerializer's own order.
+    event->changed_mask = GetDirtyMask();
+
     // Task 9 (indicator-manager-dod-soa plan): replaced the per-indicator
     // virtual-dispatch loop (`m_indicators[i]->AddToTrainingEventFB(*event)`)
     // with a call to the now-devirtualized PopulateIndicatorState(). This

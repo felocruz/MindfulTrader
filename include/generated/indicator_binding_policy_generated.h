@@ -204,8 +204,8 @@ constexpr bool HasAllExpectedKeys() {
     return true;
 }
 
-inline constexpr char kIndicatorBindingPolicySchemaSha256[] = "c4738d6fb6f08d4971c340922a457cbedc07b91b7acd76cb1e7e1ab2bbb7401d";
-inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-09-19T21:37:19Z";
+inline constexpr char kIndicatorBindingPolicySchemaSha256[] = "e35a9c4c6d4234278943eae34a7fb446f4ab0396e359635e5d3746d114231b3c";
+inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-09-19T23:08:44Z";
 
 static_assert(kIndicatorBindingPolicyRowCount == kExpectedManagedIndicatorKeyCount,
               "Indicator binding policy row count drifted from expected managed IndicatorKey count");

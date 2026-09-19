@@ -8727,6 +8727,7 @@ struct TrainingEventT : public ::flatbuffers::NativeTable {
   float delta_t_log = 0.0f;
   float tau_100_log = 0.0f;
   float log_event_velocity = 0.0f;
+  uint64_t changed_mask = 0;
   int8_t hmm_state = 0;
   int8_t market_climate = 0;
   float regime_prob_drift = 0.0f;
@@ -8816,79 +8817,80 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_DELTA_T_LOG = 10,
     VT_TAU_100_LOG = 12,
     VT_LOG_EVENT_VELOCITY = 14,
-    VT_HMM_STATE = 16,
-    VT_MARKET_CLIMATE = 18,
-    VT_REGIME_PROB_DRIFT = 20,
-    VT_REGIME_PROB_FLUSH = 22,
-    VT_REGIME_PROB_COIL = 24,
-    VT_REGIME_PROB_SWEEP = 26,
-    VT_REGIME_CONFIDENCE = 28,
-    VT_REGIME_ENTROPY = 30,
-    VT_REGIME_TRANSITION_RISK = 32,
-    VT_REGIME_EXPECTED_DURATION = 34,
-    VT_REGIME_VARIANCE_RATIO = 36,
-    VT_REGIME_DURATION_RATIO = 38,
-    VT_INDICATORS = 40,
-    VT_PREV_HIGH = 42,
-    VT_PREV_LOW = 44,
-    VT_PREV_DAY_HIGH = 46,
-    VT_PREV_DAY_LOW = 48,
-    VT_PREV_FOUR_BAR_HIGH = 50,
-    VT_PREV_FOUR_BAR_LOW = 52,
-    VT_SIDE = 54,
-    VT_MARKET_SYMBOL = 56,
-    VT_OVERNIGHT_EXIT = 58,
-    VT_OPEN = 60,
-    VT_HIGH = 62,
-    VT_LOW = 64,
-    VT_CLOSE = 66,
-    VT_ATR_10 = 68,
-    VT_VOLUME = 70,
-    VT_CLOSE_PERCENTILE = 72,
-    VT_VOLUME_RATIO_PERCENT = 74,
-    VT_VOLUME_IMBALANCE = 76,
-    VT_NH_NL_DAILY = 78,
-    VT_FEATURES = 80,
-    VT_OBSERVATION = 82,
-    VT_ASYMMETRY_CONTEXT = 84,
-    VT_VOLATILITY = 86,
-    VT_EFFICIENCY = 88,
-    VT_REL_RANGE = 90,
-    VT_VELOCITY = 92,
-    VT_REGIME_TENURE = 94,
-    VT_DIST_DAY_HIGH = 96,
-    VT_DIST_DAY_LOW = 98,
-    VT_DIST_FOUR_BAR_HIGH = 100,
-    VT_DIST_FOUR_BAR_LOW = 102,
-    VT_DIST_EMA_13 = 104,
-    VT_TIME_OF_DAY_NORM = 106,
-    VT_BAR_COMPLETION_PCT = 108,
-    VT_LONG_FI13_NORM = 110,
-    VT_INTERM_FI2_NORM = 112,
-    VT_LONG_MACD_NORM = 114,
-    VT_INTERM_MACD_NORM = 116,
-    VT_IMPULSE_COLOR = 118,
-    VT_DAILY_BIAS_ENCODED = 120,
-    VT_CORR_VELOCITY = 122,
-    VT_ENTRY_PRICE = 124,
-    VT_EXIT_PRICE = 126,
-    VT_MODEL_CONFIDENCE = 128,
-    VT_PNL_TICKS = 130,
-    VT_PNL_DOLLARS = 132,
-    VT_MAE_TICKS = 134,
-    VT_MFE_TICKS = 136,
-    VT_TRADE_QUALITY = 138,
-    VT_SLIPPAGE_TICKS = 140,
-    VT_HOLD_BARS = 142,
-    VT_SYMBOL_ID = 144,
-    VT_STOP_HIT = 146,
-    VT_TARGET_HIT = 148,
-    VT_EVENT_TYPE_CODE = 150,
-    VT_TRADE_ACTION = 152,
-    VT_TRAP_HORIZON_BARS = 154,
-    VT_TRAP_T1_BAR_PCT = 156,
-    VT_EXIT_HORIZON_BARS = 158,
-    VT_EXIT_T1_BAR_PCT = 160
+    VT_CHANGED_MASK = 16,
+    VT_HMM_STATE = 18,
+    VT_MARKET_CLIMATE = 20,
+    VT_REGIME_PROB_DRIFT = 22,
+    VT_REGIME_PROB_FLUSH = 24,
+    VT_REGIME_PROB_COIL = 26,
+    VT_REGIME_PROB_SWEEP = 28,
+    VT_REGIME_CONFIDENCE = 30,
+    VT_REGIME_ENTROPY = 32,
+    VT_REGIME_TRANSITION_RISK = 34,
+    VT_REGIME_EXPECTED_DURATION = 36,
+    VT_REGIME_VARIANCE_RATIO = 38,
+    VT_REGIME_DURATION_RATIO = 40,
+    VT_INDICATORS = 42,
+    VT_PREV_HIGH = 44,
+    VT_PREV_LOW = 46,
+    VT_PREV_DAY_HIGH = 48,
+    VT_PREV_DAY_LOW = 50,
+    VT_PREV_FOUR_BAR_HIGH = 52,
+    VT_PREV_FOUR_BAR_LOW = 54,
+    VT_SIDE = 56,
+    VT_MARKET_SYMBOL = 58,
+    VT_OVERNIGHT_EXIT = 60,
+    VT_OPEN = 62,
+    VT_HIGH = 64,
+    VT_LOW = 66,
+    VT_CLOSE = 68,
+    VT_ATR_10 = 70,
+    VT_VOLUME = 72,
+    VT_CLOSE_PERCENTILE = 74,
+    VT_VOLUME_RATIO_PERCENT = 76,
+    VT_VOLUME_IMBALANCE = 78,
+    VT_NH_NL_DAILY = 80,
+    VT_FEATURES = 82,
+    VT_OBSERVATION = 84,
+    VT_ASYMMETRY_CONTEXT = 86,
+    VT_VOLATILITY = 88,
+    VT_EFFICIENCY = 90,
+    VT_REL_RANGE = 92,
+    VT_VELOCITY = 94,
+    VT_REGIME_TENURE = 96,
+    VT_DIST_DAY_HIGH = 98,
+    VT_DIST_DAY_LOW = 100,
+    VT_DIST_FOUR_BAR_HIGH = 102,
+    VT_DIST_FOUR_BAR_LOW = 104,
+    VT_DIST_EMA_13 = 106,
+    VT_TIME_OF_DAY_NORM = 108,
+    VT_BAR_COMPLETION_PCT = 110,
+    VT_LONG_FI13_NORM = 112,
+    VT_INTERM_FI2_NORM = 114,
+    VT_LONG_MACD_NORM = 116,
+    VT_INTERM_MACD_NORM = 118,
+    VT_IMPULSE_COLOR = 120,
+    VT_DAILY_BIAS_ENCODED = 122,
+    VT_CORR_VELOCITY = 124,
+    VT_ENTRY_PRICE = 126,
+    VT_EXIT_PRICE = 128,
+    VT_MODEL_CONFIDENCE = 130,
+    VT_PNL_TICKS = 132,
+    VT_PNL_DOLLARS = 134,
+    VT_MAE_TICKS = 136,
+    VT_MFE_TICKS = 138,
+    VT_TRADE_QUALITY = 140,
+    VT_SLIPPAGE_TICKS = 142,
+    VT_HOLD_BARS = 144,
+    VT_SYMBOL_ID = 146,
+    VT_STOP_HIT = 148,
+    VT_TARGET_HIT = 150,
+    VT_EVENT_TYPE_CODE = 152,
+    VT_TRADE_ACTION = 154,
+    VT_TRAP_HORIZON_BARS = 156,
+    VT_TRAP_T1_BAR_PCT = 158,
+    VT_EXIT_HORIZON_BARS = 160,
+    VT_EXIT_T1_BAR_PCT = 162
   };
   uint64_t sequence_id() const {
     return GetField<uint64_t>(VT_SEQUENCE_ID, 0);
@@ -8925,6 +8927,12 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   bool mutate_log_event_velocity(float _log_event_velocity = 0.0f) {
     return SetField<float>(VT_LOG_EVENT_VELOCITY, _log_event_velocity, 0.0f);
+  }
+  uint64_t changed_mask() const {
+    return GetField<uint64_t>(VT_CHANGED_MASK, 0);
+  }
+  bool mutate_changed_mask(uint64_t _changed_mask = 0) {
+    return SetField<uint64_t>(VT_CHANGED_MASK, _changed_mask, 0);
   }
   int8_t hmm_state() const {
     return GetField<int8_t>(VT_HMM_STATE, 0);
@@ -9372,6 +9380,7 @@ struct TrainingEvent FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<float>(verifier, VT_DELTA_T_LOG, 4) &&
            VerifyField<float>(verifier, VT_TAU_100_LOG, 4) &&
            VerifyField<float>(verifier, VT_LOG_EVENT_VELOCITY, 4) &&
+           VerifyField<uint64_t>(verifier, VT_CHANGED_MASK, 8) &&
            VerifyField<int8_t>(verifier, VT_HMM_STATE, 1) &&
            VerifyField<int8_t>(verifier, VT_MARKET_CLIMATE, 1) &&
            VerifyField<float>(verifier, VT_REGIME_PROB_DRIFT, 4) &&
@@ -9474,6 +9483,9 @@ struct TrainingEventBuilder {
   }
   void add_log_event_velocity(float log_event_velocity) {
     fbb_.AddElement<float>(TrainingEvent::VT_LOG_EVENT_VELOCITY, log_event_velocity, 0.0f);
+  }
+  void add_changed_mask(uint64_t changed_mask) {
+    fbb_.AddElement<uint64_t>(TrainingEvent::VT_CHANGED_MASK, changed_mask, 0);
   }
   void add_hmm_state(int8_t hmm_state) {
     fbb_.AddElement<int8_t>(TrainingEvent::VT_HMM_STATE, hmm_state, 0);
@@ -9713,6 +9725,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(
     float delta_t_log = 0.0f,
     float tau_100_log = 0.0f,
     float log_event_velocity = 0.0f,
+    uint64_t changed_mask = 0,
     int8_t hmm_state = 0,
     int8_t market_climate = 0,
     float regime_prob_drift = 0.0f,
@@ -9788,6 +9801,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(
     float exit_t1_bar_pct = 1.0f) {
   TrainingEventBuilder builder_(_fbb);
   builder_.add_volume(volume);
+  builder_.add_changed_mask(changed_mask);
   builder_.add_timestamp_us(timestamp_us);
   builder_.add_sequence_id(sequence_id);
   builder_.add_exit_t1_bar_pct(exit_t1_bar_pct);
@@ -9877,6 +9891,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEventDirect(
     float delta_t_log = 0.0f,
     float tau_100_log = 0.0f,
     float log_event_velocity = 0.0f,
+    uint64_t changed_mask = 0,
     int8_t hmm_state = 0,
     int8_t market_climate = 0,
     float regime_prob_drift = 0.0f,
@@ -9959,6 +9974,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEventDirect(
       delta_t_log,
       tau_100_log,
       log_event_velocity,
+      changed_mask,
       hmm_state,
       market_climate,
       regime_prob_drift,
@@ -12190,6 +12206,7 @@ inline TrainingEventT::TrainingEventT(const TrainingEventT &o)
         delta_t_log(o.delta_t_log),
         tau_100_log(o.tau_100_log),
         log_event_velocity(o.log_event_velocity),
+        changed_mask(o.changed_mask),
         hmm_state(o.hmm_state),
         market_climate(o.market_climate),
         regime_prob_drift(o.regime_prob_drift),
@@ -12272,6 +12289,7 @@ inline TrainingEventT &TrainingEventT::operator=(TrainingEventT o) FLATBUFFERS_N
   std::swap(delta_t_log, o.delta_t_log);
   std::swap(tau_100_log, o.tau_100_log);
   std::swap(log_event_velocity, o.log_event_velocity);
+  std::swap(changed_mask, o.changed_mask);
   std::swap(hmm_state, o.hmm_state);
   std::swap(market_climate, o.market_climate);
   std::swap(regime_prob_drift, o.regime_prob_drift);
@@ -12363,6 +12381,7 @@ inline void TrainingEvent::UnPackTo(TrainingEventT *_o, const ::flatbuffers::res
   { auto _e = delta_t_log(); _o->delta_t_log = _e; }
   { auto _e = tau_100_log(); _o->tau_100_log = _e; }
   { auto _e = log_event_velocity(); _o->log_event_velocity = _e; }
+  { auto _e = changed_mask(); _o->changed_mask = _e; }
   { auto _e = hmm_state(); _o->hmm_state = _e; }
   { auto _e = market_climate(); _o->market_climate = _e; }
   { auto _e = regime_prob_drift(); _o->regime_prob_drift = _e; }
@@ -12452,6 +12471,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(::flatbuffers::F
   auto _delta_t_log = _o->delta_t_log;
   auto _tau_100_log = _o->tau_100_log;
   auto _log_event_velocity = _o->log_event_velocity;
+  auto _changed_mask = _o->changed_mask;
   auto _hmm_state = _o->hmm_state;
   auto _market_climate = _o->market_climate;
   auto _regime_prob_drift = _o->regime_prob_drift;
@@ -12533,6 +12553,7 @@ inline ::flatbuffers::Offset<TrainingEvent> CreateTrainingEvent(::flatbuffers::F
       _delta_t_log,
       _tau_100_log,
       _log_event_velocity,
+      _changed_mask,
       _hmm_state,
       _market_climate,
       _regime_prob_drift,
