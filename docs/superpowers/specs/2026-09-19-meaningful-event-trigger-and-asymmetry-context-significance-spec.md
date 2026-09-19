@@ -195,7 +195,7 @@ categorical fields included, not just the 8 new `AsymmetryContext` ones. Filed a
   already computed every tick. No redesign needed here, only an export-timing fix (below).
 - **Bits [55, 63)**: 8 new positions, one per `AsymmetryContext` field in wire-declaration order:
   `shannon_entropy`=55, `shannon_efficiency`=56, `taleb_kurtosis`=57, `taleb_skewness`=58,
-  `taleb_cliff`=59, `pareto_rot`=60, `raschke_burst`=61, `session_quality_score`=62. Bit 63 reserved.
+  `taleb_cliff`=59, `roughness_ratio`=60, `raschke_burst`=61, `session_quality_score`=62. Bit 63 reserved.
 
 **Two real implementation prerequisites, neither done yet**:
 1. `m_dirty_mask` must be **snapshotted before** `SendEventFlatBuffer()`'s field-by-field
@@ -268,10 +268,19 @@ PROTOTYPED, 2026-09-19**:
 2. **Prototyped in the offline `market_data_replay` tool first**, per the rollout philosophy above
    — wired into `MarketDataReplayEngine.h`'s `STRUCTURE_TEST` dirty-bit condition. Full existing
    engine test suite re-run clean (all pre-existing tests still pass, confirming no regression).
-3. Real-data A/B measurement in progress (30M-tick slice of `mes_ticks.parquet`, pre-fix vs.
-   post-fix binaries) — not yet concluded as of this entry.
-4. Not yet ported into the ACSIL-coupled path's `CheckTrigger()`/`HasSignificantChange()` —
-   pending the real-data measurement above per the "measure before declaring done" discipline.
+3. **Real-data A/B measurement: inconclusive, not a validation failure.** A 30M-tick slice of
+   `mes_ticks.parquet` produced byte-identical `.alpha` output pre-fix vs. post-fix — the file
+   contains real records (confirmed via hex inspection, not an empty-header artifact), so this
+   means no isolated `FAILED_*`/`DECISIVE_*` transition happened to occur (without a co-occurring
+   pattern trigger) in that particular slice, not that the fix has no effect. A larger or
+   differently-positioned sample is needed for a real measured effect size — not yet done.
+4. **Ported into the ACSIL-coupled path, 2026-09-19**: `IndicatorManager::CheckTrigger()`'s
+   `STRUCTURE_TEST` case (the real devirtualized dispatch path) now calls
+   `IsStructureTestSignificantTransition()` directly, matching the offline-prototyped logic
+   exactly. `StructureTestIndicator::ShouldTrigger()` (`include/Indicator.h`) also updated for
+   consistency, for any non-devirtualized caller. Full clean `./build_dll.sh` passes. **Phase 1 is
+   now complete** on both code paths — only the real-data effect-size measurement (item 3) remains
+   open, as a measurement task, not an implementation one.
 
 **Phase 2 — Trigger 3 (`AsymmetryContext` significance), separate initiative, not rushed**:
 1. Measure real per-dim distributions on the existing 471.9M-tick dataset.
