@@ -182,12 +182,43 @@ shared deliverable, computed once in C++, not two independently-derived (and dri
 thresholds on either side of the wire. This adds a schema-field requirement to §4's design that
 wasn't present before this cross-repo exchange.
 
-### 4e. Open questions, genuinely unresolved
+### 4e. Concrete design, 2026-09-19: `changed_fields_mask: uint64` (PSC-05, schema repo)
 
-1. Combined Mahalanobis-style distance over all 8 dims at once (one pass/fail decision, mirrors
-   `ObservationData`'s own gate), or per-dim independent thresholds (mirrors the categorical
-   trigger's per-key independence, easier to reason about per-dim but loses the "does the *whole*
-   asymmetry picture look different" framing)? Not decided.
+Operator directive: extend the per-field wire bitmask beyond just `AsymmetryContext` — one single
+bitmask covering **every field that feeds the Transformer**, `IndicatorState`'s existing
+categorical fields included, not just the 8 new `AsymmetryContext` ones. Filed as PSC-05 in
+`schema/PENDING_SCHEMA_CHANGES.md` (PROPOSED, not yet DECIDED).
+
+**Layout** (fits one `uint64_t`, no new schema type needed):
+- **Bits [0, 55)**: reuse `IndicatorKey`'s existing enum values verbatim (`include/IndicatorKey.h`,
+  `MAX_INDICATORS=55`) — these are exactly `IndicatorManager::m_dirty_mask`'s own bit positions,
+  already computed every tick. No redesign needed here, only an export-timing fix (below).
+- **Bits [55, 63)**: 8 new positions, one per `AsymmetryContext` field in wire-declaration order:
+  `shannon_entropy`=55, `shannon_efficiency`=56, `taleb_kurtosis`=57, `taleb_skewness`=58,
+  `taleb_cliff`=59, `pareto_rot`=60, `raschke_burst`=61, `session_quality_score`=62. Bit 63 reserved.
+
+**Two real implementation prerequisites, neither done yet**:
+1. `m_dirty_mask` must be **snapshotted before** `SendEventFlatBuffer()`'s field-by-field
+   extraction begins — several leaf classes' `AddToTrainingEventFB()`/`ExtractInt8AndClearDirty()`
+   clear their own dirty bit as they're read ("clear dirty bit after extraction so the latch resets
+   for next real change"), so reading `m_dirty_mask` *after* serialization would already show many
+   bits cleared. The existing `m_dirty_mask = 0` flush in `PublishEventOnChange()` happens even
+   later, confirming the bits are live at `HasSignificantChange()`'s own "true" moment — that's
+   the point to snapshot.
+2. The `AsymmetryContext` bit range needs Trigger 3's significance test to actually be **per-field**,
+   not a combined Mahalanobis pass/fail — resolves Open Question 1 below in favor of per-dim
+   independent thresholds (a single combined distance can't tell you which of the 8 fields moved).
+
+Schema field can land now (purely additive, forward-compatible, matches PSC-04's own staged-
+rollout precedent) with the `AsymmetryContext` bit range reading all-zero until Trigger 3 is
+calibrated; the `IndicatorState` half can be populated immediately once the snapshot-timing fix
+above lands, since `m_dirty_mask` already exists today.
+
+### 4f. Open questions, genuinely unresolved
+
+1. **RESOLVED by §4e's bitmask design**: per-dim independent thresholds, not a combined
+   Mahalanobis distance — `changed_fields_mask` needs to know *which* of the 8 fields moved, which
+   a single combined pass/fail distance cannot express.
 2. Update cadence mismatch: `m_latestInstitutionalMetrics`'s 8 source fields are updated at
    different cadences internally (some per-tick, some per-bar via `UpdatePriceStructure`/
    `UpdateMarketPhysics`/`SetNormalizedAnchors`/`CheckAndTriggerHMM`) — does the significance check

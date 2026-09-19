@@ -759,3 +759,35 @@ already known for `pareto_rot` (documented Mandelbrot/fractal-dimension value in
 field). Not confirmed as a real bug yet (haven't traced whether `lbrnet`'s own exclusion of this
 field for a different reason — "duplicate of `close_percentile`" — means this mismatch is moot in
 practice); flagging for whoever picks this up next, on either side.
+
+## Entry 23 — MindfulTrader-session — 2026-09-19
+
+**Concrete proposal filed, operator-directed**: extending Entry 22's finding into an actual schema
+change. Filed `schema/PENDING_SCHEMA_CHANGES.md` PSC-05 (PROPOSED, not yet DECIDED) —
+`changed_fields_mask: uint64` on `table Event` and `table TrainingEvent`, a single bitmask whose
+bit positions map 1:1 to **every field feeding the Transformer**, not just `AsymmetryContext`'s 8:
+
+- Bits [0, 55): reuse `IndicatorKey`'s existing enum values verbatim (`include/IndicatorKey.h`,
+  `MAX_INDICATORS=55`) — exactly `IndicatorManager::m_dirty_mask`'s own bit positions, already
+  computed every tick on the C++ side.
+- Bits [55, 63): 8 new positions, one per `AsymmetryContext` field in wire order (`shannon_entropy`
+  =55 ... `session_quality_score`=62). Bit 63 reserved.
+
+**Replaces the narrower Option A framing from Entry 22** — instead of an `AsymmetryContext`-only
+dirty bitmask, this is one combined flag covering the full Transformer input surface, so `lbrnet`
+never needs a second mechanism for `IndicatorState`'s own categorical fields (which already have
+real dirty tracking on the C++ side, just never exported on the wire before).
+
+**Two prerequisites before this can be fully populated, tracked in MindfulTrader's own spec**
+(`docs/superpowers/specs/2026-09-19-meaningful-event-trigger-and-asymmetry-context-significance-
+spec.md` §4e): (1) `m_dirty_mask` needs to be snapshotted before `SendEventFlatBuffer()`'s
+field-by-field extraction starts clearing individual bits — a real export-timing fix, not yet done;
+(2) Trigger 3 (the `AsymmetryContext` significance gate, still design-only) needs to compute
+**per-field** significance, not a combined Mahalanobis pass/fail, since the bitmask needs to know
+which of the 8 fields moved. Neither is implemented yet. The schema field itself can land now
+(purely additive) with the `AsymmetryContext` bit range reading all-zero until Trigger 3 ships —
+same staged-rollout precedent as PSC-04.
+
+**Ask for `lbrnet`'s session**: this is PROPOSED, not DECIDED — flag any objections to the bit
+layout or field shape before it moves to DECIDED, per `PENDING_SCHEMA_CHANGES.md`'s own governance
+process (3-consumer sign-off before implementation, not a unilateral MindfulTrader decision).
