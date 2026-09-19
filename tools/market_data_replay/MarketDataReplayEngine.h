@@ -2092,7 +2092,14 @@ private:
             const StructureTest result = ClassifyStructure(
                 high, low, close, m_prevDayHigh, m_prevDayLow,
                 static_cast<double>(atr10), lookbackHigh, lookbackLow);
-            if (result != m_lastStructureTest) {
+            // 2026-09-19 fix (docs/superpowers/specs/2026-09-19-meaningful-event-trigger-and-
+            // asymmetry-context-significance-spec.md, Phase 1): StructureTestIndicator has never
+            // had a real ShouldTrigger() in the ACSIL-coupled path (confirmed via direct read of
+            // include/Indicator.h -- it silently inherits the base class's `return false`), so a
+            // FAILED_* (TRAP) or DECISIVE_* (REGIME_INVALIDATION) transition has never been able
+            // to independently cause an event/.alpha write. Prototyping the fix here first (offline
+            // path), before porting into the ACSIL-coupled path -- see the spec's own rollout plan.
+            if (IsStructureTestSignificantTransition(m_lastStructureTest, result)) {
                 m_patternDirtyMask |= IndicatorKeyBit(IndicatorKey::STRUCTURE_TEST);
             }
             m_lastStructureTest = result;

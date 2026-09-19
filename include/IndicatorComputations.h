@@ -1626,6 +1626,31 @@ inline StructureTest ClassifyStructure(float high, float low, float close,
     return StructureTest::NONE;
 }
 
+// Pure "meaningful change" test for StructureTest, generalizing the
+// entered/exited-NONE idiom already used for KangarooTail/TurtleSoup/
+// MomentumPinball/ElderBreakout/NR7 (IndicatorManager.cpp's EnteredOrExitedNone)
+// to StructureTest's own richer state space. NONE/INSIDE_BAR/OUTSIDE_BAR are
+// this indicator's "neutral" set (no actionable structural signal); FAILED_*
+// (TRAP) and DECISIVE_* (REGIME_INVALIDATION) are both "actionable" per the
+// ADR's own TRAP-vs-REGIME_INVALIDATION split (docs/ADR/
+// triple_barrier_trap_definition_ruling.md) -- both are named, labeler-
+// relevant outcomes, so both get real triggers here, not just TRAP.
+// Significant iff NOT both prev and cur are neutral: covers entering/exiting
+// an actionable state (matching the existing idiom) AND a direct transition
+// between two *different* actionable states (e.g. a failed high reversal
+// immediately followed by a decisive breakdown) -- unlike the patterns'
+// gradation-of-one-signal enums, StructureTest's non-neutral values are
+// structurally distinct events, not degrees of the same call, so suppressing
+// actionable-to-actionable transitions the way EnteredOrExitedNone does for
+// patterns would hide a real regime change.
+inline bool IsStructureTestSignificantTransition(StructureTest prev, StructureTest cur) {
+    if (prev == cur) return false;
+    const auto isNeutral = [](StructureTest v) {
+        return v == StructureTest::NONE || v == StructureTest::INSIDE_BAR || v == StructureTest::OUTSIDE_BAR;
+    };
+    return !(isNeutral(prev) && isNeutral(cur));
+}
+
 enum class ATRProximityEnum : int8_t
 {
     LOW_VOLATILITY = 0,

@@ -708,3 +708,54 @@ not MindfulTrader's. **Flagging for `lbrnet`'s own session**: the classifier's a
 `build_turtle_soup_dataset.py` → `build_trading_partner_dataset.py` → `run_trading_partner_
 comparison.py` end-to-end against real data (now that a clean `.context.parquet`/labeled dataset
 exists per Entry 20) before this project treats the classifier as validated in any doc.
+
+## Entry 22 — MindfulTrader-session — 2026-09-19
+
+**Answering `lbrnet`'s Task 1 blocking question directly** (from their own
+`2026-09-19-asymmetry-context-change-hints-spec.md`/`-plan.md`, per the operator's cross-session
+relay): *does C++ cache `AsymmetryContext` until a real change, or rewrite it with fresh
+floating-point values every event?* Verified via direct trace of every one of the 7 live wire
+fields' C++ source call sites (`src/ContextManager.cpp`) — **the assumption is false, not merely
+unverified**:
+
+| Wire field | C++ source | Call site | Cadence |
+|---|---|---|---|
+| `shannon_entropy`/`shannon_efficiency` | `m_infoEngine.GetShannonEntropy()` | `UpdateMarketPhysics()`, line ~172 | every tick with a valid log return |
+| `taleb_kurtosis`/`taleb_skewness` | `anchors.realizedKurtosis`/`anchors.skewnessIdx` | `SetNormalizedAnchors()`, line ~193 | every anchor recompute (TS3 cadence) |
+| `taleb_cliff` | `distToCliff` (Chandelier-Exit distance) | `UpdatePriceStructure()`, line ~727 | every tick, unconditionally |
+| `pareto_rot` | `m_structureEngine.GetFractalDimension()` | `UpdatePriceStructure()`, line ~683 | every tick, unconditionally |
+| `raschke_burst` | `CalculateBurstinessIndex(now_us)` | inside `CheckAndTriggerHMM()`, line ~1075 | every tick, unconditionally, BEFORE any Locks/significance gating |
+
+All 5 source functions (`UpdateMarketPhysics`, `SetNormalizedAnchors`, `UpdatePriceStructure`,
+`CheckAndTriggerHMM`'s own burstiness update) are called **unconditionally, every tick or every
+bar-close**, completely decoupled from whether `HasSignificantChange()` ultimately decides to
+publish an event. `ContextManager::GetAsymmetryContext()` just reads whatever `m_latestInstitutionalMetrics`
+holds at the moment of serialization — never "the value as of the last real publish."
+
+**Practical consequence for the `hints` mechanism**: because these 7 fields update on a much
+higher-frequency, fully independent cadence from event-publishing itself, two *consecutive
+published* events' `AsymmetryContext` snapshots will differ from ordinary drift almost every
+time — regardless of whether that specific field's change caused either event to fire. The
+generic `col[1:] != col[:-1]` bit-exact hint will read as "changed" on close to 100% of rows for
+these 7 columns — not merely unreliable, structurally degenerate (zero discriminative signal).
+
+**Recommendation: Option A (explicit per-field dirty/significance bitmask from C++) is necessary,
+not just preferred** — and it should be powered by the SAME magnitude-significance test
+MindfulTrader's own Trigger 3 design already needs (`docs/superpowers/specs/2026-09-19-meaningful-
+event-trigger-and-asymmetry-context-significance-spec.md` §4), not a naive "value changed at all"
+flag — a naive equality/inequality flag on these continuous fields would suffer the identical
+always-true degenerate problem this finding just diagnosed, one layer later. Recommend treating
+Trigger 3's per-field significance decision and `lbrnet`'s per-field dirty bitmask as **one shared
+deliverable**: MindfulTrader computes it once (for its own event-trigger gating), exports it on the
+wire, `lbrnet` consumes the same bits for `hints` — not two independently-derived thresholds that
+can drift apart. Trigger 3 is design-only as of this entry (not yet calibrated/implemented) — this
+coordinates the eventual implementation, doesn't commit to a timeline.
+
+**Separately flagged, not yet verified**: the wire schema's 8th `AsymmetryContext` field,
+`session_quality_score`, is documented in `mts_schema.fbs` as "TimeOfDayEnum [-1.0, 1.0]" but the
+C++ `MakeAsymmetryContext()` call site positionally feeds it `elderImpulse` (Close Location
+Value) — a possible second instance of the same schema-comment-vs-actual-value mismatch class
+already known for `pareto_rot` (documented Mandelbrot/fractal-dimension value in a Pareto-named
+field). Not confirmed as a real bug yet (haven't traced whether `lbrnet`'s own exclusion of this
+field for a different reason — "duplicate of `close_percentile`" — means this mismatch is moot in
+practice); flagging for whoever picks this up next, on either side.

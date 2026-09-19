@@ -162,7 +162,27 @@ the remaining dims via the same EVT/GPD or percentile-matching discipline alread
 repo (`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s own methodology) —
 **do not invent placeholder constants**, per this project's own standing rule.
 
-### 4d. Open questions, genuinely unresolved
+### 4d. Cross-repo finding, 2026-09-19: Trigger 3 must export a per-field wire bitmask, not just gate internally
+
+`lbrnet`'s own session (working the Transformer's `hints` mechanism, `2026-09-19-asymmetry-
+context-change-hints-spec.md`) independently identified a load-bearing assumption: their generic
+"did this field change between published events" hint (`col[1:] != col[:-1]`) is only meaningful
+if C++ holds `AsymmetryContext` bit-identical between real recomputes. **Verified false, not just
+unverified** — traced all 7 live wire fields to their C++ source call sites
+(`docs/HMM_REGIME_MANAGER_COORDINATION.md` Entry 22 has the full per-field table): every one is
+recomputed every tick or every bar-close, unconditionally, fully decoupled from whether
+`HasSignificantChange()` ever fires. Two consecutive *published* events' `AsymmetryContext`
+snapshots will differ from ordinary drift almost every time regardless of causal relevance — the
+naive hint is structurally degenerate (near-100% "changed"), not merely noisy.
+
+**Design consequence**: Trigger 3's per-field significance decision (§4a-4d above) needs to be
+exported on the wire as an explicit per-field bitmask/flags, not just consumed internally by
+`HasSignificantChange()` — this is the same artifact `lbrnet`'s Option A needs for `hints`. One
+shared deliverable, computed once in C++, not two independently-derived (and driftable)
+thresholds on either side of the wire. This adds a schema-field requirement to §4's design that
+wasn't present before this cross-repo exchange.
+
+### 4e. Open questions, genuinely unresolved
 
 1. Combined Mahalanobis-style distance over all 8 dims at once (one pass/fail decision, mirrors
    `ObservationData`'s own gate), or per-dim independent thresholds (mirrors the categorical
@@ -201,20 +221,26 @@ Given the system has never been deployed to production, "rollout" here means "wh
 to prototype and validate in first, before porting to the ACSIL-coupled path" — not production
 deployment risk management.
 
-**Phase 1 — `STRUCTURE_TEST` categorical fix (low-risk, well-understood idiom)**:
-1. Decide the exact semantic before writing code: `FAILED_*`-only, or `FAILED_*` + `DECISIVE_*`
-   (§ "Where I'd like your call" from the prior discussion — still open).
-2. Implement and validate in the **offline `market_data_replay` tool first** — fast iteration, real
-   MES tick history, no Sierra Chart dependency. Golden-vector/parity test proving every existing
-   trigger path is unaffected (this is an addition, not a refactor, but "should be unaffected"
-   still gets verified, not assumed), plus a new dedicated test for the actual new behavior.
-3. Measure on a real replay run before deciding the fix is right — quantify the actual
-   event/`.alpha` rate change and whether `TRAP_*` label density moves the way the hypothesis
-   predicts. Do not declare this done from compilation alone.
-4. Once validated offline, port the same logic into the ACSIL-coupled path's `CheckTrigger()`/
-   `HasSignificantChange()` (`src/IndicatorManager.cpp`) — this is where it eventually needs to
-   live for whenever the system is deployed, but it is not the place to have designed or debugged
-   it in the first place.
+**Phase 1 — `STRUCTURE_TEST` categorical fix (low-risk, well-understood idiom) — DECIDED AND
+PROTOTYPED, 2026-09-19**:
+1. **Semantic decided**: both `FAILED_*` (TRAP) and `DECISIVE_*` (REGIME_INVALIDATION) count as
+   "actionable" — both are named, ADR-governed, labeler-relevant outcomes (the ADR splits them
+   into two label classes, it doesn't say only one matters). `NONE`/`INSIDE_BAR`/`OUTSIDE_BAR` are
+   the "neutral" set. Trigger fires unless BOTH endpoints of a transition are neutral — covers
+   entering/exiting an actionable state (mirrors the existing pattern idiom) AND a direct
+   actionable-to-different-actionable transition (unlike the patterns' gradation-of-one-signal
+   enums, `StructureTest`'s non-neutral values are structurally distinct events, so suppressing
+   actionable-to-actionable transitions the way `EnteredOrExitedNone` does for patterns would hide
+   a real regime change). Implemented as `IsStructureTestSignificantTransition()`
+   (`include/IndicatorComputations.h`), 12/12 new native tests pass
+   (`tests/cpp/test_structure_test_significant_transition.cpp`).
+2. **Prototyped in the offline `market_data_replay` tool first**, per the rollout philosophy above
+   — wired into `MarketDataReplayEngine.h`'s `STRUCTURE_TEST` dirty-bit condition. Full existing
+   engine test suite re-run clean (all pre-existing tests still pass, confirming no regression).
+3. Real-data A/B measurement in progress (30M-tick slice of `mes_ticks.parquet`, pre-fix vs.
+   post-fix binaries) — not yet concluded as of this entry.
+4. Not yet ported into the ACSIL-coupled path's `CheckTrigger()`/`HasSignificantChange()` —
+   pending the real-data measurement above per the "measure before declaring done" discipline.
 
 **Phase 2 — Trigger 3 (`AsymmetryContext` significance), separate initiative, not rushed**:
 1. Measure real per-dim distributions on the existing 471.9M-tick dataset.
