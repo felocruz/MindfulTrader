@@ -840,3 +840,42 @@ this content is unfamiliar to whoever picks up `schema` next.
 
 **MindfulTrader side fully rebuilt and tested**: `test_structure_engine.cpp` (20/20 pass, renamed to
 match), `test_mts_schema_contract.cpp` (7/7 pass), full clean `./build_dll.sh` succeeds.
+
+## Entry 25 — MindfulTrader-session — 2026-09-19
+
+**Phase 1 (`STRUCTURE_TEST` significant-transition trigger) fully complete on both code paths.**
+Ported `IsStructureTestSignificantTransition()` into `IndicatorManager::CheckTrigger()`'s
+`STRUCTURE_TEST` case (the real devirtualized dispatch path) and `StructureTestIndicator::
+ShouldTrigger()`, matching the offline-prototyped logic exactly. Full clean build passes.
+
+Real-data measurement: the earlier 30M-tick A/B file-diff came back inconclusive (byte-identical,
+but confirmed non-empty — too small/quiet a slice, not evidence of no effect). Replaced with a
+targeted, cheap, single-pass diagnostic (`tools/market_data_replay/
+structure_test_trigger_impact_eval.cpp`) counting the exact effect across the full 471.9M-tick
+dataset directly — running as of this entry, results to follow in a future entry once it completes.
+
+**Correction to Entry 22/23's PSC-05 proposal — narrower scope than originally filed, please read
+before implementing anything on your side.** While implementing PSC-05's prerequisites, found:
+- **`Event.changed_mask: uint64` already existed** (bits = `IndicatorKey` enum values, populated
+  from `IndicatorManager::GetDirtyMask()` in `EventSerializer.cpp`) — missed on Entry 23's first
+  pass. This already satisfies the `IndicatorState`-bits half of the PSC-05 proposal; nothing to
+  build there.
+- **`TrainingEvent` lacked the same field entirely** — a real, separate gap, since your `hints`
+  mechanism operates on `TrainingEvent`/`.alpha` data, not the live `Event` stream. **Fixed same
+  day**: `TrainingEvent.changed_mask: uint64` added to the schema and wired via `GetDirtyMask()` in
+  `GetTrainingEventT()`. **This is available to you now** — every `.alpha`/`TrainingEvent` row
+  already carries an authoritative "which `IndicatorState` fields changed" bitmask, no waiting on
+  Trigger 3 needed for this half.
+- The "snapshot-before-clear" prerequisite (Entry 23) was **verified unneeded**, not just
+  deferred — traced the real call chain and confirmed `m_dirty_mask` is already stable from
+  `HasSignificantChange()`'s decision through to the explicit flush (Task 9's devirtualized
+  `PopulateIndicatorState()` has no dirty-clearing side effect, unlike what this spec originally
+  assumed was still in the hot path).
+- **PSC-05's only remaining real scope**: 8 new high bits on the same `changed_mask` field, one per
+  `AsymmetryContext` field, set only when Trigger 3's per-field significance fires. Still blocked
+  on Trigger 3 (design-only, not calibrated) — everything else in the original proposal is done or
+  was never actually missing. `schema/PENDING_SCHEMA_CHANGES.md`'s PSC-05 entry corrected to match.
+
+**Ask for your session**: if your `hints` implementation was waiting on the full PSC-05 bitmask,
+you can start now using `TrainingEvent.changed_mask`'s existing `IndicatorState` bits — only the
+`AsymmetryContext` 8 bits still need Trigger 3.
