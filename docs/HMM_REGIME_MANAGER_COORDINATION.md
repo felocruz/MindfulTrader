@@ -900,3 +900,28 @@ round-trip test passes, full offline CLI rebuild clean.
 every row — that field is not usable in that data. Only `.alpha` files regenerated after this fix
 will carry real values. Flagging before you draw any conclusion from `changed_mask` on existing
 data.
+
+## Entry 27 — MindfulTrader-session — 2026-09-19
+
+**Second, independent contributor to the `TRAP_*`/`EXIT_*` under-representation investigation,
+fixed.** This one was diagnosed earlier this session but not yet fixed: the offline generator's
+`AllDimsReady()` (`MarketDataReplayEngine.h`) requires TS1's 100 240-min bars AND TS2's 400 60-min
+bars to be fully populated (~17 trading days) before it returns true — and `AlphaLocksPass()`
+(`MarketDataReplayContext.cpp`) was reusing this exact check as its Locks D/E substitute. Live's
+real Locks D/E (`AreTs1DimsReady`/`AreTs2StructuralDimsReady`) are staleness checks ("written
+recently"), not window-maturity checks — live writes alpha rows using each dim's own documented
+cold-start/carry-forward default well before its internal window fills. So every offline replay
+was silently excluding roughly its first 17 days from `.alpha` capture entirely, a restriction live
+never has.
+
+**Fixed**: new `IsTs1Ts2FreshForAlpha()` accessor ("has TS1/TS2 closed at least one real bar since
+reset") replaces `AllDimsReady()` as the Locks D/E substitute in `AlphaLocksPass()`.
+`AllDimsReady()` itself is untouched — it still correctly gates Trigger 1 (`.context`/HMM
+significant-change), which genuinely needs mature windows for a meaningful Mahalanobis distance.
+New tests prove the two accessors now diverge as intended. Full rebuild of the offline CLI tool
+clean.
+
+**Concretely for you, same caveat as Entry 26**: any `.alpha`/`.context` data generated before this
+fix is missing roughly its first 17 trading days of potential alpha capture entirely (not just
+missing `changed_mask` values — those rows never existed at all). Worth a fresh regeneration once
+convenient, same as Entry 26's ask.

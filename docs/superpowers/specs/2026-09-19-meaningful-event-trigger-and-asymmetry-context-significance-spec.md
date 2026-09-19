@@ -301,10 +301,16 @@ PROTOTYPED, 2026-09-19**:
 
 - `docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md` — the offline
   generator's own Locks D/E cold-start gap (found earlier the same session: `AllDimsReady()`
-  requires ~17 trading days of window-fill before any `.alpha` record can be written at all, vs.
-  live's freshness-only Locks D/E) is a **separate, independent** contributor to the same
-  `TRAP_*`/`EXIT_*` under-representation symptom that motivated this whole investigation. Both need
-  fixing; neither substitutes for the other.
+  required ~17 trading days of window-fill before any `.alpha` record could be written at all, vs.
+  live's freshness-only Locks D/E) was a **separate, independent** contributor to the same
+  `TRAP_*`/`EXIT_*` under-representation symptom that motivated this whole investigation. **Fixed
+  2026-09-19**: `AlphaLocksPass()` now uses a new `IsTs1Ts2FreshForAlpha()` accessor ("has TS1/TS2
+  closed at least one real bar," matching live's real staleness-based semantic) instead of
+  `AllDimsReady()`'s full-window-population check — `AllDimsReady()` itself is unchanged and still
+  correctly gates Trigger 1 (`.context`/HMM significant-change), which genuinely needs mature
+  windows. New tests prove the two accessors now diverge as intended (fresh-for-alpha goes true
+  almost 17 days before all-dims-ready does). This was independent of, not a substitute for, the
+  `STRUCTURE_TEST`/Trigger-3 fixes above — both needed fixing, neither covers the other.
 - `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 — the Transformer
   input pipeline this spec's Trigger 3 directly feeds; cross-reference once Trigger 3 is designed
   further.
