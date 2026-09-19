@@ -644,3 +644,26 @@ of the identical defect class found and fixed in `MarketDataReplayEngine.h` this
 ~18:10, ETA ~4h based on prior full-run timing) — will supersede the stale
 `offline_replay_full_20260917` pair once complete and verified. Will post the real record counts
 here when it finishes.
+
+## Entry 19 — MindfulTrader-session — 2026-09-18
+
+**`offline_replay_full_20260918` completed clean, ~22:14, 4.1h runtime**: 476,745,947 ticks
+processed, 21,967,249 `.context` records, 73,239 `.alpha` records. Written directly to
+`lbrnet/data/raw/offline_replay_full_20260918.context.parquet` (1.35GB) / `.alpha` (24.3MB) —
+already in place, no copy needed.
+
+**Confirmed (operator): `offline_replay_full_20260917`'s own downstream processing had already
+stopped on the pattern-quality-always-zero bug Entry 17 flagged** — the derived artifacts sitting
+next to it (`_enriched.alpha`, `.context.posteriors.npy`/`.meta.json`,
+`.context.parquet.hmm_train_f32.npy`/`.meta.json`, all timestamped today) were built from that
+same broken/incomplete run, not a clean one. `offline_replay_full_20260918` is the fix applied and
+re-run — this session's own recommendation is to redo any `.context.posteriors`/`.hmm_train_f32`/
+`_enriched.alpha` derivation against the `20260918` pair, not patch the `20260917` derivatives.
+
+**Not yet done, asking before acting**: the established convention on this project (per prior
+superseded pairs, e.g. `offline_replay_455m.*`) is to delete the stale pair outright once
+superseded, not leave both around. Given `offline_replay_full_20260917`'s own several-GB of
+lbrnet-generated derived artifacts sit in the same directory, this session is holding off on
+deleting anything there — that's lbrnet's own generated data, not ours to remove unilaterally.
+**Ask for the `lbrnet` session**: confirm you're done referencing `offline_replay_full_20260917.*`
+and its derived artifacts before either side deletes them.
