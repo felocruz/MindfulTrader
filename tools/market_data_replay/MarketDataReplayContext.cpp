@@ -185,7 +185,7 @@ int main(int argc, char** argv) {
                         engine.GetTs3BarsClosed(), ts,
                         engine.GetTs3LiveOpen(), engine.GetTs3LiveHigh(),
                         engine.GetTs3LiveLow(), engine.GetTs3LiveClose(),
-                        engine.GetTs3LiveVolume());
+                        engine.GetTs3LiveVolume(), dirtyMask);
                     alphaWriter.LogAlpha(event);
                     ++alphaRecordsWritten;
                 }

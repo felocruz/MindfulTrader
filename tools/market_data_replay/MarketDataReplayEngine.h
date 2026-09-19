@@ -398,9 +398,15 @@ public:
     // pooled object must remain mutable so AlphaFileWriter::LogAlpha() can
     // overwrite sequence_id on it directly (matches production's own
     // LogAlphaUnlocked(TrainingEventT&) contract).
+    // changedMask: the dirty mask as of THIS event's trigger decision -- caller must pass the
+    // value from ConsumePatternDirtyMask() taken at that moment (it clears on read, so it cannot
+    // be re-derived here). Mirrors TrainingEvent.changed_mask's live-path population
+    // (IndicatorManager::GetTrainingEventT() via GetDirtyMask()), added 2026-09-19 -- this engine
+    // had no equivalent until now, a real gap the offline path shares with the live path's own
+    // `.alpha` output.
     MTS::Training::TrainingEventT& BuildTrainingEventT(
         int barIndex, int64_t timestampUs,
-        float open, float high, float low, float close, int64_t volume) {
+        float open, float high, float low, float close, int64_t volume, uint64_t changedMask) {
         auto& event = m_trainingEventScratch;
         if (!event.indicators) {
             event.indicators = std::make_unique<MTS::Schema::IndicatorState>();
@@ -416,6 +422,7 @@ public:
         event.low = low;
         event.close = close;
         event.volume = volume;
+        event.changed_mask = changedMask;
 
         // 17 PRIMARY_TRIGGER_MASK IndicatorState fields (schema/mts_schema.fbs:221),
         // this engine's own already-computed Task 7 results.

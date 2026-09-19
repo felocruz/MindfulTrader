@@ -1247,7 +1247,7 @@ int main() {
             t += kTs2PeriodUs;
         }
 
-        const auto& event = engine.BuildTrainingEventT(42, 1705359600123456LL, 100.25f, 101.5f, 99.75f, 100.5f, 12345);
+        const auto& event = engine.BuildTrainingEventT(42, 1705359600123456LL, 100.25f, 101.5f, 99.75f, 100.5f, 12345, 0xABCDULL);
 
         // The 4 extract-to-pure fields round-trip exactly.
         check("task9_bar_index_round_trips", event.bar_index == 42);
@@ -1255,6 +1255,7 @@ int main() {
         check("task9_ohlcv_round_trips",
               event.open == 100.25f && event.high == 101.5f && event.low == 99.75f &&
               event.close == 100.5f && event.volume == 12345);
+        check("task9_changed_mask_round_trips_2026_09_19", event.changed_mask == 0xABCDULL);
 
         // IndicatorState's 17 PRIMARY_TRIGGER_MASK fields mirror this engine's
         // own current Get*Result() accessors exactly.
@@ -1334,7 +1335,7 @@ int main() {
         // fresh unique_ptr per emission.
         const auto* indicatorsPtrBefore = event.indicators.get();
         const auto* observationPtrBefore = event.observation.get();
-        const auto& event2 = engine.BuildTrainingEventT(43, 1705359601000000LL, 1.0f, 2.0f, 0.5f, 1.5f, 99);
+        const auto& event2 = engine.BuildTrainingEventT(43, 1705359601000000LL, 1.0f, 2.0f, 0.5f, 1.5f, 99, 0ULL);
         check("task9_indicators_pointer_reused_across_calls", event2.indicators.get() == indicatorsPtrBefore);
         check("task9_observation_pointer_reused_across_calls", event2.observation.get() == observationPtrBefore);
         check("task9_second_call_overwrites_bar_index", event2.bar_index == 43);
