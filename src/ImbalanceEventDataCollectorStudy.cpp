@@ -39,7 +39,7 @@
  * NOT YET RESOLVED, deferred until §1.3's ImbalanceIndicatorManager design
  * lands. Kept as-is here on purpose.
  *
- * Reference: docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+ * Reference: docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
  */
 SCSFExport scsf_ImbalanceEventDataCollectorStudy(SCStudyInterfaceRef sc)
 {

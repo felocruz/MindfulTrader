@@ -2,14 +2,14 @@
 
 **Status**: SPEC — approved via `superpowers:brainstorming` (2026-08-16, MindfulTrader-rooted session),
 literature-reviewed via `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_103`/response.
-**Split out from**: `docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md` — Turtle
+**Split out from**: `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` — Turtle
 Soup's Option B was originally specced inline; the user correctly reframed it as a general capability
 mid-brainstorm ("I was viewing things from the point of view that the classifier could be used
 generally, not just for Turtle Soup"), so this spec now stands on its own, mirroring how
 `PredatorContext`/`PredatorFusion` is its own infrastructure spec separate from the individual
 patterns that consume it.
 **Governing methodology**: `docs/superpowers/specs/2026-08-16-execution-risk-coevolution-governance-spec.md`
-(twin-first validation), `docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md`
+(twin-first validation), `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`
 (the Predator Decision Contract this capability's outputs must satisfy once consumed by any pattern).
 
 ## Purpose
@@ -21,7 +21,7 @@ tick-reactive heuristic, but a trained, calibrated prediction of a bar's eventua
 prefix) can consume it, rather than each one building its own one-off version.
 
 **Two consumers already identified, neither hypothetical:**
-1. **Turtle Soup's Option B** (`docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md`)
+1. **Turtle Soup's Option B** (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`)
    — the first, concrete application, currently in a bridge plan alongside a cheap heuristic (Option A).
 2. **TRAP's anticipatory τ* layer's own deferred need.** `CLAUDE.md`'s Trap Detection section already
    names "ECTS-style intra-bar-prefix training" as the prerequisite for genuine intra-bar model

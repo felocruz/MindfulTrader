@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # imbalance_triple_screen_first_6mo.py -- one-off visual: IS1/IS2/IS3 hierarchical
-# imbalance bars (docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+# imbalance bars (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
 # §1.2a/§1.2b), built over the first 6 months of real MES ticks. IS3 = adaptive-threshold
 # imbalance bars (AFML Ch.2 EWMA, mirrors include/ImbalanceBarEngine.h exactly); IS2 = every
 # K2=4 completed IS3 bars aggregated into one; IS1 = every K1=4 completed IS2 bars aggregated
@@ -10,10 +10,11 @@
 #
 # Run: mamba run -n mts python tools/visualization/imbalance_triple_screen_first_6mo.py
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
-import matplotlib.pyplot as plt
+
 
 TICKS_PATH = "/home/rcruz/devel/VSCode/lbrnet/data/raw/mes_ticks.parquet"
 OUT_DIR = "tools/output"
@@ -27,7 +28,9 @@ K1 = 4
 def load_first_6_months():
     f = pq.ParquetFile(TICKS_PATH)
     cols = ["timestamp_us", "trade_price", "volume", "bid_volume", "ask_volume"]
-    tables = [f.read_row_group(rg, columns=cols) for rg in range(FIRST_ROW_GROUP, LAST_ROW_GROUP + 1)]
+    tables = [
+        f.read_row_group(rg, columns=cols) for rg in range(FIRST_ROW_GROUP, LAST_ROW_GROUP + 1)
+    ]
     df = pd.concat([t.to_pandas() for t in tables], ignore_index=True)
     df["signed_flow"] = df["ask_volume"] - df["bid_volume"]
     return df
@@ -79,7 +82,9 @@ def aggregate(closes, k):
 def main():
     print(f"loading row groups {FIRST_ROW_GROUP}..{LAST_ROW_GROUP} (~first 6 months)...")
     df = load_first_6_months()
-    print(f"loaded {len(df):,} ticks, {df['timestamp_us'].iloc[0]} .. {df['timestamp_us'].iloc[-1]} (us epoch)")
+    print(
+        f"loaded {len(df):,} ticks, {df['timestamp_us'].iloc[0]} .. {df['timestamp_us'].iloc[-1]} (us epoch)"
+    )
 
     prices = df["trade_price"].to_numpy()
     flows = df["signed_flow"].to_numpy()
@@ -96,7 +101,11 @@ def main():
     fig, axes = plt.subplots(3, 1, figsize=(14, 10), sharex=False)
     for ax, (label, closes) in zip(
         axes,
-        [("IS1 (macro)", is1_closes), ("IS2 (intermediate)", is2_closes), ("IS3 (micro)", is3_closes)],
+        [
+            ("IS1 (macro)", is1_closes),
+            ("IS2 (intermediate)", is2_closes),
+            ("IS3 (micro)", is3_closes),
+        ],
     ):
         ax.plot(closes, linewidth=0.6)
         ax.set_title(f"{label} -- {len(closes):,} bars, first 6 months (2023-06-04..~2023-12-04)")

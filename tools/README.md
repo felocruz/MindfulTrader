@@ -114,4 +114,4 @@ living per-dim literature-grounding reference), `docs/superpowers/specs/2026-08-
 
 `imbalance_vs_time_bars.py` (real imbalance-vs-time-bar chart comparisons on real MES ticks),
 `imbalance_triple_screen_first_6mo.py`. See
-`docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`.
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`.

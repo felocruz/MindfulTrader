@@ -74,7 +74,7 @@ namespace {
         // same way (its own old value, 9.697616023284109, P85.1 -> 1.8401).
         // Compiled default synced to that exact live value 2026-08-15 (was
         // 1.8382, a stale near-duplicate never updated to match) -- see
-        // docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md
+        // docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
         // sec3 gate 8 (formerly docs/ADR/gate_stack_stationarity_audit_findings.md finding 8,
         // removed 2026-09-04, fully merged into that living doc).
         double taleb_signal_sigma_threshold = 1.8401;

@@ -1,5 +1,5 @@
 // TurtleSoupFusion.h — Turtle Soup Predator-ization, Option A (tick-reactive geometric
-// heuristic), per docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md.
+// heuristic), per docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md.
 //
 // Reuses the same tail-to-body-ratio/close-position-in-range shape already proven and
 // audited for Kangaroo Tail (TripleScreen3.cpp:849-877), applied against the 20-bar

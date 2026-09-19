@@ -52,7 +52,7 @@ logic defect) — these are rolling-window statistics over *completed* bar retur
 a well-defined "intrabar" version without changing what's being measured.
 
 **The real tension** (raised directly): this system's own design philosophy is "predator, not
-historian" (`2026-08-16-predator-decision-contract-execution-risk-framework.md`'s five-element
+historian" (`2026-09-18-predator-sniper-execution-architecture.md`'s five-element
 contract). A tail-risk gate that only updates once per 15-minute bar is, by that philosophy's own
 standard, historian-grade on exactly the dimension that most needs to be predator-grade.
 
@@ -463,7 +463,7 @@ across the whole system, so this isn't a cost to take on carelessly.
   collection cost) -- any activity-clock question for it is moot until that lands regardless.
 - **`PredictionAgeUs()` / `HmmStateAgeUs()` staleness decay** — currently wall-clock microseconds;
   the decay time constant is *already* an open, undecided parameter in
-  `2026-08-24-predator-fusion-transformer-signal-decay-spec.md` ("needs empirical derivation from
+  `2026-09-18-predator-sniper-execution-architecture.md` ("needs empirical derivation from
   this system's own inter-prediction-arrival-interval distribution... not a borrowed literature
   value"). Decaying against elapsed *activity* (volume/dollar volume since the prediction) rather
   than elapsed clock time is the same argument applied to signal freshness instead of tail-shape: a
@@ -593,7 +593,7 @@ accumulator instead of a ratio. No outstanding feasibility risk on this point.
    verified it's already tick-native (`TailRiskEngine`), so its weak ranking isn't a cadence
    artifact; its drop verdict stands independently.
 6. Naming/placement of the new engine relative to existing `PredatorContext`/`PredatorFusion`
-   infrastructure (`2026-08-16-predator-context-fusion-infrastructure-spec.md`) — may be a natural
+   infrastructure (`2026-09-18-predator-sniper-execution-architecture.md`) — may be a natural
    fit for that dispatch mechanism rather than a fully separate component; not yet checked against
    that spec's actual API.
 7. Whether `ActivityClockManager`'s raw imbalance magnitude (not just downstream statistics like
@@ -635,12 +635,12 @@ accumulator instead of a ratio. No outstanding feasibility risk on this point.
 
 - `CLAUDE.md` — Trap Detection (Native-First) section, the precedent for two-observers-of-one-truth
   and the deferred intra-bar-reinference reasoning this spec's §2 mirrors.
-- `docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md` —
+- `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` —
   "predator, not historian" philosophy this whole thread is answering to.
 - `docs/superpowers/specs/2026-08-25-observation-vector-institutional-hardening-spec.md` — §5's
   pure window-widening path (`recurrence_rate`/`fractal_dim`) and §5a (added 2026-08-27, the full
   literature-grounded `mean_rev_z`/`hurst_exponent` activity-clock detail this spec's §6 summarizes).
-- `docs/superpowers/specs/2026-08-24-predator-fusion-transformer-signal-decay-spec.md` — the
+- `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` — the
   already-open `PredictionAgeUs()` decay-constant question §6 connects to.
 - `lbrnet/docs/superpowers/specs/2026-08-25-vol-convexity-removal-spec.md` — the 16D→12D trim this
   spec's new dimension(s) would be added on top of.

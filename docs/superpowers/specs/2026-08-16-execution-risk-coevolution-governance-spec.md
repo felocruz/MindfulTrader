@@ -2,7 +2,7 @@
 
 **Status**: SPEC — approved via `superpowers:brainstorming` (2026-08-16, MindfulTrader-rooted session).
 **Implementation deferred.** This spec establishes the *governing methodology* by which every
-concrete work item in the companion backlog spec (`2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md`)
+concrete work item in the companion backlog spec (`2026-09-18-predator-sniper-execution-architecture.md`)
 gets built and validated. It does not itself fix anything.
 **Prerequisite reading**: `docs/BACKTESTING_FRAMEWORK.md` (the existing Historical→Simulated→Paper→Live
 ladder this spec adds a cheaper pre-stage to), `docs/SCHEMA_DRIVEN_SERIALIZATION_PARITY_INITIATIVE.md`

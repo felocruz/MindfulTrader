@@ -41,12 +41,12 @@ not yet designed: the EVT/GPD-based "how close to the tail, and closing how fast
 signal discussed 2026-09-03 (`lbrnet/logs/rc_gemini.log` context around `CLAUDE_BRIEF_123`) — a
 candidate concrete deliverable, scoped to feed `RiskGateContext` directly, not the HMM's own
 observation vector. **Living ledger opened 2026-09-03**:
-`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` (same
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (same
 spirit/format as the observation-vector ledger below) -- item 1 answered 2026-09-04, §3a's
 recommendations not yet actively worked.
 
 **Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**
-(`docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`)
+(`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`)
 — swing high/low, oscillator divergence, and (case study #2) Wyckoff Spring/Upthrust/Livermore
 stop-harvest-reversal patterns are being reassessed for Shannon/Mandelbrot/Taleb/Pareto
 reformulation, informed by real imbalance-vs-time-bar chart comparisons on real MES ticks
@@ -59,13 +59,13 @@ this work read as "therefore closer to done" than it is.
 
 **Imbalance Triple Screen migration initiative + Force Index Track 2 (`Y_imb`) closure, opened/
 resolved 2026-09-06**: foundational architecture doc opened
-(`docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md` — new
+(`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` — new
 `ImbalanceScreen1/2/3.cpp`, multi-frame `ImbalanceBarEngine`, new `ImbalanceMarketObservation`/
 `ImbalanceTrainingEvent` schema tables, 4 open design questions, nothing implemented) alongside 3
 sibling gang-statistical reformulation docs split from the same external brainstorm: risk-gating
-(`2026-09-06-risk-gating-gang-statistical-reformulation-initiative.md`), labeling/augmentation
-(`2026-09-06-labeling-data-augmentation-gang-statistical-reformulation-initiative.md`), and
-observation-vector (`2026-09-06-observation-vector-gang-statistical-reformulation-initiative.md`,
+(`2026-09-18-predator-sniper-execution-architecture.md`), labeling/augmentation
+(`2026-09-18-predator-sniper-execution-architecture.md`), and
+observation-vector (`2026-09-18-predator-sniper-execution-architecture.md`,
 holds the 5 dims already on the activity clock, split out of the 2026-08-31 elite-feature-set doc).
 Also spawned a two-track Force Index reformulation: Track 1
 (`2026-09-06-force-index-hardening-spec.md`, calendar-clock hardening) was ABANDONED OUTRIGHT
@@ -73,7 +73,7 @@ Also spawned a two-track Force Index reformulation: Track 1
 `√V` was harm reduction, not a fix, and a deeper institutional re-think surfaced more remaining
 fragility than was worth chasing) — its spec, validation tool, and all build artifacts were
 deleted, not just closed; do not resurrect without a fresh operator ask. Track 2
-(`2026-09-06-imbalance-work-rate-spec.md`, a genuinely new activity-clock construct
+(`2026-09-18-predator-sniper-execution-architecture.md`, a genuinely new activity-clock construct
 `Y_imb = ΔP/θ`) is **RESOLVED**: real-data-tested against 471.9M real MES ticks,
 found real (survives duration-gap and skip-1-bar artifact controls) but decaying to noise by 5
 bars; independent Gemini literature review (Almgren & Chriss 2001; Bouchaud/Eisler/Cont-Kukanov-

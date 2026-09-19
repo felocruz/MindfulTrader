@@ -1152,7 +1152,7 @@ capital were at stake. Still name real technical risks when found (several were,
 ## 2026-08-24 (later same day) — Two new live classifiers designed (soft gate classifier + meta-labeler) — spec written, queued
 
 Grew out of the same production-triage session as the entry below. Full design:
-`docs/superpowers/specs/2026-08-24-two-classifier-cpp-deployment-spec.md` (this repo) +
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (this repo) +
 `lbrnet/docs/superpowers/specs/2026-08-24-two-classifier-risk-sizing-architecture-spec.md`
 (Python-side training design, sibling repo). One-line summary of the confirmed architecture:
 
@@ -1208,7 +1208,7 @@ independently-testable price-geometry detector. The Transformer-signal fusion (w
 genuinely new, not-yet-started work.
 
 **Full spec written and ready to pick up**:
-`docs/superpowers/specs/2026-08-24-predator-fusion-transformer-signal-decay-spec.md`. Covers:
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`. Covers:
 add `PredictionAgeUs()` (mirrors `HmmStateAgeUs()` exactly, mechanical); design a continuous
 decay function applied to `modelConfidence` (user's explicit preference over a hard freshness
 gate); wire the decayed signal into the entry-fusion functions (currently no parameter for it
@@ -1319,7 +1319,7 @@ push is a pending decision, ask before doing it (see end of this entry).
    → live) and the mechanical parity-contract test as the real co-evolution enforcement (narrative
    scratchpad notes are a complement, not a substitute — this was an explicit user decision after two
    documentation-drift near-misses earlier the same day).
-2. **Convergence backlog** (`docs/superpowers/specs/2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md`):
+2. **Convergence backlog** (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`):
    9 units cataloged from a literature-grounded audit of the 16D risk-gate system, Triple Screen, and
    the Chandelier→Triple-Barrier migration (three research-agent reports, not reproduced here — read
    the spec). **Unit 2 (stale-comment cleanup) DONE. Unit 6 (ADR corpus reconciliation) DONE. Unit 3
@@ -1347,7 +1347,7 @@ push is a pending decision, ask before doing it (see end of this entry).
    bar-close frames with 150 sub-second micro order-flow updates via cross-attention). Real precursor
    groundwork already exists: `lbrnet/lbrnet/data/multiscale_bars.py` (Ripple/Wave/Tide bar-cache),
    with `bar_type` IDs 1/2/3 already reserved "so a future C++/wire version reuses the same numbering."
-6. **The Predator Decision Contract** (`docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md`):
+6. **The Predator Decision Contract** (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`):
    the C++ execution/risk analog of lbrnet's Predator blueprint — a decision discipline, not a neural
    architecture. **Five required elements**: (1) explicit macro input, (2) explicit micro input,
    (3) explicit fusion rule (regime-conditioned threshold, template = TRAP's τ*), (4) twin-validation
@@ -1359,7 +1359,7 @@ push is a pending decision, ask before doing it (see end of this entry).
    (`TripleScreen3.cpp:1162-1173`), proving "tick-reactive" ≠ "Predator-grade." First-wave work
    (Elder Breakout fix, Kangaroo Tail/Momentum Pinball audit, Turtle Soup Predator-ization, Units 4/5
    reframed) is named but **none of it is implemented yet**.
-7. **PredatorContext/PredatorFusion infrastructure spec** (`docs/superpowers/specs/2026-08-16-predator-context-fusion-infrastructure-spec.md`):
+7. **PredatorContext/PredatorFusion infrastructure spec** (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`):
    the concrete C++ mechanism, requested explicitly before any individual pattern gets fixed. A unified
    `PredatorContext` struct (composes existing `LocalRiskContext` + HMM state, DOD-consistent, zero new
    computation), a free-function-per-decision fusion interface (no virtual dispatch), and a
@@ -1400,7 +1400,7 @@ push is a pending decision, ask before doing it (see end of this entry).
      direction-discriminating; Momentum Pinball: `slopeAligned` + Hurst-conditioned continuous
      multiplier, genuinely regime-aware fusion).
    - **Turtle Soup Predator-ization — SPEC'D 2026-08-16
-     (`docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md`), not yet implemented.**
+     (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`), not yet implemented.**
      Bridge plan: ship a tick-reactive geometric heuristic now (Option A, reusing Kangaroo Tail's
      proven approach against the 20-bar extreme instead of a single bar); Option B (a classifier) is a
      parallel, non-blocking track that later swaps in at a single, standardized micro-signal seam
@@ -1479,7 +1479,7 @@ guidance) and executed two of them inline this session, direct-to-master, all si
 
 - **Unit B — DONE** (plan doc removed 2026-09-04, fully duplicated by its own output; its output doc
   `docs/ADR/gate_stack_stationarity_audit_findings.md` was itself ALSO removed 2026-09-04, fully
-  merged into `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`
+  merged into `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`
   §3/§3a; original commits `f9f676c`/`1d4cc7a`): audited all
   8 fixed-threshold gates in `RiskManager::EvaluateHardGates()`/
   `ExecutionGate::EvaluateEmpiricalRegimeGates()`, 7 confirmed stationary (5 by direct citation to

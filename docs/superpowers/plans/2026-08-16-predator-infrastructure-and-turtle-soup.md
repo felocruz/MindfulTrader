@@ -21,9 +21,9 @@ twin (a separate, future decision, out of scope here).
 (`g++ -std=c++17 -Wall -Wextra -I include tests/cpp/test_X.cpp -o /tmp/tX && /tmp/tX`), the project's
 existing `nlohmann::json`-based config-loading idiom (`FeatureScaler::LoadConfig()`).
 
-**Spec:** `docs/superpowers/specs/2026-08-16-predator-context-fusion-infrastructure-spec.md` (Tasks 1-3),
-`docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md` (Tasks 4, 6-7),
-`docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md` (governing
+**Spec:** `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (Tasks 1-3),
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (Tasks 4, 6-7),
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (governing
 contract), `docs/superpowers/specs/2026-08-16-ects-prefix-training-infrastructure-spec.md` (Task 6's
 deployment guidance).
 
@@ -117,7 +117,7 @@ Expected: FAIL with `fatal error: 'PredatorContext.h' file not found`
 
 ```cpp
 // PredatorContext.h — unified macro context for the Predator Decision Contract
-// (docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md).
+// (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md).
 //
 // Composes the existing LocalRiskContext (Gang/Taleb/Pareto/Shannon intelligence, already
 // populated by ContextManager every tick) with the HMM regime-state enum (previously only
@@ -577,7 +577,7 @@ Expected: FAIL with `fatal error: 'TurtleSoupFusion.h' file not found`
 
 ```cpp
 // TurtleSoupFusion.h — Turtle Soup Predator-ization, Option A (tick-reactive geometric
-// heuristic), per docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md.
+// heuristic), per docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md.
 //
 // Reuses the same tail-to-body-ratio/close-position-in-range shape already proven and
 // audited for Kangaroo Tail (TripleScreen3.cpp:849-877), applied against the 20-bar
@@ -713,7 +713,7 @@ with
     // matching Kangaroo Tail/Momentum Pinball's tick-reactive pattern. The 20-bar reference
     // window below still uses only fully-closed history (unchanged) -- only the signal
     // bar's own high/low/close became tick-reactive, per
-    // docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md.
+    // docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md.
     const int signalBarIndex = sc.Index;
 
     const bool runTurtleSoup = (signalBarIndex - 1 >= TURTLE_SOUP_LENGTH);

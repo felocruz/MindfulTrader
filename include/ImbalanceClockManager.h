@@ -1,5 +1,5 @@
 // Singleton holder driving the IS3 -> IS2 -> IS1 hierarchical bars-of-bars cascade
-// (docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md §1.2a/§1.2b).
+// (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md §1.2a/§1.2b).
 // Owns the one real ImbalanceBarEngine (IS3, adaptive threshold); IS2/IS1 "bars" are aggregates
 // of K2/K1 completed finer-level log returns, not independent engines -- rejected alternative
 // (3 independent adaptive engines) suffers stochastic boundary drift with no structural

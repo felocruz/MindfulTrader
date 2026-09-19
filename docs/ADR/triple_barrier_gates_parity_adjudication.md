@@ -144,7 +144,7 @@ Section 6's `ExitReason` schema recommendation above (`TRAP_CANDIDATE_EXIT`/
 `FAVORABLE_STRUCTURAL_EXIT`) is superseded accordingly — no `FAVORABLE_STRUCTURAL_EXIT` value is
 needed since the mechanism it would have attributed no longer exists; the still-relevant schema gap
 (TRAP-exit attribution) is tracked separately as Unit 3 of
-`docs/superpowers/specs/2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md` (currently
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` (currently
 deferred pending the SC-replay confirmation stage). This document's other verdicts (Sections 1-3, 5,
 7 — `StructureTest` parity, `TRAP_CANDIDATE` priority/buffering, catastrophic-safety-rail framing)
 are unaffected by this note and remain the record.

@@ -166,7 +166,7 @@ regression surfaces; no schema change in this unit (the field already exists).
 
 **Status: DONE, 2026-08-15** (`docs/superpowers/plans/2026-08-15-risk-gate-audit-unit-b.md`, now
 removed -- fully duplicated by its own output). Findings merged into
-`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §3
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §3
 (2026-09-04, after the original output doc `docs/ADR/gate_stack_stationarity_audit_findings.md` was
 also merged there and removed). `taleb_signal_sigma_threshold`'s three-way drift was resolved
 (compiled default synced to the live JSON's `1.8401`); the lbrnet-side stale copies

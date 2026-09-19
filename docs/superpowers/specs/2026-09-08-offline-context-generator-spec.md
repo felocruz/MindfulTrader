@@ -263,7 +263,7 @@ calendar-clock `ContextManager`/`ObservationData` (18D) pipeline. A separate, al
 committed sibling exists for the activity-clock Imbalance Triple Screen migration —
 `include/ImbalanceContextManager.h` (singleton, assembles the 4-dim `ImbalanceObservationData`
 from `ImbalanceClockManager`'s TS1/TS2/TS3 return buffers), committed in `02f5b91`, designed in
-`2026-09-06-imbalance-triple-screen-architecture-spec.md` §1.4. That component is out of scope
+`2026-09-18-predator-sniper-execution-architecture.md` §1.4. That component is out of scope
 here — this tool does not need it, and nothing in §1-§3 above refers to it despite the similar
 name.
 
@@ -758,7 +758,7 @@ Every earlier iteration of this list has been resolved, deferred, or absorbed in
    `.context.parquet`, then hand off to Feature Saliency EM (the stated goal, §0).
 7. Verify Sierra-Chart cross-chart write-ordering (`sc.CalculationPrecedence`) for the
    calendar-clock TS1/TS2/TS3 screens, matching the already-documented Imbalance-side precedent
-   (`2026-09-06-imbalance-triple-screen-architecture-spec.md` §1.2b) — the one item from the
+   (`2026-09-18-predator-sniper-execution-architecture.md` §1.2b) — the one item from the
    original list not yet touched by this session's work; still needs a look before trusting
    cross-screen write ordering in the replicated logic.
 
@@ -766,7 +766,7 @@ Every earlier iteration of this list has been resolved, deferred, or absorbed in
 
 - `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` — originating
   "Side thread" section; the Phase-1 audit this tool's feasibility rests on.
-- `docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md` — sibling
+- `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` — sibling
   activity-clock migration; NOT the same tool, but shares `ActivityClockManager`/imbalance-bar
   infrastructure this tool's `skewness_idx`/`fast_taleb_kurtosis`/`fast_hurst_exponent`/
   `recurrence_rate` dims depend on.

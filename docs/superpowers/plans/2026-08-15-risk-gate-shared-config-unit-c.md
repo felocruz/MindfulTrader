@@ -104,7 +104,7 @@ Expected: no output (the two are structurally identical once the new keys are re
     "pareto_top_state_ratio_max": 0.5,
     "shannon_min_tenure_bars": 143.5184571838369,
     "taleb_signal_sigma_threshold": 1.8401,
-    "_taleb_signal_sigma_threshold_note": "percentile-matched to Moors-kurtosis scale, rescaled 2026-08-13 (was 9.697616023284109). Compiled C++ default synced to this exact value in src/RiskManager.cpp:74 per docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md (formerly docs/ADR/gate_stack_stationarity_audit_findings.md, removed 2026-09-04, fully merged into that living doc).",
+    "_taleb_signal_sigma_threshold_note": "percentile-matched to Moors-kurtosis scale, rescaled 2026-08-13 (was 9.697616023284109). Compiled C++ default synced to this exact value in src/RiskManager.cpp:74 per docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md (formerly docs/ADR/gate_stack_stationarity_audit_findings.md, removed 2026-09-04, fully merged into that living doc).",
     "window_count_used": 34
   }
 }
@@ -329,6 +329,7 @@ is a deployment target. Run manually after editing config/*.json — not wired
 into any build step, matching this repo's other un-wired scripts/ entries
 (check_nh_nl_freshness.py, refresh_sierra_chart_dependencies.sh).
 """
+
 import argparse
 import json
 import os
@@ -407,6 +408,7 @@ if __name__ == "__main__":
 
 ```python
 """Test scripts/promote_config_to_live.py's atomic-write + backup behavior."""
+
 import json
 import sys
 from pathlib import Path
@@ -450,6 +452,7 @@ def test_promote_backs_up_existing_live_file(tmp_path):
 
 if __name__ == "__main__":
     import pytest
+
     sys.exit(pytest.main([__file__, "-v"]))
 ```
 

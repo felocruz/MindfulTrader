@@ -1,6 +1,6 @@
 // tools/observation_vector/imbalance_clock_manager_ratio_eval.cpp -- empirical validation for
 // the ImbalanceClockManager K2/K1 bars-of-bars aggregation ratio (docs/superpowers/specs/
-// 2026-09-06-imbalance-triple-screen-architecture-spec.md §1.2a/§1.2b Next Steps item 12's
+// 2026-09-18-predator-sniper-execution-architecture.md §1.2a/§1.2b Next Steps item 12's
 // remaining open follow-on: "5/5 is literature-plausible, not yet data-derived for this
 // instrument").
 //

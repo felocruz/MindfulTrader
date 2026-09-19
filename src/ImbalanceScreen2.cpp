@@ -28,7 +28,7 @@
  * (TripleScreen2.cpp). Only the general-purpose 3-state signal is shown here;
  * the divergence/TRAP sub-case is not yet wired (§1.3a).
  *
- * Reference: docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+ * Reference: docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
  */
 SCSFExport scsf_ImbalanceScreen2(SCStudyInterfaceRef sc)
 {

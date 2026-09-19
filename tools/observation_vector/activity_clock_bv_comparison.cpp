@@ -1,5 +1,5 @@
 // activity_clock_bv_comparison.cpp -- first empirical test of the decisive pivot recorded in
-// docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md:
+// docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md:
 // compares Wilder's calendar-clock ATR against a jump-robust scale reference (Bipower Variation,
 // Barndorff-Nielsen & Shephard 2004/2006) computed on the imbalance/activity clock
 // (ImbalanceBarEngine), running BOTH side by side over the same real tick stream so their

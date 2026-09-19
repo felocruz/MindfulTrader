@@ -35,7 +35,7 @@
  * the producer/cascade/dim pipeline end-to-end via its own Subgraph -- the
  * smallest real starting point, not the final wiring.
  *
- * Reference: docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+ * Reference: docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
  */
 SCSFExport scsf_ImbalanceScreen1(SCStudyInterfaceRef sc)
 {

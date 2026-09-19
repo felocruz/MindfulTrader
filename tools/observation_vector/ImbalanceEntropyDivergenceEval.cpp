@@ -1,5 +1,5 @@
 // ImbalanceEntropyDivergenceEval.cpp -- empirical validation for the Gang-MACD/Phase-Coherence
-// entropy engine (docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+// entropy engine (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
 // §1.3a/§1.3b) BEFORE wiring its divergence sub-case ("Thermodynamic Exhaustion") into the native
 // TRAP/StructureTest framework -- per an independent Gemini CLI read-only literature consult,
 // 2026-09-09: validate dH_norm/dtau is a stable, sensible signal on real imbalance-bar data first.

@@ -24,19 +24,19 @@
   2026-09-04**: `LocalRiskContext`/`RiskGateContext` was verified blind to the HMM's own signal for
   7 of its 8 hard gates (only the Amihud illiquidity veto reads live HMM state) — see `../CLAUDE.md`'s
   own pointer for the full account and prioritized recommendations. Living ledger:
-  `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md`.
+  `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`.
 - **Chart-based-TA → Gang-statistical reformulation initiative, opened 2026-09-04**: swing high/low,
   oscillator divergence, and (case study #2) Wyckoff Spring/Upthrust/Livermore stop-harvest-reversal
   patterns are being reassessed for Shannon/Mandelbrot/Taleb/Pareto reformulation, informed by real
   imbalance-vs-time-bar chart comparisons on real MES ticks. Living ledger:
-  `docs/superpowers/specs/2026-09-04-technical-analysis-gang-statistical-reformulation-initiative.md`.
+  `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`.
   **Standing caution**: this is genuinely elite-grade methodology (extrapolation-risk-aware EVT/GPD
   calibration, cross-checked via independent Gemini review — e.g. `amihud_illiquidity`'s
   winsorization bound recalibrated 2706→3036 this session) but methodology rigor is not a validated
   trading edge; don't let it read as "closer to done" than the Vision section's honest gaps allow.
 - **Imbalance Triple Screen migration initiative + Force Index Track 2 (`Y_imb`) closure, 2026-09-06**:
   foundational activity-clock migration architecture doc opened
-  (`docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md`, 4 open design
+  (`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`, 4 open design
   questions, nothing implemented) alongside 3 sibling gang-statistical reformulation docs (risk-
   gating, labeling/augmentation, observation-vector) split from the same brainstorm. `Y_imb`
   (Force Index Track 2, a new activity-clock construct) was real-data-tested against 471.9M real

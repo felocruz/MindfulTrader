@@ -54,7 +54,7 @@ public:
         bool hmmMetricsValid{false};
         // Hill (1975) tail-index proxy (1/alpha), NOT an HMM state-occupancy probability
         // despite the field's pre-2026-09-04 name (paretoTopStateRatio) -- see
-        // docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md sec3a.
+        // docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md sec3a.
         float hillTailIndexProxy{0.0f};
         float shannonTenureBars{0.0f};
         // Raw Moors octile kurtosis (same feature as RiskManager's gate 4), NOT a z-score/sigma

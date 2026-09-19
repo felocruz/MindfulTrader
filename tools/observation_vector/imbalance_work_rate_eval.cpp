@@ -1,5 +1,5 @@
 // imbalance_work_rate_eval.cpp -- empirical validation of the "Imbalance Yield" candidate signal
-// (Y_imb = barReturn / theta_tau, docs/superpowers/specs/2026-09-06-imbalance-work-rate-spec.md
+// (Y_imb = barReturn / theta_tau, docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
 // section 2, corrected there from the source brainstorm's algebraically-degenerate
 // "Work Rate" = theta*Y_imb = ΔP formula). Tests whether Y_imb's SIGN -- confirmed/efficient
 // move (theta and price agree) vs absorbed/failed move (theta and price disagree) -- carries
@@ -10,7 +10,7 @@
 // bar's own return), measured separately on the "confirmed" subset (Y_imb>0) vs the "absorbed"
 // subset (Y_imb<0). If Y_imb carries real information, these two subsets' hit rates should
 // differ meaningfully (confirmed moves should continue more often than absorbed ones) --
-// this is a genuinely new construct (docs/superpowers/specs/2026-09-06-imbalance-work-rate-spec.md
+// this is a genuinely new construct (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
 // section 1's own honesty flag: zero literature citation for this specific formula), so this is
 // exactly the "does this carry information at all" bar, not a construction-correctness check.
 //

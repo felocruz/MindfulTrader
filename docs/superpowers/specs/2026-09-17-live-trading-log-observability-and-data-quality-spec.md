@@ -146,7 +146,7 @@ why `FeatureScaler` correctly reports a constant raw input.
 
 **CORRECTED (2026-09-17, after further verification): the decision to leave it unwired IS the
 current, well-grounded institutional decision -- do not treat it as outdated or Gaussian-flawed.**
-`docs/superpowers/specs/2026-09-06-observation-vector-gang-statistical-reformulation-initiative.md`'s
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`'s
 own per-dim ledger states plainly, dated 2026-09-04: *"both variants remain statistically
 indistinguishable from a coin flip ... Decision: do not wire into production."* That test was a
 forward-return/**hit-rate** test (binary direction classification, n=1,575,967, 95% CI width

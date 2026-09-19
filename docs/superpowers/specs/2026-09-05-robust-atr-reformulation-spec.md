@@ -3,7 +3,7 @@
 **SCOPE NARROWED, 2026-09-05 (operator directive — decisive institutional replacement, not
 hedging): this spec no longer governs the Triple-Barrier exit engine's stop/target width or
 vertical time barrier.** Those are now governed by
-`docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`, which
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`, which
 replaces ATR OUTRIGHT (not a robustified variant, not a parallel fallback) with a jump-robust
 realized-volatility estimator computed natively on the activity/imbalance clock. **This spec's
 remaining scope is the 4 peripheral, non-barrier ATR consumers only**: `ATRProximityEnum`/
@@ -17,9 +17,9 @@ items 1-4 is superseded; retained for historical record only.
 in production. See §9 for the full empirical record and final decision -- plain Wilder ATR is
 adequate for this spec's (narrowed) scope, no further reformulation planned.** (Prior status,
 kept for history: SPEC v3 -- design proposed, NOT implemented. Opened 2026-09-05, following directly from
-`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 5
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 item 5
 ("Wilder ATR as a systemic single point of failure") and its cross-reference from
-`docs/superpowers/specs/2026-09-04-indicator-gang-statistical-reformulation-initiative.md` §6.3.
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §6.3.
 v1's plain-median design was critiqued by an independent Gemini instance (`CLAUDE_BRIEF_134`/`_REPLY`),
 producing v2 (Huber-in-log-space + Kaufman ER-adaptive rate). v2 was itself sent back for review
 (`CLAUDE_BRIEF_135`/`_REPLY`) and one real design flaw was found in it -- Kaufman's Efficiency Ratio
@@ -42,7 +42,7 @@ sufficient, on its own), just not for capital-preservation reasons.
 
 ## 0. Origin and mandate
 
-`docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item 5
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 item 5
 found that Wilder's ATR (a first-order EMA of True Range) is the single most load-bearing, most
 pervasive scale unit in this system — not just `ATRProximityEnum`/`EmaProximity` (already flagged as
 a candidate fix in the sibling indicator-formula initiative), but the stop-width seed for all 9
@@ -428,7 +428,7 @@ by capital risk).
 
 - Replacing ATR's *conceptual* role entirely with an activity-clock/bipower-variation-based
   volatility measure (already tracked separately as
-  `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item
+  `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 item
   4, `log_scale_expansion_ratio`) — that is a different question (a new, additional signal) from this
   spec's narrower one (robustify the existing indicator in place).
 - Any change to stop/target *multiplier* values (`stop_mult`, `target_r_mult` per pattern) — this
@@ -473,9 +473,9 @@ by capital risk).
   disorder problem) this repo's own TRAP-detection doctrine (`CLAUDE.md`) already uses for the
   identical class of problem (distinguish a genuine persistent shift from noise, react as fast as
   possible without whipsawing).
-- `docs/superpowers/specs/2026-09-03-trade-execution-risk-management-curation-initiative.md` §2 item
+- `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 item
   5 — the founding finding this spec implements.
-- `docs/superpowers/specs/2026-09-04-indicator-gang-statistical-reformulation-initiative.md` §6.3 —
+- `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §6.3 —
   the narrower `ATRProximityEnum`/`EmaProximity` candidate this spec supersedes in scope.
 - `lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_134`/`CLAUDE_BRIEF_134_REPLY` — the first-round
   independent critique that superseded v1 (§2).
@@ -548,6 +548,6 @@ this spec's own narrowed scope (§0: the 4 peripheral, non-barrier ATR consumers
 distance), **plain Wilder ATR — already confirmed intra-bar-reactive (§9.1/9.2) — is adequate. No
 further reformulation is planned for these 4 consumers.** This does not reopen or contradict the
 separate, already-decided Triple-Barrier core replacement (bipower-variation/MedRV,
-`docs/superpowers/specs/2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`) -- that
+`docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`) -- that
 remains a full outright replacement, unaffected by this section's verdict on the 4 peripheral
 consumers.

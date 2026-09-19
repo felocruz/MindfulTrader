@@ -1,6 +1,6 @@
 // ImbalanceContextManager.h -- centralized computer for the 4 activity-clock
 // dims consumed by IS1/IS2/IS3 (architecture spec docs/superpowers/specs/
-// 2026-09-06-imbalance-triple-screen-architecture-spec.md §1.1a/§1.2c/§1.2d/
+// 2026-09-18-predator-sniper-execution-architecture.md §1.1a/§1.2c/§1.2d/
 // §1.4/§1.5). Mirrors ContextManager's ROLE (assembling an observation struct
 // for the .context/.imbalance.context write) but deliberately NOT its full
 // machinery -- no Mahalanobis triggers, no Lock A-E readiness gates, no HMM

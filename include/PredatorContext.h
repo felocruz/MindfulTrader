@@ -1,5 +1,5 @@
 // PredatorContext.h — unified macro context for the Predator Decision Contract
-// (docs/superpowers/specs/2026-08-16-predator-decision-contract-execution-risk-framework.md).
+// (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md).
 //
 // Composes the existing LocalRiskContext (Gang/Taleb/Pareto/Shannon intelligence, already
 // populated by ContextManager every tick) with the HMM regime-state enum (previously only

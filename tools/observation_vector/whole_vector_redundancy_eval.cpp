@@ -30,7 +30,7 @@
 // Scope, 2026-09-07, CORRECTED same day (operator directive: remove any dim already
 // sourced from the activity/imbalance clock -- mixing them into a CALENDAR-clock
 // redundancy audit conflates two observation vectors this system's two-HMM design
-// (docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+// (docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
 // §1.4) already decided must stay independent):
 //   INCLUDED (11 dims, every formula traced to its real, live production call site,
 //   ALL genuinely calendar-clock-native -- none read ImbalanceBarEngine/activity-

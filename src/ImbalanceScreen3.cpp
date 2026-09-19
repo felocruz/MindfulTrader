@@ -27,7 +27,7 @@
  * TS3/Ripple-owned "shape of the return distribution, fast-reacting" measures
  * on the calendar-clock side, a real grouping, not coincidental.
  *
- * Reference: docs/superpowers/specs/2026-09-06-imbalance-triple-screen-architecture-spec.md
+ * Reference: docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md
  */
 SCSFExport scsf_ImbalanceScreen3(SCStudyInterfaceRef sc)
 {

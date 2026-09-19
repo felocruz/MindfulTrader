@@ -1175,7 +1175,7 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
 
     // Predator-ized (2026-08-16): evaluates the CURRENT, still-forming bar every tick,
     // matching Kangaroo Tail/Momentum Pinball's tick-reactive pattern (Predator Decision
-    // Contract, docs/superpowers/specs/2026-08-16-turtle-soup-predator-ization-spec.md).
+    // Contract, docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md).
     // signalBarIndex (sc.Index - 1, the last CLOSED bar) is left completely untouched --
     // it still anchors the "CRITICAL FIX" normalized-anchors block further down, which
     // must keep evaluating the last closed bar, not the still-forming one. currentBarIndex
