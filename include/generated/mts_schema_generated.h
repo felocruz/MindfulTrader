@@ -2379,7 +2379,7 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS 
   float taleb_kurtosis_;
   float taleb_skewness_;
   float taleb_cliff_;
-  float pareto_rot_;
+  float roughness_ratio_;
   float raschke_burst_;
   float session_quality_score_;
 
@@ -2390,17 +2390,17 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS 
         taleb_kurtosis_(0),
         taleb_skewness_(0),
         taleb_cliff_(0),
-        pareto_rot_(0),
+        roughness_ratio_(0),
         raschke_burst_(0),
         session_quality_score_(0) {
   }
-  AsymmetryContext(float _shannon_entropy, float _shannon_efficiency, float _taleb_kurtosis, float _taleb_skewness, float _taleb_cliff, float _pareto_rot, float _raschke_burst, float _session_quality_score)
+  AsymmetryContext(float _shannon_entropy, float _shannon_efficiency, float _taleb_kurtosis, float _taleb_skewness, float _taleb_cliff, float _roughness_ratio, float _raschke_burst, float _session_quality_score)
       : shannon_entropy_(::flatbuffers::EndianScalar(_shannon_entropy)),
         shannon_efficiency_(::flatbuffers::EndianScalar(_shannon_efficiency)),
         taleb_kurtosis_(::flatbuffers::EndianScalar(_taleb_kurtosis)),
         taleb_skewness_(::flatbuffers::EndianScalar(_taleb_skewness)),
         taleb_cliff_(::flatbuffers::EndianScalar(_taleb_cliff)),
-        pareto_rot_(::flatbuffers::EndianScalar(_pareto_rot)),
+        roughness_ratio_(::flatbuffers::EndianScalar(_roughness_ratio)),
         raschke_burst_(::flatbuffers::EndianScalar(_raschke_burst)),
         session_quality_score_(::flatbuffers::EndianScalar(_session_quality_score)) {
   }
@@ -2434,11 +2434,11 @@ FLATBUFFERS_MANUALLY_ALIGNED_STRUCT(4) AsymmetryContext FLATBUFFERS_FINAL_CLASS 
   void mutate_taleb_cliff(float _taleb_cliff) {
     ::flatbuffers::WriteScalar(&taleb_cliff_, _taleb_cliff);
   }
-  float pareto_rot() const {
-    return ::flatbuffers::EndianScalar(pareto_rot_);
+  float roughness_ratio() const {
+    return ::flatbuffers::EndianScalar(roughness_ratio_);
   }
-  void mutate_pareto_rot(float _pareto_rot) {
-    ::flatbuffers::WriteScalar(&pareto_rot_, _pareto_rot);
+  void mutate_roughness_ratio(float _roughness_ratio) {
+    ::flatbuffers::WriteScalar(&roughness_ratio_, _roughness_ratio);
   }
   float raschke_burst() const {
     return ::flatbuffers::EndianScalar(raschke_burst_);

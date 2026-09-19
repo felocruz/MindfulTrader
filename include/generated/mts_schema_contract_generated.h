@@ -66,7 +66,7 @@ inline constexpr std::size_t kAsymShannonEfficiency = 1;
 inline constexpr std::size_t kAsymTalebKurtosis = 2;
 inline constexpr std::size_t kAsymTalebSkewness = 3;
 inline constexpr std::size_t kAsymTalebCliff = 4;
-inline constexpr std::size_t kAsymParetoRot = 5;
+inline constexpr std::size_t kAsymRoughnessRatio = 5;
 inline constexpr std::size_t kAsymRaschkeBurst = 6;
 inline constexpr std::size_t kAsymSessionQualityScore = 7;
 
@@ -76,7 +76,7 @@ inline constexpr std::array<const char*, kAsymmetryDim> kAsymmetryFieldNames = {
     "taleb_kurtosis",
     "taleb_skewness",
     "taleb_cliff",
-    "pareto_rot",
+    "roughness_ratio",
     "raschke_burst",
     "session_quality_score",
 };

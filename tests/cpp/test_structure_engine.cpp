@@ -44,7 +44,7 @@ int main() {
         StructureEngine se;
         check("cold_start_log_expansion_ratio_is_one", se.GetLogExpansionRatio() == 1.0f);
         check("cold_start_recurrence_rate_is_neutral", se.GetRecurrenceRate() == 0.5f);
-        check("cold_start_fractal_dim_is_neutral", se.GetFractalDimension() == 1.5f);
+        check("cold_start_roughness_ratio_is_neutral", se.GetRoughnessRatio() == 1.5f);
         check("cold_start_mean_rev_z_is_zero", se.GetMeanReversionZ() == 0.0f);
         check("cold_start_not_ready", !se.IsReady());
     }
@@ -56,7 +56,7 @@ int main() {
             se.Update(/*high=*/100.5f + i, /*low=*/99.5f + i, /*close=*/100.0f + i, /*isNewBar=*/true);
         }
         check("below_window_recurrence_rate_is_neutral", se.GetRecurrenceRate() == 0.5f);
-        check("below_window_fractal_dim_is_neutral", se.GetFractalDimension() == 1.5f);
+        check("below_window_roughness_ratio_is_neutral", se.GetRoughnessRatio() == 1.5f);
         check("below_window_not_ready", !se.IsReady());
     }
 
@@ -66,7 +66,7 @@ int main() {
     //   - LogExpansionRatio: currentLogRange(0) - avg(0) -> exp(0) = 1.0
     //   - RecurrenceRate: 30 evenly-spaced prices [100..129] into 10 bins of
     //     width 2.9 split exactly 3-per-bin (hand-verified bin assignment) -> 3/30 = 0.1
-    //   - FractalDimension: pathLength = 29*1.0 = 29.0; displacement =
+    //   - RoughnessRatio: pathLength = 29*1.0 = 29.0; displacement =
     //     maxHigh(129.5) - minLow(99.5) = 30.0 -> 29.0/30.0
     //   - MeanReversionZ: perfect OLS fit -> residual=0, stdRes=0 -> guarded to 0.0f
     {
@@ -78,7 +78,7 @@ int main() {
         check("ramp_is_ready", se.IsReady());
         check("ramp_log_expansion_ratio", approx(se.GetLogExpansionRatio(), 1.0f));
         check("ramp_recurrence_rate", approx(se.GetRecurrenceRate(), 0.1f));
-        check("ramp_fractal_dimension", approx(se.GetFractalDimension(), 29.0f / 30.0f));
+        check("ramp_roughness_ratio", approx(se.GetRoughnessRatio(), 29.0f / 30.0f));
         check("ramp_mean_rev_z_is_zero_on_perfect_fit", se.GetMeanReversionZ() == 0.0f);
     }
 
@@ -103,8 +103,8 @@ int main() {
         // just confirm it stays in the method's documented [bounded-ish] output
         // range rather than blowing up (e.g. NaN/negative), i.e. the container
         // swap didn't desync any of the four parallel buffers' sizes.
-        const float fd = se.GetFractalDimension();
-        check("overwrite_then_push_fractal_dim_finite_and_positive",
+        const float fd = se.GetRoughnessRatio();
+        check("overwrite_then_push_roughness_ratio_finite_and_positive",
               std::isfinite(fd) && fd > 0.0f);
     }
 
@@ -126,7 +126,7 @@ int main() {
         se.Reset();
         check("reset_clears_ready_state", !se.IsReady());
         check("reset_clears_recurrence_rate", se.GetRecurrenceRate() == 0.5f);
-        check("reset_clears_fractal_dim", se.GetFractalDimension() == 1.5f);
+        check("reset_clears_roughness_ratio", se.GetRoughnessRatio() == 1.5f);
     }
 
     std::printf("\n%s (%d failure%s)\n", g_failures == 0 ? "ALL PASS" : "FAILURES",

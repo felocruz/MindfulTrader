@@ -562,10 +562,17 @@ MTS::Schema::AsymmetryContext ContextManager::GetAsymmetryContext() const {
         m_latestInstitutionalMetrics.talebKurtosis,
         m_latestInstitutionalMetrics.talebSkewness,
         m_latestInstitutionalMetrics.elderChandelierATR,
-        m_latestInstitutionalMetrics.paretoRot,
+        m_latestInstitutionalMetrics.roughnessRatio,
         m_latestInstitutionalMetrics.raschkeBurst,
-        m_latestInstitutionalMetrics.elderImpulse,
+        GetCurrentSessionQualityScore(),
     });
+}
+
+// AsymmetryContext.session_quality_score's real source (fixed 2026-09-19) --
+// see ContextManager.h's own declaration comment for the full trace.
+float ContextManager::GetCurrentSessionQualityScore() const {
+    const auto* tod = IndicatorManager::Instance().GetIndicator<TimeOfDayIndicator>(IndicatorKey::TIME_OF_DAY);
+    return tod ? ComputeSessionQualityScore(tod->Value()) : 0.0f;
 }
 
 // Utility: Calculate event velocity from timestamp history.
@@ -665,9 +672,9 @@ void ContextManager::AddToTrainingEventFB(MTS::Training::TrainingEventT& event, 
         m_latestInstitutionalMetrics.talebKurtosis,
         m_latestInstitutionalMetrics.talebSkewness,
         m_latestInstitutionalMetrics.elderChandelierATR,
-        m_latestInstitutionalMetrics.paretoRot,
+        m_latestInstitutionalMetrics.roughnessRatio,
         m_latestInstitutionalMetrics.raschkeBurst,
-        m_latestInstitutionalMetrics.elderImpulse,
+        GetCurrentSessionQualityScore(),
     });
 }
 
@@ -680,7 +687,7 @@ void ContextManager::UpdatePriceStructure(SCStudyInterfaceRef sc, float high, fl
     // [NEW] Elite v3.0: Populate Institutional Metrics Cache
     // See naming-mismatch note at ContextManager.h:414 -- this assigns a
     // Mandelbrot-pillar value into a Pareto-named field.
-    m_latestInstitutionalMetrics.paretoRot = m_structureEngine.GetFractalDimension();
+    m_latestInstitutionalMetrics.roughnessRatio = m_structureEngine.GetRoughnessRatio();
 
     // Elder Impulse Proxy: Close Location Value
     if (high > low) {

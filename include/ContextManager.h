@@ -413,14 +413,13 @@ private:
         float talebKurtosis = 0.0f;
         float talebSkewness = 0.0f;
         float elderChandelierATR = 0.0f;
-        float paretoRot = 0.0f;  // NOTE: holds a Mandelbrot-pillar metric (fractal
-                          // roughness from StructureEngine::GetFractalDimension()),
-                          // not a Pareto-pillar one -- field name predates this
-                          // finding (docs/superpowers/specs/2026-08-12-gang-
-                          // literature-grounding-spec.md Finding 4). Left
-                          // unrenamed: the wire-schema field this feeds is a
-                          // cross-repo contract (../schema/mts_schema.fbs),
-                          // out of scope for a comment-only hygiene fix.
+        // FIXED 2026-09-19: was `paretoRot`, holding a Mandelbrot-pillar metric
+        // (fractal roughness from StructureEngine::GetRoughnessRatio(), itself
+        // renamed same day) under a Pareto-pillar name (docs/superpowers/specs/
+        // 2026-08-12-gang-literature-grounding-spec.md Finding 4). Wire schema
+        // field renamed to `roughness_ratio` in the same fix -- both sides now
+        // match.
+        float roughnessRatio = 0.0f;
         float raschkeBurst = 0.0f;
         float elderImpulse = 0.0f;
     };
@@ -530,6 +529,12 @@ private:
     /// @param now_us Current time in microseconds
     /// @return Events per second in the EVENT_VELOCITY_WINDOW_SEC window
     float CalculateEventVelocity(uint64_t now_us);
+
+    /// AsymmetryContext.session_quality_score's real value (fixed 2026-09-19):
+    /// reads the live TimeOfDayEnum state from IndicatorManager and maps it via
+    /// ComputeSessionQualityScore() (Indicator.h) -- replaces the previous
+    /// incorrect elderImpulse (Close Location Value) source.
+    float GetCurrentSessionQualityScore() const;
 
     /// Calculate Burstiness Index (CV of Inter-Arrival Times)
     /// Measures non-Poisson clustering (Pareto flow)

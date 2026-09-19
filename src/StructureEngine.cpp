@@ -82,7 +82,7 @@ float StructureEngine::GetRecurrenceRate() const {
     return static_cast<float>(maxCount) / m_prices.size();
 }
 
-float StructureEngine::GetFractalDimension() const {
+float StructureEngine::GetRoughnessRatio() const {
     if (m_prices.size() < WINDOW_SIZE) return 1.5f; // Neutral Brownian
 
     // Path-length/displacement roughness ratio -- NOT Sevcik's method (that's

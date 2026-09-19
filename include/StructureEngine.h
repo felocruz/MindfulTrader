@@ -31,10 +31,12 @@ public:
     /// % of time price spends in the "Value Area" (Mode/POC of window)
     float GetRecurrenceRate() const;
 
-    /// 3. Fractal Dimension (Roughness)
+    /// 3. Roughness Ratio (dimensionless path-length/displacement ratio)
+    /// RENAMED 2026-09-19 (was GetFractalDimension() -- own body comment already
+    /// flagged this as NOT Sevcik's fractal dimension formula, docs/superpowers/
+    /// specs/2026-08-12-gang-literature-grounding-spec.md Finding 3/4).
     /// D = 2 - H_local (or Box Counting proxy: PathLength / Displacement)
-    /// Returns [1.0, 2.0]
-    float GetFractalDimension() const;
+    float GetRoughnessRatio() const;
 
     /// 4. Mean Reversion Potential (Standardized Residual)
     /// Z-Score of current Price vs Rolling OLS trend
