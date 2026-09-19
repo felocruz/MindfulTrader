@@ -162,6 +162,18 @@ the remaining dims via the same EVT/GPD or percentile-matching discipline alread
 repo (`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s own methodology) —
 **do not invent placeholder constants**, per this project's own standing rule.
 
+**Correction, 2026-09-19 (same day, before implementation started): the "reuse" plan above is
+blocked on verifying the reused thresholds are actually calibrated, not just labeled as such.**
+Auditing each dim's real derivation found `taleb_kurtosis`'s thresholds are the only ones with a
+saved, rerunnable, real-data pipeline; `taleb_skewness`'s citation is unverifiable (no script
+survives), `raschke_burst`'s bounded-scale thresholds are an algebraic carry-forward of an
+undocumented legacy constant, and `shannon_entropy`'s bands/halt-frac and `taleb_cliff`'s gate have
+no derivation on record at all. See the new spin-off spec
+`docs/superpowers/specs/2026-09-19-decision-boundary-calibration-tool-spec.md` for the full
+per-field audit, assessment, and the coordinated calibration tool it proposes — Trigger 3's own
+threshold work (this dim's `roughness_ratio`/`session_quality_score` gap included) is now sequenced
+behind that tool's prospective-queue item, not directly behind this section's original plan.
+
 ### 4d. Cross-repo finding, 2026-09-19: Trigger 3 must export a per-field wire bitmask, not just gate internally
 
 `lbrnet`'s own session (working the Transformer's `hints` mechanism, `2026-09-19-asymmetry-
