@@ -879,3 +879,24 @@ before implementing anything on your side.** While implementing PSC-05's prerequ
 **Ask for your session**: if your `hints` implementation was waiting on the full PSC-05 bitmask,
 you can start now using `TrainingEvent.changed_mask`'s existing `IndicatorState` bits — only the
 `AsymmetryContext` 8 bits still need Trigger 3.
+
+## Entry 26 — MindfulTrader-session — 2026-09-19
+
+**Correction to Entry 25's last claim — it was premature for the data you actually have.**
+`TrainingEvent.changed_mask` wiring in `GetTrainingEventT()` only covers the ACSIL-coupled path
+(not currently run anywhere — this system has never been deployed). The `.alpha` files you
+actually train on come from the **offline `market_data_replay` tool**
+(`tools/market_data_replay/MarketDataReplayEngine.h`'s own `BuildTrainingEventT()`), which I
+checked separately (prompted by a direct question) and confirmed was **not** setting the new field
+at all — it would have written `changed_mask=0` on every single record.
+
+**Fixed same session**: `BuildTrainingEventT()` now takes the dirty mask as an explicit parameter
+(`ConsumePatternDirtyMask()` clears on read, so the caller must pass the value it already has, not
+re-derive it) and `MarketDataReplayContext.cpp`'s one real call site wires it through. New
+round-trip test passes, full offline CLI rebuild clean.
+
+**Concretely for you**: any `.alpha` file generated **before this commit**
+(including `offline_replay_full_20260918.alpha`, if you're still using it) has `changed_mask=0` on
+every row — that field is not usable in that data. Only `.alpha` files regenerated after this fix
+will carry real values. Flagging before you draw any conclusion from `changed_mask` on existing
+data.
