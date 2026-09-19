@@ -172,7 +172,42 @@ repo (`docs/superpowers/specs/2026-08-12-gang-literature-grounding-spec.md`'s ow
    characteristics of `asymmetry_context`, a value they already train the Transformer on; worth a
    heads-up before they draw conclusions from data collected under the old, gap-having behavior.
 
-## 6. Relationship to other open specs
+## 6. Institutional rollout plan (operator directive, 2026-09-19: decouple by risk, measure before/after)
+
+The two fixes in this spec have different risk profiles and must not ship as one change.
+
+**Phase 1 — `STRUCTURE_TEST` categorical fix (low-risk, well-understood idiom, ship first)**:
+1. Decide the exact semantic before writing code: `FAILED_*`-only, or `FAILED_*` + `DECISIVE_*`
+   (§ "Where I'd like your call" from the prior discussion — still open).
+2. Golden-vector/parity test proving every existing trigger path is unaffected (this is an
+   addition, not a refactor, but "should be unaffected" still gets verified, not assumed).
+3. New, dedicated test for the actual new behavior.
+4. Full rebuild, then measure on a real replay run (`tools/market_data_replay` or a backtest pass
+   over real tick history) — quantify the actual event/`.alpha` rate change and whether `TRAP_*`
+   label density moves the way the hypothesis predicts. Do not declare this done from compilation
+   alone.
+
+**Phase 2 — Trigger 3 (`AsymmetryContext` significance), separate initiative, not rushed**:
+1. Measure real per-dim distributions on the existing 471.9M-tick dataset.
+2. Reuse `FeatureScaler`'s existing calibration for the 3 confirmed-identical-quantity dims
+   (§4c) — cheap, already real-data-validated.
+3. Fresh EVT/GPD or percentile-matching derivation for the remaining dims — no invented constants.
+4. Calibrate to a target base rate (this repo's ~10% precedent, `CandidateTriggerGate::
+   kBaseEpsilon`'s chi-squared derivation), not a guessed threshold.
+5. Implement, test, validate against real data — same empirical-close-the-loop discipline as
+   Phase 1.
+
+**Cross-cutting, both phases**:
+- Offline `market_data_replay` parity is a follow-on after each live fix ships and is validated —
+  not parallel work, to avoid re-drifting out of parity a second time before the live behavior
+  itself is even settled.
+- Flag to `lbrnet`'s coordination log both before (heads-up on the coming distributional shift in
+  `asymmetry_context`/event density) and after (what actually changed) — they train on data whose
+  statistical character this changes.
+- `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1`/`NORTH_STAR_STATUS` gets updated in the same edit that ships
+  either phase, per the Triage Protocol — not as a follow-up.
+
+## 7. Relationship to other open specs
 
 - `docs/superpowers/specs/2026-09-16-market-data-replay-alpha-generator-spec.md` — the offline
   generator's own Locks D/E cold-start gap (found earlier the same session: `AllDimsReady()`
