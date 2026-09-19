@@ -1425,6 +1425,15 @@ class StructureTestIndicator : public Indicator<StructureTest>
 public:
     StructureTestIndicator(IndicatorKey key_) : Indicator(key_, StructureTest::NONE) { }
 
+    // 2026-09-19 fix: was passive-by-default (base class `return false`) --
+    // see IndicatorManager::CheckTrigger()'s STRUCTURE_TEST case (the real
+    // devirtualized dispatch path) for the full trace. Kept here too so any
+    // non-devirtualized caller of this class's own ShouldTrigger() sees the
+    // same, now-correct behavior.
+    bool ShouldTrigger() const override {
+        return IsStructureTestSignificantTransition(m_prevValue, m_value);
+    }
+
     // Completed-bar structural test (evaluated on sc.Index-1) — the deterministic,
     // model-independent parity anchor for the native TRAP floor. Distinct from the
     // intra-bar Value() that feeds the model's observation vector.

@@ -320,6 +320,12 @@ IndicatorManager::IndicatorManager()
 //     ATRProximity, EmaProximity, KangarooTail, TurtleSoup, MomentumPinball,
 //     ElderBreakout, NR7) call the free-function reimplementations above,
 //     keyed to the same kIndicatorLayout position their packed row lives at.
+//   - STRUCTURE_TEST (2026-09-19 fix): was previously in the "no override,
+//     always false" bucket below -- see docs/superpowers/specs/2026-09-19-
+//     meaningful-event-trigger-and-asymmetry-context-significance-spec.md
+//     Phase 1. Now calls IsStructureTestSignificantTransition()
+//     (IndicatorComputations.h), matching StructureTestIndicator's own real
+//     ShouldTrigger() override.
 //   - LONG_IMP/INTERM_IMP/SIDE's ShouldTrigger() is `return IsDirty();`
 //     (Indicator.h:779,904). CheckTrigger(index) is only ever invoked from
 //     HasSignificantChange() with an index bit already known set in
@@ -364,7 +370,22 @@ bool IndicatorManager::CheckTrigger(size_t index) const {
         case IndicatorKey::INTERM_MACD: return false;
 
         // Screen 3
-        case IndicatorKey::STRUCTURE_TEST: return false;
+        case IndicatorKey::STRUCTURE_TEST: {
+            // 2026-09-19 fix (docs/superpowers/specs/2026-09-19-meaningful-event-trigger-and-
+            // asymmetry-context-significance-spec.md, Phase 1): StructureTestIndicator never had
+            // a real ShouldTrigger() (silently inherited the base class's `return false`), so a
+            // FAILED_* (TRAP) or DECISIVE_* (REGIME_INVALIDATION) transition could never
+            // independently cause an event/.alpha write. Prototyped and validated in the offline
+            // market_data_replay path first (IsStructureTestSignificantTransition,
+            // IndicatorComputations.h); ported here unchanged.
+            constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::STRUCTURE_TEST).position;
+            // `enum` tag required: IndicatorManager::StructureTest() (a method,
+            // StructureTestIndicator* getter) shadows the StructureTest enum type name
+            // in this class scope.
+            return IsStructureTestSignificantTransition(
+                static_cast<enum StructureTest>(m_packed.GetPrevI8(pos)),
+                static_cast<enum StructureTest>(m_packed.GetI8(pos)));
+        }
         case IndicatorKey::VOLUME_SIGNAL: return false;
         case IndicatorKey::ATR_PROXIMITY: {
             constexpr size_t pos = mts::UniqueDescriptorFor(IndicatorKey::ATR_PROXIMITY).position;
