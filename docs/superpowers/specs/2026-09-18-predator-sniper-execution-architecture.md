@@ -52,8 +52,8 @@ consolidate at all, not just tidiness.
   instrument — a real open question, not assumed to win).
 - Trading Partner Classifier (the "soft/gate classifier") — general danger veto, deliberately
   independent of live HMM output by design (a second, orthogonal survey axis, not a duplicate of
-  the HMM regime read). **Implemented and validated on the Python/training side already** — full
-  content in §2a, not just a spec reference.
+  the HMM regime read). **Code implemented, unit-tested; real empirical validation NOT yet run**
+  (verified 2026-09-19, see §2a) — full content in §2a, not just a spec reference.
 - `PredictionAgeUs()` continuous decay of the Transformer's staleness (mirrors `HmmStateAgeUs()`)
   — decay function form not yet chosen (candidates: exponential, linear ramp — needs empirical
   derivation, not an invented constant). **Consumer corrected 2026-08-24**: feeds the meta-labeler's
@@ -90,7 +90,23 @@ the original call. Moved from IN to OUT in the offline replay tool's candidate s
 The Python/training side is materially ahead of that — two genuinely distinct classifiers exist on
 the `lbrnet` side, at different maturity, both full content absorbed below (not just referenced).
 
-### 2a. Trading Partner Classifier (the "soft/gate classifier") — implemented, validated
+### 2a. Trading Partner Classifier (the "soft/gate classifier") — code done, empirical validation NOT run
+
+**Status correction (verified 2026-09-19, do not trust the "implemented and validated against real
+data" framing this section previously carried, inherited uncritically from the lbrnet spec's own
+prose)**: the classifier's *code* — feature attachment, LR/GBT training, threshold calibration,
+the hard-gate Python replay — is implemented and covered by passing unit tests. But every one of
+those tests (`test_trading_partner_twin.py` etc.) runs against small `rng`-generated synthetic toy
+data, not real outcomes. The actual empirical deliverable this whole spec exists to answer — does
+the classifier beat a replay of `EvaluateHardGates()` on real Turtle Soup trades (Test Plan item 4)
+— has **never been run**: `data/training/turtle_soup_snapshots.parquet` (the pattern-outcome
+dataset itself), `data/training/trading_partner_dataset.parquet` (the gang-augmented training set
+one step downstream), and `models/trading_partner_comparison_report.json` (the LR/GBT-vs-hard-gates
+report `run_trading_partner_comparison.py` produces) all do not exist on disk in the `lbrnet` repo.
+Per this spec's own deliverable rule ("if the hard gate already does as well/better, document and
+stop — no hand-port"), whether a C++ hand-port is even warranted is genuinely unknown until this
+run happens. Flagged to `lbrnet`'s own coordination log; not run from here (real-data ML training
+runs are `lbrnet`'s repo boundary, not MindfulTrader's).
 
 **What it is**: a learned, graded, *bidirectional* analog of `RiskManager::EvaluateHardGates()`.
 "Gate" was the original name and was deliberately dropped — a gate only has veto vocabulary (fire
@@ -155,12 +171,17 @@ trained classifier against real historical outcomes AND against a replay of `Eva
 own boolean logic on the same data — scored via Omega_net/AUPR, never raw accuracy, because class
 imbalance in profitable/not outcomes makes accuracy misleading here).
 
-**Real work completed**: logistic regression + GBT training, a Python replay of
-`EvaluateHardGates()`, golden-vector parity against `predict_proba()`, EV-swept threshold
-calibration. **Deliverable path for the eventual C++ hand-port (not yet done)**: mandatory
-golden-vector regression tests proving Python's `predict_proba()`/`compute_bet_size()` matches the
-hand-ported C++ formula bit-for-bit before any live wiring — same discipline as every other
-cross-language model port in this project, no exception for a model this small.
+**Real work completed (code, not empirical outcome)**: logistic regression + GBT training
+mechanics, a Python replay of `EvaluateHardGates()`, threshold-calibration mechanics (EV sweep),
+all unit-tested on synthetic data — golden-vector parity against `predict_proba()` on *real*
+trained weights has not happened because no real model has been trained yet (nothing to take a
+golden vector from). **Deliverable path, in order**: (1) build
+`turtle_soup_snapshots.parquet` → (2) `trading_partner_dataset.parquet` → (3) run
+`run_trading_partner_comparison.py` for the real LR/GBT-vs-hard-gates result → (4) only if the
+classifier wins, golden-vector regression tests proving Python's `predict_proba()`/
+`compute_bet_size()` matches a hand-ported C++ formula bit-for-bit, before any live wiring — same
+discipline as every other cross-language model port in this project, no exception for a model this
+small.
 
 **Non-goals** (explicit): no entry origination from `gang` alone (Use Case 3 amplifies size on an
 already-pattern-originated trade, never originates one itself); no pattern-specific classifier
@@ -229,7 +250,7 @@ than grading an externally-supplied one.
 |---|---|---|
 | Side | Supplied externally (pattern's proposal / open position) | Part of the model's own output |
 | Label | Real triple-barrier `profitable` outcome, multi-hour horizon | Symmetric barrier race on 1-second bars, capped at next `.context` row, time-weighted persistence |
-| Status | Implemented, validated against real Turtle Soup data | Design only |
+| Status | Code implemented, unit-tested on synthetic data; real empirical validation not yet run (verified 2026-09-19) | Design only |
 | Training data | Turtle Soup's dataset today, extensible | Dense pattern-free sampling (every `.context` row or a sampled subset) |
 
 Whether 2b eventually supersedes, complements, or feeds into 2a is a later decision, not yet made.
