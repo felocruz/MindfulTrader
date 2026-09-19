@@ -52,8 +52,8 @@ consolidate at all, not just tidiness.
   instrument — a real open question, not assumed to win).
 - Trading Partner Classifier (the "soft/gate classifier") — general danger veto, deliberately
   independent of live HMM output by design (a second, orthogonal survey axis, not a duplicate of
-  the HMM regime read). **Implemented and validated on the Python/training side already** — see §2
-  for the real status, not just a spec.
+  the HMM regime read). **Implemented and validated on the Python/training side already** — full
+  content in §2a, not just a spec reference.
 - `PredictionAgeUs()` continuous decay of the Transformer's staleness (mirrors `HmmStateAgeUs()`)
   — decay function form not yet chosen (candidates: exponential, linear ramp — needs empirical
   derivation, not an invented constant). **Consumer corrected 2026-08-24**: feeds the meta-labeler's
@@ -87,34 +87,178 @@ the original call. Moved from IN to OUT in the offline replay tool's candidate s
 ## 2. Transformer + Meta-labeler — direction and size
 
 **Status: C++ deployment not started for either classifier** (`two-classifier-cpp-deployment-spec`).
-**Corrected 2026-09-18** — the Python/training side is materially ahead of that: two genuinely
-distinct classifiers exist on the `lbrnet` side, at different maturity:
+The Python/training side is materially ahead of that — two genuinely distinct classifiers exist on
+the `lbrnet` side, at different maturity, both full content absorbed below (not just referenced).
 
-1. **Soft/gate classifier = the "Trading Partner Classifier"** (belongs to the Predator's survey,
-   §1) — renamed mid-design ("gate" only has veto vocabulary; this one is side-aware, so it can say
-   more than veto/silent). **Implemented and validated against real data on the Python side**
-   (`lbrnet/docs/superpowers/specs/2026-08-18-predator-fusion-secondary-classifier-spec.md`): a
-   learned, graded, bidirectional analog of `RiskManager::EvaluateHardGates()`, trained on the same
-   15 substantive `LocalRiskContext`/`gang` fields plus `side` — pattern-agnostic (uses Turtle
-   Soup's labeled outcomes purely as training data, no pattern-specific features), reusable across
-   all 9 Raschke patterns without per-pattern engineering. Real work done: logistic regression + GBT
-   training, a Python replay of `EvaluateHardGates()`, golden-vector parity against
-   `predict_proba()`, and threshold calibration by sweeping aggregate expected value. **Still
-   genuinely not started**: the C++ deployment side (this doc's own scope) — no `ClassifierParams`
-   config section, no live call site.
-2. **Tier 2 Physics/Regime Signal** — a separate, newer, lower-maturity artifact
-   (`lbrnet/docs/superpowers/specs/2026-08-19-predator-fusion-tier2-physics-signal-spec.md`), does
-   NOT supersede the Trading Partner Classifier. A signed (not side-blind) physics/regime signal
-   sitting between the hard gates and pattern checks, grounded in EGARCH/leverage-effect asymmetric-
-   volatility literature (Chen, Hong & Stein 2001 on conditional skewness forecasting crashes;
-   French, Schwert & Stambaugh 1987 on asymmetric volatility). **Status: design only, not
-   implemented, not yet planned** — the genuinely least mature of the two.
-3. **Meta-labeler** — decides position size once the Transformer has produced a side call
-   (AFML Ch.10). Consumes: the Transformer's time-decayed side/confidence (`PredictionAgeUs()`),
-   the Trading Partner Classifier's score, HMM posterior-derived scalars, and the existing
-   hand-crafted sizing multipliers already live in `RiskManager`/`Indicator.h`. **Confirmed
-   2026-08-24**: Predator Fusion output is NOT one of the meta-labeler's live inputs — Predator
-   Fusion only scopes/labels the meta-labeler's *training* set in Python.
+### 2a. Trading Partner Classifier (the "soft/gate classifier") — implemented, validated
+
+**What it is**: a learned, graded, *bidirectional* analog of `RiskManager::EvaluateHardGates()`.
+"Gate" was the original name and was deliberately dropped — a gate only has veto vocabulary (fire
+or stay silent); once the classifier is side-aware it can say more: not just "don't enter/exit
+here" but "this specific side, in this specific context, is favored." It is a second opinion *on a
+decision a pattern already initiated*, never an independent trade-originator.
+
+**Two-tier sequencing, reconciled with the Predator Decision Contract's element #5** ("subordinate
+to safety, in both position states — non-negotiable"): hard gates and this classifier are not
+alternatives, they are two tiers over two different subsets of `gang` (`LocalRiskContext`'s 15
+substantive fields), evaluated in strict order:
+- **Tier 1 — hard gates** (`EvaluateHardGates()`, `RiskManager.cpp:834-897`): reads only 6 of the
+  15 fields (`amihud_illiquidity`, `amihud_percentile`, `elder_chandelier_atr`,
+  `shannon_flow_entropy`, `taleb_kurtosis`, `spread_stress`). Absolute, boolean, side-blind,
+  evaluated first, non-overridable, unchanged by any of this.
+- **Tier 2 — this classifier**, evaluated only once Tier 1 finds no imminent danger. Trained on
+  *all 15* fields — the 6 Tier 1 reads, plus the 9 it ignores entirely (`taleb_skewness`,
+  `pareto_tail_alpha`, `hurst_exponent`, `fractal_dim`, `mean_rev_z`, `raschke_burst`,
+  `fisher_info`, `regime_duration`) — plus `side`, which Tier 1 structurally lacks. "Softer" does
+  NOT mean weaker: Tier 2 retains full veto power over its own richer feature set, second in
+  sequence, not subordinate in authority within that sequence.
+
+**Why `side` matters and doesn't reintroduce pattern-specificity**: `taleb_kurtosis` (which Tier 1
+reads) measures fat-tail *magnitude* only, sign-blind — it can't distinguish a crash-skewed tail
+(dangerous for longs) from a squeeze-skewed one (dangerous for shorts). `taleb_skewness` (already
+in `gang`, one of the 9 fields Tier 1 ignores) carries exactly that directional information. `side`
+is a position-state input always available without pattern-specific geometry — evaluating both
+`predict_proba(gang, LONG)` and `predict_proba(gang, SHORT)` symmetrically requires no pattern to
+have fired yet, so this classifier sits at the same pipeline point `EvaluateHardGates()` occupies
+today (before any pattern/tactical-trigger runs), not only reactively after one proposes a
+candidate.
+
+**Feature set (final)**: `[shannon_flow_entropy, shannon_efficiency, taleb_kurtosis,
+taleb_skewness, elder_chandelier_atr, pareto_tail_alpha, amihud_illiquidity, amihud_percentile,
+spread_stress, hurst_exponent, fractal_dim, mean_rev_z, raschke_burst, fisher_info,
+regime_duration, side]` — 15 `gang` fields + `side` (`+1`/`-1`/`0`). `is_valid` gates whether it
+runs at all (mirrors `EvaluateHardGates()`'s own precondition); `snapshot_timestamp_us` excluded
+(bookkeeping, not signal).
+
+**Three use cases** (naming them explicitly matters — collapsing back to "just a gate" is exactly
+the framing this design moved past):
+1. **Entry/exit veto** (the original framing) — `abs(bet_size) > τ` decides act/veto, same as
+   `EvaluateHardGates()` already does, just graded and side-aware. Runs bidirectionally against
+   the current `gang` reading alone, no pattern proposal required.
+2. **Symmetric risk-awareness for an already-open position** — the concrete failure mode fixed:
+   short position, a black-swan move forming skewed toward a crash. A side-blind hard gate sees
+   only kurtosis magnitude and flattens regardless of direction, closing a *profitable* short right
+   as the crash begins. Trained on `(gang, side, outcome)` triples, the classifier can learn that
+   `(elevated kurtosis, strongly negative skew, side=short)` is favorable, not a veto trigger.
+3. **Position-management conviction** — already in a position, `bet_size` for that side is large
+   and positive: "this position is well-supported, hold it," or at entry, "the pattern fired *and*
+   the partner strongly agrees — lean into a bigger size." Amplifies conviction on a trade a
+   pattern already originated; does not originate trades from `gang` alone (explicit non-goal).
+
+**Components (real, on the Python side)**: `predator_fusion.py`'s `compute_bet_size(probability,
+side)` (López de Prado's z-score/CDF conversion, pattern-agnostic); `lbrnet/data/
+trading_partner_classifier.py` (dataset labeling from any pattern-outcome dataset with
+`timestamp_us`/`direction`/`profitable` — Turtle Soup's today — training-frame prep, logistic
+regression + GBT training, threshold calibration by sweeping τ on a held-out split to maximize
+aggregate expected value, then freezing it); `backtest/trading_partner_twin.py` (evaluates the
+trained classifier against real historical outcomes AND against a replay of `EvaluateHardGates()`'s
+own boolean logic on the same data — scored via Omega_net/AUPR, never raw accuracy, because class
+imbalance in profitable/not outcomes makes accuracy misleading here).
+
+**Real work completed**: logistic regression + GBT training, a Python replay of
+`EvaluateHardGates()`, golden-vector parity against `predict_proba()`, EV-swept threshold
+calibration. **Deliverable path for the eventual C++ hand-port (not yet done)**: mandatory
+golden-vector regression tests proving Python's `predict_proba()`/`compute_bet_size()` matches the
+hand-ported C++ formula bit-for-bit before any live wiring — same discipline as every other
+cross-language model port in this project, no exception for a model this small.
+
+**Non-goals** (explicit): no entry origination from `gang` alone (Use Case 3 amplifies size on an
+already-pattern-originated trade, never originates one itself); no pattern-specific classifier
+(deferred, tracked in `lbrnet`'s `PREDATOR_CROSS_PATTERN_ALPHA_RANKER_ASPIRATION.md`); no
+cross-pattern ranking; no live C++ wiring yet; no change to `EvaluateHardGates()` itself; classical
+models only (logistic regression + GBT), no deep learning.
+
+### 2b. Tier 2 Physics/Regime Signal — design only, does not supersede 2a
+
+A separate, newer, lower-maturity artifact — a genuinely signed (not side-blind) physics/regime
+signal sitting between Tier 1 (hard gates) and Tier 3 (pattern checks): `Tier 1 → Tier 2 (this) →
+Tier 3 (patterns)`.
+
+**Why one signed model, not a decomposed hazard/direction pipeline**: literature argues against
+treating physics-derived risk measures as inherently side-blind. Chen, Hong & Stein (2001): 
+conditional skewness genuinely forecasts crashes — a directional signal, not a side-blind hazard
+reading. French, Schwert & Stambaugh (1987) and the leverage-effect/asymmetric-volatility
+literature: negative returns raise future volatility more than positive returns of equal
+magnitude. Barndorff-Nielsen, Kinnebrock & Shephard (2010): realized semivariance decomposes
+volatility itself into directional components. `taleb_skewness` (and any sign-carrying field)
+stays in one model, not stripped into a side-blind stage.
+
+**Why the label is a short nowcast, not a multi-hour forecast**: reusing the main transformer's
+own triple-barrier labeling construct would make this a smaller, worse-featured duplicate of the
+transformer's job. Architecturally closer to the hard gates and the HMM — both are nowcasts ("what
+is the state right now"), not forecasts. Timescale grounding: the 2010 Flash Crash's acute phase
+was ~13 minutes (4% drop in 4 minutes); Kirilenko et al. (2017)'s forensic reconstruction was at
+~1-second resolution — pointing to a confirmation window of seconds to a few minutes, not the
+transformer's multi-hour horizon.
+
+**Why persistence is asymmetric and time-weighted (fast attack, slow decay)**: grounded at three
+levels — EGARCH (Nelson 1991, `σ²_t` depends recursively on `σ²_{t-1}` plus an asymmetric shock
+term); dual-lambda exponential smoothing (a real futures margin-modeling patent, US11393029: "high
+reactivity to crisis and slow reactivity to periods of calm"); LSTM forget/input gates (the
+fully-learned general version of the same shape — right concept, not the right implementation
+given this project's classical-models-only constraint). `.context` anchors arrive irregularly
+(dense during bursts, sparse during calm), so the decay recursion is time-weighted using the same
+continuous-time EWMA construction standard for irregularly-arriving tick data:
+```
+Y_i = Y_i_raw                                     if sign(Y_i_raw) != sign(Y_{i-1})
+Y_i = max(Y_i_raw, decay^(Δt_i / τ) * Y_{i-1})    if sign(Y_i_raw) == sign(Y_{i-1})
+```
+
+**Feature set (X)**: all 15 `gang` fields (including `taleb_skewness`, not stripped out); HMM
+regime posteriors (`p_coiled`, `p_gaussian_stable`, `p_gaussian_fragile`, `p_pareto`,
+`mahal_distance`); short backward-window trajectory features on hazard-carrying fields (exact
+window length undecided). No externally-supplied `side` — direction is part of the model's own
+output.
+
+**Label (Y) construction, training only**: symmetric barriers (`upper = close_t + m·σ_t`, `lower =
+close_t − m·σ_t`, `σ_t` = DOF-scaled ATR10) anchored at each `.context` row, resolved via
+first-hit-wins walk-forward through real 1-second OHLC bars — capped at the last 1-second bar
+before the *next* `.context` row's own bar (a label must not outlive the regime it describes; if
+neither barrier touches by then, drop the row, matching this project's inconclusive-exclusion
+convention). Resolved raw labels then get the time-weighted dual-lambda persistence recursion
+above applied across the sequence to produce the final training target.
+
+**Output**: a single number in `(-1, 1)` — sign = which side the physics currently favors,
+magnitude = conviction (a position-sizing multiplier at entry, or a scale-out fraction on an open
+position). Consulted the same way as 2a's Use Case 1/exit role, just producing its own sign rather
+than grading an externally-supplied one.
+
+**Relationship to 2a** — both exist, neither replaces the other:
+
+| | Trading Partner Classifier (2a) | Tier 2 Physics Signal (2b) |
+|---|---|---|
+| Side | Supplied externally (pattern's proposal / open position) | Part of the model's own output |
+| Label | Real triple-barrier `profitable` outcome, multi-hour horizon | Symmetric barrier race on 1-second bars, capped at next `.context` row, time-weighted persistence |
+| Status | Implemented, validated against real Turtle Soup data | Design only |
+| Training data | Turtle Soup's dataset today, extensible | Dense pattern-free sampling (every `.context` row or a sampled subset) |
+
+Whether 2b eventually supersedes, complements, or feeds into 2a is a later decision, not yet made.
+
+**Non-goals**: same as 2a (no entry origination from `gang`/regime/trajectory alone; no
+replacement of Tier 1; no live C++ wiring; no deep learning).
+
+**Open questions, genuinely unresolved (flagged, not guessed, per this project's own standing rule
+against inventing placeholder constants)**:
+1. Symmetric bracket multiple `m` (barrier width in units of `σ_t`).
+2. Max forward window `M_bars_max` (1-second bars) — granularity decided, magnitude not.
+3. Backward trajectory window length and which fields receive trajectory features.
+4. Decay time constant `τ` — fixed or regime-conditioned (matching `max_bars_for_regime`'s own
+   precedent)?
+5. Training data granularity — every `.context` row, or a sampled subset.
+6. Timestamp skew between `.context`'s wall-clock processing time and the trade-timestamped tick
+   data — needs empirical measurement before treating the anchor as exact.
+7. `σ_t`'s actual data source — `atr_10`/`dof` aren't native `.context.parquet` columns; whether to
+   use `elder_chandelier_atr` directly, join to `.alpha` for the literal `atr_10`, and/or join to
+   HMM posteriors for DOF-scaling is deferred.
+
+### 2c. Meta-labeler — position size
+
+Decides position size once the Transformer has produced a side call (AFML Ch.10). Consumes: the
+Transformer's time-decayed side/confidence (`PredictionAgeUs()`), the Trading Partner Classifier's
+score, HMM posterior-derived scalars, and the existing hand-crafted sizing multipliers already
+live in `RiskManager`/`Indicator.h`. **Confirmed 2026-08-24**: Predator Fusion output is NOT one of
+the meta-labeler's live inputs — Predator Fusion only scopes/labels the meta-labeler's *training*
+set in Python.
 
 **Existing deployment precedent** (reusable template for all three, once C++ deployment starts):
 `EvaluateTurtleSoupOptionB()`'s `ClassifierParams` pattern — config-driven weights/bias loaded from
@@ -249,3 +393,8 @@ completed-bar-trained posterior is what currently provides intra-bar responsiven
 `2026-09-06-imbalance-work-rate-spec.md`,
 `2026-09-05-activity-clock-triple-barrier-reformulation-spec.md`,
 `2026-08-16-elder-raschke-triple-barrier-convergence-backlog.md`.
+
+**Also fully absorbed (§2a/§2b), from `lbrnet` (not deleted there — that repo's own call, this is
+our copy of the substance)**: `lbrnet/docs/superpowers/specs/2026-08-18-predator-fusion-secondary-
+classifier-spec.md` (Trading Partner Classifier) and `lbrnet/docs/superpowers/specs/2026-08-19-
+predator-fusion-tier2-physics-signal-spec.md` (Tier 2 Physics Signal), added 2026-09-18.
