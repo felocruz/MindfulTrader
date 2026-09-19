@@ -16,7 +16,7 @@ from here, not merged into here. Same for `docs/ADR/risk_gate_context_wire_spec.
 
 ```
 PREDATOR (regime survey — decides WHETHER)
-   │  HMM 4-state regime + soft/gate classifier veto + structural pattern detection
+   │  HMM 4-state regime + Trading Partner Classifier veto + structural pattern detection
    ▼
 TRANSFORMER (decides WHICH direction)
    ▼
@@ -46,12 +46,14 @@ consolidate at all, not just tidiness.
 - Native TRAP floor (`FAILED_*` structural reversal) — built, live, the parity anchor with the
   labeler.
 
-**Spec'd, not started:**
+**Spec'd, not started (C++ side):**
 - Turtle Soup Option B (genuine ECTS model on partial-bar prefixes) — bridge-plan's later half;
   only proceeds if it empirically beats Option A on this specific pattern (small-sample, single-
   instrument — a real open question, not assumed to win).
-- Soft/gate classifier — general danger veto, deliberately independent of live HMM output (by
-  design — this is a second, orthogonal survey axis, not a duplicate of the HMM regime read).
+- Trading Partner Classifier (the "soft/gate classifier") — general danger veto, deliberately
+  independent of live HMM output by design (a second, orthogonal survey axis, not a duplicate of
+  the HMM regime read). **Implemented and validated on the Python/training side already** — see §2
+  for the real status, not just a spec.
 - `PredictionAgeUs()` continuous decay of the Transformer's staleness (mirrors `HmmStateAgeUs()`)
   — decay function form not yet chosen (candidates: exponential, linear ramp — needs empirical
   derivation, not an invented constant). **Consumer corrected 2026-08-24**: feeds the meta-labeler's
@@ -84,22 +86,41 @@ the original call. Moved from IN to OUT in the offline replay tool's candidate s
 
 ## 2. Transformer + Meta-labeler — direction and size
 
-**Status: neither started, both spec'd** (`two-classifier-cpp-deployment-spec`). Two Python-trained
-classifiers, deployed natively in C++ on every tick:
+**Status: C++ deployment not started for either classifier** (`two-classifier-cpp-deployment-spec`).
+**Corrected 2026-09-18** — the Python/training side is materially ahead of that: two genuinely
+distinct classifiers exist on the `lbrnet` side, at different maturity:
 
-1. **Soft/gate classifier** (belongs to the Predator's survey, listed in §1) — general danger veto.
-2. **Meta-labeler** — decides position size once the Transformer has produced a side call
+1. **Soft/gate classifier = the "Trading Partner Classifier"** (belongs to the Predator's survey,
+   §1) — renamed mid-design ("gate" only has veto vocabulary; this one is side-aware, so it can say
+   more than veto/silent). **Implemented and validated against real data on the Python side**
+   (`lbrnet/docs/superpowers/specs/2026-08-18-predator-fusion-secondary-classifier-spec.md`): a
+   learned, graded, bidirectional analog of `RiskManager::EvaluateHardGates()`, trained on the same
+   15 substantive `LocalRiskContext`/`gang` fields plus `side` — pattern-agnostic (uses Turtle
+   Soup's labeled outcomes purely as training data, no pattern-specific features), reusable across
+   all 9 Raschke patterns without per-pattern engineering. Real work done: logistic regression + GBT
+   training, a Python replay of `EvaluateHardGates()`, golden-vector parity against
+   `predict_proba()`, and threshold calibration by sweeping aggregate expected value. **Still
+   genuinely not started**: the C++ deployment side (this doc's own scope) — no `ClassifierParams`
+   config section, no live call site.
+2. **Tier 2 Physics/Regime Signal** — a separate, newer, lower-maturity artifact
+   (`lbrnet/docs/superpowers/specs/2026-08-19-predator-fusion-tier2-physics-signal-spec.md`), does
+   NOT supersede the Trading Partner Classifier. A signed (not side-blind) physics/regime signal
+   sitting between the hard gates and pattern checks, grounded in EGARCH/leverage-effect asymmetric-
+   volatility literature (Chen, Hong & Stein 2001 on conditional skewness forecasting crashes;
+   French, Schwert & Stambaugh 1987 on asymmetric volatility). **Status: design only, not
+   implemented, not yet planned** — the genuinely least mature of the two.
+3. **Meta-labeler** — decides position size once the Transformer has produced a side call
    (AFML Ch.10). Consumes: the Transformer's time-decayed side/confidence (`PredictionAgeUs()`),
-   the soft classifier's score, HMM posterior-derived scalars, and the existing hand-crafted sizing
-   multipliers already live in `RiskManager`/`Indicator.h`. **Confirmed 2026-08-24**: Predator
-   Fusion output is NOT one of the meta-labeler's live inputs — Predator Fusion only scopes/labels
-   the meta-labeler's *training* set in Python.
+   the Trading Partner Classifier's score, HMM posterior-derived scalars, and the existing
+   hand-crafted sizing multipliers already live in `RiskManager`/`Indicator.h`. **Confirmed
+   2026-08-24**: Predator Fusion output is NOT one of the meta-labeler's live inputs — Predator
+   Fusion only scopes/labels the meta-labeler's *training* set in Python.
 
-**Existing deployment precedent** (reusable template for both): `EvaluateTurtleSoupOptionB()`'s
-`ClassifierParams` pattern — config-driven weights/bias loaded from `config/classifier_params.json`
-at runtime, not hand-transcribed constants, not a linked ML runtime. Option B itself was never
-wired live and never will be (training-time-only ruling supersedes it) — only the *deployment
-mechanism* survives as the template.
+**Existing deployment precedent** (reusable template for all three, once C++ deployment starts):
+`EvaluateTurtleSoupOptionB()`'s `ClassifierParams` pattern — config-driven weights/bias loaded from
+`config/classifier_params.json` at runtime, not hand-transcribed constants, not a linked ML runtime.
+Option B itself was never wired live and never will be (training-time-only ruling supersedes it) —
+only the *deployment mechanism* survives as the template.
 
 **Validation mechanism, not yet built**: a `BackTesterStudy`-hosted dual-path comparison — log both
 the native C++ path's output and what the real-time backtester (a genuine Python model over ZMQ,
