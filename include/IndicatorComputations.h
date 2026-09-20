@@ -1768,28 +1768,29 @@ inline TimeOfDayEnum ClassifyTimeOfDay(int hour, int minute, bool hasOpenPositio
 // AsymmetryContext.session_quality_score's real source (fixed 2026-09-19 --
 // this slot was previously fed Elder Impulse's Close Location Value, an
 // unrelated quantity; the field name/semantic was always meant to be this).
-// Continuous [-1.0, 1.0] "dual representation" of the same TimeOfDayEnum
-// state IndicatorState.time_of_day already carries categorically -- a
-// reasoned discretization of this enum's own already-documented per-session
-// trading-quality characterization above (Raschke/Taylor methodology), not a
-// freshly invented ranking: SWEET_SPOT ("cleanest trends, best entries") is
-// the max: LUNCH_DEAD_ZONE ("avoid entries, choppy action") is the min.
-// OVERNIGHT_HOLD is a bookkeeping state (already in a position, not a fresh-
-// entry-quality question) and maps to neutral 0.0, not the low end.
+// CORRECTED same day: this must be the SAME canonical symmetric_val already
+// defined per-member on the Python side (lbrnet/lbrnet/core/rc_enums.py's
+// TimeOfDayEnum(BaseIntEnum), "Elite v2.3: Quality-Based Symmetric Mapping")
+// -- every other Transformer-facing categorical field in this system already
+// has exactly one canonical [-1,+1] mapping there; this function's first
+// version invented its OWN different scale instead of matching it, a real
+// bug (e.g. OPENING_HOUR=0.6 vs canonical 0.66, ASIAN_SESSION=-0.6 vs
+// canonical 0.0). Values below are transcribed directly from rc_enums.py,
+// not re-derived.
 inline float ComputeSessionQualityScore(TimeOfDayEnum tod) {
     switch (tod) {
         case TimeOfDayEnum::SWEET_SPOT:            return  1.0f;
-        case TimeOfDayEnum::OPENING_HOUR:          return  0.6f;
-        case TimeOfDayEnum::AFTERNOON_SESSION:     return  0.4f;
-        case TimeOfDayEnum::PRE_MARKET_HOOK:       return  0.1f;
-        case TimeOfDayEnum::LONDON_WINDOW:         return  0.0f;
+        case TimeOfDayEnum::OPENING_HOUR:          return  0.66f;
+        case TimeOfDayEnum::AFTERNOON_SESSION:     return  0.66f;
+        case TimeOfDayEnum::PRE_MARKET_HOOK:       return  0.33f;
+        case TimeOfDayEnum::PM_RUN_ENTRY:          return  0.33f;
+        case TimeOfDayEnum::ASIAN_SESSION:         return  0.0f;
+        case TimeOfDayEnum::PRE_MARKET:            return  0.0f;
         case TimeOfDayEnum::OVERNIGHT_HOLD:        return  0.0f;
-        case TimeOfDayEnum::PRE_MARKET:            return -0.1f;
-        case TimeOfDayEnum::LONDON_TO_PREMARKET:   return -0.2f;
-        case TimeOfDayEnum::PM_RUN_ENTRY:          return -0.3f;
-        case TimeOfDayEnum::FINAL_HOUR:            return -0.5f;
-        case TimeOfDayEnum::ASIAN_SESSION:         return -0.6f;
-        case TimeOfDayEnum::AFTER_HOURS:           return -0.8f;
+        case TimeOfDayEnum::LONDON_WINDOW:         return -0.33f;
+        case TimeOfDayEnum::LONDON_TO_PREMARKET:   return -0.33f;
+        case TimeOfDayEnum::AFTER_HOURS:           return -0.33f;
+        case TimeOfDayEnum::FINAL_HOUR:             return -0.66f;
         case TimeOfDayEnum::LUNCH_DEAD_ZONE:       return -1.0f;
         default:                                   return  0.0f;
     }

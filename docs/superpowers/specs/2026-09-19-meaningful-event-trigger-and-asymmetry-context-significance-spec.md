@@ -180,10 +180,26 @@ built and run against the full 471.9M-tick real dataset (16-thread row-group-sha
 clock). Both previously-uncalibrated dims now have real, data-derived candidate thresholds:
 `roughness_ratio` empirical-percentile (10% upper-tail) = **3.4898**, EVT-GPD p=1/N return level =
 **6.2597** (Weibull/bounded, genuine finite endpoint, xi=-0.0948); `session_quality_score`
-empirical-percentile (10% lower-tail) = **-0.8** (lands on a known discrete session-quality level,
-expected given the dim's construction). Full derivation, sample counts, and ledger references:
-that plan's Tasks 4-6. The 6 dims with pre-existing production thresholds (§4c above) still need
-the retroactive audit (spec §7) before Trigger 3 can trust them, per that spec's own sequencing.
+empirical-percentile (10% lower-tail) = **-0.66** (corrected same day -- see below; lands on a
+known discrete session-quality level, expected given the dim's construction). Full derivation,
+sample counts, and ledger references: that plan's Tasks 4-6. The 6 dims with pre-existing
+production thresholds (§4c above) still need the retroactive audit (spec §7) before Trigger 3 can
+trust them, per that spec's own sequencing.
+
+**Real bug found and fixed, 2026-09-19 (same day, post-user-review)**: `ComputeSessionQualityScore()`
+had invented its own `[-1,+1]` scale for `TimeOfDayEnum` instead of matching the canonical,
+already-established `symmetric_val` per member already defined in `lbrnet/lbrnet/core/rc_enums.py`
+("Elite v2.3: Quality-Based Symmetric Mapping") -- every other Transformer-facing categorical field
+in this system already has exactly one canonical mapping there. Fixed to transcribe the real
+values; the -0.8 threshold above was stale (didn't even exist on the corrected 7-value discrete
+set) and has been superseded by -0.66. See `docs/superpowers/plans/2026-09-19-decision-boundary-
+calibration-tool-implementation.md`'s own correction note and `tools/RECALIBRATION_LEDGER.md` for
+the full before/after. **Bigger open question this raised, not yet resolved**: given `symmetric_val`
+is this system's own established pattern for feeding categorical state to the Transformer, several
+of `AsymmetryContext`'s other continuous fields (kurtosis, entropy, burst, skewness, roughness) may
+be better redesigned as categorical enums with their own `symmetric_val` rather than requiring
+Trigger 3's bespoke continuous magnitude-significance calibration at all -- see operator discussion,
+not yet spec'd.
 
 ### 4d. Cross-repo finding, 2026-09-19: Trigger 3 must export a per-field wire bitmask, not just gate internally
 
@@ -374,3 +390,171 @@ corresponding leaf-class `ShouldTrigger()` override):
 - `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md` §2 — the Transformer
   input pipeline this spec's Trigger 3 directly feeds; cross-reference once Trigger 3 is designed
   further.
+
+## 8. Design synthesis, 2026-09-19 evening (operator discussion) — Trigger 3 reframed, nothing implemented yet
+
+A long design discussion (not yet acted on beyond the `session_quality_score` bug fix already
+committed) resolved several open questions from §4f and reframed Trigger 3's actual shape. Recorded
+in full so none of it is lost before the next session picks this up.
+
+### 8a. Two separate questions were being conflated under "Trigger 3"
+
+1. **What should the Transformer's training payload be** for each `AsymmetryContext` field — raw
+   continuous value, or a discretized/categorical proxy?
+2. **When should a fresh observation get captured at all**, and separately, **which fields should
+   carry a "this specific field just moved meaningfully" hint bit** on whatever row does get
+   captured (for whatever reason)?
+
+These don't need the same answer, and conflating them is what produced the "raw level vs. delta"
+confusion earlier in this doc.
+
+### 8b. Resolution for (1): keep the payload continuous, except where the field is already categorical
+
+- `taleb_kurtosis`, `taleb_skewness`, `shannon_entropy`, `roughness_ratio`, `raschke_burst`,
+  `taleb_cliff` are genuinely continuous-natured statistics with real fine-grained variation.
+  Collapsing them into a handful of enum buckets for the *training payload* throws away exactly the
+  kind of signal a high-capacity model can otherwise learn nonlinear thresholds over itself. This
+  also matches this repo's own established precedent for its *other* continuous vector (the 18D
+  HMM observation vector, `FeatureScaler.h`): scale/winsorize robustly, keep continuous — the
+  Student-t HMM's own EM weighting (Peel & McLachlan 2000, already cited in `FeatureScaler.h`)
+  explicitly wants continuous magnitude to downweight tails, not a coarse bucket ID.
+- `session_quality_score` is the one genuine exception: it isn't a continuous quantity being
+  discretized, it's a continuous *representation of an already-categorical thing* (`TimeOfDayEnum`'s
+  13 mutually-exclusive states) — there's no "0.5 of Sweet Spot" in between states. It should just
+  carry `TimeOfDayEnum`'s own canonical `symmetric_val` directly, which is what the 2026-09-19
+  bug fix (§ below) already made it do.
+
+### 8c. Real bug found and fixed, 2026-09-19: `ComputeSessionQualityScore()` didn't match the canonical Python scale
+
+`lbrnet/lbrnet/core/rc_enums.py`'s `TimeOfDayEnum(BaseIntEnum)` already defines a canonical
+`symmetric_val` per member ("Elite v2.3: Quality-Based Symmetric Mapping") — the same mechanism
+every other Transformer-facing categorical field in this system already uses. This function's first
+version (added earlier the same session) invented its own different `[-1,+1]` scale instead of
+matching it (e.g. `OPENING_HOUR=0.6` vs. canonical `0.66`, `ASIAN_SESSION=-0.6` vs. canonical `0.0`).
+Neither scale is more "scientific" than the other in any empirical/literature sense (both are
+hand-picked discretizations of the same Raschke/Taylor qualitative ranking — see 8d) — but having
+the C++ producer and the Python training consumer silently disagree about what `SWEET_SPOT` means
+numerically is a real correctness bug regardless. **Fixed**: `IndicatorComputations.h`'s
+`ComputeSessionQualityScore()` now transcribes the real `rc_enums.py` values directly. Full
+before/after and the corrected real-data extraction (`session_quality_score` empirical-percentile
+threshold corrected from a stale -0.8 to -0.66): `tools/RECALIBRATION_LEDGER.md`,
+`docs/superpowers/plans/2026-09-19-decision-boundary-calibration-tool-implementation.md`'s own
+correction note.
+
+### 8d. Provenance of the `TimeOfDayEnum` qualitative ranking itself (for the record)
+
+Both the C++ and Python source comments explicitly attribute the *qualitative* session-quality
+ranking (which periods are good/bad, roughly why) to two named sources, split by which part of the
+24-hour session each state covers: **Linda Raschke** ("Street Smarts", 1995) grounds the RTH/day
+states (Opening Hour, Sweet Spot, Lunch Dead Zone, Afternoon Session, Final Hour, PM Run Entry);
+**George Taylor**'s overnight/Globex trading-day methodology grounds the overnight states (Asian
+Session, London Window, London-to-Premarket, Pre-Market Hook, After Hours, Overnight Hold). This
+attribution is real and well-cited. What is **not** attributable to either source — confirmed by
+Gemini's own literature check (`CLAUDE_BRIEF_149`) — is the specific numeric encoding
+(`1.0/0.66/0.33/0.0/-0.33/-0.66/-1.0`, an evenly-spaced sevenths-of-the-range ordinal scale) or any
+exact tied-ranking within it; that's an engineering discretization layered on top of the qualitative
+framework, not a literature-derived quantity.
+
+### 8e. Resolution for (2): separate "capture a new row" from "tag this field as having moved meaningfully"
+
+`lbrnet`'s own "hints" mechanism (§4d) needs a real, non-degenerate per-field "did this change
+meaningfully" signal — not "did the raw value change at all" (always true, useless, per §4d's
+already-diagnosed finding). The right shape for that signal is a **bucket-transition test**
+(reusing the exact `EnteredOrExitedNeutral` idiom already implemented and tested this session for
+`RASCHKE_STRATEGY_SETUP`/etc.) over each field's own *existing, already-consequential* regime
+boundaries — not a fresh percentile/GPD threshold computed on the raw value's level or delta
+distribution (which is what Tasks 4-6 of the calibration-tool plan actually did, and which this
+discussion now recognizes was answering a related-but-different question than what the hint
+mechanism needs). Concretely: the bucket boundaries become the trigger-classifier's edges; the
+*value recorded* in the payload stays the raw continuous magnitude (per 8b) — the two are decoupled,
+not the same number reused for two jobs.
+
+**Whether a field should *also* be able to independently cause a new row to be captured** (not just
+tag hint bits on rows already captured for some other reason) is reframed as an **empirical
+question, not a design assumption** — see 8g.
+
+### 8f. Six candidate fields already have C++-consequential regime boundaries (real, not invented for this discussion)
+
+| Field | Existing boundary(ies) | What crossing it does in C++ today |
+|---|---|---|
+| `taleb_kurtosis` | 1.3248 / 1.6414 / 1.5650 / 1.3809 / 2.0064 / 1.7592 | Fragility penalty, crisis enter/exit, halt, Amihud fat-tail tightening |
+| `raschke_burst` | 1/3, 1/2 | Caution → deny (force passive / reject entry) |
+| `shannon_entropy` | 0.45 / 0.60 / 0.80 / 0.90 × Hmax | Pattern-multiplier bands, chaos halt |
+| `roughness_ratio` | 3.33 (Kaufman ER-inverted, see 8h) | Not yet wired to any gate, but a real trending/choppy regime distinction |
+| `taleb_skewness` | ±0.1544 | Directional-asymmetry force-passive |
+| `taleb_cliff` | 0.50 | Proximity-to-invalidation hard gate |
+
+If C++ already treats crossing one of these as consequential enough to change trading behavior,
+that's a real, literature-independent argument for the Transformer needing to learn about that exact
+moment too — not just whenever some unrelated pattern happens to also fire on the same tick.
+
+### 8g. Proposed empirical test (not yet built): measure isolated-transition rate per candidate field
+
+Generalizes the diagnostic already built for `STRUCTURE_TEST`
+(`tools/market_data_replay/structure_test_trigger_impact_eval.cpp`, currently still running
+single-threaded against the full 471.9M-tick dataset — confirmed alive via `ps` (`R` state, 99.9%
+CPU, 3h14m elapsed at last check), not hung, just slow; a parallelized rebuild using today's
+`asymmetry_context_dim_extractor.cpp` row-group-sharding approach would very likely finish in
+seconds rather than hours, same lesson learned this session). For each of the 6 fields/boundaries
+in 8f, measure across the real tick dataset:
+1. How often does the field cross that boundary at all (enter/exit the "notable" region)?
+2. Of those crossings, what fraction are **isolated** — no other pattern/indicator trigger fires on
+   the same tick/bar? That fraction is the actual, measured case for giving that specific field
+   independent triggering power. Near-zero isolated rate = the crossing is already captured
+   incidentally by other triggers, no new mechanism needed. High isolated rate = a real, currently
+   invisible gap, the same class of finding `STRUCTURE_TEST` turned out to be.
+
+This also directly answers §4f open question #4 (does fixing `STRUCTURE_TEST` reduce Trigger 3's
+own necessary scope), generalized from just `STRUCTURE_TEST` to all 6 candidates here.
+
+**Not yet built. Next session's natural starting point once resumed.**
+
+### 8h. Per-field literature-computability status (from `CLAUDE_BRIEF_149`, for the record)
+
+Distinguishing fields with a *real, explicit method* for computing a defensible boundary from those
+with none:
+
+- **`taleb_kurtosis`**: already has a real, saved, rerunnable percentile-matching pipeline
+  (`analyze_kurtosis_threshold_migration.py`) — the best-grounded of the six already.
+- **`taleb_skewness`**: Bowley (1920) gives an explicit, citable band convention
+  (`|S_B|<0.10` negligible, `0.10-0.30` mild, `>0.30` moderate-to-strong) — a real, computable rule;
+  the existing `0.1544` lands in "mild," consistent-but-not-uniquely-validated by the convention
+  (the band doesn't pin one exact number within it).
+- **`roughness_ratio`**: Kaufman's Efficiency Ratio convention (`ER>0.30` = trending, "Smarter
+  Trading", 1995) gives an explicit, real, literature-sourced number, inverting to
+  `roughness_ratio<3.33` — usable now, not just a reference point.
+- **`shannon_entropy`**: no universal *fixed* band exists in the literature, but there IS a real,
+  citable *method*: identify regime shifts via local maxima/minima or structural breaks in rolling
+  entropy (a change-point-detection approach), rather than a static percentile cutoff. This is a
+  bigger methodology lift than a constant, not yet attempted.
+- **`raschke_burst`** (Goh & Barabási 2008): no universal gating threshold, but a real theoretical
+  anchor exists (`B=0` is exactly Poisson-neutral; empirically-observed human-activity processes
+  cluster in `B∈(0.5,0.9)`) — useful context, not a ready-made trigger threshold.
+  Also: this dim's *own current threshold pair* (1/3, 1/2) is an algebraic carry-forward of an
+  undocumented older constant (2.0/3.0 on the pre-bounded scale) — the original pair's own
+  provenance is still unknown, a retroactive-queue item (spec §7).
+- **`taleb_cliff`** (Chandelier Exit distance): LeBeau's own convention (2.5-3.0× ATR) is for the
+  *stop distance itself*, not a secondary "how close to that stop is alarming" early-warning gate —
+  no literature precedent found for that secondary layer at all. This field has the weakest
+  grounding of the six.
+- **General EVT/GPD methodology correction** (Coles 2001): decision thresholds should be read
+  directly as a quantile of the fitted GPD at a target risk probability — not a secondary
+  arbitrary percentage layered on top of an already-computed return level. Flags this plan's
+  `roughness_ratio` EVT-GPD figure (6.2597) for a methodology revisit before treating it as final —
+  not yet redone.
+
+### 8i. Immediate next actions for whoever resumes this thread
+
+1. Build the parallelized isolated-transition-rate measurement tool (8g) for the 6 candidate
+   fields/boundaries in 8f — the concrete, data-driven way to decide which (if any) need
+   independent Trigger-3 power, rather than assuming all or none do.
+2. Revisit `roughness_ratio`'s EVT-GPD return level (6.2597) per the Coles (2001) correction in 8h.
+3. Decide `shannon_entropy`'s boundary via the structural-break/local-extrema method (8h), not a
+   fixed percentile — a materially different, bigger task than the other fields.
+4. `raschke_burst`'s and `taleb_cliff`'s original threshold provenance remain open retroactive-queue
+   items (spec §7) independent of this discussion.
+5. Once isolated-transition rates are known, design the actual bucket-transition trigger
+   (`EnteredOrExitedNeutral`-style) for whichever fields warrant it, plus the per-field hint-bit
+   export (8e) for `lbrnet`'s consumption regardless of which fields get independent triggering
+   power.
+

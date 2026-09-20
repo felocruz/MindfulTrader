@@ -140,7 +140,18 @@ full before starting; every task below cites the section it implements.
 - [x] Emitted a real `session_quality_score` time series (same tool/run as Task 4, ET hour/minute
   derived from each TS3 bar's own close timestamp via `EasternTimeOffset.h`'s existing
   `GetEasternUtcOffsetSeconds()`): **77,890 real samples** (discrete-valued as expected --
-  `ComputeSessionQualityScore()`'s fixed per-session constants -- p10=-0.8 p50=-0.6 p90=0.6 p99=1.0).
+  `ComputeSessionQualityScore()`'s fixed per-session constants -- corrected values below).
+
+**Correction, 2026-09-19 (same day, post-user-review)**: `ComputeSessionQualityScore()`'s first
+version invented its own [-1,+1] scale instead of matching the canonical, already-established
+`symmetric_val` per `TimeOfDayEnum` member in `lbrnet/lbrnet/core/rc_enums.py` ("Elite v2.3:
+Quality-Based Symmetric Mapping") -- every other Transformer-facing categorical field in this
+system already has exactly one canonical mapping there, and this function should have matched it
+from the start rather than deriving a fresh one. Fixed to transcribe the real values
+(SWEET_SPOT=1.0, OPENING_HOUR/AFTERNOON_SESSION=0.66, PRE_MARKET_HOOK/PM_RUN_ENTRY=0.33,
+ASIAN_SESSION/PRE_MARKET/OVERNIGHT_HOLD=0.0, LONDON_WINDOW/LONDON_TO_PREMARKET/AFTER_HOURS=-0.33,
+FINAL_HOUR=-0.66, LUNCH_DEAD_ZONE=-1.0), corrected value set: p10=-0.66 p50=0.0 p90=0.66 p99=1.0.
+Extraction and calibration rerun against the corrected scale (see Task 6 below).
 
 ### Task 6: Calibrate both dims via empirical-percentile mode against the full real dataset (spec §9 item 2) -- DONE
 
@@ -149,11 +160,10 @@ full before starting; every task below cites the section it implements.
   - `roughness_ratio` empirical-percentile (10% upper-tail): **threshold = 3.4898**.
   - `roughness_ratio` EVT-GPD (POT, u=p99): u=4.4583, n_tail=771, xi=-0.0948 (Weibull/bounded,
     genuine finite endpoint), sigma=0.3652, p=1/N return level (N=77,426) = **6.2597**.
-  - `session_quality_score` empirical-percentile (10% lower-tail): **threshold = -0.8** (lands
-    exactly on a known discrete session-quality level, not an interpolated value -- expected given
-    this dim's construction).
-- [x] Recorded in `tools/RECALIBRATION_LEDGER.md` (3 rows marked REVIEWED with the concrete
-  numbers above). Cross-referencing from the parent Trigger 3 spec's §4c is the natural next step,
+  - `session_quality_score` empirical-percentile (10% lower-tail, **corrected scale**):
+    **threshold = -0.66** (supersedes a stale -0.8 computed before the symmetric_val fix above).
+- [x] Recorded in `tools/RECALIBRATION_LEDGER.md` (superseded row + corrected rerun rows marked
+  REVIEWED). Cross-referencing from the parent Trigger 3 spec's §4c is the natural next step,
   left to that spec's own implementation work (out of this plan's scope per "Explicitly deferred"
   below).
 
