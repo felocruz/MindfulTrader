@@ -205,7 +205,7 @@ constexpr bool HasAllExpectedKeys() {
 }
 
 inline constexpr char kIndicatorBindingPolicySchemaSha256[] = "e35a9c4c6d4234278943eae34a7fb446f4ab0396e359635e5d3746d114231b3c";
-inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-09-19T23:08:44Z";
+inline constexpr char kIndicatorBindingPolicyGeneratedUtc[] = "2026-09-20T12:12:00Z";
 
 static_assert(kIndicatorBindingPolicyRowCount == kExpectedManagedIndicatorKeyCount,
               "Indicator binding policy row count drifted from expected managed IndicatorKey count");
