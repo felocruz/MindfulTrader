@@ -243,12 +243,32 @@ but are only called by objects outside the `m_dirty_mask` system entirely, e.g.
 `InferenceManager`'s HMM/prediction/climate state). `m_dirty_mask` is already stable at the exact
 moment `HasSignificantChange()` confirms true, all the way through to the explicit flush.
 
-**Only genuinely remaining scope**: extend `changed_mask` (both tables, now real on both) with 8
-new high bits, one per `AsymmetryContext` field in wire-declaration order: `shannon_entropy`=55,
-`shannon_efficiency`=56, `taleb_kurtosis`=57, `taleb_skewness`=58, `taleb_cliff`=59,
-`roughness_ratio`=60, `raschke_burst`=61, `session_quality_score`=62 (bit 63 reserved) — set only
-when Trigger 3's per-field significance test fires for that dim. Still fully blocked on Trigger 3
-(§4a-4d above), which remains design-only, not calibrated.
+**Only genuinely remaining scope, as first written**: extend `changed_mask` (both tables, now real
+on both) with 8 new high bits, one per `AsymmetryContext` field in wire-declaration order:
+`shannon_entropy`=55, `shannon_efficiency`=56, `taleb_kurtosis`=57, `taleb_skewness`=58,
+`taleb_cliff`=59, `roughness_ratio`=60, `raschke_burst`=61, `session_quality_score`=62 (bit 63
+reserved) — set only when Trigger 3's per-field significance test fires for that dim.
+
+**IMPLEMENTED 2026-09-19 (evening), narrower than the above: 6 bits, not 8.** Per §8's design
+synthesis, `shannon_efficiency` (bit 56) and `session_quality_score` (bit 62) were dropped as
+redundant (see §8f/§8e) — `IndicatorComputations.h` gained 6 pure bucket classifiers
+(`ClassifyKurtosisBucket`/`ClassifySkewnessBucket`/`ClassifyCliffBucket`/`ClassifyRoughnessBucket`/
+`ClassifyBurstBucket`/`ClassifyEntropyFractionBucket`), each using that field's own existing
+production risk-gate boundaries as bucket edges (not a fresh percentile/GPD threshold — the
+distinction §8b/§8e's design synthesis draws). `ContextManager` gained a bucket baseline
+(`m_asymmetryBucketBaseline`, `GetAsymmetryContextChangedBits()`, `CommitAsymmetryContextBaseline()`)
+committed at the exact same point `IndicatorManager::PublishEventOnChange()` resets
+`m_dirty_mask=0` — one shared baseline across both the live `Event` and `TrainingEvent` consumers,
+mirroring `m_dirty_mask`'s own existing shared-state design. Wired into both `changed_mask`
+assembly sites (`EventSerializer.cpp`, `IndicatorManager::GetTrainingEventT()`). 24 new native
+tests (`tests/cpp/test_asymmetry_context_buckets.cpp`), full clean `./build_dll.sh` passes.
+`schema/PENDING_SCHEMA_CHANGES.md`'s PSC-05 entry updated to IMPLEMENTED.
+
+**Still open, not done in this pass**: the isolated-transition-rate measurement (§8g) to confirm
+which of these 6 fields' bucket transitions are genuinely novel vs. already co-captured by other
+triggers, `shannon_entropy`'s literature-suggested structural-break reformulation (§8h), and the
+offline `market_data_replay` path (which doesn't compute `AsymmetryContext` at all currently, so
+this feature is ACSIL-coupled-only for now).
 
 ### 4f. Open questions, genuinely unresolved
 

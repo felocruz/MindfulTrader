@@ -1796,6 +1796,76 @@ inline float ComputeSessionQualityScore(TimeOfDayEnum tod) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// AsymmetryContext regime-bucket classifiers, 2026-09-19 (spec 2026-09-19-meaningful-event-
+// trigger-and-asymmetry-context-significance-spec.md §8e-8h). Purpose: give each field a
+// discrete ordinal "which regime am I in" classification using that field's OWN EXISTING
+// production risk-gate boundaries (RiskManager.cpp/Scoring.cpp/PositionManager.cpp/
+// ExecutionParams.h) as bucket edges -- not a fresh percentile/GPD threshold on raw level or
+// delta. A bucket CHANGE (any transition, not just entered/exited-neutral -- these are ordinal
+// multi-bucket regimes, same "any actionable-to-actionable transition also counts" idiom as
+// IsStructureTestSignificantTransition(), not the single-neutral-value EnteredOrExitedNeutral
+// idiom) is what feeds each field's changed_mask bit (55-60, see ContextManager.cpp's wiring).
+//
+// Only 6 of AsymmetryContext's 8 fields get their own bit -- 2 are intentionally NOT duplicated:
+//   - session_quality_score: a pure function of TimeOfDayEnum, so "did this change" is already
+//     exactly IndicatorKey::TIME_OF_DAY's own existing changed_mask bit (29). A dedicated bit
+//     would just duplicate it.
+//   - shannon_efficiency: a monotonic transform of shannon_entropy (1 - H/Hmax) in the normal
+//     operating branch (they only decouple during a rare warmup edge case) -- entropy's own bit
+//     already carries this signal in practice.
+// ---------------------------------------------------------------------------------------------
+
+// taleb_kurtosis: 6 sorted existing production boundaries (fragility-penalty-start, crisis-exit,
+// crisis-enter, fragility-center, Amihud fat-tail gate, halt-threshold) -> 7 ordinal buckets.
+inline int ClassifyKurtosisBucket(float kurtosis) {
+    static constexpr float kBounds[] = {1.3248f, 1.3809f, 1.5650f, 1.6414f, 1.7592f, 2.0064f};
+    int bucket = 0;
+    for (float b : kBounds) { if (kurtosis > b) ++bucket; }
+    return bucket;
+}
+
+// taleb_skewness: signed, single existing directional-asymmetry gate at +/-0.1544 -> 3 buckets.
+inline int ClassifySkewnessBucket(float skewness) {
+    if (skewness < -0.1544f) return -1;
+    if (skewness >  0.1544f) return  1;
+    return 0;
+}
+
+// taleb_cliff (elderChandelierATR): single existing proximity-to-invalidation hard gate at
+// 0.50 ATR-units -> 2 buckets.
+inline int ClassifyCliffBucket(float cliff) {
+    return cliff < 0.50f ? 0 : 1;
+}
+
+// roughness_ratio: Kaufman's Efficiency Ratio inverted convention (ER>0.30 trending, "Smarter
+// Trading" 1995; literature-grounded via CLAUDE_BRIEF_149, not yet wired to any live C++ gate) ->
+// 2 buckets (0=trending, 1=choppy/noisy).
+inline int ClassifyRoughnessBucket(float roughness) {
+    return roughness < 3.33f ? 0 : 1;
+}
+
+// raschke_burst: 2 sorted existing production boundaries (caution, deny) -> 3 buckets.
+inline int ClassifyBurstBucket(float burst) {
+    if (burst > 0.5f) return 2;
+    if (burst > (1.0f / 3.0f)) return 1;
+    return 0;
+}
+
+// shannon_entropy (as a fraction of kShannonMaxEntropyBits): 4 sorted existing production bands
+// -> 5 buckets. NOTE (spec §8h): the literature does NOT prescribe fixed hard bands for this dim
+// specifically -- Gemini's own finding is that regime shifts are usually identified via local
+// extrema/structural breaks in rolling entropy, not static cutoffs. These ARE this system's own
+// already-consequential production bands (Scoring.cpp's pattern-multiplier bands + RiskManager's
+// halt fraction), reused as-is for a real trigger signal now; a structural-break-based
+// reformulation remains a documented open follow-up (spec §8i item 3), not implemented here.
+inline int ClassifyEntropyFractionBucket(float hFraction) {
+    static constexpr float kBounds[] = {0.45f, 0.60f, 0.80f, 0.90f};
+    int bucket = 0;
+    for (float b : kBounds) { if (hFraction > b) ++bucket; }
+    return bucket;
+}
+
 enum class ATRProximityEnum : int8_t
 {
     LOW_VOLATILITY = 0,

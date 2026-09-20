@@ -83,7 +83,10 @@ bool EventSerializer::SerializeEventInPlace(
         // via ExtractInt8AndClearDirty(). Task 9 rewrote PopulateIndicatorState
         // to read m_packed directly with no dirty-clearing side effect, so the
         // ordering relative to the call below is no longer load-bearing.
-        const uint64_t changed_mask = manager.GetDirtyMask();
+        // OR'd with AsymmetryContext's own regime-bucket bits (55/57-61, spec
+        // 2026-09-19-meaningful-event-trigger-and-asymmetry-context-significance-
+        // spec.md §8e-8h).
+        const uint64_t changed_mask = manager.GetDirtyMask() | ContextManager::Instance().GetAsymmetryContextChangedBits();
         event_builder.add_changed_mask(changed_mask);
 
         // Zero-Copy IndicatorState

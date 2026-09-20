@@ -575,6 +575,56 @@ float ContextManager::GetCurrentSessionQualityScore() const {
     return tod ? ComputeSessionQualityScore(tod->Value()) : 0.0f;
 }
 
+// AsymmetryContext regime-bucket changed_mask bits (spec 2026-09-19-meaningful-event-trigger-
+// and-asymmetry-context-significance-spec.md §8e-8h). Bit numbers match that spec's own §4e
+// design note (bits 56/62 intentionally unused -- shannon_efficiency/session_quality_score are
+// covered by shannon_entropy's bit and IndicatorKey::TIME_OF_DAY's own existing bit 29,
+// respectively, see the header's declaration comment).
+namespace {
+constexpr uint64_t kAsymBitShannonEntropy = 1ULL << 55;
+constexpr uint64_t kAsymBitTalebKurtosis  = 1ULL << 57;
+constexpr uint64_t kAsymBitTalebSkewness  = 1ULL << 58;
+constexpr uint64_t kAsymBitTalebCliff     = 1ULL << 59;
+constexpr uint64_t kAsymBitRoughnessRatio = 1ULL << 60;
+constexpr uint64_t kAsymBitRaschkeBurst   = 1ULL << 61;
+}  // namespace
+
+uint64_t ContextManager::GetAsymmetryContextChangedBits() const {
+    const auto& m = m_latestInstitutionalMetrics;
+    const auto& b = m_asymmetryBucketBaseline;
+    uint64_t bits = 0;
+
+    const int entropyBucket = ClassifyEntropyFractionBucket(m.shannonFlowEntropy / kShannonMaxEntropyBits);
+    if (entropyBucket != b.shannonEntropy) bits |= kAsymBitShannonEntropy;
+
+    const int kurtosisBucket = ClassifyKurtosisBucket(m.talebKurtosis);
+    if (kurtosisBucket != b.talebKurtosis) bits |= kAsymBitTalebKurtosis;
+
+    const int skewnessBucket = ClassifySkewnessBucket(m.talebSkewness);
+    if (skewnessBucket != b.talebSkewness) bits |= kAsymBitTalebSkewness;
+
+    const int cliffBucket = ClassifyCliffBucket(m.elderChandelierATR);
+    if (cliffBucket != b.talebCliff) bits |= kAsymBitTalebCliff;
+
+    const int roughnessBucket = ClassifyRoughnessBucket(m.roughnessRatio);
+    if (roughnessBucket != b.roughnessRatio) bits |= kAsymBitRoughnessRatio;
+
+    const int burstBucket = ClassifyBurstBucket(m.raschkeBurst);
+    if (burstBucket != b.raschkeBurst) bits |= kAsymBitRaschkeBurst;
+
+    return bits;
+}
+
+void ContextManager::CommitAsymmetryContextBaseline() {
+    const auto& m = m_latestInstitutionalMetrics;
+    m_asymmetryBucketBaseline.shannonEntropy = ClassifyEntropyFractionBucket(m.shannonFlowEntropy / kShannonMaxEntropyBits);
+    m_asymmetryBucketBaseline.talebKurtosis = ClassifyKurtosisBucket(m.talebKurtosis);
+    m_asymmetryBucketBaseline.talebSkewness = ClassifySkewnessBucket(m.talebSkewness);
+    m_asymmetryBucketBaseline.talebCliff = ClassifyCliffBucket(m.elderChandelierATR);
+    m_asymmetryBucketBaseline.roughnessRatio = ClassifyRoughnessBucket(m.roughnessRatio);
+    m_asymmetryBucketBaseline.raschkeBurst = ClassifyBurstBucket(m.raschkeBurst);
+}
+
 // Utility: Calculate event velocity from timestamp history.
 // Buffer maintenance (push_back/pop_front) moved OUT to CheckAndTriggerHMM()'s
 // own Phase 1 (2026-09-17) -- it used to live here, which meant it silently

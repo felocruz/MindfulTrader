@@ -957,3 +957,42 @@ fired that bar — same caveat shape as Entries 26/27, worth folding into the sa
 regeneration. Real-data effect-size measurement not yet done for these 4 (same open item as the
 `STRUCTURE_TEST` measurement in the spec).
 
+## Entry 29 — MindfulTrader-session — 2026-09-19 (late evening)
+
+**`STRUCTURE_TEST` fix's real-data effect size, measured**: the full 476.7M-tick isolated-impact
+run (Entry 25's own open item) finished — 102 net-new capture events across the whole historical
+dataset (41 TRAP, 11 REGIME_INVALIDATION, 50 uncategorized in the tool's own counters), out of
+6,684 total significant `STRUCTURE_TEST` transitions and 476,745,947 ticks. Real but modest (~1 in
+4.7M ticks) — confirms the fix is not a no-op, but don't expect a large `.alpha` file size jump
+from this one fix alone.
+
+**`AsymmetryContext` regime-bucket `changed_mask` bits SHIPPED same evening** — a real, narrower
+mechanism than what PSC-05 (schema repo) originally proposed. Full design trace:
+`docs/superpowers/specs/2026-09-19-meaningful-event-trigger-and-asymmetry-context-significance-
+spec.md` §8 (read this before consuming the bits below) and §4e (implementation note). TL;DR for
+you: **6 new `changed_mask` bits, not 8** — `shannon_entropy`=55, `taleb_kurtosis`=57,
+`taleb_skewness`=58, `taleb_cliff`=59, `roughness_ratio`=60, `raschke_burst`=61 (bits 56/62/63
+intentionally unused/reserved). Each bit fires on a **regime-bucket transition** (using that
+field's own existing production risk-gate boundaries as bucket edges), NOT a raw-value magnitude
+threshold — decoupled from the raw continuous value still recorded in the payload, which is
+unchanged. `shannon_efficiency` and `session_quality_score` were deliberately given no bit of
+their own: `shannon_efficiency` mirrors `shannon_entropy`'s own bit in the normal operating branch
+(monotonic transform of the same quantity), and `session_quality_score` is a pure function of
+`TimeOfDayEnum`, already covered by `IndicatorKey::TIME_OF_DAY`'s own existing bit 29 — a
+dedicated bit for either would just duplicate signal you can already read elsewhere in the same
+mask. Live on both `Event.changed_mask` (port 5555) and `TrainingEvent.changed_mask` (`.alpha`).
+
+**Real bug found and fixed in the same design pass, worth flagging for your own training-data
+awareness**: `ComputeSessionQualityScore()` (added earlier the same session) had invented its own
+`[-1,+1]` numeric scale for `TimeOfDayEnum` instead of matching the canonical `symmetric_val`
+already defined per member in `lbrnet/lbrnet/core/rc_enums.py`. Fixed to transcribe the real
+values. If you've collected any `.alpha`/`.context` data using a build from earlier today (between
+the original `session_quality_score` producer fix and this correction), its `session_quality_score`
+values used the wrong scale — worth a regeneration once convenient, same shape as Entries 26/27's
+caveat.
+
+**Not yet done**: the isolated-transition-rate measurement for these 6 fields (spec §8g) — i.e.
+whether any of them would benefit from *independent* Trigger-3 triggering power (not just the
+change-hint bit), the same open question `STRUCTURE_TEST` itself was until measured above. The
+offline `market_data_replay` path does not compute `AsymmetryContext` at all, so these 6 bits are
+ACSIL-coupled-only for now — no offline-path parity gap has opened, but also none has closed.

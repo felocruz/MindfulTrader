@@ -167,6 +167,19 @@ public:
     /// NOT scaled - these are raw metrics for embedding lookup.
     MTS::Schema::AsymmetryContext GetAsymmetryContext() const;
 
+    /// AsymmetryContext regime-bucket changed_mask bits (55-60, spec 2026-09-19-meaningful-
+    /// event-trigger-and-asymmetry-context-significance-spec.md §8e-8h): compares each of the
+    /// 6 bucket-classified fields' CURRENT regime against the baseline as of the last successful
+    /// publish (CommitAsymmetryContextBaseline()), returns the OR'd bits for whichever changed.
+    /// Pure query -- does not itself mutate the baseline.
+    uint64_t GetAsymmetryContextChangedBits() const;
+
+    /// Advances the AsymmetryContext bucket baseline to the CURRENT classification -- call this
+    /// exactly where IndicatorManager::PublishEventOnChange() resets m_dirty_mask=0 (the same
+    /// "commit on successful publish" semantic, single shared baseline across both the live Event
+    /// and TrainingEvent consumers, mirroring m_dirty_mask's own existing shared-state design).
+    void CommitAsymmetryContextBaseline();
+
     /// Latest computed event velocity (events/sec) from CheckAndTriggerHMM.
     float GetLastEventVelocityPerSec() const;
 
@@ -424,6 +437,22 @@ private:
         float elderImpulse = 0.0f;
     };
     InstitutionalMetrics m_latestInstitutionalMetrics;
+
+    // AsymmetryContext regime-bucket baseline (spec 2026-09-19-meaningful-event-trigger-and-
+    // asymmetry-context-significance-spec.md §8e-8h) -- "as of the last successful publish"
+    // classification for each of the 6 bucket-tracked fields, advanced only by
+    // CommitAsymmetryContextBaseline(). -1 = not yet initialized (first classification always
+    // reports changed, matching HasSignificantChange()'s own "always true if never yet
+    // published" convention elsewhere).
+    struct AsymmetryBucketBaseline {
+        int shannonEntropy = -1;
+        int talebKurtosis = -1;
+        int talebSkewness = -1;
+        int talebCliff = -1;
+        int roughnessRatio = -1;
+        int raschkeBurst = -1;
+    };
+    AsymmetryBucketBaseline m_asymmetryBucketBaseline;
 
     // Elite v3.2: Unified local risk context (public via GetLocalRiskContext())
     LocalRiskContext m_localRiskContext;

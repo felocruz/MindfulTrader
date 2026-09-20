@@ -796,7 +796,9 @@ MTS::Training::TrainingEventT* IndicatorManager::GetTrainingEventT(SCStudyInterf
     // Ordering relative to PopulateIndicatorState() below is not load-bearing
     // (Task 9's devirtualization gave it no dirty-clearing side effect), but
     // kept before it anyway for consistency with EventSerializer's own order.
-    event->changed_mask = GetDirtyMask();
+    // OR'd with AsymmetryContext's own regime-bucket bits (55/57-61, spec 2026-09-19-
+    // meaningful-event-trigger-and-asymmetry-context-significance-spec.md §8e-8h).
+    event->changed_mask = GetDirtyMask() | ContextManager::Instance().GetAsymmetryContextChangedBits();
 
     // Task 9 (indicator-manager-dod-soa plan): replaced the per-indicator
     // virtual-dispatch loop (`m_indicators[i]->AddToTrainingEventFB(*event)`)
@@ -1046,6 +1048,10 @@ bool IndicatorManager::PublishEventOnChange(SCStudyInterfaceRef sc) {
     if (sent) {
         // Phase 3.1: Flush any remaining dirty bits not consumed by serializer
         m_dirty_mask = 0;
+        // Advance AsymmetryContext's own regime-bucket baseline in lockstep (spec 2026-09-19-
+        // meaningful-event-trigger-and-asymmetry-context-significance-spec.md §8e-8h) -- same
+        // "commit on successful publish" semantic as m_dirty_mask's reset above.
+        ContextManager::Instance().CommitAsymmetryContextBaseline();
     }
     return sent;
 }
