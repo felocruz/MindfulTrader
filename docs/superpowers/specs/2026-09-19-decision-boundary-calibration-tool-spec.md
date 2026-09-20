@@ -144,6 +144,35 @@ first place). A coordinated tool is warranted.
    literature-grounding reference for every Shannon/Mandelbrot/Taleb/Pareto parameter in this repo)
    once any retroactive re-derivation lands, per that doc's own stated maintenance convention.
 
+## 9a. Literature-grounding consult, 2026-09-19 (`CLAUDE_BRIEF_149`/`_REPLY`, `lbrnet/logs/rc_gemini.log`)
+
+Real-name/methodology findings for both the prospective and retroactive queues, read-only Gemini
+research consult (`--approval-mode plan`, no code touched):
+
+- **`roughness_ratio` has a real name after all**: mathematically the reciprocal of Kaufman's
+  Efficiency Ratio (*Smarter Trading*, 1995: `ER = Displacement/PathLength`), equivalently a
+  **tortuosity index** in movement-ecology/random-walk literature — not Sevcik's fractal dimension,
+  confirming the prior mislabeling finding. Kaufman's own trending-regime convention (`ER > 0.30`)
+  inverts to `roughness_ratio < 3.33` — a literature-grounded reference point distinct from, and
+  worth comparing against, this session's empirical 10%-exceedance threshold (3.4898).
+- **EVT/GPD methodology correction**: standard practice (Coles 2001) sets decision thresholds
+  directly from the fitted GPD's own quantiles/return levels at a target risk probability, not by
+  layering a second arbitrary exceedance percentage on top of an already-fitted return level (what
+  this plan's Task 6 did for `roughness_ratio`'s EVT-GPD mode). Worth a methodology revisit before
+  Trigger 3 treats that 6.2597 figure as final — not yet done.
+- **`session_quality_score`**: the underlying session ranking is real and literature-grounded
+  (Admati & Pfleiderer 1988; Wood/McInish/Ord 1985 U-shaped intraday patterns; Raschke 1995), but
+  Gemini was explicit that the numeric `[-1,+1]` encoding and any threshold on it (including this
+  session's -0.8) has **no literature precedent at all** — an honest "we invented this" finding, not
+  a gap to keep searching for.
+- **Retroactive queue (§7)**: no universal literature bands exist for Shannon-entropy chaos
+  thresholds or Chandelier-Exit early-warning distance (both remain engineering choices even after
+  a fresh derivation). Bowley quartile skewness DOES have a generic robust-statistics convention
+  (`|S_B|<0.10` negligible, `0.10-0.30` mild, `>0.30` moderate-to-strong) — the existing `0.1544`
+  lands in "mild," consistent-but-not-validating (the convention doesn't pin an exact number).
+  Goh-Barabási burstiness has no universal gating threshold either. Full detail:
+  `CLAUDE_BRIEF_149_REPLY`.
+
 ## 10. Relationship to other specs
 
 - Parent: `2026-09-19-meaningful-event-trigger-and-asymmetry-context-significance-spec.md` §4c —
