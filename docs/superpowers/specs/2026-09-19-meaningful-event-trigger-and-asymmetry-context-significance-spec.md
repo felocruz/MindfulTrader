@@ -174,6 +174,17 @@ per-field audit, assessment, and the coordinated calibration tool it proposes �
 threshold work (this dim's `roughness_ratio`/`session_quality_score` gap included) is now sequenced
 behind that tool's prospective-queue item, not directly behind this section's original plan.
 
+**Prospective queue closed out, 2026-09-19 (same day)**: the calibration tool
+(`docs/superpowers/plans/2026-09-19-decision-boundary-calibration-tool-implementation.md`) was
+built and run against the full 471.9M-tick real dataset (16-thread row-group-sharded, ~2s wall
+clock). Both previously-uncalibrated dims now have real, data-derived candidate thresholds:
+`roughness_ratio` empirical-percentile (10% upper-tail) = **3.4898**, EVT-GPD p=1/N return level =
+**6.2597** (Weibull/bounded, genuine finite endpoint, xi=-0.0948); `session_quality_score`
+empirical-percentile (10% lower-tail) = **-0.8** (lands on a known discrete session-quality level,
+expected given the dim's construction). Full derivation, sample counts, and ledger references:
+that plan's Tasks 4-6. The 6 dims with pre-existing production thresholds (§4c above) still need
+the retroactive audit (spec §7) before Trigger 3 can trust them, per that spec's own sequencing.
+
 ### 4d. Cross-repo finding, 2026-09-19: Trigger 3 must export a per-field wire bitmask, not just gate internally
 
 `lbrnet`'s own session (working the Transformer's `hints` mechanism, `2026-09-19-asymmetry-

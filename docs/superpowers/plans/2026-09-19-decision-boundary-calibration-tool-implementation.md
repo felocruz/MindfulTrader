@@ -86,49 +86,76 @@ full before starting; every task below cites the section it implements.
 
 **Files:** New `tools/observation_vector/DecisionBoundaryCalibrationEval.cpp`.
 
-- [ ] Accepts `--dim <name>`, `--mode {empirical-percentile|percentile-match|evt-gpd}`, a real-data
-  input source (initially: a plain newline-delimited float file or CSV column, generic — not fused
-  to any one dim's own data-sourcing mechanism), and mode-specific parameters (`--target-rate` /
-  `--old-threshold --old-sample --new-sample` / `--pot-threshold-percentile`). Dispatches to Task
-  1/2's core functions. Emits results via `ToolProgressLogger`.
-- [ ] Manual smoke test: rerun `analyze_kurtosis_threshold_migration.py`'s existing paired CSV
-  through `--mode percentile-match` for at least 2 of its `OLD_THRESHOLDS` entries and confirm the
-  C++ tool's output matches the already-published Python output to a tight tolerance — the
-  concrete form of Task 2's "known-good answer" validation, now end-to-end through the CLI.
+- [x] Accepts `--mode {empirical-percentile|percentile-match|evt-gpd}`, a plain newline-delimited
+  float file input (generic — not fused to any one dim's own data-sourcing mechanism), and
+  mode-specific parameters. Dispatches to Task 1/2's core functions. Emits results via
+  `ToolProgressLogger`.
+- [x] Smoke test: **the originally-planned real-data reproduction of
+  `analyze_kurtosis_threshold_migration.py`'s published numbers was BLOCKED** -- the `.scid` source
+  files it needs (`/mnt/c/SierraChart2/Data/`) are not mounted in this environment (checked
+  directly), and no paired-sample CSV artifact survives on disk. Substituted a synthetic
+  hand-computable CLI-level smoke test instead (confirms argument parsing/file I/O/dispatch;
+  Task 1/2's own unit tests already prove the algorithms themselves are correct ports) --
+  documented here as a real, not-silently-skipped gap, not treated as equivalent to the original
+  plan.
 
-### Task 4: Real-data sourcing for `roughness_ratio` (spec §8 item 1)
+### Task 4: Real-data sourcing for `roughness_ratio` (spec §8 item 1) -- DONE
 
-**Files:** likely a small new standalone driver under `tools/observation_vector/` (or a mode added
-to an existing `market_data_replay` binary if that proves less invasive once inspected) feeding
-`StructureEngine::Update()`/`GetRoughnessRatio()` (`include/StructureEngine.h`, confirmed
-ACSIL-independent, no `sc.`/`SCStudyInterfaceRef` dependency) from real TS3-cadence OHLC bars
-reconstructed from `mes_ticks.parquet` — reuse `tools/market_data_replay/MarketDataReplayEngine.h`'s
-existing TS3 `TickBarAggregator` rather than building a new one.
+**Files:** New `tools/observation_vector/asymmetry_context_dim_extractor.cpp`, new shared
+`ClassifyTimeOfDay()`/`TimeOfDayEnum`/`ComputeSessionQualityScore()` relocated to
+`include/IndicatorComputations.h` (see Task 5 note -- one combined tool covers both dims).
 
-- [ ] Confirm which chart/bar interval production's `ContextManager::UpdatePriceStructure()` is
-  actually fed from (`SCStudies.cpp`'s call site) before assuming TS3 — do not assume from memory.
-- [ ] Emit a real `roughness_ratio` time series across the full tick dataset, `ToolProgressLogger`-
-  reported, archived to `tools/output/`.
+- [x] Confirmed which chart/bar interval production's `ContextManager::UpdatePriceStructure()` is
+  actually fed from: `SCStudies.cpp`'s own comment states explicitly "Runs on the TS3 (15-minute)
+  chart ... All ContextManager updates (physics, structure, HMM) operate in 15-min context" --
+  verified directly, not assumed. `StructureEngine`/`TickBarAggregator` are both confirmed
+  ACSIL-independent (no `sc.`/`SCStudyInterfaceRef`), reused as-is.
+- [x] **Parallelized across the Puget machine's cores** (32 hardware threads; machine load checked
+  via `free -h`/`ps aux` first, per `/memories/user/shared_hardware_concurrency.md` -- only one
+  other light single-core job running, 52GB free): `mes_ticks.parquet`'s row groups are
+  single-contract and chronologically ordered (existing, already-verified property), so
+  `[0,num_row_groups)` was split into N contiguous shards, each with its own
+  `TickBarAggregator`/`StructureEngine` instance (no shared/locked state) -- same "one independent
+  unit of work per thread" shape as `scid_to_ticks_parquet.cpp`'s existing per-contract worker
+  pool. Full 471.9M-tick, 7,282-row-group run: **~2 seconds wall clock with 16 threads** (a 200-
+  row-group timed sub-run extrapolated to ~29s single-threaded; DOD-style per-tick work in
+  `TickBarAggregator`/`StructureEngine` was already cheap/allocation-light, so the real lever here
+  was I/O parallelism, not micro-level compute restructuring).
+- [x] Emitted a real `roughness_ratio` time series across the full tick dataset: **77,426 real
+  samples** (p10=1.695 p50=2.464 p90=3.490 p99=4.458), archived via `ToolProgressLogger`
+  (`tools/output/asymmetry_context_dim_extractor_20260919_202326.txt`, ledger-reviewed).
 
-### Task 5: Real-data sourcing for `session_quality_score` (spec §8 item 2)
+### Task 5: Real-data sourcing for `session_quality_score` (spec §8 item 2) -- DONE
 
-**Files:** likely a small pure `timestamp -> TimeOfDayEnum` classifier extracted from wherever the
-live classification logic lives (`StudyHelperFunctions.cpp`, to be located, not assumed), mirroring
-`MarketDataReplayEngine.h`'s existing `IsRthSession()` offline precedent, feeding
-`ComputeSessionQualityScore()` (`include/Indicator.h`, already pure).
+- [x] Located the live `TimeOfDayEnum` classification logic (`src/Indicator.cpp`'s
+  `TimeOfDayIndicator::SetFromDateTime()`) and confirmed it reduces to pure ET-hour/minute
+  arithmetic (its only ACSIL touch is `SCDateTime::GetTimeHMS()` for extracting hour/minute, not
+  the classification itself). Extracted the boundary logic into a new pure
+  `ClassifyTimeOfDay(hour, minute, hasOpenPosition)` in `include/IndicatorComputations.h`, moved
+  `TimeOfDayEnum`/`ComputeSessionQualityScore` there alongside it (same "zero-ACSIL-dependency,
+  single-source, re-exposed via the `#include` in `Indicator.h`" pattern already used for
+  `RaschkeStrategySetup`/`RaschkeTacticalTrigger`) -- `SetFromDateTime()` now delegates to the pure
+  function instead of duplicating the boundary logic. Full clean `./build_dll.sh` passes; offline
+  `market_data_replay` test suite (75+ tests) re-run clean, confirming no regression from the move.
+- [x] Emitted a real `session_quality_score` time series (same tool/run as Task 4, ET hour/minute
+  derived from each TS3 bar's own close timestamp via `EasternTimeOffset.h`'s existing
+  `GetEasternUtcOffsetSeconds()`): **77,890 real samples** (discrete-valued as expected --
+  `ComputeSessionQualityScore()`'s fixed per-session constants -- p10=-0.8 p50=-0.6 p90=0.6 p99=1.0).
 
-- [ ] Locate the live `TimeOfDayEnum` classification logic and confirm it reduces to pure
-  timestamp/session-calendar arithmetic (no other ACSIL dependency) before porting.
-- [ ] Emit a real `session_quality_score` time series across the full tick dataset.
+### Task 6: Calibrate both dims via empirical-percentile mode against the full real dataset (spec §9 item 2) -- DONE
 
-### Task 6: Calibrate both dims via empirical-percentile mode against the full real dataset (spec §9 item 2)
-
-- [ ] Run Task 3's CLI against Task 4/5's real time series in `--mode empirical-percentile`, at a
-  target rate consistent with this repo's existing base-rate precedent (~10%, per
-  `CandidateTriggerGate::kBaseEpsilon`'s chi-squared derivation, cited in the parent spec's §6 item
-  4) unless a dim-specific rate is separately justified.
-- [ ] Record results in `tools/RECALIBRATION_LEDGER.md` (automatic via `ToolProgressLogger`) and
-  cross-reference from the parent Trigger 3 spec's §4c once thresholds exist.
+- [x] Ran Task 3's CLI against Task 4/5's real time series at this repo's ~10% base-rate precedent
+  (`CandidateTriggerGate::kBaseEpsilon`'s chi-squared derivation):
+  - `roughness_ratio` empirical-percentile (10% upper-tail): **threshold = 3.4898**.
+  - `roughness_ratio` EVT-GPD (POT, u=p99): u=4.4583, n_tail=771, xi=-0.0948 (Weibull/bounded,
+    genuine finite endpoint), sigma=0.3652, p=1/N return level (N=77,426) = **6.2597**.
+  - `session_quality_score` empirical-percentile (10% lower-tail): **threshold = -0.8** (lands
+    exactly on a known discrete session-quality level, not an interpolated value -- expected given
+    this dim's construction).
+- [x] Recorded in `tools/RECALIBRATION_LEDGER.md` (3 rows marked REVIEWED with the concrete
+  numbers above). Cross-referencing from the parent Trigger 3 spec's §4c is the natural next step,
+  left to that spec's own implementation work (out of this plan's scope per "Explicitly deferred"
+  below).
 
 ---
 

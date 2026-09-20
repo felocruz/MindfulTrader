@@ -338,57 +338,14 @@ enum class DailyBiasEnum : int8_t {
  * - Final Hour (15:00-16:00): Avoid new entries, close intraday positions
  *
  * Calculated by C++ execution layer from bar datetime.
+ *
+ * TimeOfDayEnum/ComputeSessionQualityScore/ClassifyTimeOfDay moved to
+ * IndicatorComputations.h (2026-09-19, decision-boundary-calibration-tool
+ * plan Task 4/5) so offline calibration tools can classify session quality
+ * without linking sierrachart.h -- re-exposed here via the
+ * #include "IndicatorComputations.h" below, matching RaschkeStrategySetup/
+ * RaschkeTacticalTrigger's own identical moves.
  */
-enum class TimeOfDayEnum : int8_t {
-    // === Globex Session Windows ===
-    ASIAN_SESSION = 0,          // 18:00-03:00 ET - Globex overnight trading
-    LONDON_WINDOW = 1,          // 03:00-04:00 ET - European open influence
-    LONDON_TO_PREMARKET = 2,    // 04:00-08:30 ET - Pre-US session positioning
-    PRE_MARKET_HOOK = 3,        // 08:30-09:00 ET - Economic data reaction window
-
-    // === Regular Trading Hours ===
-    PRE_MARKET = 4,             // 09:00-09:30 ET - Pre-market positioning
-    OPENING_HOUR = 5,           // 09:30-10:30 ET - High volatility, trend establishment
-    SWEET_SPOT = 6,             // 10:30-12:00 ET - Cleanest trends, best entries
-    LUNCH_DEAD_ZONE = 7,        // 12:00-14:00 ET - Avoid entries, choppy action
-    AFTERNOON_SESSION = 8,      // 14:00-15:00 ET - Second chance setups
-    FINAL_HOUR = 9,             // 15:00-15:45 ET - Avoid new entries unless strong setup
-    PM_RUN_ENTRY = 10,          // 15:45-16:00 ET - Late-day entry, must profit immediately
-    AFTER_HOURS = 11,           // 16:00-18:00 ET - Low liquidity, position squaring
-
-    // === Overnight Hold State ===
-    OVERNIGHT_HOLD = 12         // Position held overnight (set when carrying position through close)
-};
-
-// AsymmetryContext.session_quality_score's real source (fixed 2026-09-19 --
-// this slot was previously fed Elder Impulse's Close Location Value, an
-// unrelated quantity; the field name/semantic was always meant to be this).
-// Continuous [-1.0, 1.0] "dual representation" of the same TimeOfDayEnum
-// state IndicatorState.time_of_day already carries categorically -- a
-// reasoned discretization of this enum's own already-documented per-session
-// trading-quality characterization above (Raschke/Taylor methodology), not a
-// freshly invented ranking: SWEET_SPOT ("cleanest trends, best entries") is
-// the max: LUNCH_DEAD_ZONE ("avoid entries, choppy action") is the min.
-// OVERNIGHT_HOLD is a bookkeeping state (already in a position, not a fresh-
-// entry-quality question) and maps to neutral 0.0, not the low end.
-inline float ComputeSessionQualityScore(TimeOfDayEnum tod) {
-    switch (tod) {
-        case TimeOfDayEnum::SWEET_SPOT:            return  1.0f;
-        case TimeOfDayEnum::OPENING_HOUR:          return  0.6f;
-        case TimeOfDayEnum::AFTERNOON_SESSION:     return  0.4f;
-        case TimeOfDayEnum::PRE_MARKET_HOOK:       return  0.1f;
-        case TimeOfDayEnum::LONDON_WINDOW:         return  0.0f;
-        case TimeOfDayEnum::OVERNIGHT_HOLD:        return  0.0f;
-        case TimeOfDayEnum::PRE_MARKET:            return -0.1f;
-        case TimeOfDayEnum::LONDON_TO_PREMARKET:   return -0.2f;
-        case TimeOfDayEnum::PM_RUN_ENTRY:          return -0.3f;
-        case TimeOfDayEnum::FINAL_HOUR:            return -0.5f;
-        case TimeOfDayEnum::ASIAN_SESSION:         return -0.6f;
-        case TimeOfDayEnum::AFTER_HOURS:           return -0.8f;
-        case TimeOfDayEnum::LUNCH_DEAD_ZONE:       return -1.0f;
-        default:                                   return  0.0f;
-    }
-}
 
 
 /**

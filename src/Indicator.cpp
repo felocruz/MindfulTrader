@@ -315,84 +315,10 @@ void TimeOfDayIndicator::SetFromDateTime(const SCDateTime& dateTime, bool hasOpe
     int hour = 0, minute = 0, second = 0;
     dateTime.GetTimeHMS(hour, minute, second);
 
-    // Convert to minutes since midnight for easier comparison
-    int timeInMinutes = hour * 60 + minute;
-
-    // === Globex / Overnight Session Boundaries (Eastern Time) ===
-    const int ASIAN_START = 18 * 60;           // 18:00 (6:00 PM)
-    const int LONDON_WINDOW_START = 3 * 60;    // 03:00 (3:00 AM)
-    const int LONDON_WINDOW_END = 4 * 60;      // 04:00 (4:00 AM)
-    const int PRE_MARKET_HOOK_START = 8 * 60 + 30;  // 08:30 (8:30 AM)
-
-    // === Regular Trading Hours Boundaries (Eastern Time) ===
-    const int PRE_MARKET_START = 9 * 60;       // 09:00 (9:00 AM)
-    const int MARKET_OPEN = 9 * 60 + 30;       // 09:30 (9:30 AM)
-    const int OPENING_HOUR_END = 10 * 60 + 30; // 10:30 (10:30 AM)
-    const int SWEET_SPOT_END = 12 * 60;        // 12:00 (12:00 PM)
-    const int LUNCH_END = 14 * 60;             // 14:00 (2:00 PM)
-    const int AFTERNOON_END = 15 * 60;         // 15:00 (3:00 PM)
-    const int FINAL_HOUR_END = 15 * 60 + 45;   // 15:45 (3:45 PM)
-    const int MARKET_CLOSE = 16 * 60;          // 16:00 (4:00 PM)
-
-    TimeOfDayEnum newValue = TimeOfDayEnum::OVERNIGHT_HOLD;
-
-    // === Globex Session Classification (handles midnight rollover) ===
-    // ASIAN_SESSION: 18:00-03:00 ET (crosses midnight)
-    if (timeInMinutes >= ASIAN_START || timeInMinutes < LONDON_WINDOW_START) {
-        // Special case: If holding overnight position during Globex, classify as OVERNIGHT_HOLD
-        if (hasOpenPosition) {
-            newValue = TimeOfDayEnum::OVERNIGHT_HOLD;
-        } else {
-            newValue = TimeOfDayEnum::ASIAN_SESSION;
-        }
-    }
-    // LONDON_WINDOW: 03:00-04:00 ET (key entry window)
-    else if (timeInMinutes >= LONDON_WINDOW_START && timeInMinutes < LONDON_WINDOW_END) {
-        newValue = TimeOfDayEnum::LONDON_WINDOW;
-    }
-    // LONDON_TO_PREMARKET: 04:00-08:30 ET
-    else if (timeInMinutes >= LONDON_WINDOW_END && timeInMinutes < PRE_MARKET_HOOK_START) {
-        newValue = TimeOfDayEnum::LONDON_TO_PREMARKET;
-    }
-    // PRE_MARKET_HOOK: 08:30-09:00 ET (economic data reaction)
-    else if (timeInMinutes >= PRE_MARKET_HOOK_START && timeInMinutes < PRE_MARKET_START) {
-        newValue = TimeOfDayEnum::PRE_MARKET_HOOK;
-    }
-    // === Regular Trading Hours Classification ===
-    // PRE_MARKET: 09:00-09:30 ET
-    else if (timeInMinutes >= PRE_MARKET_START && timeInMinutes < MARKET_OPEN) {
-        newValue = TimeOfDayEnum::PRE_MARKET;
-    }
-    // OPENING_HOUR: 09:30-10:30 ET
-    else if (timeInMinutes >= MARKET_OPEN && timeInMinutes < OPENING_HOUR_END) {
-        newValue = TimeOfDayEnum::OPENING_HOUR;
-    }
-    // SWEET_SPOT: 10:30-12:00 ET (best entry window)
-    else if (timeInMinutes >= OPENING_HOUR_END && timeInMinutes < SWEET_SPOT_END) {
-        newValue = TimeOfDayEnum::SWEET_SPOT;
-    }
-    // LUNCH_DEAD_ZONE: 12:00-14:00 ET
-    else if (timeInMinutes >= SWEET_SPOT_END && timeInMinutes < LUNCH_END) {
-        newValue = TimeOfDayEnum::LUNCH_DEAD_ZONE;
-    }
-    // AFTERNOON_SESSION: 14:00-15:00 ET
-    else if (timeInMinutes >= LUNCH_END && timeInMinutes < AFTERNOON_END) {
-        newValue = TimeOfDayEnum::AFTERNOON_SESSION;
-    }
-    // FINAL_HOUR: 15:00-15:45 ET
-    else if (timeInMinutes >= AFTERNOON_END && timeInMinutes < FINAL_HOUR_END) {
-        newValue = TimeOfDayEnum::FINAL_HOUR;
-    }
-    // PM_RUN_ENTRY: 15:45-16:00 ET (conditional entry window)
-    else if (timeInMinutes >= FINAL_HOUR_END && timeInMinutes < MARKET_CLOSE) {
-        newValue = TimeOfDayEnum::PM_RUN_ENTRY;
-    }
-    // AFTER_HOURS: 16:00-18:00 ET
-    else if (timeInMinutes >= MARKET_CLOSE && timeInMinutes < ASIAN_START) {
-        newValue = TimeOfDayEnum::AFTER_HOURS;
-    }
-
-    Update(newValue);
+    // Classification logic extracted to ClassifyTimeOfDay() (IndicatorComputations.h,
+    // 2026-09-19) so offline calibration tools can share this exact logic without
+    // linking sierrachart.h.
+    Update(ClassifyTimeOfDay(hour, minute, hasOpenPosition));
 }
 
 //

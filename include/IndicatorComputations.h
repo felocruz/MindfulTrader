@@ -1663,6 +1663,138 @@ inline bool EnteredOrExitedNeutral(Enum prev, Enum cur, Enum neutralValue) {
     return (prev == neutralValue) != (cur == neutralValue);
 }
 
+// TimeOfDayEnum/ComputeSessionQualityScore/ClassifyTimeOfDay moved here 2026-09-19
+// (decision-boundary-calibration-tool-implementation plan, Task 4/5) so the offline
+// market_data_replay/calibration tools can classify session quality without linking
+// sierrachart.h -- same "zero ACSIL dependency, single-source, re-exposed via the
+// #include below" pattern already used for RaschkeStrategySetup/RaschkeTacticalTrigger.
+//
+// Categorizes the current trading session based on time of day. Helps identify
+// high-quality entry windows vs low-quality sessions.
+//
+// Based on Linda Raschke's session quality framework:
+// - Opening Hour (9:30-10:30): High volatility, trend establishment
+// - Sweet Spot (10:30-12:00): Cleanest trends, best follow-through
+// - Lunch Dead Zone (12:00-14:00): Avoid entries, choppy action
+// - Afternoon Session (14:00-15:00): Second chance setups
+// - Final Hour (15:00-16:00): Avoid new entries, close intraday positions
+enum class TimeOfDayEnum : int8_t {
+    // === Globex Session Windows ===
+    ASIAN_SESSION = 0,          // 18:00-03:00 ET - Globex overnight trading
+    LONDON_WINDOW = 1,          // 03:00-04:00 ET - European open influence
+    LONDON_TO_PREMARKET = 2,    // 04:00-08:30 ET - Pre-US session positioning
+    PRE_MARKET_HOOK = 3,        // 08:30-09:00 ET - Economic data reaction window
+
+    // === Regular Trading Hours ===
+    PRE_MARKET = 4,             // 09:00-09:30 ET - Pre-market positioning
+    OPENING_HOUR = 5,           // 09:30-10:30 ET - High volatility, trend establishment
+    SWEET_SPOT = 6,             // 10:30-12:00 ET - Cleanest trends, best entries
+    LUNCH_DEAD_ZONE = 7,        // 12:00-14:00 ET - Avoid entries, choppy action
+    AFTERNOON_SESSION = 8,      // 14:00-15:00 ET - Second chance setups
+    FINAL_HOUR = 9,             // 15:00-15:45 ET - Avoid new entries unless strong setup
+    PM_RUN_ENTRY = 10,          // 15:45-16:00 ET - Late-day entry, must profit immediately
+    AFTER_HOURS = 11,           // 16:00-18:00 ET - Low liquidity, position squaring
+
+    // === Overnight Hold State ===
+    OVERNIGHT_HOLD = 12         // Position held overnight (set when carrying position through close)
+};
+
+// Pure ET-hour/minute classifier, extracted verbatim from Indicator.cpp's
+// TimeOfDayIndicator::SetFromDateTime() (2026-09-19) -- that method now delegates
+// here, keeping exactly one copy of the session-boundary logic instead of two.
+// hasOpenPosition mirrors the live method's own parameter (OVERNIGHT_HOLD only
+// applies while actually holding a position); offline/calibration callers with no
+// position concept should pass false, matching ASIAN_SESSION's own default.
+inline TimeOfDayEnum ClassifyTimeOfDay(int hour, int minute, bool hasOpenPosition) {
+    const int timeInMinutes = hour * 60 + minute;
+
+    // === Globex / Overnight Session Boundaries (Eastern Time) ===
+    const int ASIAN_START = 18 * 60;                // 18:00 (6:00 PM)
+    const int LONDON_WINDOW_START = 3 * 60;         // 03:00 (3:00 AM)
+    const int LONDON_WINDOW_END = 4 * 60;           // 04:00 (4:00 AM)
+    const int PRE_MARKET_HOOK_START = 8 * 60 + 30;  // 08:30 (8:30 AM)
+
+    // === Regular Trading Hours Boundaries (Eastern Time) ===
+    const int PRE_MARKET_START = 9 * 60;       // 09:00 (9:00 AM)
+    const int MARKET_OPEN = 9 * 60 + 30;       // 09:30 (9:30 AM)
+    const int OPENING_HOUR_END = 10 * 60 + 30; // 10:30 (10:30 AM)
+    const int SWEET_SPOT_END = 12 * 60;        // 12:00 (12:00 PM)
+    const int LUNCH_END = 14 * 60;             // 14:00 (2:00 PM)
+    const int AFTERNOON_END = 15 * 60;         // 15:00 (3:00 PM)
+    const int FINAL_HOUR_END = 15 * 60 + 45;   // 15:45 (3:45 PM)
+    const int MARKET_CLOSE = 16 * 60;          // 16:00 (4:00 PM)
+
+    // === Globex Session Classification (handles midnight rollover) ===
+    if (timeInMinutes >= ASIAN_START || timeInMinutes < LONDON_WINDOW_START) {
+        return hasOpenPosition ? TimeOfDayEnum::OVERNIGHT_HOLD : TimeOfDayEnum::ASIAN_SESSION;
+    }
+    if (timeInMinutes >= LONDON_WINDOW_START && timeInMinutes < LONDON_WINDOW_END) {
+        return TimeOfDayEnum::LONDON_WINDOW;
+    }
+    if (timeInMinutes >= LONDON_WINDOW_END && timeInMinutes < PRE_MARKET_HOOK_START) {
+        return TimeOfDayEnum::LONDON_TO_PREMARKET;
+    }
+    if (timeInMinutes >= PRE_MARKET_HOOK_START && timeInMinutes < PRE_MARKET_START) {
+        return TimeOfDayEnum::PRE_MARKET_HOOK;
+    }
+    // === Regular Trading Hours Classification ===
+    if (timeInMinutes >= PRE_MARKET_START && timeInMinutes < MARKET_OPEN) {
+        return TimeOfDayEnum::PRE_MARKET;
+    }
+    if (timeInMinutes >= MARKET_OPEN && timeInMinutes < OPENING_HOUR_END) {
+        return TimeOfDayEnum::OPENING_HOUR;
+    }
+    if (timeInMinutes >= OPENING_HOUR_END && timeInMinutes < SWEET_SPOT_END) {
+        return TimeOfDayEnum::SWEET_SPOT;
+    }
+    if (timeInMinutes >= SWEET_SPOT_END && timeInMinutes < LUNCH_END) {
+        return TimeOfDayEnum::LUNCH_DEAD_ZONE;
+    }
+    if (timeInMinutes >= LUNCH_END && timeInMinutes < AFTERNOON_END) {
+        return TimeOfDayEnum::AFTERNOON_SESSION;
+    }
+    if (timeInMinutes >= AFTERNOON_END && timeInMinutes < FINAL_HOUR_END) {
+        return TimeOfDayEnum::FINAL_HOUR;
+    }
+    if (timeInMinutes >= FINAL_HOUR_END && timeInMinutes < MARKET_CLOSE) {
+        return TimeOfDayEnum::PM_RUN_ENTRY;
+    }
+    if (timeInMinutes >= MARKET_CLOSE && timeInMinutes < ASIAN_START) {
+        return TimeOfDayEnum::AFTER_HOURS;
+    }
+    return TimeOfDayEnum::OVERNIGHT_HOLD;  // unreachable given the boundaries above are exhaustive
+}
+
+// AsymmetryContext.session_quality_score's real source (fixed 2026-09-19 --
+// this slot was previously fed Elder Impulse's Close Location Value, an
+// unrelated quantity; the field name/semantic was always meant to be this).
+// Continuous [-1.0, 1.0] "dual representation" of the same TimeOfDayEnum
+// state IndicatorState.time_of_day already carries categorically -- a
+// reasoned discretization of this enum's own already-documented per-session
+// trading-quality characterization above (Raschke/Taylor methodology), not a
+// freshly invented ranking: SWEET_SPOT ("cleanest trends, best entries") is
+// the max: LUNCH_DEAD_ZONE ("avoid entries, choppy action") is the min.
+// OVERNIGHT_HOLD is a bookkeeping state (already in a position, not a fresh-
+// entry-quality question) and maps to neutral 0.0, not the low end.
+inline float ComputeSessionQualityScore(TimeOfDayEnum tod) {
+    switch (tod) {
+        case TimeOfDayEnum::SWEET_SPOT:            return  1.0f;
+        case TimeOfDayEnum::OPENING_HOUR:          return  0.6f;
+        case TimeOfDayEnum::AFTERNOON_SESSION:     return  0.4f;
+        case TimeOfDayEnum::PRE_MARKET_HOOK:       return  0.1f;
+        case TimeOfDayEnum::LONDON_WINDOW:         return  0.0f;
+        case TimeOfDayEnum::OVERNIGHT_HOLD:        return  0.0f;
+        case TimeOfDayEnum::PRE_MARKET:            return -0.1f;
+        case TimeOfDayEnum::LONDON_TO_PREMARKET:   return -0.2f;
+        case TimeOfDayEnum::PM_RUN_ENTRY:          return -0.3f;
+        case TimeOfDayEnum::FINAL_HOUR:            return -0.5f;
+        case TimeOfDayEnum::ASIAN_SESSION:         return -0.6f;
+        case TimeOfDayEnum::AFTER_HOURS:           return -0.8f;
+        case TimeOfDayEnum::LUNCH_DEAD_ZONE:       return -1.0f;
+        default:                                   return  0.0f;
+    }
+}
+
 enum class ATRProximityEnum : int8_t
 {
     LOW_VOLATILITY = 0,
