@@ -1255,7 +1255,11 @@ int main() {
         check("task9_ohlcv_round_trips",
               event.open == 100.25f && event.high == 101.5f && event.low == 99.75f &&
               event.close == 100.5f && event.volume == 12345);
-        check("task9_changed_mask_round_trips_2026_09_19", event.changed_mask == 0xABCDULL);
+        // changed_mask now also carries AsymmetryContext's own regime-bucket bits
+        // (55/57-61, 2026-09-20 parity work) ORed in by BuildTrainingEventT() itself --
+        // the raw passed-in dirty mask no longer round-trips byte-for-byte alone.
+        check("task9_changed_mask_round_trips_2026_09_19",
+              event.changed_mask == (0xABCDULL | engine.GetAsymmetryContextChangedBits()));
 
         // IndicatorState's 17 PRIMARY_TRIGGER_MASK fields mirror this engine's
         // own current Get*Result() accessors exactly.
@@ -1382,16 +1386,29 @@ int main() {
         check("task10_fractal_dim_is_documented_sentinel_not_wrong_window",
               rgc.fractal_dim == 1.5f);
 
-        // Out-of-scope fields hold LocalRiskContext.h's own documented
-        // defaults -- especially raschke_burst, which must NOT be
-        // RiskGateContextT's own mismatched wire default (1.0f).
+        // Out-of-scope fields (StructureEngine/TailRiskEngine/MarketClimateIndicator/Layer-B
+        // rolling-percentile subsystems, still not replicated here) hold LocalRiskContext.h's
+        // own documented defaults.
         check("task10_out_of_scope_fields_hold_documented_defaults",
-              rgc.shannon_flow_entropy == 0.0f && rgc.shannon_efficiency == 0.5f &&
-              rgc.taleb_kurtosis == 0.0f && rgc.taleb_skewness == 0.0f &&
-              rgc.elder_chandelier_atr == 0.0f && rgc.vol_convexity == 0.0f &&
-              rgc.regime_duration == 0 && rgc.amihud_percentile == 0.5f);
-        check("task10_raschke_burst_is_poisson_neutral_not_wire_default",
-              rgc.raschke_burst == 0.0f);
+              rgc.vol_convexity == 0.0f && rgc.regime_duration == 0 && rgc.amihud_percentile == 0.5f);
+
+        // shannon_flow_entropy/shannon_efficiency/taleb_kurtosis/taleb_skewness/
+        // elder_chandelier_atr/raschke_burst: real values as of 2026-09-20 (AsymmetryContext
+        // parity work) -- sourced from the same m_latestAsym GetAsymmetryContext() reads, not a
+        // second independent computation, so they must round-trip exactly.
+        const auto asym = engine.GetAsymmetryContext();
+        check("task10_shannon_flow_entropy_matches_asymmetry_context",
+              rgc.shannon_flow_entropy == asym.shannon_entropy());
+        check("task10_shannon_efficiency_matches_asymmetry_context",
+              rgc.shannon_efficiency == asym.shannon_efficiency());
+        check("task10_taleb_kurtosis_matches_asymmetry_context",
+              rgc.taleb_kurtosis == asym.taleb_kurtosis());
+        check("task10_taleb_skewness_matches_asymmetry_context",
+              rgc.taleb_skewness == asym.taleb_skewness());
+        check("task10_elder_chandelier_atr_matches_asymmetry_context",
+              rgc.elder_chandelier_atr == asym.taleb_cliff());
+        check("task10_raschke_burst_matches_asymmetry_context",
+              rgc.raschke_burst == asym.raschke_burst());
     }
 
     // --- Task 10: is_valid reflects FeatureScaler's real warm-up state, not

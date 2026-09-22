@@ -1148,6 +1148,17 @@ bool IndicatorManager::SendEventFlatBuffer(SCStudyInterfaceRef sc, bool isSnapsh
 }
 
 bool IndicatorManager::HasSignificantChange() {
+    // AsymmetryContext independent trigger (2026-09-20 fix): the regime-bucket
+    // classifiers behind these bits are already real, calibrated boundary
+    // crossings (production risk-gate percentiles as edges, Entry 29) -- they
+    // were computed every tick but only ever consulted post-hoc to decorate
+    // changed_mask, never to decide whether to publish at all. A tick where
+    // e.g. taleb_kurtosis crosses a regime bucket but no discrete IndicatorKey
+    // pattern also fires previously went uncaptured entirely.
+    if (ContextManager::Instance().GetAsymmetryContextChangedBits() != 0ULL) {
+        return true;
+    }
+
     // Bounds-sanitize: mask off any bits beyond MAX_INDICATORS to prevent
     // OOB access on m_indicators[] if dirty mask is ever corrupted.
     const uint64_t dirtyMask = m_dirty_mask & ALL_INDICATOR_MASK;

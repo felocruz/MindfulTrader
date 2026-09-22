@@ -28,9 +28,9 @@
 // Open()'s own real `<path>.<ext>` convention, spec §5 item 6's resolved
 // decision, just with `.context.parquet` instead of `.context`.)
 //
-// Build: mamba run -n mts g++ -O2 -std=c++17 -Iinclude \
+// Build: mamba run -n mts g++ -O2 -std=c++17 -Iinclude -I/usr/include/eigen3 \
 //   $(mamba run -n mts pkg-config --cflags arrow parquet) \
-//   tools/market_data_replay/MarketDataReplayContext.cpp \
+//   tools/market_data_replay/MarketDataReplayContext.cpp src/StructureEngine.cpp \
 //   $(mamba run -n mts pkg-config --libs arrow parquet) \
 //   -Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib \
 //   -o tools/bin/market_data_replay_context
@@ -165,22 +165,26 @@ int main(int argc, char** argv) {
                 const bool significantContext = engine.OnTick(ts, price, volume, askVol, bidVol);
                 if (emitContext && significantContext) {
                     const auto rgc = engine.BuildRiskGateContextT(ts);
-                    // asymmetry_context: out of scope (spec §3 item 3's own
-                    // disposition table -- requires StructureEngine/
-                    // PositionManager this tool doesn't replicate) --
-                    // documented zero-init sentinel, not a guessed value.
-                    const MTS::Schema::AsymmetryContext emptyAsymmetry{};
+                    // asymmetry_context: real values as of 2026-09-20 (previously an
+                    // emptyAsymmetry sentinel -- closed, see MarketDataReplayEngine.h's
+                    // GetAsymmetryContext()).
+                    const MTS::Schema::AsymmetryContext asymmetry = engine.GetAsymmetryContext();
                     contextWriter.LogContext(
-                        engine.GetObservation(), emptyAsymmetry, static_cast<uint64_t>(ts),
+                        engine.GetObservation(), asymmetry, static_cast<uint64_t>(ts),
                         engine.GetBarsSinceLastUpdate(), &rgc);
                     ++contextRecordsWritten;
                 }
 
                 // Trigger 2 (`.alpha`): independent PRIMARY_TRIGGER_MASK dirty-bit
                 // schedule, gated by Locks A/B/D/E -- never unified with trigger 1
-                // (spec §2's own core design decision).
+                // (spec §2's own core design decision). OR'd with AsymmetryContext's
+                // own regime-bucket boundary crossings (2026-09-20 fix, mirrors
+                // IndicatorManager::HasSignificantChange() -- previously computed
+                // every tick but only ever consulted post-hoc to decorate
+                // changed_mask, never to decide whether to publish at all).
                 const uint64_t dirtyMask = engine.ConsumePatternDirtyMask();
-                if (emitAlpha && dirtyMask != 0 && AlphaLocksPass(engine)) {
+                const bool asymmetrySignificant = engine.GetAsymmetryContextChangedBits() != 0ULL;
+                if (emitAlpha && (dirtyMask != 0 || asymmetrySignificant) && AlphaLocksPass(engine)) {
                     auto& event = engine.BuildTrainingEventT(
                         engine.GetTs3BarsClosed(), ts,
                         engine.GetTs3LiveOpen(), engine.GetTs3LiveHigh(),
@@ -188,6 +192,10 @@ int main(int argc, char** argv) {
                         engine.GetTs3LiveVolume(), dirtyMask);
                     alphaWriter.LogAlpha(event);
                     ++alphaRecordsWritten;
+                    // Advance the AsymmetryContext regime-bucket baseline only once the row
+                    // carrying its bits is actually emitted -- mirrors IndicatorManager::
+                    // PublishEventOnChange()'s CommitAsymmetryContextBaseline() call site.
+                    engine.CommitAsymmetryContextBaseline();
                 }
 
                 if (ticksProcessed % kProgressEveryNTicks == 0) {

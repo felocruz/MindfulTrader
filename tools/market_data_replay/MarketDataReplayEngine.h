@@ -21,6 +21,7 @@
 #include "DailyBiasEngine.h"
 #include "DfaHurstExponent.h"
 #include "ActivityClockMeanReversion.h"
+#include "EasternTimeOffset.h"
 #include "EventVelocityEngine.h"
 #include "FeatureScaler.h"
 #include "ImbalanceBarEngine.h"
@@ -34,6 +35,7 @@
 #include "RobustMoments.h"
 #include "RQAEpsilonSelector.h"
 #include "SevcikFractalDimension.h"
+#include "StructureEngine.h"
 #include "TailRiskEngine.h"
 
 // Task 7 (spec §3 item 2): compute primitives for the 5 already-audited
@@ -273,6 +275,57 @@ public:
 
     const MTS::Schema::ObservationData& GetObservation() const { return m_obs; }
 
+    // AsymmetryContext (2026-09-20 parity work) -- real values, not the emptyAsymmetry sentinel
+    // this engine's own caller (MarketDataReplayContext.cpp) previously had to use.
+    MTS::Schema::AsymmetryContext GetAsymmetryContext() const {
+        return MTS::Schema::Contract::MakeAsymmetryContext({
+            m_latestAsym.shannonEntropy,
+            m_latestAsym.shannonEfficiency,
+            m_latestAsym.talebKurtosis,
+            m_latestAsym.talebSkewness,
+            m_latestAsym.talebCliff,
+            m_latestAsym.roughnessRatio,
+            m_latestAsym.raschkeBurst,
+            m_latestAsym.sessionQualityScore,
+        });
+    }
+
+    // Regime-bucket changed_mask bits (55/57-61), same semantics as ContextManager's
+    // GetAsymmetryContextChangedBits()/CommitAsymmetryContextBaseline() pair -- pure query,
+    // compares current buckets against the baseline as of the last commit.
+    uint64_t GetAsymmetryContextChangedBits() const {
+        constexpr uint64_t kBitShannonEntropy = 1ULL << 55;
+        constexpr uint64_t kBitTalebKurtosis  = 1ULL << 57;
+        constexpr uint64_t kBitTalebSkewness  = 1ULL << 58;
+        constexpr uint64_t kBitTalebCliff     = 1ULL << 59;
+        constexpr uint64_t kBitRoughnessRatio = 1ULL << 60;
+        constexpr uint64_t kBitRaschkeBurst   = 1ULL << 61;
+
+        const auto& m = m_latestAsym;
+        const auto& b = m_asymBucketBaseline;
+        uint64_t bits = 0;
+        if (ClassifyEntropyFractionBucket(m.shannonEntropy / 3.321928f) != b.shannonEntropy) bits |= kBitShannonEntropy;
+        if (ClassifyKurtosisBucket(m.talebKurtosis) != b.talebKurtosis) bits |= kBitTalebKurtosis;
+        if (ClassifySkewnessBucket(m.talebSkewness) != b.talebSkewness) bits |= kBitTalebSkewness;
+        if (ClassifyCliffBucket(m.talebCliff) != b.talebCliff) bits |= kBitTalebCliff;
+        if (ClassifyRoughnessBucket(m.roughnessRatio) != b.roughnessRatio) bits |= kBitRoughnessRatio;
+        if (ClassifyBurstBucket(m.raschkeBurst) != b.raschkeBurst) bits |= kBitRaschkeBurst;
+        return bits;
+    }
+
+    // Advances the bucket baseline to the CURRENT classification -- caller's responsibility to
+    // call this only when a row is actually emitted (mirrors IndicatorManager::
+    // PublishEventOnChange()'s m_dirty_mask=0 reset / ContextManager::CommitAsymmetryContextBaseline()).
+    void CommitAsymmetryContextBaseline() {
+        const auto& m = m_latestAsym;
+        m_asymBucketBaseline.shannonEntropy = ClassifyEntropyFractionBucket(m.shannonEntropy / 3.321928f);
+        m_asymBucketBaseline.talebKurtosis = ClassifyKurtosisBucket(m.talebKurtosis);
+        m_asymBucketBaseline.talebSkewness = ClassifySkewnessBucket(m.talebSkewness);
+        m_asymBucketBaseline.talebCliff = ClassifyCliffBucket(m.talebCliff);
+        m_asymBucketBaseline.roughnessRatio = ClassifyRoughnessBucket(m.roughnessRatio);
+        m_asymBucketBaseline.raschkeBurst = ClassifyBurstBucket(m.raschkeBurst);
+    }
+
     // SystemState's regime-tenure field (Task 4b) -- the tick loop passes this
     // into LBRFileManager::LogContext()'s bars_since_last_update parameter.
     float GetBarsSinceLastUpdate() const { return m_regimeTenure; }
@@ -437,7 +490,10 @@ public:
         event.low = low;
         event.close = close;
         event.volume = volume;
-        event.changed_mask = changedMask;
+        // OR in AsymmetryContext's own regime-bucket bits (55/57-61) -- caller's dirtyMask only
+        // ever carries IndicatorKey bits (0-54); this engine is the only one that knows about
+        // the other 6 (2026-09-20 parity work).
+        event.changed_mask = changedMask | GetAsymmetryContextChangedBits();
 
         // 17 PRIMARY_TRIGGER_MASK IndicatorState fields (schema/mts_schema.fbs:221),
         // this engine's own already-computed Task 7 results.
@@ -486,6 +542,13 @@ public:
         // AddToTrainingEventFB reads (spec §3 item 3's own confirmed finding).
         *event.observation = m_obs;
 
+        // event.asymmetry_context: real values as of 2026-09-20 (previously left at
+        // zero-init/TrainingEventT's own default -- a documented gap this closes).
+        if (!event.asymmetry_context) {
+            event.asymmetry_context = std::make_unique<MTS::Schema::AsymmetryContext>();
+        }
+        *event.asymmetry_context = GetAsymmetryContext();
+
         // WriteTrainingRootSharedFields-equivalent (schema/mts_schema.fbs's
         // TrainingEvent "Absolute Levels"/execution-context shared fields).
         mts::schema_contract::shared_writers::WriteTrainingRootSharedFields(
@@ -514,14 +577,16 @@ public:
         // structural reason as the HMM/regime fields below, not a special case.
         event.model_confidence = 0.0f;
 
-        // Everything else (HMM/regime fields, asymmetry_context, dist_*,
+        // Everything else (HMM/regime fields, dist_*,
         // volatility/efficiency/rel_range/velocity/regime_tenure, features,
         // Section 12-15 outcome/label fields) is explicitly out of scope for
         // this PRIMARY_TRIGGER_MASK-only initiative (spec §3 item 3's own
         // disposition table) -- left at TrainingEventT's own zero-init
         // defaults, which the pooled object already starts with and this
         // method never touches, so nothing here can carry forward a stale
-        // value from a prior call either. lbrnet's own posterior-injection
+        // value from a prior call either. asymmetry_context was closed out of
+        // this list 2026-09-20 (see above -- real values now, not a gap).
+        // lbrnet's own posterior-injection
         // pass (mirroring materialize_hmm_features.py) is the intended fix
         // for these downstream, not a C++ change here -- see
         // HMM_REGIME_MANAGER_COORDINATION.md Entries 9/11.
@@ -534,11 +599,13 @@ public:
     // (spec §11 item 1) -- a plain member, never freshly constructed per call.
     // 6 fields are direct m_obs/m_featureScaler reads (this engine already
     // retains production's own "raw pre-scaling" values there, confirmed by
-    // direct trace -- see this task's own plan-doc scope-correction note);
-    // fractal_dim is a genuine gap (documented sentinel, not a wrong-window
-    // value); everything else is LocalRiskContext.h's own documented default,
-    // explicitly assigned (never left at RiskGateContextT's own generated
-    // defaults, which mismatch LocalRiskContext.h's for raschke_burst).
+    // direct trace -- see this task's own plan-doc scope-correction note); 6
+    // more (shannon_flow_entropy/shannon_efficiency/taleb_kurtosis/taleb_skewness/
+    // elder_chandelier_atr/raschke_burst) are m_latestAsym reads as of 2026-09-20
+    // (AsymmetryContext parity work); fractal_dim/vol_convexity/regime_duration/
+    // amihud_percentile remain genuine gaps, explicitly assigned to LocalRiskContext.h's
+    // own documented defaults (never left at RiskGateContextT's own generated defaults,
+    // which mismatch LocalRiskContext.h's for raschke_burst).
     const MTS::Schema::RiskGateContextT& BuildRiskGateContextT(int64_t timestampUs) {
         auto& rgc = m_riskGateContextScratch;
 
@@ -559,22 +626,22 @@ public:
         // LocalRiskContext.h's own documented neutral instead.
         rgc.fractal_dim = 1.5f;
 
-        // Out of scope (StructureEngine/TailRiskEngine/MarketClimateIndicator/
-        // Layer-B rolling-percentile subsystems, none replicated here) --
-        // LocalRiskContext.h's own documented defaults, explicit, never left
-        // to RiskGateContextT's own generated member initializers (which
-        // mismatch for raschke_burst: wire default 1.0f vs. the semantically
-        // correct Poisson-neutral 0.0f).
-        rgc.shannon_flow_entropy = 0.0f;
-        rgc.shannon_efficiency = 0.5f;
-        rgc.taleb_kurtosis = 0.0f;
-        rgc.taleb_skewness = 0.0f;
-        rgc.elder_chandelier_atr = 0.0f;
+        // shannon_flow_entropy/shannon_efficiency/taleb_kurtosis/taleb_skewness/
+        // elder_chandelier_atr/raschke_burst: real values as of 2026-09-20 (AsymmetryContext
+        // parity work) -- m_latestAsym is the SAME computation GetAsymmetryContext() reads,
+        // these RiskGateContext fields are just LocalRiskContext.h's own parallel copies of the
+        // same underlying metrics (ContextManager.cpp's BuildRiskGateContext() reads them from
+        // m_latestInstitutionalMetrics too, not a second independent computation).
+        rgc.shannon_flow_entropy = m_latestAsym.shannonEntropy;
+        rgc.shannon_efficiency = m_latestAsym.shannonEfficiency;
+        rgc.taleb_kurtosis = m_latestAsym.talebKurtosis;
+        rgc.taleb_skewness = m_latestAsym.talebSkewness;
+        rgc.elder_chandelier_atr = m_latestAsym.talebCliff;
         // vol_convexity (restored 2026-09-18, RiskGateContext-only): CalculateVolConvexity()
         // is ACSIL-coupled (sc.BaseData reads), not yet ported to this offline engine -- same
         // "out of scope" treatment as the other unreplicated subsystems above.
         rgc.vol_convexity = 0.0f;
-        rgc.raschke_burst = 0.0f;
+        rgc.raschke_burst = m_latestAsym.raschkeBurst;
         rgc.regime_duration = 0;
         rgc.amihud_percentile = 0.5f;
 
@@ -2190,6 +2257,95 @@ private:
         // No longer computes mean_rev_z here (Task 6b) -- ComputeTs3LiveDims()
         // runs every tick from OnTick() instead. This callback only advances
         // the closed-bar history.
+
+        // --- AsymmetryContext (2026-09-20, offline<=>TrainingEvent<=>ACSIL-coupled parity,
+        // spec 2026-09-19-meaningful-event-trigger-and-asymmetry-context-significance-
+        // spec.md) -- this engine never computed any of these 8 fields before this. ---
+        {
+            // shannon_entropy/shannon_efficiency: m_infoEngine is already fed every tick
+            // (OnTick() above) -- same InformationEngine instance production's ContextManager
+            // uses, same formula.
+            m_latestAsym.shannonEntropy = static_cast<float>(m_infoEngine.GetShannonEntropy());
+            constexpr float kMaxEntropy = 3.321928f;  // log2(10), InformationEngine::NUM_BINS
+            m_latestAsym.shannonEfficiency = (m_latestAsym.shannonEntropy > 0.0f)
+                ? (1.0f - std::min(m_latestAsym.shannonEntropy / kMaxEntropy, 1.0f))
+                : 0.5f;
+
+            // raschke_burst: same function AND same tick-timestamp buffer as ObservationData's
+            // own burstiness_index (ContextManager.cpp's own comment confirms raschke_burst IS
+            // CalculateBurstinessIndex() -- literally the same call, not a parallel one).
+            m_latestAsym.raschkeBurst = m_obs.burstiness_index();
+
+            // roughness_ratio: StructureEngine, same TS3-bar feed as production's
+            // ContextManager::UpdatePriceStructure().
+            m_asymStructureEngine.Update(high, low, close, /*isNewBar=*/true);
+            if (m_asymStructureEngine.IsReady()) {
+                m_latestAsym.roughnessRatio = m_asymStructureEngine.GetRoughnessRatio();
+            }
+
+            // session_quality_score: real TimeOfDayEnum classification from this bar's own
+            // close timestamp -- same ClassifyTimeOfDay()/ComputeSessionQualityScore() pair the
+            // ACSIL-coupled path uses (IndicatorComputations.h).
+            {
+                const int64_t utcSeconds = bar.closeTimeUs / 1'000'000LL;
+                const int etOffsetSeconds = ete::GetEasternUtcOffsetSeconds(utcSeconds);
+                const int64_t etSeconds = utcSeconds + etOffsetSeconds;
+                const int hour = static_cast<int>((etSeconds / 3600) % 24);
+                const int minute = static_cast<int>((etSeconds / 60) % 60);
+                const TimeOfDayEnum tod = ClassifyTimeOfDay(hour, minute, /*hasOpenPosition=*/false);
+                m_latestAsym.sessionQualityScore = ComputeSessionQualityScore(tod);
+            }
+
+            // taleb_kurtosis/taleb_skewness: 101-close + 20-ATR rolling windows, matching
+            // ComputeRealizedKurtosis()/ComputeRealizedSkewness()'s (RobustMoments.h) input
+            // contract exactly (ported from StudyHelperFunctions.cpp's CalculateRealizedKurtosis/
+            // CalculateSkewness).
+            m_asymKurtosisCloses.push_back(close);
+            if (m_asymKurtosisCloses.size() > 101) m_asymKurtosisCloses.pop_front();
+            m_asymKurtosisAtr.push_back(atr10);
+            if (m_asymKurtosisAtr.size() > 20) m_asymKurtosisAtr.pop_front();
+            if (m_asymKurtosisCloses.size() >= 101 && m_asymKurtosisAtr.size() >= 20) {
+                std::array<float, 101> closesNewestFirst{};
+                const size_t cSz = m_asymKurtosisCloses.size();
+                for (size_t i = 0; i < 101; ++i) closesNewestFirst[i] = m_asymKurtosisCloses[cSz - 1 - i];
+                std::array<float, 20> atrNewestFirst{};
+                const size_t aSz = m_asymKurtosisAtr.size();
+                for (size_t i = 0; i < 20; ++i) atrNewestFirst[i] = m_asymKurtosisAtr[aSz - 1 - i];
+
+                m_latestAsym.talebKurtosis = ComputeRealizedKurtosis(
+                    closesNewestFirst, atrNewestFirst, m_asymPrevKurtosis, m_asymHasPrevKurtosis);
+                m_asymPrevKurtosis = m_latestAsym.talebKurtosis;
+                m_asymHasPrevKurtosis = true;
+
+                m_latestAsym.talebSkewness = ComputeRealizedSkewness(
+                    closesNewestFirst, atrNewestFirst, m_asymLastValidSkewness);
+                m_asymLastValidSkewness = m_latestAsym.talebSkewness;
+            }
+
+            // taleb_cliff (elderChandelierATR): 22-bar high/low, "no position" theoretical
+            // branch only -- production's with-position branch needs PositionManager's live
+            // stop distance, structurally absent in offline replay (same disposition as this
+            // engine's other already-documented PositionManager-dependent exclusions).
+            m_asymChandelierHighs.push_back(high);
+            if (m_asymChandelierHighs.size() > 22) m_asymChandelierHighs.pop_front();
+            m_asymChandelierLows.push_back(low);
+            if (m_asymChandelierLows.size() > 22) m_asymChandelierLows.pop_front();
+            if (m_asymChandelierHighs.size() >= 22 && atr10 > 0.00001f) {
+                float hh = m_asymChandelierHighs[0];
+                float ll = m_asymChandelierLows[0];
+                const size_t n = m_asymChandelierHighs.size();
+                for (size_t i = 1; i < n; ++i) {
+                    hh = std::max(hh, m_asymChandelierHighs[i]);
+                    ll = std::min(ll, m_asymChandelierLows[i]);
+                }
+                const float longStop = hh - (3.0f * atr10);
+                const float shortStop = ll + (3.0f * atr10);
+                const float distLong = close - longStop;
+                const float distShort = shortStop - close;
+                const float nearestSafeDist = std::min(distLong, distShort);
+                m_latestAsym.talebCliff = nearestSafeDist / atr10;
+            }
+        }
     }
 
     void ComputeTs3LiveDims() {
@@ -2625,6 +2781,58 @@ private:
     RingBuffer<float, kElderConsolidationCapacity> m_ts3ElderTopBandHist;
     RingBuffer<float, kElderConsolidationCapacity> m_ts3ElderBottomBandHist;
     RingBuffer<float, kElderConsolidationCapacity> m_ts3ElderAtrHist;
+
+    // AsymmetryContext parity work (2026-09-20, offline<=>TrainingEvent<=>ACSIL-coupled
+    // consistency -- spec 2026-09-19-meaningful-event-trigger-and-asymmetry-context-
+    // significance-spec.md): this engine never computed AsymmetryContext at all before this.
+    // shannon_entropy/shannon_efficiency reuse m_infoEngine (already fed every tick above) --
+    // no new state needed. raschke_burst reuses m_obs's own already-computed burstiness_index
+    // (ContextManager.cpp's own comment confirms raschke_burst IS CalculateBurstinessIndex(),
+    // the same function, same tick-timestamp buffer) -- no new state needed either.
+    MindfulTrader::StructureEngine m_asymStructureEngine;  // feeds roughness_ratio
+    // taleb_kurtosis/taleb_skewness: 101-close + 20-ATR rolling windows, matching
+    // ComputeRealizedKurtosis()/ComputeRealizedSkewness()'s (RobustMoments.h) input contract
+    // exactly -- ported from StudyHelperFunctions.cpp's CalculateRealizedKurtosis/
+    // CalculateSkewness, same TS3/atr10 cadence this engine already uses elsewhere.
+    // Capacities include +1 headroom (RingBuffer.h's own documented "push_back then
+    // conditionally pop_front" call shape requirement).
+    RingBuffer<float, 102> m_asymKurtosisCloses;
+    RingBuffer<float, 21> m_asymKurtosisAtr;
+    float m_asymPrevKurtosis = 1.23f;
+    bool m_asymHasPrevKurtosis = false;
+    float m_asymLastValidSkewness = 0.0f;
+    // taleb_cliff (elderChandelierATR): 22-bar high/low window, "no open position" theoretical
+    // branch only (ContextManager.cpp's own with-position branch needs PositionManager's live
+    // stop distance, structurally absent in offline replay -- same disposition as the rest of
+    // this engine's already-documented PositionManager-dependent exclusions).
+    RingBuffer<float, 23> m_asymChandelierHighs;
+    RingBuffer<float, 23> m_asymChandelierLows;
+
+    struct AsymmetryContextRaw {
+        float shannonEntropy = 0.0f;
+        float shannonEfficiency = 0.5f;
+        float talebKurtosis = 1.23f;
+        float talebSkewness = 0.0f;
+        float talebCliff = 0.0f;
+        float roughnessRatio = 0.0f;
+        float raschkeBurst = 0.0f;
+        float sessionQualityScore = 0.0f;
+    };
+    AsymmetryContextRaw m_latestAsym;
+
+    // Regime-bucket baseline (mirrors ContextManager's m_asymmetryBucketBaseline /
+    // GetAsymmetryContextChangedBits() / CommitAsymmetryContextBaseline() exactly -- same 6
+    // bits, same bucket classifiers, same "commit only when a row is actually emitted"
+    // semantic).
+    struct AsymmetryBucketBaseline {
+        int shannonEntropy = -1;
+        int talebKurtosis = -1;
+        int talebSkewness = -1;
+        int talebCliff = -1;
+        int roughnessRatio = -1;
+        int raschkeBurst = -1;
+    };
+    AsymmetryBucketBaseline m_asymBucketBaseline;
 
     KangarooTailEnum m_lastKangarooTail = KangarooTailEnum::NONE;
     TurtleSoupEnum m_lastTurtleSoup = TurtleSoupEnum::NONE;

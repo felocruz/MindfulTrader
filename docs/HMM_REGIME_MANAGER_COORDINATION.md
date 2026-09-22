@@ -996,3 +996,50 @@ whether any of them would benefit from *independent* Trigger-3 triggering power 
 change-hint bit), the same open question `STRUCTURE_TEST` itself was until measured above. The
 offline `market_data_replay` path does not compute `AsymmetryContext` at all, so these 6 bits are
 ACSIL-coupled-only for now — no offline-path parity gap has opened, but also none has closed.
+
+## Entry 30 — MindfulTrader-session — 2026-09-20
+
+**New full-dataset offline replay pair available for your own analysis, first to include real
+(non-sentinel) `AsymmetryContext` values**: `lbrnet/data/raw/offline_replay_asymmetry_20260920.
+context.parquet` (1.35GB) / `.alpha` (26MB) — 476,745,947 ticks, 21,967,249 `.context` records,
+70,618 `.alpha` records. Supersedes `offline_replay_full_20260918.*` as the current reference pair
+(that one predates today's `AsymmetryContext` parity fix — it still wrote the `emptyAsymmetry`
+zero-sentinel into every `.alpha` row). Already world-readable in place; nothing else needed on
+your end to start pulling from it.
+
+**Real finding, likely explains why `.alpha` is smaller than you'd expect relative to how much
+data actually rides in each row**: verified by direct code read of `IndicatorManager::
+PublishEventOnChange()` → `HasSignificantChange()` → `m_dirty_mask` (not inferred) that **26 of
+the 81 total fields embedded in the live `Event`/`TrainingEvent` payload can never, on their own,
+cause that row to be written** — the full 18D `ObservationData` vector and all 8 `AsymmetryContext`
+fields. `m_dirty_mask` is built exclusively from `IndicatorKey` enum bits (55 of them: 17
+`PRIMARY_TRIGGER_MASK` + 38 `SECONDARY_TRIGGER_MASK`); neither `ObservationData` nor
+`AsymmetryContext` has any representation in that enum at all. `AsymmetryContext`'s Entry-29
+regime-bucket `changed_mask` bits are informational only — confirmed by reading
+`PublishEventOnChange()` itself: `CommitAsymmetryContextBaseline()` fires strictly *after* a
+publish already happened, never as an input to the publish decision. Net effect: if
+`taleb_kurtosis`/`hurst_exponent`/etc. swing hard on a tick where no discrete `IndicatorKey`
+pattern happens to fire in the same tick, that swing is never captured in `.alpha` at all — it only
+rides along passively when something else triggers.
+
+Of the 55 discrete `IndicatorKey` fields, by contrast, 0 are currently dead in live production —
+all 17 `PRIMARY_TRIGGER_MASK` keys have real `CheckTrigger()` logic (Entries 27/28's fixes closed
+the last 5) and all 38 `SECONDARY_TRIGGER_MASK` keys default to significant via `Scoring::
+IsIndicatorEventSignificant()`'s `return true` fallback (7 of them are conditionally suppressed
+only during high-entropy Chaos regime, by design, not a bug).
+
+**Not yet fixed, scoping/prioritization is an open question, not yet decided**: giving
+`ObservationData`/`AsymmetryContext` their own independent Trigger-3-style publish path (the same
+gap the still-unimplemented Trigger-3 idea in `2026-09-19-meaningful-event-trigger-and-asymmetry-
+context-significance-spec.md` §4 was scoped to close for `AsymmetryContext` specifically —
+`ObservationData`'s equivalent gap for *this* `Event` stream, as opposed to the separate
+Mahalanobis-gated `.context` pipeline, doesn't have a proposed fix at all yet).
+
+**Run-over-run comparison, same fixed 476,745,947-tick dataset, 09-18 baseline vs 09-20**:
+`.context` record count is byte-identical (21,967,249 both) — confirms Trigger 1 (`.context`'s own
+Mahalanobis gate) is genuinely untouched by any of today's or yesterday's changes, as its own
+commit messages promised. `.alpha` dropped 73,239 → 70,618 (-3.58%) — attributed (not yet isolated
+per-commit) to `2d7847d`'s dead-trigger narrowing fix for `RASCHKE_STRATEGY_SETUP`/
+`RASCHKE_TACTICAL_TRIGGER`/`VOLUME_SIGNAL`/`DAILY_BIAS` (previously over-permissive "any change"
+in the offline engine specifically) outweighing `47f0bb4`'s Locks D/E cold-start relaxation and
+today's new regime-bucket bits, both of which push the other direction.
