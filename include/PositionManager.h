@@ -237,6 +237,10 @@ private:
     Trade m_openTrade;
     Trade m_lastClosedTrade;  // Stores most recently closed trade for analytics/logging
     int m_lastFillArraySize{ -1 };
+    // Instrument invariant, captured once in Init(), never changes during a session --
+    // avoids repeated sc.TickSize reads across every method (backtester-shim scoping,
+    // docs/superpowers/specs/2026-09-19-imbalance-clock-hotpath-and-standalone-backtester-spec.md §2.4a).
+    double m_tickSize = 0.0;
 
     TradeStatusEnum m_tradeStatus = TradeStatusEnum::NO_TRADE;
 

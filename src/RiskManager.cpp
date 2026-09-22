@@ -594,6 +594,15 @@ void RiskManager::RefreshMetrics(SCStudyInterfaceRef sc) {
 void RiskManager::Update(SCStudyInterfaceRef sc) {
     // Continuous monitoring called every bar
 
+    // GAP FIX (2026-09-20, imbalance-clock-hotpath-and-standalone-backtester-spec.md §2.4d):
+    // daily reset was previously only re-checked in Init() (sc.UpdateStartIndex==0 -- chart
+    // load/full recalc only), unlike EnsureMonthlyEquityTracking()'s own per-call month check
+    // below. A continuously-running session (live or backtest replay) never re-triggered it.
+    // Mirrors the monthly check's own "recheck every call" pattern for the daily case.
+    if (sc.GetPersistentInt(RISK_LAST_RESET_DATE_ID) != sc.CurrentSystemDateTime.GetDate()) {
+        ResetDailyState(sc);
+    }
+
     // Keep kurtosis emergency state current even when no trades are attempted.
     RefreshKurtosisEmergencyState(sc);
 
@@ -1402,8 +1411,8 @@ Result<void> RiskManager::ValidateOrder(
         // Layer 3: RiskPrice — dollar-denominated risk with additive premiums
         // (PAER §9.6: replaces multiplicative shrinkage with structured pricing)
         RiskPriceInputs rpIn;
-        rpIn.stopDistanceTicks  = fabs(entryPrice - stopPrice) / sc.TickSize;
-        rpIn.currencyPerTick    = sc.CurrencyValuePerTick;
+        rpIn.stopDistanceTicks  = fabs(entryPrice - stopPrice) / m_invariants.tickSize;
+        rpIn.currencyPerTick    = m_invariants.currencyPerTick;
         rpIn.atrRatio           = (m_atr14Avg > 0.0f) ? (m_atr14 / m_atr14Avg) : 1.0f;
         rpIn.amihudPercentile   = lrc.amihudPercentile;
         rpIn.spreadStress       = lrc.spreadStress;
@@ -1576,7 +1585,7 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
 
     // Physical Risk (C++ Domain)
     const double stopDistance = fabs(entryPrice - stopPrice);
-    const double riskPerContract = (stopDistance / sc.TickSize) * sc.CurrencyValuePerTick;
+    const double riskPerContract = (stopDistance / m_invariants.tickSize) * m_invariants.currencyPerTick;
     if (riskPerContract <= 0.0) [[unlikely]] return Result<int>::Failure("Invalid stop distance", 2001);
 
     int baseSize = static_cast<int>(maxRisk / riskPerContract);
@@ -2013,7 +2022,7 @@ void RiskManager::OnTradeClose(SCStudyInterfaceRef sc, double pnl) {
     int consecutiveLosses = sc.GetPersistentInt(RISK_CONSECUTIVE_LOSSES_ID);
 
     // Convert P&L to ticks for psychological tracking
-    const double tickValue = sc.CurrencyValuePerTick;
+    const double tickValue = m_invariants.currencyPerTick;
     const double ticksPnL = (tickValue > 0) ? (pnl / tickValue) : 0.0;
     const double currentNetTicks = sc.GetPersistentDouble(RISK_NET_TICKS_TODAY_ID);
     sc.SetPersistentDouble(RISK_NET_TICKS_TODAY_ID, currentNetTicks + ticksPnL);
@@ -2039,7 +2048,7 @@ void RiskManager::OnTradeClose(SCStudyInterfaceRef sc, double pnl) {
     double initialRisk = 0.0;
     if (entryPrice > 0 && stopPrice > 0 && quantity > 0) {
         const double stopDistance = std::abs(entryPrice - stopPrice);
-        initialRisk = (stopDistance / sc.TickSize) * sc.CurrencyValuePerTick * quantity;
+        initialRisk = (stopDistance / m_invariants.tickSize) * m_invariants.currencyPerTick * quantity;
     }
 
     m_kellyCalculator.RecordTrade(pnl, initialRisk);
@@ -2428,9 +2437,9 @@ double RiskManager::GetRiskMultiplier(SCStudyInterfaceRef sc) const {
     return std::max(1.0 - (drawdown / m_execParams.drawdownHalt), 0.0);
 }
 
-double RiskManager::CalculateOrderRisk(SCStudyInterfaceRef sc, double entryPrice, double stopPrice, int quantity) const {
+double RiskManager::CalculateOrderRisk([[maybe_unused]] SCStudyInterfaceRef sc, double entryPrice, double stopPrice, int quantity) const {
     const double stopDistance = fabs(entryPrice - stopPrice);
-    const double riskPerContract = (stopDistance / sc.TickSize) * sc.CurrencyValuePerTick;
+    const double riskPerContract = (stopDistance / m_invariants.tickSize) * m_invariants.currencyPerTick;
     return riskPerContract * quantity;
 }
 
@@ -2452,9 +2461,9 @@ double RiskManager::CalculateTotalExposure(SCStudyInterfaceRef sc) const {
     const double currentPrice = sc.Close[sc.Index];
     const int quantity = abs(PositionData.PositionQuantity);
 
-    if (stopPrice > 0.0 && currentPrice > 0.0 && sc.TickSize > 0.0) {
+    if (stopPrice > 0.0 && currentPrice > 0.0 && m_invariants.tickSize > 0.0) {
         const double stopDistance = fabs(currentPrice - stopPrice);
-        return (stopDistance / sc.TickSize) * sc.CurrencyValuePerTick * quantity;
+        return (stopDistance / m_invariants.tickSize) * m_invariants.currencyPerTick * quantity;
     }
 
     static bool missing_stop_context_logged = false;
@@ -2690,13 +2699,13 @@ void RiskManager::MonitorStopOrderModifications(SCStudyInterfaceRef sc) {
             if (position.PositionQuantity > 0) {
                 // Long position - stop should be below entry
                 // Moving stop DOWN (further away) = WORSE
-                if (currentStop < originalStop - sc.TickSize) {  // C19: instrument-aware tolerance
+                if (currentStop < originalStop - m_invariants.tickSize) {  // C19: instrument-aware tolerance
                     stopMovedWorse = true;
                 }
             } else if (position.PositionQuantity < 0) {
                 // Short position - stop should be above entry
                 // Moving stop UP (further away) = WORSE
-                if (currentStop > originalStop + sc.TickSize) {
+                if (currentStop > originalStop + m_invariants.tickSize) {
                     stopMovedWorse = true;
                 }
             }
@@ -2757,11 +2766,11 @@ void RiskManager::MonitorStopOrderModifications(SCStudyInterfaceRef sc) {
 
             // Allow stops to move CLOSER (trailing) - update original
             if (!stopMovedWorse) {
-                if (position.PositionQuantity > 0 && currentStop > originalStop + sc.TickSize) {
+                if (position.PositionQuantity > 0 && currentStop > originalStop + m_invariants.tickSize) {
                     // Long stop moved UP (closer/better) - allowed, update original
                     int64_t stopPriceInt = (int64_t)(currentStop * 100);
                     sc.SetPersistentInt64(RISK_ORIGINAL_STOP_PRICE_ID, stopPriceInt);
-                } else if (position.PositionQuantity < 0 && currentStop < originalStop - sc.TickSize) {
+                } else if (position.PositionQuantity < 0 && currentStop < originalStop - m_invariants.tickSize) {
                     // Short stop moved DOWN (closer/better) - allowed, update original
                     int64_t stopPriceInt = (int64_t)(currentStop * 100);
                     sc.SetPersistentInt64(RISK_ORIGINAL_STOP_PRICE_ID, stopPriceInt);

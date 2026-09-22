@@ -265,10 +265,10 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
             const float prevHigh = sc.High[idx - 1];
 
             // Determine entry: use close if already broken out, else breakout level
-            entryPrice = (high > prevHigh) ? close : prevHigh + sc.TickSize;
+            entryPrice = (high > prevHigh) ? close : prevHigh + m_tickSize;
 
             // Stop: Below low of past 2 bars (tight per Elder methodology)
-            stopPrice = std::min(low, sc.Low[idx - 1]) - sc.TickSize;
+            stopPrice = std::min(low, sc.Low[idx - 1]) - m_tickSize;
 
             // Target: 1.5R initial (trail with 13-EMA + MACD-H later)
             const float riskAmount = entryPrice - stopPrice;
@@ -286,10 +286,10 @@ bool PositionManager::CalculateTacticalTriggerPrices(SCStudyInterfaceRef sc, con
             constexpr float ELDER_TARGET_R_MULTIPLE = 1.5f;
             const float prevLow = sc.Low[idx - 1];
 
-            entryPrice = (low < prevLow) ? close : prevLow - sc.TickSize;
+            entryPrice = (low < prevLow) ? close : prevLow - m_tickSize;
 
             // Stop: Above high of past 2 bars
-            stopPrice = std::max(high, sc.High[idx - 1]) + sc.TickSize;
+            stopPrice = std::max(high, sc.High[idx - 1]) + m_tickSize;
 
             // Target: 1.5R initial
             const float riskAmount = stopPrice - entryPrice;
@@ -337,11 +337,11 @@ bool PositionManager::CalculateStrategySetupPrices(SCStudyInterfaceRef sc, const
             }
 
             if (isLong) {
-                entryPrice = high + sc.TickSize;
+                entryPrice = high + m_tickSize;
                 stopPrice = low - (COMPRESSION_STOP_MULTIPLIER * atr);
                 targetPrice = entryPrice + compressionHeight;
             } else {
-                entryPrice = low - sc.TickSize;
+                entryPrice = low - m_tickSize;
                 stopPrice = high + (COMPRESSION_STOP_MULTIPLIER * atr);
                 targetPrice = entryPrice - compressionHeight;
             }

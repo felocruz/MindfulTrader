@@ -164,6 +164,7 @@ void PositionManager::Init(SCStudyInterfaceRef sc,
     m_requestQueue = req;
     m_replyQueue = rep;
     m_lastFillArraySize = sc.GetOrderFillArraySize();
+    m_tickSize = sc.TickSize;
 }
 
 void PositionManager::Reset(SCStudyInterfaceRef sc) {
@@ -313,7 +314,7 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
         if (hasPartialRemainder) {
             const float actualFillPrice = latestFill.FillPrice;
             const float slippageTicks = std::fabs(actualFillPrice - m_pendingEntryOrder.decisionPrice)
-                                        / sc.TickSize;
+                                        / m_tickSize;
 
             if (slippageTicks > 0.5f) {
                 // Fill is far from decision price — cancel remainder immediately
@@ -407,7 +408,7 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
             tbIn.swing_high              = static_cast<double>(tbSwingHigh);
             tbIn.swing_low               = static_cast<double>(tbSwingLow);
             tbIn.regime                  = tbRegime;
-            tbIn.tick_size               = sc.TickSize;
+            tbIn.tick_size               = m_tickSize;
 
             const tbe::Barriers tbB = tbe::ComputeBarriers(tbIn);
             const double tbRR = (tbB.risk > 0.0) ? (tbB.reward_at_target / tbB.risk) : 0.0;
@@ -603,7 +604,7 @@ void PositionManager::ManageWorkingEntryOrder(SCStudyInterfaceRef sc) {
 
     const double bid = static_cast<double>(sc.Bid);
     const double ask = static_cast<double>(sc.Ask);
-    const bool hasInside = (ask > bid) && (sc.TickSize > 0.0f);
+    const bool hasInside = (ask > bid) && (m_tickSize > 0.0);
     if (!hasInside) {
         Logger::getInstance().log(
             "PositionManager::ManagePendingEntry: skipped — invalid market quote "
@@ -611,7 +612,7 @@ void PositionManager::ManageWorkingEntryOrder(SCStudyInterfaceRef sc) {
         return;
     }
 
-    const double spreadTicks = (ask - bid) / static_cast<double>(sc.TickSize);
+    const double spreadTicks = (ask - bid) / m_tickSize;
     if (spreadTicks > static_cast<double>(maxSpreadTicks)) {
         DetectBrokerCancelFault(sc.CancelOrder(m_pendingEntryOrder.orderId));
         m_pendingEntryOrder = {};
@@ -795,13 +796,13 @@ bool PositionManager::CreatePositionUpdateFlatBuffer(
     // Build strings - safe even if Trade is uninitialized (returns empty string)
     auto pattern_offset = m_positionUpdateBuilder.CreateString(m_openTrade.GetPatternName());
 
-    // Calculate MAE/MFE in ticks (instrument-agnostic via sc.TickSize)
+    // Calculate MAE/MFE in ticks (instrument-agnostic via m_tickSize)
     // SAFETY: Only calculate if position is actually open
     float mae_ticks = 0.0f;
     float mfe_ticks = 0.0f;
 
-    if (!isFlat && m_openTrade.GetStatus() == TradeStatusEnum::OPEN && sc.TickSize > 0.0f) {
-        const float tick = static_cast<float>(sc.TickSize);
+    if (!isFlat && m_openTrade.GetStatus() == TradeStatusEnum::OPEN && m_tickSize > 0.0) {
+        const float tick = static_cast<float>(m_tickSize);
         float entry_price = static_cast<float>(m_openTrade.GetEntryPrice());
 
         // MAE: Maximum Adverse Excursion
@@ -2032,8 +2033,8 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     const float decisionPrice = entryPrice;
     const double arrivalBid = static_cast<double>(sc.Bid);
     const double arrivalAsk = static_cast<double>(sc.Ask);
-    const bool hasInsideQuote = (arrivalAsk > arrivalBid) && (sc.TickSize > 0.0f);
-    const double spreadTicks = hasInsideQuote ? ((arrivalAsk - arrivalBid) / static_cast<double>(sc.TickSize)) : 0.0;
+    const bool hasInsideQuote = (arrivalAsk > arrivalBid) && (m_tickSize > 0.0);
+    const double spreadTicks = hasInsideQuote ? ((arrivalAsk - arrivalBid) / m_tickSize) : 0.0;
 
     float allowedSpreadTicks = GetSessionSpreadLimit();
 
@@ -2207,8 +2208,8 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
                 ? std::min(entryPrice, static_cast<float>(arrivalBid))
                 : std::max(entryPrice, static_cast<float>(arrivalAsk));
         } else if (executionStyle == "MIDPOINT_IMPROVE") {
-            const float improvedLong = static_cast<float>(arrivalBid + static_cast<double>(sc.TickSize));
-            const float improvedShort = static_cast<float>(arrivalAsk - static_cast<double>(sc.TickSize));
+            const float improvedLong = static_cast<float>(arrivalBid + m_tickSize);
+            const float improvedShort = static_cast<float>(arrivalAsk - m_tickSize);
             entryPrice = isLong ? std::min(entryPrice, improvedLong) : std::max(entryPrice, improvedShort);
         } else { // AGGRESSIVE_CROSS
             if (spreadTicks > 1.0) {
@@ -2294,19 +2295,19 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
 
     // Limit Chase: SC engine reprices at zero latency; MaximumChaseAsPrice caps slippage per style.
     if (executionStyle == "AGGRESSIVE_CROSS") {
-        order.MaximumChaseAsPrice = 1.0 * sc.TickSize;  // Already crossing, minimal additional chase
+        order.MaximumChaseAsPrice = 1.0 * m_tickSize;  // Already crossing, minimal additional chase
     } else {
-        order.MaximumChaseAsPrice = 2.0 * sc.TickSize;  // PASSIVE/MIDPOINT: allow 2 ticks of chase
+        order.MaximumChaseAsPrice = 2.0 * m_tickSize;  // PASSIVE/MIDPOINT: allow 2 ticks of chase
     }
 
     // === GAP 20: INFERENCE LATENCY → CHASE AGGRESSIVENESS (Shannon — information freshness) ===
     // A 50ms inference is 10× staler than 5ms — the market has moved further from the
     // decision price.  Widen chase for stale predictions, tighten for fresh ones.
     if (prediction.inferenceLatencyUs > 8000) {
-        order.MaximumChaseAsPrice += 1.0 * sc.TickSize;  // Stale: market likely moved, chase further
+        order.MaximumChaseAsPrice += 1.0 * m_tickSize;  // Stale: market likely moved, chase further
     } else if (prediction.inferenceLatencyUs > 0 && prediction.inferenceLatencyUs < 3000) {
         // Fresh prediction: price is still close to where model saw it — tighten chase
-        order.MaximumChaseAsPrice = std::max(0.0, order.MaximumChaseAsPrice - 1.0 * sc.TickSize);
+        order.MaximumChaseAsPrice = std::max(0.0, order.MaximumChaseAsPrice - 1.0 * m_tickSize);
     }
 
     // === GAP 25: FAT-TAIL CHASE CAP (Taleb — refuse to chase in crash regimes) ===
@@ -2373,7 +2374,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
         } else {
             // Tier 2: static stop-limit — protective fill control, no trailing
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_LIMIT;
-            order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * sc.TickSize;
+            order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * m_tickSize;
         }
     }
     order.Stop1Price = stopPrice;
@@ -2386,7 +2387,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // (breakout trend-scanning / meta-label exit) are a later, data-gated layer.
     order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
     order.Target1Price = targetPrice;
-    order.AttachedOrderMaximumChase = 2.0 * sc.TickSize;
+    order.AttachedOrderMaximumChase = 2.0 * m_tickSize;
 
     int orderResult = isLong ? static_cast<int>(sc.BuyOrder(order)) : static_cast<int>(sc.SellOrder(order));
 
@@ -2626,7 +2627,7 @@ void PositionManager::ProcessManualTradeCommand(
     // === PHASE 5: MICROSTRUCTURE ADMISSION GATE ===
     const double bid = static_cast<double>(sc.Bid);
     const double ask = static_cast<double>(sc.Ask);
-    const bool hasInside = (ask > bid) && (sc.TickSize > 0.0f);
+    const bool hasInside = (ask > bid) && (m_tickSize > 0.0);
 
     if (!hasInside) {
         Logger::getInstance().log("Manual entry rejected: No valid market (bid/ask invalid)");
@@ -2641,7 +2642,7 @@ void PositionManager::ProcessManualTradeCommand(
         return;
     }
 
-    const double spreadTicks = (ask - bid) / static_cast<double>(sc.TickSize);
+    const double spreadTicks = (ask - bid) / m_tickSize;
 
     // Session-aware spread gate (delegated to helper)
     const float maxSpreadTicks = GetSessionSpreadLimit();
@@ -2765,7 +2766,7 @@ void PositionManager::ProcessManualTradeCommand(
     order.OrderQuantity = adjustedQuantity;
     order.Price1 = entryPrice;
     order.OrderType = SCT_ORDERTYPE_LIMIT_CHASE;
-    order.MaximumChaseAsPrice = 2.0 * sc.TickSize;
+    order.MaximumChaseAsPrice = 2.0 * m_tickSize;
     order.TimeInForce = SCT_TIF_DAY;
 
     // GAP 25: fat-tail chase cap (mirrors automatic path). Threshold/fallback
@@ -2808,7 +2809,7 @@ void PositionManager::ProcessManualTradeCommand(
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_WITH_BID_ASK_TRIGGERING;
         } else {
             order.AttachedOrderStop1Type = SCT_ORDERTYPE_STOP_LIMIT;
-            order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * sc.TickSize;
+            order.StopLimitOrderLimitOffsetForAttachedOrders = 2.0 * m_tickSize;
         }
     }
     order.Stop1Price = stopPrice;
@@ -2817,7 +2818,7 @@ void PositionManager::ProcessManualTradeCommand(
     // No trailing runner, no move-to-breakeven (removed in the Phase 1 cutover).
     order.AttachedOrderTarget1Type = SCT_ORDERTYPE_LIMIT_CHASE;
     order.Target1Price = targetPrice;
-    order.AttachedOrderMaximumChase = 2.0 * sc.TickSize;
+    order.AttachedOrderMaximumChase = 2.0 * m_tickSize;
 
     int orderResult = isLong ? static_cast<int>(sc.BuyOrder(order)) : static_cast<int>(sc.SellOrder(order));
 
