@@ -1493,5 +1493,18 @@ const PredatorContext& ContextManager::GetPredatorContext() const {
     return m_predatorContext;
 }
 
+// Assemble SniperContext from the same already-computed sources as GetPredatorContext() --
+// no new computation, just composition. is3BarClosed left at its false default: the per-tick
+// ImbalanceClockManager::GetIs3CompletedBarCount() before/after cadence hook is a separate,
+// not-yet-identified wiring step (needs the single per-tick call site, not a lazy per-call
+// diff here, since this accessor can be called more than once per tick).
+const SniperContext& ContextManager::GetSniperContext() const {
+    m_sniperContext.gang = m_localRiskContext;
+    const auto* hmmInd = InferenceManager::Instance().HmmState();
+    m_sniperContext.regime = hmmInd ? hmmInd->Value() : HMM_NO_PRIOR;
+    m_sniperContext.inPosition = !PositionManager::Instance().IsFlat();
+    return m_sniperContext;
+}
+
 
 // 1200

@@ -11,6 +11,7 @@
 #include "generated/mts_schema_generated.h"
 #include "LocalRiskContext.h"
 #include "PredatorContext.h"
+#include "SniperContext.h"
 #include "InformationEngine.h"
 #include "TailRiskEngine.h"
 #include "StructureEngine.h"
@@ -373,6 +374,14 @@ public:
     /// computed sources; no new computation.
     const PredatorContext& GetPredatorContext() const;
 
+    /// Sniper Decision Contract's exit-monitoring context (docs/superpowers/specs/
+    /// 2026-09-18-predator-sniper-execution-architecture.md §3) -- same gang/regime/inPosition
+    /// composition as GetPredatorContext(), plus is3BarClosed (the IS3 exit-monitoring cadence
+    /// gate). is3BarClosed is NOT YET WIRED -- defaults to false until a per-tick
+    /// ImbalanceClockManager::GetIs3CompletedBarCount() before/after hook is added; see
+    /// SniperContext.h's own header comment for the staged plan.
+    const SniperContext& GetSniperContext() const;
+
     /// Update regime duration from MarketClimateIndicator
     void SetRegimeDuration(int bars) { m_localRiskContext.regimeDuration = bars; }
 
@@ -468,6 +477,10 @@ private:
     // Predator Decision Contract's unified macro context (public via GetPredatorContext()).
     // Assembled lazily from m_localRiskContext + HMM state on each accessor call.
     mutable PredatorContext m_predatorContext;
+
+    // Sniper Decision Contract's exit-monitoring context (public via GetSniperContext()).
+    // Same assembly discipline as m_predatorContext.
+    mutable SniperContext m_sniperContext;
 
     // === Layer B: session-aware Amihud rolling-percentile estimator ===
     // Two trailing pools so the structurally-higher thin-session (overnight/globex)
