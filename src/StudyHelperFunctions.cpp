@@ -2354,83 +2354,24 @@ float CalculateRealizedKurtosis(SCStudyInterfaceRef sc, float prevKurtosis, SCFl
     ///   Normal volatility: kurtosis as-is (baseline)
     ///   High volatility (>1.3× avg): scale UP 1.25× (panic amplifies tail risk)
     ///   Low volatility (<0.7× avg): scale DOWN 0.75× (flat creates false positives)
+    ///
+    /// Actual math extracted to ComputeRealizedKurtosis() (RobustMoments.h, 2026-09-20) so the
+    /// offline market_data_replay path can share it byte-for-byte -- this function now only owns
+    /// the warmup gate + SC array marshalling.
     constexpr int KURT_WINDOW = 100;
-    /// Moors' N(0,1) reference value. Replaces the old moment-based scale's
-    /// 3.0f neutral -- on the Moors scale 3.0 sits ABOVE every migrated risk
-    /// threshold above, so returning it during cold start tripped all of them
-    /// simultaneously for the first ~100 bars of any replay/backtest/export
-    /// (final-review Finding 2, fixed 2026-08-13).
     constexpr float KURT_NEUTRAL_BASELINE = 1.23f;
-    /// Moors kurtosis is a ratio of ordered octile gaps, so it is structurally
-    /// non-negative; with the 1.25x high-vol regime multiplier the realistic
-    /// ceiling is ~4. The old [-5, 50] clamp was inherited from the
-    /// moment-based statistic and is inert on this scale (resolves the
-    /// self-assigned "needs Task 7's re-derivation" TODO left here).
-    constexpr float KURT_CLAMP_LO = 0.0f;
-    constexpr float KURT_CLAMP_HI = 5.0f;
     if (sc.Index < KURT_WINDOW) return KURT_NEUTRAL_BASELINE;
 
-    std::array<float, KURT_WINDOW> returns{};
-    for (int i = 0; i < KURT_WINDOW; ++i) {
-        returns[static_cast<size_t>(i)] = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
+    std::array<float, 101> closesNewestFirst{};
+    for (int i = 0; i <= KURT_WINDOW; ++i) {
+        closesNewestFirst[static_cast<size_t>(i)] = sc.Close[sc.Index - i];
     }
-
-    float mean_ret = 0.0f;
-    for (float r : returns) mean_ret += r;
-    mean_ret /= KURT_WINDOW;
-
-    float variance = 0.0f;
-    for (float ret : returns) {
-        float diff = ret - mean_ret;
-        variance += diff * diff;
+    std::array<float, 20> atrNewestFirst{};
+    for (int i = 0; i < 20; ++i) {
+        atrNewestFirst[static_cast<size_t>(i)] = atrArray[sc.Index - i];
     }
-    variance /= KURT_WINDOW;
-
-    // Shared degradation policy for both guards below (degenerate variance and
-    // a NaN Moors ratio): carry the previous value forward when one exists,
-    // otherwise fall back to the neutral baseline.
-    const bool hasCarryForward = (sc.Index > 0 && std::isfinite(prevKurtosis));
-    const float carriedKurtosis = hasCarryForward
-                                      ? std::clamp(prevKurtosis, KURT_CLAMP_LO, KURT_CLAMP_HI)
-                                      : KURT_NEUTRAL_BASELINE;
-
-    // ES 15s log-return variance is typically very small; avoid hard-zero fallback.
-    // Returning 0.0f here created a pathological floor-lock in the rank-percentile
-    // scaler (Dim 8 zero-trap). Use a neutral/carry-forward value instead.
-    constexpr float KURT_VARIANCE_EPS = 1e-10f;
-    if (variance < KURT_VARIANCE_EPS) {
-        return carriedKurtosis;
-    }
-
-    const float moorsKurtosis = MoorsKurtosis(returns);
-    float kurtosis;
-    if (std::isnan(moorsKurtosis)) {
-        if (hasCarryForward) return carriedKurtosis;
-        kurtosis = KURT_NEUTRAL_BASELINE;
-    } else {
-        kurtosis = moorsKurtosis;
-    }
-
-    // ELITE FIX #3: Regime adjustment -- unchanged mechanism, now applied to
-    // Moors kurtosis instead of moment-based kurtosis. Task 7 re-derived the
-    // CONSUMER thresholds against the new statistic's distribution rather than
-    // re-tuning these multipliers, so they stay as-is.
-    float atrCurrent = atrArray[sc.Index];
-    constexpr int VOL_COMPARE_WINDOW = 20;
-    if (sc.Index >= VOL_COMPARE_WINDOW) {
-        float atrAvg = 0.0f;
-        for (int i = 0; i < VOL_COMPARE_WINDOW; ++i) {
-            atrAvg += atrArray[sc.Index - i];
-        }
-        atrAvg /= VOL_COMPARE_WINDOW;
-        float vol_ratio = atrCurrent / std::max(atrAvg, 0.0001f);
-        float regime_mult = 1.0f;
-        if (vol_ratio > 1.3f) regime_mult = 1.25f;   // High-vol: panic amplifies
-        if (vol_ratio < 0.7f) regime_mult = 0.75f;   // Low-vol: flat creates noise
-        kurtosis *= regime_mult;
-    }
-
-    return std::clamp(kurtosis, KURT_CLAMP_LO, KURT_CLAMP_HI);
+    const bool hasPrevValid = (sc.Index > 0 && std::isfinite(prevKurtosis));
+    return ComputeRealizedKurtosis(closesNewestFirst, atrNewestFirst, prevKurtosis, hasPrevValid);
 }
 
 float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
@@ -2441,64 +2382,24 @@ float CalculateSkewness(SCStudyInterfaceRef sc, SCFloatArrayRef atrArray) {
     ///   Normal volatility: skewness as-is (baseline)
     ///   High-vol trending (>1.2× avg): amplify × 1.3× (rallies steeper, crashes sharp)
     ///   Low-vol ranging (<0.8× avg): dampen × 0.8× (noise creates spurious asymmetry)
+    ///
+    /// Actual math extracted to ComputeRealizedSkewness() (RobustMoments.h, 2026-09-20) so the
+    /// offline market_data_replay path can share it byte-for-byte -- this function now only owns
+    /// the warmup gate, persistent carry-forward storage, and SC array marshalling.
     constexpr int SKEW_WINDOW = 100;
     if (sc.Index < SKEW_WINDOW) return 0.0f;
 
-    std::array<float, SKEW_WINDOW> returns{};
-    for (int i = 0; i < SKEW_WINDOW; ++i) {
-        returns[static_cast<size_t>(i)] = std::log(sc.Close[sc.Index - i] / std::max(sc.Close[sc.Index - i - 1], 0.001f));
+    std::array<float, 101> closesNewestFirst{};
+    for (int i = 0; i <= SKEW_WINDOW; ++i) {
+        closesNewestFirst[static_cast<size_t>(i)] = sc.Close[sc.Index - i];
     }
-
-    float mean_ret = 0.0f;
-    for (float r : returns) mean_ret += r;
-    mean_ret /= SKEW_WINDOW;
-
-    float variance = 0.0f;
-    for (float ret : returns) {
-        float diff = ret - mean_ret;
-        variance += diff * diff;
+    std::array<float, 20> atrNewestFirst{};
+    for (int i = 0; i < 20; ++i) {
+        atrNewestFirst[static_cast<size_t>(i)] = atrArray[sc.Index - i];
     }
-    variance /= SKEW_WINDOW;
 
     float& lastValidSkewness = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::SKEWNESS_LAST_VALID_VALUE);
-
-    // ES 15s log-return variance is typically very small; avoid collapsing to zero.
-    // Degenerate (near-flat return window) carries the last valid value forward
-    // instead of a fabricated exact-zero "no skew" reading -- returning before
-    // the regime-adjustment block below means a carried-forward value is never
-    // re-multiplied by a fresh regime factor -- same sentinel-collapse fix
-    // already applied to dims 1/2/3/7/8/11/12
-    // (docs/superpowers/plans/2026-08-12-observation-vector-carry-forward-completion.md).
-    constexpr float SKEW_VARIANCE_EPS = 1e-10f;
-    if (variance < SKEW_VARIANCE_EPS) {
-        return lastValidSkewness;
-    }
-    const float bowleySkewness = BowleySkewness(returns);
-    float skewness;
-    if (std::isnan(bowleySkewness)) {
-        return lastValidSkewness;
-    }
-    skewness = bowleySkewness;
-
-    // ELITE FIX #4: Regime adjustment (house-tuned multiplier, no direct
-    // methodological link to Wyckoff's framework -- see docs/superpowers/specs/
-    // 2026-08-12-gang-literature-grounding-spec.md Pillar 3)
-    float atrCurrent = atrArray[sc.Index];
-    constexpr int VOL_COMPARE_WINDOW = 20;
-    if (sc.Index >= VOL_COMPARE_WINDOW) {
-        float atrAvg = 0.0f;
-        for (int i = 0; i < VOL_COMPARE_WINDOW; ++i) {
-            atrAvg += atrArray[sc.Index - i];
-        }
-        atrAvg /= VOL_COMPARE_WINDOW;
-        float vol_ratio = atrCurrent / std::max(atrAvg, 0.0001f);
-        float regime_mult = 1.0f;
-        if (vol_ratio > 1.2f) regime_mult = 1.30f;   // Trending: steeper rallies
-        if (vol_ratio < 0.8f) regime_mult = 0.80f;   // Ranging: flatten spurious skew
-        skewness *= regime_mult;
-    }
-
-    skewness = std::clamp(skewness, -1.5f, 1.5f);
+    const float skewness = ComputeRealizedSkewness(closesNewestFirst, atrNewestFirst, lastValidSkewness);
     lastValidSkewness = skewness;
     return skewness;
 }
