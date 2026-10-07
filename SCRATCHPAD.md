@@ -1,5 +1,23 @@
 # Session Scratchpad — Where We Left Off
 
+**W0s SPIKE BUILT, AWAITING SIERRA LOAD (go/no-go for Rust in MindfulTrader — kill criterion in spec §12.8):** worktree
+`/home/rcruz/devel/_mt_spike` branch `spike/rust-in-dll`; `C:\SierraChart2\Data\MindfulTrader_RustSpike.dll` is staged (new file, production DLL
+untouched); read `/mnt/c/Trading/logs/rust_spike.log` after loading the study.
+
+**PICK UP HERE, 2026-10-07 — monorepo consolidation + Rust HMM lifecycle, design only (the only
+artifact beyond docs is the throwaway W0s spike below).** Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
+consolidation-spec.md` (merge `schema`/`MindfulTrader`→`cpp`/`lbrnet`/`MTS`→`GUI` into
+`VSCode/MindfulTrader/`; §1a is the decision log; pre-work P1-P7; Rust ZMQ transport plan) and
+`docs/superpowers/specs/2026-10-07-rust-hmm-lifecycle-spec.md` (HMM training + offline posteriors +
+in-process live inference in Rust, Python HMM serving path and 5561 deleted; Stage A golden-file harness
+is the first deliverable); consolidation spec §10 now also records moving the 18D observation pipeline to
+Rust (largely pre-decoupled already in C++: `ContextManager.cpp` has only 6 `sc.*` refs). Modeled on `../Atratus`. Transformer coherence rule RULED; one wording left
+to confirm (regime-epoch vs literal older-sequence, lifecycle spec §9-1). Consolidation spec §12 is the whole picture (end state, workstreams W0-W11 + dependencies, risks, gaps,
+first moves) — start there. Sequencing RULED (consolidation spec §1b: pre-work P1-P9 → merge → core/hmm + core/obs → core/transport;
+Rust-free P8/P9 may start pre-merge). Next action: pick up
+pre-work P7 (settle uncommitted work: lbrnet 86 files, MindfulTrader 12, MTS 2, schema 1) or start
+Stage A. Both specs are uncommitted.
+
 **PICK UP HERE, 2026-09-08 — offline `.context` generator now has a real spec:
 `docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md`. Recreated from scratch after
 a VS Code crash lost the original design-in-progress (never saved to a file) — the supporting code
