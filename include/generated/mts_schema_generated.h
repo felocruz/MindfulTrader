@@ -4001,6 +4001,7 @@ struct HmmRiskStateT : public ::flatbuffers::NativeTable {
   int8_t fim_nearest_state = 0;
   int32_t duration_bars = 0;
   float duration_ratio = 0.0f;
+  bool black_swan_alert = false;
 };
 
 struct HmmRiskState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
@@ -4020,7 +4021,8 @@ struct HmmRiskState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_FIM_DISTANCE_MIN = 24,
     VT_FIM_NEAREST_STATE = 26,
     VT_DURATION_BARS = 28,
-    VT_DURATION_RATIO = 30
+    VT_DURATION_RATIO = 30,
+    VT_BLACK_SWAN_ALERT = 32
   };
   int8_t primary_state() const {
     return GetField<int8_t>(VT_PRIMARY_STATE, 0);
@@ -4106,6 +4108,12 @@ struct HmmRiskState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   bool mutate_duration_ratio(float _duration_ratio = 0.0f) {
     return SetField<float>(VT_DURATION_RATIO, _duration_ratio, 0.0f);
   }
+  bool black_swan_alert() const {
+    return GetField<uint8_t>(VT_BLACK_SWAN_ALERT, 0) != 0;
+  }
+  bool mutate_black_swan_alert(bool _black_swan_alert = 0) {
+    return SetField<uint8_t>(VT_BLACK_SWAN_ALERT, static_cast<uint8_t>(_black_swan_alert), 0);
+  }
   bool Verify(::flatbuffers::Verifier &verifier) const {
     return VerifyTableStart(verifier) &&
            VerifyField<int8_t>(verifier, VT_PRIMARY_STATE, 1) &&
@@ -4123,6 +4131,7 @@ struct HmmRiskState FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyField<int8_t>(verifier, VT_FIM_NEAREST_STATE, 1) &&
            VerifyField<int32_t>(verifier, VT_DURATION_BARS, 4) &&
            VerifyField<float>(verifier, VT_DURATION_RATIO, 4) &&
+           VerifyField<uint8_t>(verifier, VT_BLACK_SWAN_ALERT, 1) &&
            verifier.EndTable();
   }
   HmmRiskStateT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
@@ -4176,6 +4185,9 @@ struct HmmRiskStateBuilder {
   void add_duration_ratio(float duration_ratio) {
     fbb_.AddElement<float>(HmmRiskState::VT_DURATION_RATIO, duration_ratio, 0.0f);
   }
+  void add_black_swan_alert(bool black_swan_alert) {
+    fbb_.AddElement<uint8_t>(HmmRiskState::VT_BLACK_SWAN_ALERT, static_cast<uint8_t>(black_swan_alert), 0);
+  }
   explicit HmmRiskStateBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
@@ -4202,7 +4214,8 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskState(
     float fim_distance_min = 0.0f,
     int8_t fim_nearest_state = 0,
     int32_t duration_bars = 0,
-    float duration_ratio = 0.0f) {
+    float duration_ratio = 0.0f,
+    bool black_swan_alert = false) {
   HmmRiskStateBuilder builder_(_fbb);
   builder_.add_duration_ratio(duration_ratio);
   builder_.add_duration_bars(duration_bars);
@@ -4215,6 +4228,7 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskState(
   builder_.add_transition_risk(transition_risk);
   builder_.add_entropy(entropy);
   builder_.add_probability_vector(probability_vector);
+  builder_.add_black_swan_alert(black_swan_alert);
   builder_.add_fim_nearest_state(fim_nearest_state);
   builder_.add_model_drift_alert(model_drift_alert);
   builder_.add_primary_state(primary_state);
@@ -4236,7 +4250,8 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskStateDirect(
     float fim_distance_min = 0.0f,
     int8_t fim_nearest_state = 0,
     int32_t duration_bars = 0,
-    float duration_ratio = 0.0f) {
+    float duration_ratio = 0.0f,
+    bool black_swan_alert = false) {
   auto probability_vector__ = probability_vector ? _fbb.CreateVector<float>(*probability_vector) : 0;
   return MTS::Schema::CreateHmmRiskState(
       _fbb,
@@ -4253,7 +4268,8 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskStateDirect(
       fim_distance_min,
       fim_nearest_state,
       duration_bars,
-      duration_ratio);
+      duration_ratio,
+      black_swan_alert);
 }
 
 ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskState(::flatbuffers::FlatBufferBuilder &_fbb, const HmmRiskStateT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
@@ -10918,6 +10934,7 @@ inline void HmmRiskState::UnPackTo(HmmRiskStateT *_o, const ::flatbuffers::resol
   { auto _e = fim_nearest_state(); _o->fim_nearest_state = _e; }
   { auto _e = duration_bars(); _o->duration_bars = _e; }
   { auto _e = duration_ratio(); _o->duration_ratio = _e; }
+  { auto _e = black_swan_alert(); _o->black_swan_alert = _e; }
 }
 
 inline ::flatbuffers::Offset<HmmRiskState> HmmRiskState::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const HmmRiskStateT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
@@ -10942,6 +10959,7 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskState(::flatbuffers::Fla
   auto _fim_nearest_state = _o->fim_nearest_state;
   auto _duration_bars = _o->duration_bars;
   auto _duration_ratio = _o->duration_ratio;
+  auto _black_swan_alert = _o->black_swan_alert;
   return MTS::Schema::CreateHmmRiskState(
       _fbb,
       _primary_state,
@@ -10957,7 +10975,8 @@ inline ::flatbuffers::Offset<HmmRiskState> CreateHmmRiskState(::flatbuffers::Fla
       _fim_distance_min,
       _fim_nearest_state,
       _duration_bars,
-      _duration_ratio);
+      _duration_ratio,
+      _black_swan_alert);
 }
 
 inline RiskStateUpdateT::RiskStateUpdateT(const RiskStateUpdateT &o)
