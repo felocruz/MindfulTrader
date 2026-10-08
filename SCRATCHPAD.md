@@ -1,11 +1,24 @@
 # Session Scratchpad — Where We Left Off
 
-**W0s SPIKE BUILT, AWAITING SIERRA LOAD (go/no-go for Rust in MindfulTrader — kill criterion in spec §12.8):** worktree
-`/home/rcruz/devel/_mt_spike` branch `spike/rust-in-dll`; `C:\SierraChart2\Data\MindfulTrader_RustSpike.dll` is staged (new file, production DLL
-untouched); read `/mnt/c/Trading/logs/rust_spike.log` after loading the study.
+**W0s KILL CRITERION (check 3) PASSED, 2026-10-07 — via a second, independent spike, methodology
+caveat in spec §12.8.** A different session/path (not the isolated worktree above) linked a trivial
+Rust staticlib directly into the real `MindfulTrader.dll`, armed `EventDataCollectorStudy` in a live
+Sierra Chart 2949 process (Sim/delayed chart only), and got an independently-verified checksum match
+over real ticks (40,000+ processed afterward, no crash) — strong evidence the DLL loads and executes
+Rust correctly. Cleaned up fully afterward (crate deleted, all touched files reverted, DLL rebuilt
+clean and redeployed). **Still open: checks 5-9, especially 6 (unload/reload survival — this spec's
+own "why check 6 matters most") — not yet run.** Full results table: spec §12.8. The original isolated
+worktree spike (`/home/rcruz/devel/_mt_spike`, branch `spike/rust-in-dll`,
+`C:\SierraChart2\Data\MindfulTrader_RustSpike.dll` staged, not yet loaded) is still sitting there,
+unused — needs a decision (run it for checks 5-9, or clean it up) next time this is picked up.
 
-**PICK UP HERE, 2026-10-07 — monorepo consolidation + Rust HMM lifecycle, design only (the only
-artifact beyond docs is the throwaway W0s spike below).** Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
+**P7 (settle uncommitted work) DONE for 3 of 4 repos, 2026-10-07**: `schema` (1 file), `MindfulTrader`
+(15 items), `MTS` (2 files) all committed — 11 commits total, build + native tests verified where code
+changed. **`lbrnet`'s 86 files deliberately deferred** (operator: "separate session/owner") — still
+blocking Stage 0 of the merge.
+
+**PICK UP HERE, 2026-10-07 — monorepo consolidation + Rust HMM lifecycle, design only (W0s's kill
+criterion now passed, see above).** Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
 consolidation-spec.md` (merge `schema`/`MindfulTrader`→`cpp`/`lbrnet`/`MTS`→`GUI` into
 `VSCode/MindfulTrader/`; §1a is the decision log; pre-work P1-P7; Rust ZMQ transport plan) and
 `docs/superpowers/specs/2026-10-07-rust-hmm-lifecycle-spec.md` (HMM training + offline posteriors +
@@ -14,9 +27,10 @@ is the first deliverable); consolidation spec §10 now also records moving the 1
 Rust (largely pre-decoupled already in C++: `ContextManager.cpp` has only 6 `sc.*` refs). Modeled on `../Atratus`. Transformer coherence rule RULED; one wording left
 to confirm (regime-epoch vs literal older-sequence, lifecycle spec §9-1). Consolidation spec §12 is the whole picture (end state, workstreams W0-W11 + dependencies, risks, gaps,
 first moves) — start there. Sequencing RULED (consolidation spec §1b: pre-work P1-P9 → merge → core/hmm + core/obs → core/transport;
-Rust-free P8/P9 may start pre-merge). Next action: pick up
-pre-work P7 (settle uncommitted work: lbrnet 86 files, MindfulTrader 12, MTS 2, schema 1) or start
-Stage A. Both specs are uncommitted.
+Rust-free P8/P9 may start pre-merge). Next action: `lbrnet`'s P7 (86 files, deferred to a separate
+session/owner) still blocks Stage 0; W0s checks 5-9 (esp. 6) are the other open item; otherwise start
+Stage A (HMM golden harness, Python-only, no Rust needed) or P1-P6/P8/P9 (also Rust-free). Both specs
+are committed (`8a713d3`).
 
 **PICK UP HERE, 2026-09-08 — offline `.context` generator now has a real spec:
 `docs/superpowers/specs/2026-09-08-offline-context-generator-spec.md`. Recreated from scratch after
