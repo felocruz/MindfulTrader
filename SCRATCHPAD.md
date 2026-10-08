@@ -1,16 +1,44 @@
 # Session Scratchpad — Where We Left Off
 
-**W0s KILL CRITERION (check 3) PASSED, 2026-10-07 — via a second, independent spike, methodology
-caveat in spec §12.8.** A different session/path (not the isolated worktree above) linked a trivial
-Rust staticlib directly into the real `MindfulTrader.dll`, armed `EventDataCollectorStudy` in a live
-Sierra Chart 2949 process (Sim/delayed chart only), and got an independently-verified checksum match
-over real ticks (40,000+ processed afterward, no crash) — strong evidence the DLL loads and executes
-Rust correctly. Cleaned up fully afterward (crate deleted, all touched files reverted, DLL rebuilt
-clean and redeployed). **Still open: checks 5-9, especially 6 (unload/reload survival — this spec's
-own "why check 6 matters most") — not yet run.** Full results table: spec §12.8. The original isolated
-worktree spike (`/home/rcruz/devel/_mt_spike`, branch `spike/rust-in-dll`,
-`C:\SierraChart2\Data\MindfulTrader_RustSpike.dll` staged, not yet loaded) is still sitting there,
-unused — needs a decision (run it for checks 5-9, or clean it up) next time this is picked up.
+**PICK UP HERE, 2026-10-08 — Rust-in-Sierra cleared; sequencing plan exists; `rust/ffi` skeleton
+scaffolded and link-proven.** `docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md`
+is the entry point: it resolves a real conflict between the two 2026-10-07 specs and the new
+`docs/superpowers/specs/2026-10-08-monorepo-infrastructure-guide.md` (written by a sibling Atratus
+session, then corrected twice this session — naming `mt_`/`core/` → `mts_`/`rust/`, both real
+collision risks: `core/` clashes with `lbrnet/core/`'s existing Python module, `mt_` clashes with
+vcpkg's own "-mt" multi-threaded suffix convention and with MetaTrader 4/5) — those assumed the repo
+merge happens *before* the Rust workspace is bootstrapped; **operator decision 2026-10-08 reverses
+that**: Rust work starts now, per-repo, via cross-repo relative-path Cargo deps; the merge is
+deferred to its own schedule, motivated by doc-duplication-drift, not by Rust. **`rust/`'s placement
+confirmed (operator): it is the permanent, unified home for every Rust crate from all four projects,
+a top-level sibling of `cpp/`/`lbrnet/`/`GUI/`/`schema/` post-merge — today it lives nested inside
+the current MindfulTrader repo as a pre-merge convenience only; the merge's Stage 2 "move everything
+into `cpp/`" step must explicitly carve `rust/` out (plan §1), not sweep it along.**
+
+W0s: all checks done or reasoned through (full table + the check-6 reasoning in the plan §2) — no
+remaining blocker. The isolated worktree spike (`/home/rcruz/devel/_mt_spike`, branch
+`spike/rust-in-dll`) was actually run this session (swapped in as `Data/MindfulTrader.dll`
+temporarily, original backed up, **restored after**): magic/version round-trip,
+background-thread-advancing, panic-caught-at-boundary, and 0.70 ns/call FFI overhead all confirmed
+with real evidence.
+
+**Plan Phase 2 first step DONE**: `rust/` Cargo workspace scaffolded (`rust/Cargo.toml`,
+`rust/.cargo/config.toml`, `rust-toolchain.toml` pinned to 1.98.1) with one crate, `rust/ffi`
+(`mts_ffi`, staticlib+rlib, exports only `mts_abi_version()` so far, `cbindgen`-generated header at
+`include/generated/mts_core.h`). `CMakeLists.txt` gained an `MTS_WITH_RUST` option (OFF by default)
++ a new `wsl-clang-cl-release-rust` preset (separate `build-windows-rust/` dir, never touches the
+normal `build-windows/` output). **Proven working end to end**: native `cargo test` (3/3 pass),
+cross-compiled to `x86_64-pc-windows-msvc`, `cmake --preset wsl-clang-cl-release-rust` configures and
+links cleanly (`[48/48] Linking ... MindfulTrader.dll`), import table confirmed byte-identical to
+the non-Rust build via `llvm-objdump-22 -p` (nothing calls `mts_abi_version()` yet, so nothing new
+got pulled in — expected static-linking behavior, not a failure). **Deliberately not yet done**: no
+C++ call site wired, so no fresh Sierra Chart round-trip for this specific skeleton (operator:
+sufficient confidence already exists from the W0s spikes; defer the live test until a real subsystem
+-- `rust/schema`, `rust/obs`, or `rust/hmm` -- actually exists with logic worth testing).
+
+Next action: plan §4 Phase 2's next item — either the `rust/schema` `flatc --rust` target (P3) or
+starting `rust/obs`/`rust/hmm` against their respective goldens (P8/P9, not yet built either).
+`lbrnet`'s P7 (86 files) remains deliberately deferred, still blocking the eventual merge's Stage 0.
 
 **P7 (settle uncommitted work) DONE for 3 of 4 repos, 2026-10-07**: `schema` (1 file), `MindfulTrader`
 (15 items), `MTS` (2 files) all committed — 11 commits total, build + native tests verified where code

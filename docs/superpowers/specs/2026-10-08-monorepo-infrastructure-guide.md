@@ -718,15 +718,22 @@ __pycache__/  .mypy_cache/  .pytest_cache/  .ruff_cache/  node_modules/
 
 ## 11. Order of operations (maps onto the umbrella's sequencing; gates per step)
 
+**Superseded ordering, 2026-10-08**: steps 5-6 (finish W0s, then the merge) and step 7 (W2
+bootstrap) are no longer sequential as written below — see
+`docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md` §1: the merge (step 6) is
+decoupled from Rust work and deferred to its own schedule; step 7's `rust/` scaffold and `mts_ffi`
+skeleton were started and partly completed **before** step 6, not after. The per-step gates below
+still apply to each step individually; only the relative order across steps 5-7 has changed.
+
 | # | Step | Umbrella ref | Gate |
 |---|---|---|---|
 | 1 | Rotate the API keys; add gitleaks to each repo's pre-commit | §9.4 here | gitleaks clean on HEAD |
 | 2 | P2: one FlatBuffers version; install the matching `flatc` in the regen env; regenerate | P2 | regen diff = version asserts only; all three projects' checks green |
 | 3 | P1: root-relative paths (+ the `no-absolute-paths` hook per repo) | P1 | `git grep /home/rcruz/devel/VSCode` → docs history only |
 | 4 | P6: split envs + locks (`mts` = lbrnet; `mts-gui` = GUI); GUI depends on lbrnet by a relative editable path (`-e ../lbrnet`) until the merge | P6 | each project's tests green in its own env |
-| 5 | W0s checks 5–9 (above all **6**) with the spike's safe method (worktree, separate DLL name, separate log) | §12.8 | recorded PASS; **kill criterion applies** |
-| 6 | The merge, Stages 0–6, with §9.1's `.gitignore` in place **before** the first `git add` in the scratch repo | §4–5 | umbrella gates + the MB-not-GB check |
-| 7 | **W2 bootstrap:** root files (§9), `rust-toolchain.toml`, `rust/` workspace with **empty** crates, `mts_ffi` exporting only `mts_abi_version`, `MTS_WITH_RUST` preset, `build_rust.sh`, `install_py_ext.sh` (`mindful_core.version()`), `check_all.sh`, CI | W2 | DLL builds with `-rust` preset; imports unchanged (objdump); Sierra loads it and logs `mts_abi_version()==1`; `import mindful_core` in both envs; CI green |
+| 5 | W0s checks 5–9 (above all **6**) with the spike's safe method (worktree, separate DLL name, separate log) | §12.8 | **Resolved without an empirical run** — 2026-10-08, roadmap plan §2: check 6 reasoned through mechanism-by-mechanism, no applicable failure mode found. Checks 1,3,4,5,7,8 PASSED with real evidence (two independent spikes); 2,9 not reverified/not attempted, low priority. |
+| 6 | The merge, Stages 0–6, with §9.1's `.gitignore` in place **before** the first `git add` in the scratch repo | §4–5 | umbrella gates + the MB-not-GB check; **deferred to its own schedule, 2026-10-08** — no longer a prerequisite for step 7 |
+| 7 | **W2 bootstrap:** root files (§9), `rust-toolchain.toml`, `rust/` workspace with **empty** crates, `mts_ffi` exporting only `mts_abi_version`, `MTS_WITH_RUST` preset, `build_rust.sh`, `install_py_ext.sh` (`mindful_core.version()`), `check_all.sh`, CI | W2 | **Partly done, 2026-10-08** (commit `63bcc63`): `rust-toolchain.toml`, `rust/` workspace, `mts_ffi` skeleton, `MTS_WITH_RUST` preset, `build_rust.sh` all exist and are proven (DLL builds with `-rust` preset; imports confirmed unchanged via objdump). **Not yet done**: Sierra load-and-log round-trip for this specific skeleton (deferred — W0s spikes already give that confidence independently), `install_py_ext.sh`, `check_all.sh`, CI. |
 | 8 | P3: `flatc --rust` + `contract.rs` into `rust/schema`; `mts_schema` compiles; freshness job | P3 | `schema-fresh` CI job green |
 | 9 | Then the umbrella's W3 (`mts_hmm` inference vs P9 goldens) ∥ W5 (`mts_obs` vs P8 goldens) → W6 → W7 → W9 | §12.3 | as specified there |
 
@@ -738,8 +745,9 @@ __pycache__/  .mypy_cache/  .pytest_cache/  .ruff_cache/  node_modules/
 
 ## 12. Open questions for the operator (not decided by this guide)
 
-1. **One `mts_ffi` and one `mindful_core`** instead of the umbrella's per-subsystem `*_ffi`/`*_py` (§2.2)?
-   Recommended, for the duplicate-`std` reason.
+1. ~~**One `mts_ffi` and one `mindful_core`** instead of the umbrella's per-subsystem `*_ffi`/`*_py`
+   (§2.2)?~~ **Ratified by implementation, 2026-10-08**: built and proven as one `mts_ffi` staticlib
+   (commit `63bcc63`). Still open for `mindful_core`/`mts_py` — not built yet.
 2. **GUI env name** (`mts-gui` proposed) and whether lbrnet's env keeps the name `mts` (it owns it today).
 3. **Numeric policy** (§4.3): no fast-math wherever goldens compare. Recommended.
 4. **MindfulTrader history scrub** (force-push) vs rotation only (§9.4).

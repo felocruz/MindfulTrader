@@ -124,13 +124,17 @@ the merge. Order within this phase follows the existing specs' own dependency ch
 hmm → transport), adapted only in that each step happens inside whichever repo currently owns the
 code, not inside a merged monorepo's `rust/`.
 
-- [ ] **Scaffold `rust/` in MindfulTrader** (empty workspace, no real crates yet) — infrastructure
-  guide §3: `rust/Cargo.toml` (`[workspace]`, `[workspace.dependencies]`, `[profile.release]` per
-  §3.3), `rust/.cargo/config.toml`, `rust-toolchain.toml` at the repo root. This is the concrete next
-  action coming out of this session.
-- [ ] `mts_ffi` skeleton: one staticlib, `mts_abi_version()` only, no features enabled yet — proves the
-  CMake `MTS_WITH_RUST` option + link step work end to end before any real subsystem exists
-  (infrastructure guide §4.1, §11 step 7).
+- [x] **Scaffold `rust/` in MindfulTrader** — done 2026-10-08, commit `63bcc63`: `rust/Cargo.toml`
+  (`[workspace]`, `[workspace.dependencies]`, `[profile.release]` per infrastructure guide §3.3),
+  `rust/.cargo/config.toml`, `rust-toolchain.toml` at the repo root (pinned 1.98.1).
+- [x] `mts_ffi` skeleton: one staticlib, `mts_abi_version()` only, no features enabled yet — done
+  2026-10-08, commit `63bcc63`. Proves the CMake `MTS_WITH_RUST` option + link step work end to end:
+  native `cargo test` (3/3 pass), cross-compiled to `x86_64-pc-windows-msvc`, `cmake --preset
+  wsl-clang-cl-release-rust` links cleanly, import table confirmed byte-identical to the non-Rust
+  build (`llvm-objdump-22 -p` — nothing calls `mts_abi_version()` yet, so nothing new is pulled in,
+  expected static-linking behavior). **Not done, deliberately deferred**: no C++ call site wired, so
+  no fresh Sierra Chart round-trip for this specific skeleton — operator judged the W0s spikes
+  already sufficient evidence; revisit once a real subsystem gives the call site something to prove.
 - [ ] `schema/regenerate_schema.sh` gains a `flatc --rust` target, writing into MindfulTrader's
   `rust/schema/` (P3, consolidation spec §7, infrastructure guide §5). Lives in the `schema` repo;
   no merge needed since `regenerate_schema.sh` already writes into sibling-repo paths today.
