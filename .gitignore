@@ -5,6 +5,10 @@
 /build/
 # clang-cl cross-compile output (build_dll.sh) — 112 MB incl. the 1 GB DLL
 /build-windows/
+# MTS_WITH_RUST=ON preset's separate build dir (CMakePresets.json wsl-clang-cl-release-rust)
+/build-windows-rust/
+# Rust workspace build output (rust/.cargo/config.toml sets target-dir = "target")
+/rust/target/
 # CMake files (typically in-source, but better to be safe)
 CMakeCache.txt
 CMakeFiles/

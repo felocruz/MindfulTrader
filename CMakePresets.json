@@ -10,9 +10,20 @@
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/toolchain-clang-cl.cmake",
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "MTS_WITH_RUST": "OFF"
       },
       "toolchainFile": "${sourceDir}/toolchain-clang-cl.cmake"
+    },
+    {
+      "name": "wsl-clang-cl-release-rust",
+      "displayName": "WSL Clang-cl (Windows DLL + rust/ffi)",
+      "description": "Same as wsl-clang-cl-release, with rust/ffi (mts_ffi.lib) linked in. Build rust/ffi first (scripts/build_rust.sh).",
+      "inherits": "wsl-clang-cl-release",
+      "binaryDir": "${sourceDir}/build-windows-rust",
+      "cacheVariables": {
+        "MTS_WITH_RUST": "ON"
+      }
     }
   ]
 }

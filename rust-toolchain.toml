@@ -1,0 +1,5 @@
+[toolchain]
+channel = "1.98.1"                         # the toolchain on this machine 2026-10-08; bump deliberately
+components = ["rustfmt", "clippy"]
+targets = ["x86_64-pc-windows-msvc"]       # the Sierra DLL
+profile = "minimal"

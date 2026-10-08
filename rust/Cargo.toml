@@ -1,0 +1,36 @@
+[workspace]
+resolver = "3"
+members = ["ffi"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+version = "0.1.0"
+license = "LicenseRef-Proprietary"
+publish = false
+
+# Every third-party version lives HERE ONCE; crates say `foo.workspace = true`.
+# (Atratus repeats versions per crate -- ndarray/flatbuffers/zmq drift risk. Don't.)
+# Grows as each crate (schema/obs/hmm/transport/py/tools) actually lands -- see
+# docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md Phase 2.
+[workspace.dependencies]
+cbindgen = "0.29"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+missing_debug_implementations = "warn"
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+float_cmp = "deny"       # parity code compares with stated tolerances
+unwrap_used = "deny"     # hot path / FFI: no panics by accident (tests may `allow`)
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1             # reproducible numerics and binary
+debug = "line-tables-only"    # symbolized crash reports from inside Sierra
+panic = "unwind"              # REQUIRED: catch_unwind at the C-ABI needs unwinding
+
+[profile.dev.package."*"]
+opt-level = 2    # golden tests over millions of ticks stay fast in debug

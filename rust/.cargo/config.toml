@@ -1,0 +1,5 @@
+[build]
+target-dir = "target"    # rust/target -- one cache for every crate
+
+[profile.release]
+# the [profile] tables live in rust/Cargo.toml; this file is only for per-machine/build env
