@@ -109,3 +109,36 @@ pub extern "C" fn mts_observation_vector_compute_mean_reversion_z(
         mts_observation_vector::compute_mean_reversion_z(slice, last_valid_value)
     })
 }
+
+/// Port of LiquidityFragilityEngine.h's `ComputeLiquidityFragility`. `range_window`/
+/// `sqrt_vol_window` each point to `len` elements (the real call site always sizes both to
+/// `mts_observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
+/// null/empty/too-short window maps to `prev_fragility` (not NaN), matching
+/// `compute_liquidity_fragility`'s own carry-forward convention.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_liquidity_fragility(
+    range_window: *const f32,
+    sqrt_vol_window: *const f32,
+    len: usize,
+    live_bar_range: f32,
+    live_volume_so_far: f32,
+    prev_fragility: f32,
+) -> f32 {
+    guard_f32(|| {
+        let range_slice: &[f32] = match unsafe { slice_or_none(range_window, len) } {
+            Some(s) => s,
+            None => &[],
+        };
+        let vol_slice: &[f32] = match unsafe { slice_or_none(sqrt_vol_window, len) } {
+            Some(s) => s,
+            None => &[],
+        };
+        mts_observation_vector::compute_liquidity_fragility(
+            range_slice,
+            vol_slice,
+            live_bar_range,
+            live_volume_so_far,
+            prev_fragility,
+        )
+    })
+}

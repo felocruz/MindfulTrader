@@ -51,6 +51,18 @@ float mts_observation_vector_compute_mean_reversion_z(const float *prices,
                                                       uintptr_t len,
                                                       float last_valid_value);
 
+/// Port of LiquidityFragilityEngine.h's `ComputeLiquidityFragility`. `range_window`/
+/// `sqrt_vol_window` each point to `len` elements (the real call site always sizes both to
+/// `mts_observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
+/// null/empty/too-short window maps to `prev_fragility` (not NaN), matching
+/// `compute_liquidity_fragility`'s own carry-forward convention.
+float mts_observation_vector_compute_liquidity_fragility(const float *range_window,
+                                                         const float *sqrt_vol_window,
+                                                         uintptr_t len,
+                                                         float live_bar_range,
+                                                         float live_volume_so_far,
+                                                         float prev_fragility);
+
 }  // extern "C"
 
 }  // namespace mts

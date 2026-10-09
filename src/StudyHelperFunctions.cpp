@@ -2370,8 +2370,34 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) 
     const float liveVolumeSoFar = static_cast<float>(sc.Volume[sc.Index]);
     const float barRange = sc.High[sc.Index] - sc.Low[sc.Index];
 
-    return lfe::ComputeLiquidityFragility(rangeWindow.data(), sqrtVolWindow.data(),
-                                           barRange, liveVolumeSoFar, prev_fragility);
+    const float fragility = lfe::ComputeLiquidityFragility(rangeWindow.data(), sqrtVolWindow.data(),
+                                                            barRange, liveVolumeSoFar, prev_fragility);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
+    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // anything -- `fragility` (computed above) remains the only value this function returns or
+    // that any downstream caller sees.
+    {
+        const float rustFragility = mts::mts_observation_vector_compute_liquidity_fragility(
+            rangeWindow.data(), sqrtVolWindow.data(), rangeWindow.size(), barRange, liveVolumeSoFar,
+            prev_fragility);
+        const bool matches = std::fabs(fragility - rustFragility) < 1e-4f;
+        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeLiquidityFragility cpp=" + std::to_string(fragility) +
+                " rust=" + std::to_string(rustFragility));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeLiquidityFragility shadow-mode OK (cpp==rust=" +
+                std::to_string(fragility) + ")");
+        }
+    }
+#endif
+
+    return fragility;
 }
 
 // NOTE: micro_asymmetry (dim 7) is NOT computed here -- see the declaration's

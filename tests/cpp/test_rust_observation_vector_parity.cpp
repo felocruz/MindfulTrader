@@ -14,6 +14,7 @@
 
 #include "BipowerVariation.h"
 #include "DfaHurstExponent.h"
+#include "LiquidityFragilityEngine.h"
 #include "MeanReversionCalculator.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
@@ -182,6 +183,50 @@ int main() {
         const float rustResult = mts::mts_observation_vector_compute_mean_reversion_z(nullptr, 0, 0.77f);
         check("ComputeMeanReversionZ Rust wrapper: null input carries last_valid_value forward",
               std::fabs(rustResult - 0.77f) < 1e-6f);
+    }
+
+    // --- ComputeLiquidityFragility: C++ production function vs. Rust FFI wrapper, same input ---
+    {
+        std::array<float, lfe::kWindow> rangeW{};
+        std::array<float, lfe::kWindow> volW{};
+        const auto rangeWalk = MakeWalk(lfe::kWindow, 0.3, 5151u);
+        const auto volWalk = MakeWalk(lfe::kWindow, 2.0, 6161u);
+        for (int i = 0; i < lfe::kWindow; ++i) {
+            rangeW[static_cast<std::size_t>(i)] = std::fabs(rangeWalk[static_cast<std::size_t>(i)] - 100.0f) + 0.5f;
+            volW[static_cast<std::size_t>(i)] = std::fabs(volWalk[static_cast<std::size_t>(i)]) + 1.0f;
+        }
+
+        for (const auto& [liveBarRange, liveVol, prevFrag] :
+             {std::make_tuple(4.0f, 400.0f, 0.5f), std::make_tuple(20.0f, 100.0f, 0.2f),
+              std::make_tuple(2.0f, 1000.0f, 0.1f)}) {
+            const float cppResult =
+                lfe::ComputeLiquidityFragility(rangeW.data(), volW.data(), liveBarRange, liveVol, prevFrag);
+            const float rustResult = mts::mts_observation_vector_compute_liquidity_fragility(
+                rangeW.data(), volW.data(), rangeW.size(), liveBarRange, liveVol, prevFrag);
+            check("ComputeLiquidityFragility: Rust matches C++ exactly",
+                  std::fabs(cppResult - rustResult) < 1e-4f);
+        }
+    }
+
+    // Thin-volume degenerate case must agree too: both carry prev_fragility forward.
+    {
+        std::array<float, lfe::kWindow> rangeW{};
+        std::array<float, lfe::kWindow> volW{};
+        rangeW.fill(2.0f);
+        volW.fill(10.0f);
+        const float cppResult = lfe::ComputeLiquidityFragility(rangeW.data(), volW.data(), 4.0f, 10.0f, 0.42f);
+        const float rustResult = mts::mts_observation_vector_compute_liquidity_fragility(
+            rangeW.data(), volW.data(), rangeW.size(), 4.0f, 10.0f, 0.42f);
+        check("ComputeLiquidityFragility thin-volume degenerate: both carry prev_fragility=0.42 forward",
+              std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
+    }
+
+    // Null/zero-length window input must also carry prev_fragility forward.
+    {
+        const float rustResult =
+            mts::mts_observation_vector_compute_liquidity_fragility(nullptr, nullptr, 0, 4.0f, 400.0f, 0.63f);
+        check("ComputeLiquidityFragility Rust wrapper: null input carries prev_fragility forward",
+              std::fabs(rustResult - 0.63f) < 1e-6f);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

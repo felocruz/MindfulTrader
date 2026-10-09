@@ -348,6 +348,69 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     (score as f32).clamp(0.0, 5.0)
 }
 
+/// Window size for the liquidity-fragility microstructure elasticity ratio. Port of
+/// LiquidityFragilityEngine.h's `kWindow` -- a *fixed* window, not an adaptive one (unlike
+/// `compute_mean_reversion_z`/`dfa_hurst_exponent` above), so the real call site always supplies
+/// exactly this many elements for both `range_window` and `sqrt_vol_window`.
+pub const LIQ_FRAGILITY_WINDOW: usize = 30;
+
+/// Microstructure elasticity ratio (Foucault, Kadan & Kandel 2005; Morris & Shin 2004), mapped
+/// through a bounded sigmoid and EMA-blended against the previous reading (dim 12, liq_fragility).
+/// Port of LiquidityFragilityEngine.h's `ComputeLiquidityFragility`.
+///
+/// `range_window`/`sqrt_vol_window`: `LIQ_FRAGILITY_WINDOW` closed bars' (high-low) and
+/// sqrt(volume) respectively (order doesn't matter -- only the median is used). `live_bar_range`/
+/// `live_volume_so_far` describe the still-forming current bar. Degenerate (thin live volume, a
+/// collapsed scale reference, or -- unreachable in practice, see below -- a too-short window)
+/// carries `prev_fragility` forward. Contract: result in [0, 1].
+///
+/// The C++ original takes raw pointers with no length parameter at all -- it unconditionally reads
+/// exactly `kWindow` elements from each, a *stronger* precondition than `mean_rev_z`'s "n in [4,
+/// 40]" (there is no partial-window case at all; every real call site sizes both arrays to exactly
+/// 30). A Rust slice shorter than `LIQ_FRAGILITY_WINDOW` would be unsound to read that way, so this
+/// port treats that case as a degenerate carry-forward too -- unreachable for every real input,
+/// safe for the unreachable one.
+pub fn compute_liquidity_fragility(
+    range_window: &[f32],
+    sqrt_vol_window: &[f32],
+    live_bar_range: f32,
+    live_volume_so_far: f32,
+    prev_fragility: f32,
+) -> f32 {
+    const LIVE_BAR_MIN_VOLUME: f32 = 50.0;
+    const EPS: f32 = 1e-6;
+    const MID: usize = LIQ_FRAGILITY_WINDOW / 2;
+
+    if range_window.len() < LIQ_FRAGILITY_WINDOW || sqrt_vol_window.len() < LIQ_FRAGILITY_WINDOW {
+        return prev_fragility.clamp(0.0, 1.0);
+    }
+
+    let mut range_scratch = [0.0f32; LIQ_FRAGILITY_WINDOW];
+    range_scratch.copy_from_slice(&range_window[..LIQ_FRAGILITY_WINDOW]);
+    range_scratch.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let med_range = range_scratch[MID];
+
+    let mut vol_scratch = [0.0f32; LIQ_FRAGILITY_WINDOW];
+    vol_scratch.copy_from_slice(&sqrt_vol_window[..LIQ_FRAGILITY_WINDOW]);
+    vol_scratch.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let med_sqrt_vol = vol_scratch[MID];
+    let scale_ref = med_range / (med_sqrt_vol + EPS);
+
+    if live_volume_so_far < LIVE_BAR_MIN_VOLUME || scale_ref < EPS {
+        return prev_fragility.clamp(0.0, 1.0);
+    }
+
+    let bar_range = if live_bar_range < 0.00001 { 0.00001 } else { live_bar_range };
+
+    let eta = bar_range / (live_volume_so_far.sqrt() + EPS);
+    let f_raw = eta / scale_ref;
+    let log_f = f_raw.max(1e-6).ln();
+    let fragility_raw = 1.0 / (1.0 + (-2.0 * log_f).exp());
+
+    let alpha = if fragility_raw > prev_fragility { 0.30 } else { 0.15 };
+    (alpha * fragility_raw + (1.0 - alpha) * prev_fragility).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -688,5 +751,47 @@ mod tests {
         let prices = [100.0f32, 100.0, 100.0, 100.0, 100000.0];
         let result = compute_mean_reversion_z(&prices, 0.0);
         assert!((0.0..=5.0).contains(&result), "got {result}");
+    }
+
+    // --- compute_liquidity_fragility: golden values from tests/cpp/test_liquidity_fragility_engine.cpp ---
+
+    #[test]
+    fn liq_fragility_neutral_case_matches_reference() {
+        let range_w = [2.0f32; LIQ_FRAGILITY_WINDOW];
+        let vol_w = [10.0f32; LIQ_FRAGILITY_WINDOW];
+        let result = compute_liquidity_fragility(&range_w, &vol_w, 4.0, 400.0, 0.5);
+        assert!((result - 0.5000000).abs() <= 1e-3);
+    }
+
+    #[test]
+    fn liq_fragility_fragile_case_matches_reference() {
+        let range_w = [2.0f32; LIQ_FRAGILITY_WINDOW];
+        let vol_w = [10.0f32; LIQ_FRAGILITY_WINDOW];
+        let result = compute_liquidity_fragility(&range_w, &vol_w, 20.0, 100.0, 0.2);
+        assert!((result - 0.4370297).abs() <= 1e-3);
+    }
+
+    #[test]
+    fn liq_fragility_thin_volume_guard_carries_forward() {
+        let range_w = [2.0f32; LIQ_FRAGILITY_WINDOW];
+        let vol_w = [10.0f32; LIQ_FRAGILITY_WINDOW];
+        let result = compute_liquidity_fragility(&range_w, &vol_w, 4.0, 10.0, 0.42);
+        assert!((result - 0.42).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn liq_fragility_result_stays_within_contract_bounds() {
+        let range_w = [0.5f32; LIQ_FRAGILITY_WINDOW];
+        let vol_w = [20.0f32; LIQ_FRAGILITY_WINDOW];
+        let result = compute_liquidity_fragility(&range_w, &vol_w, 500.0, 10000.0, 0.9);
+        assert!((0.0..=1.0).contains(&result), "got {result}");
+    }
+
+    #[test]
+    fn liq_fragility_too_short_window_carries_forward() {
+        let range_w = [2.0f32; 10]; // shorter than LIQ_FRAGILITY_WINDOW -- unreachable in practice
+        let vol_w = [10.0f32; 10];
+        let result = compute_liquidity_fragility(&range_w, &vol_w, 4.0, 400.0, 0.37);
+        assert!((result - 0.37).abs() <= 1e-6);
     }
 }

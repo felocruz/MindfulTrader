@@ -49,6 +49,12 @@ here instead.
   (`mean_rev_z`) — same proof pattern (21/21 cross-language parity assertions incl. the
   flat-window/null-input carry-forward cases; `MTS_WITH_RUST=OFF` byte-identical, `=ON` links and
   grows to 1,932,800 bytes); live Sierra Chart confirmation deferred.
+- **Fifth and final self-contained `rust/observation_vector` dim ported and shadow-wired, 2026-10-09**:
+  `LiquidityFragilityEngine.h` (`liq_fragility`) — same proof pattern (26/26 cross-language parity
+  assertions incl. the thin-volume/null-input carry-forward cases; `MTS_WITH_RUST=OFF` byte-identical,
+  `=ON` links and grows to 1,953,280 bytes); live Sierra Chart confirmation deferred. All dims that
+  were self-contained (no `FeatureScaler`/dim-index coupling) per §8.1 are now ported — the next
+  observation-vector dims all require P2/P3 (schema-driven dim indices) first.
 - **`rust/schema` (`mts_schema`) crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -62,14 +68,12 @@ here instead.
   standalone meaning in this codebase; confirmed against the schema's own distinct `ObservationData`).
 
 **Not yet started (the next real pieces of work, in rough order):**
-1. Continue `rust/observation_vector` dim-by-dim: `LiquidityFragilityEngine.h` (`liq_fragility`) is
-   self-contained and ready now (§8.1).
-2. `rust/hmm` (`mts_hmm`): the Student-t HMM lifecycle (train → posteriors → live inference) — §7.
+1. `rust/hmm` (`mts_hmm`): the Student-t HMM lifecycle (train → posteriors → live inference) — §7.
    This is the big one; most of the rest of this initiative (the `.context.parquet`/`.alpha` goal in
    §7.5, the execution-layer "all Rust" scope in §10) explicitly depends on it landing first.
-3. Execution-layer computations (`RiskManager`/`PositionManager`/`ExecutionGate`) — confirmed in scope
+2. Execution-layer computations (`RiskManager`/`PositionManager`/`ExecutionGate`) — confirmed in scope
    2026-10-09, not yet sequenced in detail. §10.
-4. `rust/transport` — deliberately last (removing ZMQ port 5561 via the HMM port removes the hardest
+3. `rust/transport` — deliberately last (removing ZMQ port 5561 via the HMM port removes the hardest
    socket `transport` would otherwise have to handle).
 
 **Deferred, own schedule, explicitly decoupled from the Rust work:**
@@ -613,16 +617,17 @@ in Sierra Chart, 2026-10-09**: `DfaHurstExponent.h` (`hurst_exponent` — this s
 HMM cross-state discriminator). 16/16 cross-language parity assertions pass (4 new); 12/12 Rust unit
 tests pass (3 new). `MeanReversionCalculator.h` (`mean_rev_z`) — 21/21 cross-language parity
 assertions pass (5 new, incl. flat-window and null-input carry-forward); 17/17 Rust unit tests pass
-(5 new).
+(5 new). `LiquidityFragilityEngine.h` (`liq_fragility`) — 26/26 cross-language parity assertions
+pass (5 new, incl. thin-volume and null-input carry-forward); 22/22 Rust unit tests pass (5 new).
 
-**Ready now** (self-contained, no `FeatureScaler`/dim-index coupling): `LiquidityFragilityEngine.h`
-(`liq_fragility`).
+**None remaining self-contained** (no `FeatureScaler`/dim-index coupling) — all five such dims are
+now ported (§0 lists all five). Every remaining dim is blocked on P2/P3 (below).
 
 **Deferred until P2/P3 settle** (one FlatBuffers version lands, dim indices need to come from the
 schema, not literals — the exact bug class that has bitten this repo twice already): `EventVelocityEngine.h`
 (`burstiness_index`), `CarryForwardCalculators.h`-coupled dims.
 
-**Methodology, proven four times**: port the function → Rust unit tests mirroring the C++ test's exact
+**Methodology, proven five times**: port the function → Rust unit tests mirroring the C++ test's exact
 golden values → `mts_ffi` FFI wrapper (`(ptr, len)` shape, panic-guarded) → cross-language parity test
 (same deterministic-LCG input into both the C++ original and the Rust wrapper, exact equality) → wire
 into the real C++ call site in shadow mode (compare-and-log only, never used, logged once per process

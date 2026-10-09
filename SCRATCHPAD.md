@@ -1,5 +1,28 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 (cont'd) — `liq_fragility` ported to Rust (fifth and final
+self-contained dim), shadow-wired, build-verified.** Entry point:
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+- **`liq_fragility` (`LiquidityFragilityEngine.h`) ported to Rust, fifth dim in the proven
+  pattern**: Rust unit tests (22/22 pass, 5 new) →
+  `mts_observation_vector_compute_liquidity_fragility` FFI wrapper (null/empty/too-short window
+  carries `prev_fragility` forward, same convention as `mean_rev_z`'s wrapper) → 26/26
+  cross-language parity assertions pass (5 new, incl. thin-volume and null-input carry-forward) →
+  shadow-wired into the real `CalculateLiquidityFragility` call site in `StudyHelperFunctions.cpp`
+  (compare-and-log only, never used) → `MTS_WITH_RUST=OFF` build confirmed byte-identical
+  (1,779,712 bytes) → `=ON` build confirmed to link and genuinely grow (1,953,280 bytes, up from the
+  fourth port's 1,932,800). Live Sierra Chart confirmation deferred (pattern now build-verified-only
+  for three consecutive ports after being live-confirmed twice).
+- **This closes out all five self-contained `rust/observation_vector` dims** (no `FeatureScaler`/
+  dim-index coupling) — every remaining dim needs P2/P3 (schema-driven dim indices) first. Next
+  observation-vector work is blocked until then; `rust/hmm` is the next unblocked initiative.
+
+Next action: start `rust/hmm` (master spec §7) — most other goals (§7.5 `.context.parquet`/`.alpha`
+collapse, §10 execution-layer "all Rust" scope) explicitly depend on it landing first. `lbrnet`'s P7
+(86 files) remains deliberately deferred.
+
+---
+
 **PICK UP HERE, 2026-10-09 (cont'd) — `mean_rev_z` ported to Rust (fourth dim), shadow-wired,
 build-verified; two stale duplicate ContextManager docs deleted; .vscode/settings.json now tracked.**
 Entry point: `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
