@@ -118,9 +118,9 @@ struct BacktestStatusEvent;
 struct BacktestStatusEventBuilder;
 struct BacktestStatusEventT;
 
-struct MTS_Envelope;
-struct MTS_EnvelopeBuilder;
-struct MTS_EnvelopeT;
+struct Envelope;
+struct EnvelopeBuilder;
+struct EnvelopeT;
 
 struct MentalProfileUpdate;
 struct MentalProfileUpdateBuilder;
@@ -7042,19 +7042,19 @@ inline ::flatbuffers::Offset<BacktestStatusEvent> CreateBacktestStatusEventDirec
 
 ::flatbuffers::Offset<BacktestStatusEvent> CreateBacktestStatusEvent(::flatbuffers::FlatBufferBuilder &_fbb, const BacktestStatusEventT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
-struct MTS_EnvelopeT : public ::flatbuffers::NativeTable {
-  typedef MTS_Envelope TableType;
+struct EnvelopeT : public ::flatbuffers::NativeTable {
+  typedef Envelope TableType;
   std::unique_ptr<MTS::Schema::EventHeader> header{};
   MTS::Schema::MessageUnion data{};
-  MTS_EnvelopeT() = default;
-  MTS_EnvelopeT(const MTS_EnvelopeT &o);
-  MTS_EnvelopeT(MTS_EnvelopeT&&) FLATBUFFERS_NOEXCEPT = default;
-  MTS_EnvelopeT &operator=(MTS_EnvelopeT o) FLATBUFFERS_NOEXCEPT;
+  EnvelopeT() = default;
+  EnvelopeT(const EnvelopeT &o);
+  EnvelopeT(EnvelopeT&&) FLATBUFFERS_NOEXCEPT = default;
+  EnvelopeT &operator=(EnvelopeT o) FLATBUFFERS_NOEXCEPT;
 };
 
-struct MTS_Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
-  typedef MTS_EnvelopeT NativeTableType;
-  typedef MTS_EnvelopeBuilder Builder;
+struct Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef EnvelopeT NativeTableType;
+  typedef EnvelopeBuilder Builder;
   enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
     VT_HEADER = 4,
     VT_DATA_TYPE = 6,
@@ -7156,144 +7156,144 @@ struct MTS_Envelope FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            VerifyMessage(verifier, data(), data_type()) &&
            verifier.EndTable();
   }
-  MTS_EnvelopeT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  void UnPackTo(MTS_EnvelopeT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
-  static ::flatbuffers::Offset<MTS_Envelope> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const MTS_EnvelopeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+  EnvelopeT *UnPack(const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  void UnPackTo(EnvelopeT *_o, const ::flatbuffers::resolver_function_t *_resolver = nullptr) const;
+  static ::flatbuffers::Offset<Envelope> Pack(::flatbuffers::FlatBufferBuilder &_fbb, const EnvelopeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 };
 
-template<> inline const MTS::Schema::Heartbeat *MTS_Envelope::data_as<MTS::Schema::Heartbeat>() const {
+template<> inline const MTS::Schema::Heartbeat *Envelope::data_as<MTS::Schema::Heartbeat>() const {
   return data_as_Heartbeat();
 }
 
-template<> inline const MTS::Schema::RiskStateUpdate *MTS_Envelope::data_as<MTS::Schema::RiskStateUpdate>() const {
+template<> inline const MTS::Schema::RiskStateUpdate *Envelope::data_as<MTS::Schema::RiskStateUpdate>() const {
   return data_as_RiskStateUpdate();
 }
 
-template<> inline const MTS::Schema::Diagnostic *MTS_Envelope::data_as<MTS::Schema::Diagnostic>() const {
+template<> inline const MTS::Schema::Diagnostic *Envelope::data_as<MTS::Schema::Diagnostic>() const {
   return data_as_Diagnostic();
 }
 
-template<> inline const MTS::Schema::PreFlightCheckRequest *MTS_Envelope::data_as<MTS::Schema::PreFlightCheckRequest>() const {
+template<> inline const MTS::Schema::PreFlightCheckRequest *Envelope::data_as<MTS::Schema::PreFlightCheckRequest>() const {
   return data_as_PreFlightCheckRequest();
 }
 
-template<> inline const MTS::Schema::PreFlightCheckResponse *MTS_Envelope::data_as<MTS::Schema::PreFlightCheckResponse>() const {
+template<> inline const MTS::Schema::PreFlightCheckResponse *Envelope::data_as<MTS::Schema::PreFlightCheckResponse>() const {
   return data_as_PreFlightCheckResponse();
 }
 
-template<> inline const MTS::Schema::ConfigRequest *MTS_Envelope::data_as<MTS::Schema::ConfigRequest>() const {
+template<> inline const MTS::Schema::ConfigRequest *Envelope::data_as<MTS::Schema::ConfigRequest>() const {
   return data_as_ConfigRequest();
 }
 
-template<> inline const MTS::Schema::ConfigResponse *MTS_Envelope::data_as<MTS::Schema::ConfigResponse>() const {
+template<> inline const MTS::Schema::ConfigResponse *Envelope::data_as<MTS::Schema::ConfigResponse>() const {
   return data_as_ConfigResponse();
 }
 
-template<> inline const MTS::Schema::ValidationProbe *MTS_Envelope::data_as<MTS::Schema::ValidationProbe>() const {
+template<> inline const MTS::Schema::ValidationProbe *Envelope::data_as<MTS::Schema::ValidationProbe>() const {
   return data_as_ValidationProbe();
 }
 
-template<> inline const MTS::Schema::ValidationResponse *MTS_Envelope::data_as<MTS::Schema::ValidationResponse>() const {
+template<> inline const MTS::Schema::ValidationResponse *Envelope::data_as<MTS::Schema::ValidationResponse>() const {
   return data_as_ValidationResponse();
 }
 
-template<> inline const MTS::Schema::RequestInitSequence *MTS_Envelope::data_as<MTS::Schema::RequestInitSequence>() const {
+template<> inline const MTS::Schema::RequestInitSequence *Envelope::data_as<MTS::Schema::RequestInitSequence>() const {
   return data_as_RequestInitSequence();
 }
 
-template<> inline const MTS::Schema::TradeRequest *MTS_Envelope::data_as<MTS::Schema::TradeRequest>() const {
+template<> inline const MTS::Schema::TradeRequest *Envelope::data_as<MTS::Schema::TradeRequest>() const {
   return data_as_TradeRequest();
 }
 
-template<> inline const MTS::Schema::TradeResponse *MTS_Envelope::data_as<MTS::Schema::TradeResponse>() const {
+template<> inline const MTS::Schema::TradeResponse *Envelope::data_as<MTS::Schema::TradeResponse>() const {
   return data_as_TradeResponse();
 }
 
-template<> inline const MTS::Schema::TradeClose *MTS_Envelope::data_as<MTS::Schema::TradeClose>() const {
+template<> inline const MTS::Schema::TradeClose *Envelope::data_as<MTS::Schema::TradeClose>() const {
   return data_as_TradeClose();
 }
 
-template<> inline const MTS::Schema::TradeCloseResponse *MTS_Envelope::data_as<MTS::Schema::TradeCloseResponse>() const {
+template<> inline const MTS::Schema::TradeCloseResponse *Envelope::data_as<MTS::Schema::TradeCloseResponse>() const {
   return data_as_TradeCloseResponse();
 }
 
-template<> inline const MTS::Schema::MentalProfileUpdate *MTS_Envelope::data_as<MTS::Schema::MentalProfileUpdate>() const {
+template<> inline const MTS::Schema::MentalProfileUpdate *Envelope::data_as<MTS::Schema::MentalProfileUpdate>() const {
   return data_as_MentalProfileUpdate();
 }
 
-template<> inline const MTS::Schema::MentalProfileAck *MTS_Envelope::data_as<MTS::Schema::MentalProfileAck>() const {
+template<> inline const MTS::Schema::MentalProfileAck *Envelope::data_as<MTS::Schema::MentalProfileAck>() const {
   return data_as_MentalProfileAck();
 }
 
-template<> inline const MTS::Schema::ModelPrediction *MTS_Envelope::data_as<MTS::Schema::ModelPrediction>() const {
+template<> inline const MTS::Schema::ModelPrediction *Envelope::data_as<MTS::Schema::ModelPrediction>() const {
   return data_as_ModelPrediction();
 }
 
-template<> inline const MTS::Schema::PositionUpdate *MTS_Envelope::data_as<MTS::Schema::PositionUpdate>() const {
+template<> inline const MTS::Schema::PositionUpdate *Envelope::data_as<MTS::Schema::PositionUpdate>() const {
   return data_as_PositionUpdate();
 }
 
-template<> inline const MTS::Schema::GateEvent *MTS_Envelope::data_as<MTS::Schema::GateEvent>() const {
+template<> inline const MTS::Schema::GateEvent *Envelope::data_as<MTS::Schema::GateEvent>() const {
   return data_as_GateEvent();
 }
 
-template<> inline const MTS::Schema::IntentEvent *MTS_Envelope::data_as<MTS::Schema::IntentEvent>() const {
+template<> inline const MTS::Schema::IntentEvent *Envelope::data_as<MTS::Schema::IntentEvent>() const {
   return data_as_IntentEvent();
 }
 
-template<> inline const MTS::Schema::RecoveryEvent *MTS_Envelope::data_as<MTS::Schema::RecoveryEvent>() const {
+template<> inline const MTS::Schema::RecoveryEvent *Envelope::data_as<MTS::Schema::RecoveryEvent>() const {
   return data_as_RecoveryEvent();
 }
 
-template<> inline const MTS::Schema::BacktestControlRequest *MTS_Envelope::data_as<MTS::Schema::BacktestControlRequest>() const {
+template<> inline const MTS::Schema::BacktestControlRequest *Envelope::data_as<MTS::Schema::BacktestControlRequest>() const {
   return data_as_BacktestControlRequest();
 }
 
-template<> inline const MTS::Schema::BacktestControlAck *MTS_Envelope::data_as<MTS::Schema::BacktestControlAck>() const {
+template<> inline const MTS::Schema::BacktestControlAck *Envelope::data_as<MTS::Schema::BacktestControlAck>() const {
   return data_as_BacktestControlAck();
 }
 
-template<> inline const MTS::Schema::BacktestStatusEvent *MTS_Envelope::data_as<MTS::Schema::BacktestStatusEvent>() const {
+template<> inline const MTS::Schema::BacktestStatusEvent *Envelope::data_as<MTS::Schema::BacktestStatusEvent>() const {
   return data_as_BacktestStatusEvent();
 }
 
-struct MTS_EnvelopeBuilder {
-  typedef MTS_Envelope Table;
+struct EnvelopeBuilder {
+  typedef Envelope Table;
   ::flatbuffers::FlatBufferBuilder &fbb_;
   ::flatbuffers::uoffset_t start_;
   void add_header(const MTS::Schema::EventHeader *header) {
-    fbb_.AddStruct(MTS_Envelope::VT_HEADER, header);
+    fbb_.AddStruct(Envelope::VT_HEADER, header);
   }
   void add_data_type(MTS::Schema::Message data_type) {
-    fbb_.AddElement<uint8_t>(MTS_Envelope::VT_DATA_TYPE, static_cast<uint8_t>(data_type), 0);
+    fbb_.AddElement<uint8_t>(Envelope::VT_DATA_TYPE, static_cast<uint8_t>(data_type), 0);
   }
   void add_data(::flatbuffers::Offset<void> data) {
-    fbb_.AddOffset(MTS_Envelope::VT_DATA, data);
+    fbb_.AddOffset(Envelope::VT_DATA, data);
   }
-  explicit MTS_EnvelopeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+  explicit EnvelopeBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
         : fbb_(_fbb) {
     start_ = fbb_.StartTable();
   }
-  ::flatbuffers::Offset<MTS_Envelope> Finish() {
+  ::flatbuffers::Offset<Envelope> Finish() {
     const auto end = fbb_.EndTable(start_);
-    auto o = ::flatbuffers::Offset<MTS_Envelope>(end);
+    auto o = ::flatbuffers::Offset<Envelope>(end);
     return o;
   }
 };
 
-inline ::flatbuffers::Offset<MTS_Envelope> CreateMTS_Envelope(
+inline ::flatbuffers::Offset<Envelope> CreateEnvelope(
     ::flatbuffers::FlatBufferBuilder &_fbb,
     const MTS::Schema::EventHeader *header = nullptr,
     MTS::Schema::Message data_type = MTS::Schema::Message_NONE,
     ::flatbuffers::Offset<void> data = 0) {
-  MTS_EnvelopeBuilder builder_(_fbb);
+  EnvelopeBuilder builder_(_fbb);
   builder_.add_data(data);
   builder_.add_header(header);
   builder_.add_data_type(data_type);
   return builder_.Finish();
 }
 
-::flatbuffers::Offset<MTS_Envelope> CreateMTS_Envelope(::flatbuffers::FlatBufferBuilder &_fbb, const MTS_EnvelopeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
+::flatbuffers::Offset<Envelope> CreateEnvelope(::flatbuffers::FlatBufferBuilder &_fbb, const EnvelopeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher = nullptr);
 
 struct MentalProfileUpdateT : public ::flatbuffers::NativeTable {
   typedef MentalProfileUpdate TableType;
@@ -11772,24 +11772,24 @@ inline ::flatbuffers::Offset<BacktestStatusEvent> CreateBacktestStatusEvent(::fl
       _detail_json);
 }
 
-inline MTS_EnvelopeT::MTS_EnvelopeT(const MTS_EnvelopeT &o)
+inline EnvelopeT::EnvelopeT(const EnvelopeT &o)
       : header((o.header) ? new MTS::Schema::EventHeader(*o.header) : nullptr),
         data(o.data) {
 }
 
-inline MTS_EnvelopeT &MTS_EnvelopeT::operator=(MTS_EnvelopeT o) FLATBUFFERS_NOEXCEPT {
+inline EnvelopeT &EnvelopeT::operator=(EnvelopeT o) FLATBUFFERS_NOEXCEPT {
   std::swap(header, o.header);
   std::swap(data, o.data);
   return *this;
 }
 
-inline MTS_EnvelopeT *MTS_Envelope::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
-  auto _o = std::unique_ptr<MTS_EnvelopeT>(new MTS_EnvelopeT());
+inline EnvelopeT *Envelope::UnPack(const ::flatbuffers::resolver_function_t *_resolver) const {
+  auto _o = std::unique_ptr<EnvelopeT>(new EnvelopeT());
   UnPackTo(_o.get(), _resolver);
   return _o.release();
 }
 
-inline void MTS_Envelope::UnPackTo(MTS_EnvelopeT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
+inline void Envelope::UnPackTo(EnvelopeT *_o, const ::flatbuffers::resolver_function_t *_resolver) const {
   (void)_o;
   (void)_resolver;
   { auto _e = header(); if (_e) _o->header = std::unique_ptr<MTS::Schema::EventHeader>(new MTS::Schema::EventHeader(*_e)); }
@@ -11797,18 +11797,18 @@ inline void MTS_Envelope::UnPackTo(MTS_EnvelopeT *_o, const ::flatbuffers::resol
   { auto _e = data(); if (_e) _o->data.value = MTS::Schema::MessageUnion::UnPack(_e, data_type(), _resolver); }
 }
 
-inline ::flatbuffers::Offset<MTS_Envelope> MTS_Envelope::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const MTS_EnvelopeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
-  return CreateMTS_Envelope(_fbb, _o, _rehasher);
+inline ::flatbuffers::Offset<Envelope> Envelope::Pack(::flatbuffers::FlatBufferBuilder &_fbb, const EnvelopeT* _o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+  return CreateEnvelope(_fbb, _o, _rehasher);
 }
 
-inline ::flatbuffers::Offset<MTS_Envelope> CreateMTS_Envelope(::flatbuffers::FlatBufferBuilder &_fbb, const MTS_EnvelopeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
+inline ::flatbuffers::Offset<Envelope> CreateEnvelope(::flatbuffers::FlatBufferBuilder &_fbb, const EnvelopeT *_o, const ::flatbuffers::rehasher_function_t *_rehasher) {
   (void)_rehasher;
   (void)_o;
-  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const MTS_EnvelopeT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
+  struct _VectorArgs { ::flatbuffers::FlatBufferBuilder *__fbb; const EnvelopeT* __o; const ::flatbuffers::rehasher_function_t *__rehasher; } _va = { &_fbb, _o, _rehasher}; (void)_va;
   auto _header = _o->header ? _o->header.get() : nullptr;
   auto _data_type = _o->data.type;
   auto _data = _o->data.Pack(_fbb);
-  return MTS::Schema::CreateMTS_Envelope(
+  return MTS::Schema::CreateEnvelope(
       _fbb,
       _header,
       _data_type,
@@ -13337,68 +13337,68 @@ inline void MessageUnion::Reset() {
   type = Message_NONE;
 }
 
-inline const MTS::Schema::MTS_Envelope *GetMTS_Envelope(const void *buf) {
-  return ::flatbuffers::GetRoot<MTS::Schema::MTS_Envelope>(buf);
+inline const MTS::Schema::Envelope *GetEnvelope(const void *buf) {
+  return ::flatbuffers::GetRoot<MTS::Schema::Envelope>(buf);
 }
 
-inline const MTS::Schema::MTS_Envelope *GetSizePrefixedMTS_Envelope(const void *buf) {
-  return ::flatbuffers::GetSizePrefixedRoot<MTS::Schema::MTS_Envelope>(buf);
+inline const MTS::Schema::Envelope *GetSizePrefixedEnvelope(const void *buf) {
+  return ::flatbuffers::GetSizePrefixedRoot<MTS::Schema::Envelope>(buf);
 }
 
-inline MTS_Envelope *GetMutableMTS_Envelope(void *buf) {
-  return ::flatbuffers::GetMutableRoot<MTS_Envelope>(buf);
+inline Envelope *GetMutableEnvelope(void *buf) {
+  return ::flatbuffers::GetMutableRoot<Envelope>(buf);
 }
 
-inline MTS::Schema::MTS_Envelope *GetMutableSizePrefixedMTS_Envelope(void *buf) {
-  return ::flatbuffers::GetMutableSizePrefixedRoot<MTS::Schema::MTS_Envelope>(buf);
+inline MTS::Schema::Envelope *GetMutableSizePrefixedEnvelope(void *buf) {
+  return ::flatbuffers::GetMutableSizePrefixedRoot<MTS::Schema::Envelope>(buf);
 }
 
-inline const char *MTS_EnvelopeIdentifier() {
+inline const char *EnvelopeIdentifier() {
   return "LBRN";
 }
 
-inline bool MTS_EnvelopeBufferHasIdentifier(const void *buf) {
+inline bool EnvelopeBufferHasIdentifier(const void *buf) {
   return ::flatbuffers::BufferHasIdentifier(
-      buf, MTS_EnvelopeIdentifier());
+      buf, EnvelopeIdentifier());
 }
 
-inline bool SizePrefixedMTS_EnvelopeBufferHasIdentifier(const void *buf) {
+inline bool SizePrefixedEnvelopeBufferHasIdentifier(const void *buf) {
   return ::flatbuffers::BufferHasIdentifier(
-      buf, MTS_EnvelopeIdentifier(), true);
+      buf, EnvelopeIdentifier(), true);
 }
 
-inline bool VerifyMTS_EnvelopeBuffer(
+inline bool VerifyEnvelopeBuffer(
     ::flatbuffers::Verifier &verifier) {
-  return verifier.VerifyBuffer<MTS::Schema::MTS_Envelope>(MTS_EnvelopeIdentifier());
+  return verifier.VerifyBuffer<MTS::Schema::Envelope>(EnvelopeIdentifier());
 }
 
-inline bool VerifySizePrefixedMTS_EnvelopeBuffer(
+inline bool VerifySizePrefixedEnvelopeBuffer(
     ::flatbuffers::Verifier &verifier) {
-  return verifier.VerifySizePrefixedBuffer<MTS::Schema::MTS_Envelope>(MTS_EnvelopeIdentifier());
+  return verifier.VerifySizePrefixedBuffer<MTS::Schema::Envelope>(EnvelopeIdentifier());
 }
 
-inline void FinishMTS_EnvelopeBuffer(
+inline void FinishEnvelopeBuffer(
     ::flatbuffers::FlatBufferBuilder &fbb,
-    ::flatbuffers::Offset<MTS::Schema::MTS_Envelope> root) {
-  fbb.Finish(root, MTS_EnvelopeIdentifier());
+    ::flatbuffers::Offset<MTS::Schema::Envelope> root) {
+  fbb.Finish(root, EnvelopeIdentifier());
 }
 
-inline void FinishSizePrefixedMTS_EnvelopeBuffer(
+inline void FinishSizePrefixedEnvelopeBuffer(
     ::flatbuffers::FlatBufferBuilder &fbb,
-    ::flatbuffers::Offset<MTS::Schema::MTS_Envelope> root) {
-  fbb.FinishSizePrefixed(root, MTS_EnvelopeIdentifier());
+    ::flatbuffers::Offset<MTS::Schema::Envelope> root) {
+  fbb.FinishSizePrefixed(root, EnvelopeIdentifier());
 }
 
-inline std::unique_ptr<MTS::Schema::MTS_EnvelopeT> UnPackMTS_Envelope(
+inline std::unique_ptr<MTS::Schema::EnvelopeT> UnPackEnvelope(
     const void *buf,
     const ::flatbuffers::resolver_function_t *res = nullptr) {
-  return std::unique_ptr<MTS::Schema::MTS_EnvelopeT>(GetMTS_Envelope(buf)->UnPack(res));
+  return std::unique_ptr<MTS::Schema::EnvelopeT>(GetEnvelope(buf)->UnPack(res));
 }
 
-inline std::unique_ptr<MTS::Schema::MTS_EnvelopeT> UnPackSizePrefixedMTS_Envelope(
+inline std::unique_ptr<MTS::Schema::EnvelopeT> UnPackSizePrefixedEnvelope(
     const void *buf,
     const ::flatbuffers::resolver_function_t *res = nullptr) {
-  return std::unique_ptr<MTS::Schema::MTS_EnvelopeT>(GetSizePrefixedMTS_Envelope(buf)->UnPack(res));
+  return std::unique_ptr<MTS::Schema::EnvelopeT>(GetSizePrefixedEnvelope(buf)->UnPack(res));
 }
 
 }  // namespace Schema

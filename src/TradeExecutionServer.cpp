@@ -29,7 +29,7 @@ zmq::message_t BuildTradeResponseEnvelope(
     trade_resp_builder.add_latency_us(latency_us);
     auto trade_resp = trade_resp_builder.Finish();
 
-    MTS::Schema::MTS_EnvelopeBuilder env_builder(fbb);
+    MTS::Schema::EnvelopeBuilder env_builder(fbb);
     env_builder.add_data_type(MTS::Schema::Message_TradeResponse);
     env_builder.add_data(trade_resp.Union());
     auto envelope = env_builder.Finish();
@@ -175,8 +175,8 @@ void TradeExecutionServer::TradeRpcWorkerLoop() {
                 flatbuffers::Verifier verifier(
                     static_cast<const uint8_t*>(request.data()),
                     request.size());
-                if (MTS::Schema::VerifyMTS_EnvelopeBuffer(verifier)) {
-                    const auto* envelope = MTS::Schema::GetMTS_Envelope(request.data());
+                if (MTS::Schema::VerifyEnvelopeBuffer(verifier)) {
+                    const auto* envelope = MTS::Schema::GetEnvelope(request.data());
                     if (envelope && envelope->data_type() == MTS::Schema::Message_TradeRequest) {
                         const auto* req = envelope->data_as_TradeRequest();
                         if (req) {
@@ -302,8 +302,8 @@ bool TradeExecutionServer::HandleTradeCommand(
 
         // Canonical wire format: envelope-wrapped TradeRequest.
         flatbuffers::Verifier envelopeVerifier(data, size);
-        if (MTS::Schema::VerifyMTS_EnvelopeBuffer(envelopeVerifier)) {
-            const MTS::Schema::MTS_Envelope* envelope = MTS::Schema::GetMTS_Envelope(data);
+        if (MTS::Schema::VerifyEnvelopeBuffer(envelopeVerifier)) {
+            const MTS::Schema::Envelope* envelope = MTS::Schema::GetEnvelope(data);
             if (!envelope || envelope->data_type() != MTS::Schema::Message_TradeRequest) {
                 Logger::getInstance().log(
                     "ERROR: TradeExecutionServer::HandleTradeCommand - Envelope data_type is not TradeRequest"
@@ -325,7 +325,7 @@ bool TradeExecutionServer::HandleTradeCommand(
         }
 
         Logger::getInstance().log(
-            "ERROR: TradeExecutionServer::HandleTradeCommand - Invalid payload: expected MTS_Envelope with TradeRequest"
+            "ERROR: TradeExecutionServer::HandleTradeCommand - Invalid payload: expected Envelope with TradeRequest"
         );
         Logger::getInstance().log("ORDER_FAIL|source=RPC|stage=TRADE_COMMAND_DECODE|reason_code=INVALID_ENVELOPE");
         return false;
@@ -522,14 +522,14 @@ bool TradeExecutionServer::HandlePythonPrediction(
 
         // Canonical wire format: envelope-wrapped ModelPrediction.
         flatbuffers::Verifier envelopeVerifier(data, size);
-        if (!MTS::Schema::VerifyMTS_EnvelopeBuffer(envelopeVerifier)) {
+        if (!MTS::Schema::VerifyEnvelopeBuffer(envelopeVerifier)) {
             Logger::getInstance().log(
-                "ERROR: TradeExecutionServer::HandlePythonPrediction - Invalid payload: expected MTS_Envelope"
+                "ERROR: TradeExecutionServer::HandlePythonPrediction - Invalid payload: expected Envelope"
             );
             return false;
         }
 
-        const MTS::Schema::MTS_Envelope* envelope = MTS::Schema::GetMTS_Envelope(data);
+        const MTS::Schema::Envelope* envelope = MTS::Schema::GetEnvelope(data);
         if (!envelope || envelope->data_type() != MTS::Schema::Message_ModelPrediction) {
             Logger::getInstance().log(
                 "ERROR: TradeExecutionServer::HandlePythonPrediction - Envelope data_type is not ModelPrediction"

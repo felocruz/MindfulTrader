@@ -340,7 +340,7 @@ public:
     // Proper type-safe routing without heuristics
     
     /**
-     * @brief Wrap message in MTS_Envelope
+     * @brief Wrap message in Envelope
      * @param message_bytes Raw message bytes (pre-built FlatBuffer)
      * @param message_type Type discriminator
      * @return ZMQ message with wrapped envelope
@@ -350,7 +350,7 @@ public:
         MTS::Schema::Message message_type);
     
     /**
-     * @brief Parse MTS_Envelope and extract message
+     * @brief Parse Envelope and extract message
      * @param msg ZMQ message containing envelope
      * @param out_message_type Extracted message type
      * @param out_message_bytes Extracted payload

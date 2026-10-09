@@ -191,21 +191,21 @@ inline bool VerifyEnvelopeBuffer(const void* data, std::size_t size) {
         return false;
     }
     flatbuffers::Verifier verifier(static_cast<const std::uint8_t*>(data), size);
-    return verifier.VerifyBuffer<MTS::Schema::MTS_Envelope>(nullptr);
+    return verifier.VerifyBuffer<MTS::Schema::Envelope>(nullptr);
 }
 
-inline const MTS::Schema::MTS_Envelope* GetVerifiedEnvelope(const void* data, std::size_t size) {
+inline const MTS::Schema::Envelope* GetVerifiedEnvelope(const void* data, std::size_t size) {
     if (!VerifyEnvelopeBuffer(data, size)) {
         return nullptr;
     }
-    return ::flatbuffers::GetRoot<MTS::Schema::MTS_Envelope>(static_cast<const std::uint8_t*>(data));
+    return ::flatbuffers::GetRoot<MTS::Schema::Envelope>(static_cast<const std::uint8_t*>(data));
 }
 
-inline flatbuffers::Offset<MTS::Schema::MTS_Envelope> BuildEnvelope(
+inline flatbuffers::Offset<MTS::Schema::Envelope> BuildEnvelope(
     flatbuffers::FlatBufferBuilder& fbb,
     EnvelopeMessage data_type,
     flatbuffers::Offset<void> data_union) {
-    MTS::Schema::MTS_EnvelopeBuilder env_builder(fbb);
+    MTS::Schema::EnvelopeBuilder env_builder(fbb);
     env_builder.add_data_type(data_type);
     env_builder.add_data(data_union);
     return env_builder.Finish();

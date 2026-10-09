@@ -544,18 +544,18 @@ void HMMClient::HandleBinaryResponse(const uint8_t* data, size_t size) {
     m_responseCount.fetch_add(1, std::memory_order_relaxed);
 
     // Validate buffer size
-    if (size < sizeof(MTS::Schema::MTS_Envelope)) {
+    if (size < sizeof(MTS::Schema::Envelope)) {
         Logger::getInstance().log("HMMClient::HandleBinaryResponse ERROR: Buffer too small (" + std::to_string(size) + " bytes)");
         return;
     }
 
     flatbuffers::Verifier envelopeVerifier(data, size);
-    if (!MTS::Schema::VerifyMTS_EnvelopeBuffer(envelopeVerifier)) {
-        Logger::getInstance().log("HMMClient::HandleBinaryResponse ERROR: Invalid MTS_Envelope buffer");
+    if (!MTS::Schema::VerifyEnvelopeBuffer(envelopeVerifier)) {
+        Logger::getInstance().log("HMMClient::HandleBinaryResponse ERROR: Invalid Envelope buffer");
         return;
     }
 
-    auto envelope = ::flatbuffers::GetRoot<MTS::Schema::MTS_Envelope>(data);
+    auto envelope = ::flatbuffers::GetRoot<MTS::Schema::Envelope>(data);
     if (!envelope) {
         Logger::getInstance().log("HMMClient::HandleBinaryResponse ERROR: Failed to deserialize envelope");
         return;

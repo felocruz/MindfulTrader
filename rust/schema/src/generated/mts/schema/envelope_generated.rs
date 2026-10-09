@@ -9,36 +9,36 @@ use core::mem;
 use core::cmp::Ordering;
 use self::flatbuffers::{EndianScalar, Follow};
 use super::*;
-pub enum MTS_EnvelopeOffset {}
+pub enum EnvelopeOffset {}
 #[derive(Copy, Clone, PartialEq)]
 
-pub struct MTS_Envelope<'a> {
+pub struct Envelope<'a> {
   pub _tab: flatbuffers::Table<'a>,
 }
 
-impl<'a> flatbuffers::Follow<'a> for MTS_Envelope<'a> {
-  type Inner = MTS_Envelope<'a>;
+impl<'a> flatbuffers::Follow<'a> for Envelope<'a> {
+  type Inner = Envelope<'a>;
   #[inline]
   unsafe fn follow(buf: &'a [u8], loc: usize) -> Self::Inner {
     Self { _tab: flatbuffers::Table::new(buf, loc) }
   }
 }
 
-impl<'a> MTS_Envelope<'a> {
+impl<'a> Envelope<'a> {
   pub const VT_HEADER: flatbuffers::VOffsetT = 4;
   pub const VT_DATA_TYPE: flatbuffers::VOffsetT = 6;
   pub const VT_DATA: flatbuffers::VOffsetT = 8;
 
   #[inline]
   pub unsafe fn init_from_table(table: flatbuffers::Table<'a>) -> Self {
-    MTS_Envelope { _tab: table }
+    Envelope { _tab: table }
   }
   #[allow(unused_mut)]
   pub fn create<'bldr: 'args, 'args: 'mut_bldr, 'mut_bldr, A: flatbuffers::Allocator + 'bldr>(
     _fbb: &'mut_bldr mut flatbuffers::FlatBufferBuilder<'bldr, A>,
-    args: &'args MTS_EnvelopeArgs<'args>
-  ) -> flatbuffers::WIPOffset<MTS_Envelope<'bldr>> {
-    let mut builder = MTS_EnvelopeBuilder::new(_fbb);
+    args: &'args EnvelopeArgs<'args>
+  ) -> flatbuffers::WIPOffset<Envelope<'bldr>> {
+    let mut builder = EnvelopeBuilder::new(_fbb);
     if let Some(x) = args.data { builder.add_data(x); }
     if let Some(x) = args.header { builder.add_header(x); }
     builder.add_data_type(args.data_type);
@@ -51,21 +51,21 @@ impl<'a> MTS_Envelope<'a> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<EventHeader>(MTS_Envelope::VT_HEADER, None)}
+    unsafe { self._tab.get::<EventHeader>(Envelope::VT_HEADER, None)}
   }
   #[inline]
   pub fn data_type(&self) -> Message {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<Message>(MTS_Envelope::VT_DATA_TYPE, Some(Message::NONE)).unwrap()}
+    unsafe { self._tab.get::<Message>(Envelope::VT_DATA_TYPE, Some(Message::NONE)).unwrap()}
   }
   #[inline]
   pub fn data(&self) -> Option<flatbuffers::Table<'a>> {
     // Safety:
     // Created from valid Table for this object
     // which contains a valid value in this slot
-    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(MTS_Envelope::VT_DATA, None)}
+    unsafe { self._tab.get::<flatbuffers::ForwardsUOffset<flatbuffers::Table<'a>>>(Envelope::VT_DATA, None)}
   }
   #[inline]
   #[allow(non_snake_case)]
@@ -429,7 +429,7 @@ impl<'a> MTS_Envelope<'a> {
 
 }
 
-impl flatbuffers::Verifiable for MTS_Envelope<'_> {
+impl flatbuffers::Verifiable for Envelope<'_> {
   #[inline]
   fn run_verifier(
     v: &mut flatbuffers::Verifier, pos: usize
@@ -470,15 +470,15 @@ impl flatbuffers::Verifiable for MTS_Envelope<'_> {
     Ok(())
   }
 }
-pub struct MTS_EnvelopeArgs<'a> {
+pub struct EnvelopeArgs<'a> {
     pub header: Option<&'a EventHeader>,
     pub data_type: Message,
     pub data: Option<flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>>,
 }
-impl<'a> Default for MTS_EnvelopeArgs<'a> {
+impl<'a> Default for EnvelopeArgs<'a> {
   #[inline]
   fn default() -> Self {
-    MTS_EnvelopeArgs {
+    EnvelopeArgs {
       header: None,
       data_type: Message::NONE,
       data: None,
@@ -486,41 +486,41 @@ impl<'a> Default for MTS_EnvelopeArgs<'a> {
   }
 }
 
-pub struct MTS_EnvelopeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
+pub struct EnvelopeBuilder<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> {
   fbb_: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
   start_: flatbuffers::WIPOffset<flatbuffers::TableUnfinishedWIPOffset>,
 }
-impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> MTS_EnvelopeBuilder<'a, 'b, A> {
+impl<'a: 'b, 'b, A: flatbuffers::Allocator + 'a> EnvelopeBuilder<'a, 'b, A> {
   #[inline]
   pub fn add_header(&mut self, header: &EventHeader) {
-    self.fbb_.push_slot_always::<&EventHeader>(MTS_Envelope::VT_HEADER, header);
+    self.fbb_.push_slot_always::<&EventHeader>(Envelope::VT_HEADER, header);
   }
   #[inline]
   pub fn add_data_type(&mut self, data_type: Message) {
-    self.fbb_.push_slot::<Message>(MTS_Envelope::VT_DATA_TYPE, data_type, Message::NONE);
+    self.fbb_.push_slot::<Message>(Envelope::VT_DATA_TYPE, data_type, Message::NONE);
   }
   #[inline]
   pub fn add_data(&mut self, data: flatbuffers::WIPOffset<flatbuffers::UnionWIPOffset>) {
-    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(MTS_Envelope::VT_DATA, data);
+    self.fbb_.push_slot_always::<flatbuffers::WIPOffset<_>>(Envelope::VT_DATA, data);
   }
   #[inline]
-  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> MTS_EnvelopeBuilder<'a, 'b, A> {
+  pub fn new(_fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>) -> EnvelopeBuilder<'a, 'b, A> {
     let start = _fbb.start_table();
-    MTS_EnvelopeBuilder {
+    EnvelopeBuilder {
       fbb_: _fbb,
       start_: start,
     }
   }
   #[inline]
-  pub fn finish(self) -> flatbuffers::WIPOffset<MTS_Envelope<'a>> {
+  pub fn finish(self) -> flatbuffers::WIPOffset<Envelope<'a>> {
     let o = self.fbb_.end_table(self.start_);
     flatbuffers::WIPOffset::new(o.value())
   }
 }
 
-impl core::fmt::Debug for MTS_Envelope<'_> {
+impl core::fmt::Debug for Envelope<'_> {
   fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-    let mut ds = f.debug_struct("MTS_Envelope");
+    let mut ds = f.debug_struct("Envelope");
       ds.field("header", &self.header());
       ds.field("data_type", &self.data_type());
       match self.data_type() {
@@ -701,85 +701,85 @@ impl core::fmt::Debug for MTS_Envelope<'_> {
   }
 }
 #[inline]
-/// Verifies that a buffer of bytes contains a `MTS_Envelope`
+/// Verifies that a buffer of bytes contains a `Envelope`
 /// and returns it.
 /// Note that verification is still experimental and may not
 /// catch every error, or be maximally performant. For the
 /// previous, unchecked, behavior use
-/// `root_as_mts_envelope_unchecked`.
-pub fn root_as_mts_envelope(buf: &[u8]) -> Result<MTS_Envelope, flatbuffers::InvalidFlatbuffer> {
-  flatbuffers::root::<MTS_Envelope>(buf)
+/// `root_as_envelope_unchecked`.
+pub fn root_as_envelope(buf: &[u8]) -> Result<Envelope, flatbuffers::InvalidFlatbuffer> {
+  flatbuffers::root::<Envelope>(buf)
 }
 #[inline]
 /// Verifies that a buffer of bytes contains a size prefixed
-/// `MTS_Envelope` and returns it.
+/// `Envelope` and returns it.
 /// Note that verification is still experimental and may not
 /// catch every error, or be maximally performant. For the
 /// previous, unchecked, behavior use
-/// `size_prefixed_root_as_mts_envelope_unchecked`.
-pub fn size_prefixed_root_as_mts_envelope(buf: &[u8]) -> Result<MTS_Envelope, flatbuffers::InvalidFlatbuffer> {
-  flatbuffers::size_prefixed_root::<MTS_Envelope>(buf)
+/// `size_prefixed_root_as_envelope_unchecked`.
+pub fn size_prefixed_root_as_envelope(buf: &[u8]) -> Result<Envelope, flatbuffers::InvalidFlatbuffer> {
+  flatbuffers::size_prefixed_root::<Envelope>(buf)
 }
 #[inline]
 /// Verifies, with the given options, that a buffer of bytes
-/// contains a `MTS_Envelope` and returns it.
+/// contains a `Envelope` and returns it.
 /// Note that verification is still experimental and may not
 /// catch every error, or be maximally performant. For the
 /// previous, unchecked, behavior use
-/// `root_as_mts_envelope_unchecked`.
-pub fn root_as_mts_envelope_with_opts<'b, 'o>(
+/// `root_as_envelope_unchecked`.
+pub fn root_as_envelope_with_opts<'b, 'o>(
   opts: &'o flatbuffers::VerifierOptions,
   buf: &'b [u8],
-) -> Result<MTS_Envelope<'b>, flatbuffers::InvalidFlatbuffer> {
-  flatbuffers::root_with_opts::<MTS_Envelope<'b>>(opts, buf)
+) -> Result<Envelope<'b>, flatbuffers::InvalidFlatbuffer> {
+  flatbuffers::root_with_opts::<Envelope<'b>>(opts, buf)
 }
 #[inline]
 /// Verifies, with the given verifier options, that a buffer of
-/// bytes contains a size prefixed `MTS_Envelope` and returns
+/// bytes contains a size prefixed `Envelope` and returns
 /// it. Note that verification is still experimental and may not
 /// catch every error, or be maximally performant. For the
 /// previous, unchecked, behavior use
-/// `root_as_mts_envelope_unchecked`.
-pub fn size_prefixed_root_as_mts_envelope_with_opts<'b, 'o>(
+/// `root_as_envelope_unchecked`.
+pub fn size_prefixed_root_as_envelope_with_opts<'b, 'o>(
   opts: &'o flatbuffers::VerifierOptions,
   buf: &'b [u8],
-) -> Result<MTS_Envelope<'b>, flatbuffers::InvalidFlatbuffer> {
-  flatbuffers::size_prefixed_root_with_opts::<MTS_Envelope<'b>>(opts, buf)
+) -> Result<Envelope<'b>, flatbuffers::InvalidFlatbuffer> {
+  flatbuffers::size_prefixed_root_with_opts::<Envelope<'b>>(opts, buf)
 }
 #[inline]
-/// Assumes, without verification, that a buffer of bytes contains a MTS_Envelope and returns it.
+/// Assumes, without verification, that a buffer of bytes contains a Envelope and returns it.
 /// # Safety
-/// Callers must trust the given bytes do indeed contain a valid `MTS_Envelope`.
-pub unsafe fn root_as_mts_envelope_unchecked(buf: &[u8]) -> MTS_Envelope {
-  flatbuffers::root_unchecked::<MTS_Envelope>(buf)
+/// Callers must trust the given bytes do indeed contain a valid `Envelope`.
+pub unsafe fn root_as_envelope_unchecked(buf: &[u8]) -> Envelope {
+  flatbuffers::root_unchecked::<Envelope>(buf)
 }
 #[inline]
-/// Assumes, without verification, that a buffer of bytes contains a size prefixed MTS_Envelope and returns it.
+/// Assumes, without verification, that a buffer of bytes contains a size prefixed Envelope and returns it.
 /// # Safety
-/// Callers must trust the given bytes do indeed contain a valid size prefixed `MTS_Envelope`.
-pub unsafe fn size_prefixed_root_as_mts_envelope_unchecked(buf: &[u8]) -> MTS_Envelope {
-  flatbuffers::size_prefixed_root_unchecked::<MTS_Envelope>(buf)
+/// Callers must trust the given bytes do indeed contain a valid size prefixed `Envelope`.
+pub unsafe fn size_prefixed_root_as_envelope_unchecked(buf: &[u8]) -> Envelope {
+  flatbuffers::size_prefixed_root_unchecked::<Envelope>(buf)
 }
-pub const MTS_ENVELOPE_IDENTIFIER: &str = "LBRN";
+pub const ENVELOPE_IDENTIFIER: &str = "LBRN";
 
 #[inline]
-pub fn mts_envelope_buffer_has_identifier(buf: &[u8]) -> bool {
-  flatbuffers::buffer_has_identifier(buf, MTS_ENVELOPE_IDENTIFIER, false)
-}
-
-#[inline]
-pub fn mts_envelope_size_prefixed_buffer_has_identifier(buf: &[u8]) -> bool {
-  flatbuffers::buffer_has_identifier(buf, MTS_ENVELOPE_IDENTIFIER, true)
+pub fn envelope_buffer_has_identifier(buf: &[u8]) -> bool {
+  flatbuffers::buffer_has_identifier(buf, ENVELOPE_IDENTIFIER, false)
 }
 
 #[inline]
-pub fn finish_mts_envelope_buffer<'a, 'b, A: flatbuffers::Allocator + 'a>(
+pub fn envelope_size_prefixed_buffer_has_identifier(buf: &[u8]) -> bool {
+  flatbuffers::buffer_has_identifier(buf, ENVELOPE_IDENTIFIER, true)
+}
+
+#[inline]
+pub fn finish_envelope_buffer<'a, 'b, A: flatbuffers::Allocator + 'a>(
     fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>,
-    root: flatbuffers::WIPOffset<MTS_Envelope<'a>>) {
-  fbb.finish(root, Some(MTS_ENVELOPE_IDENTIFIER));
+    root: flatbuffers::WIPOffset<Envelope<'a>>) {
+  fbb.finish(root, Some(ENVELOPE_IDENTIFIER));
 }
 
 #[inline]
-pub fn finish_size_prefixed_mts_envelope_buffer<'a, 'b, A: flatbuffers::Allocator + 'a>(fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>, root: flatbuffers::WIPOffset<MTS_Envelope<'a>>) {
-  fbb.finish_size_prefixed(root, Some(MTS_ENVELOPE_IDENTIFIER));
+pub fn finish_size_prefixed_envelope_buffer<'a, 'b, A: flatbuffers::Allocator + 'a>(fbb: &'b mut flatbuffers::FlatBufferBuilder<'a, A>, root: flatbuffers::WIPOffset<Envelope<'a>>) {
+  fbb.finish_size_prefixed(root, Some(ENVELOPE_IDENTIFIER));
 }

@@ -65,11 +65,34 @@ Surveyed every `table`/`struct` name in both `.fbs` files (`grep -oE "^(table|st
 
 **This is the finding that actually triggered today's Rust friction**: `non_camel_case_types`
 flagged `MTS_Envelope`/`MTS_EnvelopeBuilder`/`MTS_EnvelopeArgs`/`MTS_EnvelopeOffset` in the generated
-Rust (currently silenced by `mts_schema`'s lint-suppressing wrapper, not fixed at the source).
-Rename to `MtsEnvelope` fixes it at the one place it actually lives — the `.fbs` file — rather than
-suppressing it in every language's generated-code wrapper forever.
+Rust (previously silenced by `mts_schema`'s lint-suppressing wrapper, not fixed at the source).
 
-**Disposition: _(operator to decide)_**
+**Disposition: FIXED, 2026-10-09.** Operator chose `Envelope` over my originally-proposed
+`MtsEnvelope` — the namespace is already `MTS.Schema`, so a prefix would just be redundant
+(`MTS.Schema.MtsEnvelope`). Renamed at the one place it actually lives (the `.fbs` `table`/
+`root_type` declaration), not just suppressed in each language's wrapper. Mechanical
+string-substitution rename (`MTS_Envelope` → `Envelope`) was safe everywhere it appears — every
+derived form (`MTS_EnvelopeBuilder`, `GetMTS_Envelope`, `CreateMTS_Envelope`, the Python module
+filename, ...) is generated purely from the table name, confirmed by sampling actual usages in all
+three languages before the global replace.
+**Real blast radius, not just the schema file**: 151 occurrences across 13 hand-written (not
+generated) consumer files in three repos — `MindfulTrader` (`SystemOrchestrator.h/.cpp`,
+`EliteFlatBufferHelper.h/.cpp`, `TradeExecutionServer.cpp`, `HMMClient.cpp`), `lbrnet`
+(`backtest/backtest_server.py`, `lbrnet/inference/live_agent.py`), and `MTS`
+(`system_orchestrator.py`, `websocket_broadcaster.py`, `trade_server.py`, `action_plan.py`,
+`zmq_client.py` — by far the largest share, since the GUI consumes the full envelope protocol).
+Also needed updating: `schema/regenerate_schema.sh` (it embeds a hand-written C++ envelope-helper
+snippet referencing `MTS::Schema::MTS_Envelope` directly inside a heredoc — would have emitted code
+referencing a type that no longer exists) and `schema/self_test_schema_contract.py` (an expected-
+symbols list that would have falsely reported the rename as "symbol missing").
+**Verification, not just "it compiles"**: full `regenerate_schema.sh` run (all three languages,
+checksums verified) → `self_test_schema_contract.py` initially caught the not-yet-fixed `MTS`-repo
+consumers by name (`zmq_client`, `action_plan` import failures) *before* I'd touched them, then
+passed clean after → `cargo build/clippy/test --workspace` clean for `mts_schema` → full clean
+`./build_dll.sh` (PCH regenerated after the generated-header size change; the "redefinition of
+kObservationDim" error was a PCH-staleness cascade, not an independent bug) → runtime
+`import lbrnet.generated.MTS.Schema.Envelope` verified in both `lbrnet` and `MTS` Python envs
+(not just `py_compile` syntax checks).
 
 ### 3.2 "MTS" is not actually overloaded — it's one acronym, correctly used, colliding with one
 already-scheduled repo rename
@@ -155,27 +178,24 @@ Recorded here so they are **not** re-litigated as new findings:
 
 ## 4. What this audit deliberately does NOT do
 
-- It does not fix anything yet for the still-open findings (§3.1, §3.3, §3.4 — marked `(operator to
-  decide)`). §3.2 is the one finding this pass already resolved, by recognizing it as already ruled
-  elsewhere, not by deciding anything new here.
+- It does not fix anything yet for the still-open findings (§3.3, §3.4 — marked `(operator to
+  decide)`). §3.1 and §3.2 are the two findings this pass already resolved — §3.1 by executing the
+  rename, §3.2 by recognizing it as already ruled elsewhere.
 - It does not re-survey `lbrnet`'s or `MTS`'s internal (non-schema-touching) naming conventions —
   flagged as an open follow-up, not silently skipped (§5).
-- It does not re-decide §3.5's (or now §3.2's) already-settled items.
+- It does not re-decide §3.5's (or now §3.1's/§3.2's) already-settled items.
 
 ## 5. Open questions for the operator
 
-1. Which of §3.1, §3.3, §3.4 should be fixed now, vs. deferred (with a reason), vs. accepted
-   permanently? (§3.2 no longer needs a decision here — resolved, see §3.2.)
-2. §3.1 (`MTS_Envelope` → `MtsEnvelope`) is the narrowest, cheapest fix here, and — now that §3.2 is
-   understood to be a repo-path/acronym collision rather than a naming-convention question — it no
-   longer needs to wait on anything else. Is it the right first mover?
-3. Should the already-ruled `MTS` → `GUI/` consolidation step (§3.2) be reprioritized earlier than
+1. Which of §3.3, §3.4 should be fixed now, vs. deferred (with a reason), vs. accepted
+   permanently? (§3.1 and §3.2 no longer need a decision here — both resolved, see their own
+   sections.)
+2. Should the already-ruled `MTS` → `GUI/` consolidation step (§3.2) be reprioritized earlier than
    its current place in the Phase 3 merge sequencing, given it just resolved a real, live piece of
    confusion rather than being purely a structural tidy-up?
-4. Should a follow-up pass extend this audit to `lbrnet`'s and `MTS`'s own internal naming
+3. Should a follow-up pass extend this audit to `lbrnet`'s and `MTS`'s own internal naming
    conventions (C++ class names, Python module names) beyond what touches the schema, or is the
    schema surface the right boundary to stop at for now?
-5. Once §3.1/§3.3/§3.4 dispositions are decided, does the Rust-adoption roadmap's Phase 2 sequencing
-   (paused for this audit) resume as-is, or does it need reordering so schema-naming fixes land
-   before the round-trip proof work (so the proof is written against final names, not names about
-   to change)?
+4. Now that §3.1 is resolved, does the Rust-adoption roadmap's Phase 2 sequencing (paused for this
+   audit) resume as-is, or does §3.3/§3.4 warrant finishing first so the round-trip proof is written
+   against final names/structure, not ones about to change?

@@ -129,8 +129,8 @@ pub mod mts {
     pub use self::backtest_control_ack_generated::*;
     mod backtest_status_event_generated;
     pub use self::backtest_status_event_generated::*;
-    mod mts_envelope_generated;
-    pub use self::mts_envelope_generated::*;
+    mod envelope_generated;
+    pub use self::envelope_generated::*;
     mod mental_profile_update_generated;
     pub use self::mental_profile_update_generated::*;
     mod mental_profile_ack_generated;

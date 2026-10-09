@@ -445,8 +445,8 @@ void SystemOrchestrator::MentalProfileWorkerThread() {
 
                     // === Elite Pattern: Parse FlatBuffer MentalProfileUpdate ===
                     try {
-                        // Zero-copy parsing: Mental profile is inside MTS_Envelope Message union
-                        auto envelope = MTS::Schema::GetMTS_Envelope(message.data());
+                        // Zero-copy parsing: Mental profile is inside Envelope Message union
+                        auto envelope = MTS::Schema::GetEnvelope(message.data());
                         if (!envelope || envelope->data_type() != MTS::Schema::Message_MentalProfileUpdate) {
                             Logger::getInstance().log("⚠️ MentalProfile message type mismatch");
                             continue;
@@ -937,7 +937,7 @@ bool SystemOrchestrator::ParseConfigRequest_FB(
     try {
         // ===== ELITE UPGRADE #2: HARDENED FLATBUFFER VERIFICATION =====
         // Verify buffer integrity BEFORE any pointer dereferences
-        // CONFIG_REQ is sent as a raw ConfigRequest table (no MTS_Envelope wrapping)
+        // CONFIG_REQ is sent as a raw ConfigRequest table (no Envelope wrapping)
         flatbuffers::Verifier verifier(
             static_cast<const uint8_t*>(msg.data()),
             msg.size());
@@ -1384,7 +1384,7 @@ void SystemOrchestrator::HandleValidationProbe() {
 // - PreFlightCheckRequest: Python → C++ for readiness check
 // - PreFlightCheckResponse: C++ → Python with readiness status
 // - Heartbeat: C++ → Python for liveness and model health monitoring
-// All messages wrapped in MTS_Envelope for type-safe routing.
+// All messages wrapped in Envelope for type-safe routing.
 // Message sequence numbers enable dropped message detection.
 // Round-trip latency target: <100µs
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1426,8 +1426,8 @@ zmq::message_t SystemOrchestrator::BuildPreFlightCheckRequest_FB(
         MTS::Schema::EventType_ControlMessage           // event_type
     );
 
-    // Wrap in MTS_Envelope with header and message data
-    MTS::Schema::MTS_EnvelopeBuilder env_builder(fbb);
+    // Wrap in Envelope with header and message data
+    MTS::Schema::EnvelopeBuilder env_builder(fbb);
     env_builder.add_header(&header);
     env_builder.add_data_type(MTS::Schema::Message_PreFlightCheckRequest);
     env_builder.add_data(request.Union());
@@ -1456,15 +1456,15 @@ bool SystemOrchestrator::ParsePreFlightCheckRequest_FB(
             static_cast<const uint8_t*>(msg.data()),
             msg.size());
 
-        if (!MTS::Schema::VerifyMTS_EnvelopeBuffer(verifier)) {
+        if (!MTS::Schema::VerifyEnvelopeBuffer(verifier)) {
             ReportStrike("NETWORK", "Corrupt PreFlightCheckRequest - buffer verification failed");
             return false;
         }
 
         // Parse envelope using correct generated API (template-based GetRoot)
-        const MTS::Schema::MTS_Envelope* envelope = ::flatbuffers::GetRoot<MTS::Schema::MTS_Envelope>(msg.data());
+        const MTS::Schema::Envelope* envelope = ::flatbuffers::GetRoot<MTS::Schema::Envelope>(msg.data());
         if (!envelope) {
-            ReportStrike("SCHEMA", "Failed to parse MTS_Envelope from PreFlightCheckRequest");
+            ReportStrike("SCHEMA", "Failed to parse Envelope from PreFlightCheckRequest");
             return false;
         }
 
@@ -1661,8 +1661,8 @@ zmq::message_t SystemOrchestrator::BuildHeartbeat_FB(
 
     auto heartbeat = hb_builder.Finish();
 
-    // Wrap in MTS_Envelope (Message is a union, not a table)
-    MTS::Schema::MTS_EnvelopeBuilder env_builder(fbb);
+    // Wrap in Envelope (Message is a union, not a table)
+    MTS::Schema::EnvelopeBuilder env_builder(fbb);
     env_builder.add_data_type(MTS::Schema::Message_Heartbeat);
     env_builder.add_data(heartbeat.Union());
 
@@ -1816,7 +1816,7 @@ std::optional<SystemOrchestrator::HeartbeatData> SystemOrchestrator::ParseHeartb
             static_cast<const uint8_t*>(msg.data()),
             msg.size());
 
-        if (!MTS::Schema::VerifyMTS_EnvelopeBuffer(verifier)) {
+        if (!MTS::Schema::VerifyEnvelopeBuffer(verifier)) {
             EliteStrike strike{
                 "NETWORK",
                 "Corrupt Heartbeat FlatBuffer - verification failed",
@@ -1829,10 +1829,10 @@ std::optional<SystemOrchestrator::HeartbeatData> SystemOrchestrator::ParseHeartb
             return std::nullopt;
         }
 
-        // Parse envelope (Message is a union in MTS_Envelope)
-        const MTS::Schema::MTS_Envelope* envelope = MTS::Schema::GetMTS_Envelope(msg.data());
+        // Parse envelope (Message is a union in Envelope)
+        const MTS::Schema::Envelope* envelope = MTS::Schema::GetEnvelope(msg.data());
         if (!envelope) {
-            ReportStrike("SCHEMA", "Failed to parse MTS_Envelope from Heartbeat");
+            ReportStrike("SCHEMA", "Failed to parse Envelope from Heartbeat");
             return std::nullopt;
         }
 

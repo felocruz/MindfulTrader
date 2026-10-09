@@ -170,16 +170,16 @@ public:
     // ===== MESSAGE ENVELOPE UTILITIES =====
 
     /**
-     * @brief Determine message type from MTS_Envelope
+     * @brief Determine message type from Envelope
      * Type-safe routing without heuristics
-     * @param msg ZMQ message containing MTS_Envelope
+     * @param msg ZMQ message containing Envelope
      * @return Message type enum, std::nullopt if parsing fails
      */
     static std::optional<Schema::Message> GetMessageType(const zmq::message_t& msg);
 
     /**
-     * @brief Extract message payload from MTS_Envelope
-     * @param msg ZMQ message containing MTS_Envelope
+     * @brief Extract message payload from Envelope
+     * @param msg ZMQ message containing Envelope
      * @return Message bytes (already deserialized for further parsing)
      */
     static std::optional<std::vector<uint8_t>> ExtractMessagePayload(const zmq::message_t& msg);

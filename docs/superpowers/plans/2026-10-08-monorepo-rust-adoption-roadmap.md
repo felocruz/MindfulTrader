@@ -169,6 +169,16 @@ code, not inside a merged monorepo's `rust/`.
   2026-10-09-cross-repo-naming-schema-coherence-audit.md`. **Do not resume the round-trip proof
   until that audit's dispositions are decided** — writing a proof against names that are about to
   change would need rework.
+  **Update, same day**: audit §3.1 (`MTS_Envelope` → `Envelope`) decided and executed — a real
+  cross-repo rename, not just a schema-file edit: 151 occurrences across 13 hand-written consumer
+  files in `MindfulTrader` (C++), `lbrnet`, and `MTS` (Python; by far the largest share, since the
+  GUI consumes the full envelope protocol), plus `regenerate_schema.sh`'s own embedded C++ helper
+  snippet and `self_test_schema_contract.py`'s expected-symbols list. Full chain re-verified after:
+  `regenerate_schema.sh` (all three languages, checksums pass) → schema self-test (caught the
+  not-yet-fixed `MTS`-repo consumers by name before I'd touched them, clean after) →
+  `cargo build/clippy/test --workspace` → full clean `./build_dll.sh` → runtime Python import
+  verified in both `lbrnet` and `MTS` envs. §3.3/§3.4 remain open; round-trip proof still paused
+  until those are decided (open question §5.4 of the audit doc).
 - [x] **First two real `rust/observation_vector` (`mts_observation_vector`) ports, done 2026-10-08**:
   `SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` (+ their shared `EmpiricalQuantile`
   helper), ported from `include/SevcikFractalDimension.h`/`include/RobustMoments.h`. Chosen as

@@ -16,7 +16,7 @@ std::optional<std::map<std::string, std::string>> EliteFlatBufferHelper::ParsePr
     const zmq::message_t& msg)
 {
     try {
-        const Schema::MTS_Envelope* envelope =
+        const Schema::Envelope* envelope =
             Schema::Contract::GetVerifiedEnvelope(msg.data(), msg.size());
         if (!envelope) {
             Logger::getInstance().log("ERROR: EliteFlatBufferHelper: Invalid envelope");
@@ -84,7 +84,7 @@ zmq::message_t EliteFlatBufferHelper::BuildPreFlightCheckResponse(
 
     auto response = resp_builder.Finish();
 
-    // Wrap in MTS_Envelope with proper union handling
+    // Wrap in Envelope with proper union handling
     // The envelope.data field holds the serialized response
     // The envelope.data_type field holds Message_PreFlightCheckResponse
     auto envelope = Schema::Contract::BuildEnvelope(
@@ -108,7 +108,7 @@ zmq::message_t EliteFlatBufferHelper::BuildPreFlightCheckResponse(
 std::optional<HeartbeatData> EliteFlatBufferHelper::ParseHeartbeat(const zmq::message_t& msg)
 {
     try {
-        const Schema::MTS_Envelope* envelope =
+        const Schema::Envelope* envelope =
             Schema::Contract::GetVerifiedEnvelope(msg.data(), msg.size());
         if (!envelope) {
             Logger::getInstance().log("ERROR: EliteFlatBufferHelper: Invalid Heartbeat envelope");
@@ -186,7 +186,7 @@ zmq::message_t EliteFlatBufferHelper::BuildHeartbeat(
 
     auto heartbeat = hb_builder.Finish();
 
-    // Wrap in MTS_Envelope with proper union handling
+    // Wrap in Envelope with proper union handling
     auto envelope = Schema::Contract::BuildEnvelope(
         fbb,
         Schema::Contract::kEnvelopeHeartbeat,
@@ -391,7 +391,7 @@ zmq::message_t EliteFlatBufferHelper::BuildDiagnosticWithRecoveryEvent(
 std::optional<Schema::Message> EliteFlatBufferHelper::GetMessageType(const zmq::message_t& msg)
 {
     try {
-        const Schema::MTS_Envelope* envelope =
+        const Schema::Envelope* envelope =
             Schema::Contract::GetVerifiedEnvelope(msg.data(), msg.size());
         if (!envelope) {
             return std::nullopt;
@@ -408,7 +408,7 @@ std::optional<std::vector<uint8_t>> EliteFlatBufferHelper::ExtractMessagePayload
     const zmq::message_t& msg)
 {
     try {
-        const Schema::MTS_Envelope* envelope =
+        const Schema::Envelope* envelope =
             Schema::Contract::GetVerifiedEnvelope(msg.data(), msg.size());
         if (!envelope) {
             return std::nullopt;
