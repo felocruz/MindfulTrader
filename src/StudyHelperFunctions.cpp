@@ -2584,8 +2584,8 @@ void UpdateObservationVectorSubgraphs(
 #ifdef MTS_WITH_RUST
 namespace {
 // Shadow-mode validation shared by CalculateLogScaleRatio/CalculateLogScaleExpansionRatio's
-// window-BV lambdas below (docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md
-// Phase 2). Compares and logs only -- `cppResult` remains the only value either lambda returns.
+// window-BV lambdas below (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
+// §8.1). Compares and logs only -- `cppResult` remains the only value either lambda returns.
 // One shared loggedMatchOnce across both call sites: the goal is proof the Rust port executes and
 // matches at all, not per-call-site bookkeeping.
 void ShadowCheckBipowerVariation(const double* returns, int n, double cppResult) {
@@ -2819,8 +2819,8 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
     const float dim = SevcikFractalDimension(prices.data(), lookback_n);
 
 #ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md
-    // Phase 2): proves the Rust port stays correct on live data, without using its result for
+    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
+    // §8.1): proves the Rust port stays correct on live data, without using its result for
     // anything -- `dim` (computed above) remains the only value this function returns or that any
     // downstream caller sees.
     {

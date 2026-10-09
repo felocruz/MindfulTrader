@@ -16,8 +16,8 @@ set(VCPKG_SYSROOT "$ENV{HOME}/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-w
 
 # --- Rust (rust/ffi, the mts_ffi staticlib) -------------------------------------------------
 # OFF by default; flip ON via -DMTS_WITH_RUST=ON (or the wsl-clang-cl-release-rust preset) once
-# built. See docs/superpowers/specs/2026-10-08-monorepo-infrastructure-guide.md §4.1 and
-# docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md. Path note: today rust/ is a
+# built. See docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md §11.2.
+# Path note: today rust/ is a
 # direct child of this repo root (pre-merge); post-merge, once this C++ moves into cpp/ and rust/
 # becomes a top-level sibling, this path gains a "../" -- update in the same commit as that move.
 option(MTS_WITH_RUST "Link rust/ffi (mts_ffi.lib) into the DLL" OFF)

@@ -1,7 +1,53 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 — five drifting specs consolidated into one; schema coherence fixes
+shipped; HMM lifecycle's `.context.parquet`/`.alpha` goal recorded.** Entry point now:
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — this single
+document replaces (deleted, content folded in) the former
+`2026-10-07-mindfultrader-monorepo-consolidation-spec.md`, `2026-10-07-rust-hmm-lifecycle-spec.md`,
+`2026-10-08-monorepo-infrastructure-guide.md`, `2026-10-08-monorepo-rust-adoption-roadmap.md` (plan),
+and `2026-10-09-cross-repo-naming-schema-coherence-audit.md`. **Operator directive that triggered
+this**: "stop creating specs all over the place... create a single unifying spec/plan... otherwise
+your context will drift later on." The five docs had already produced real drift (duplicated status,
+cross-references each needing separate updates) — this consolidation is the actual fix, not a
+reorganization for its own sake. **Going forward: do not open a new sibling spec for a sub-topic of
+this initiative; add a section to the master spec instead.**
+
+**What shipped today, folded into the master spec's §0/§6**:
+- Schema coherence audit opened and three of its four findings resolved: `MTS_Envelope` → `Envelope`
+  renamed across 4 repos (151 occurrences); `backtest_schema.fbs` merged into `mts_schema.fbs`
+  entirely (one schema file now, Rust generation simplified from 77 files back to one); "MTS" naming
+  confirmed correct (not overloaded — it's the real "Mindful Trading System" acronym), the one real
+  collision already ruled elsewhere (`MTS`→`GUI/` at merge time).
+- A genuinely pre-existing bug caught and fixed along the way:
+  `rewrite_generated_python_imports.sh` never had a same-namespace rule for `MTS.Backtest` — found
+  because this was the first-ever real attempt to import `BacktestFrame.py` in this system's history.
+- HMM lifecycle spec's `.context.parquet`/`.alpha` goal recorded (master spec §7.5): once the HMM is
+  in-process Rust, `EventDataCollectorStudy.cpp` can write `.context.parquet` directly, and
+  `.alpha`/`TrainingEvent` can drop its redundant embedded `ObservationData` copy for a join key.
+  Confirmed today's `.alpha` pipeline is genuinely two-phase (collect, then a separate later Python
+  pass fills in HMM posteriors via `materialize_hmm_features.py`) — collapsing to one pass is the
+  real operational win on top of the architectural one. One open question not resolved: the `MTS`
+  GUI's live `MarketObservation` consumption (`zmq_client.py`/`FeatureSpine`) — a real, separate
+  consumer not accounted for by the HMM-in-process goal alone.
+- Execution-layer Rust-porting scope confirmed explicit ("all Rust", not just HMM/observation_vector):
+  `RiskManager`/`PositionManager`/`ExecutionGate`'s own low-level computations are equal-footing
+  candidates, no special caution tier (master spec §10).
+- A DOD/performance finding from comparing against Atratus's schema: `RiskGateContext`/
+  `ImbalanceRiskGateContext` are struct-vs-table candidates (master spec §6.3) — proposed, not yet
+  implemented.
+
+Next action: continue `rust/observation_vector` (master spec §8.1 — `DfaHurstExponent.h`,
+`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (§7),
+which most of today's other goals (§7.5, §10) explicitly depend on landing first. `lbrnet`'s P7 (86
+files) remains deliberately deferred.
+
 **PICK UP HERE, 2026-10-08 — Rust-in-Sierra cleared; sequencing plan exists; `rust/ffi` skeleton
-scaffolded and link-proven.** `docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md`
+scaffolded and link-proven.** (**Note, 2026-10-09**: the roadmap plan and infrastructure guide this
+entry references were consolidated into
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — see the entry
+above; the filenames below no longer exist on disk, read for history only.)
+`docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md`
 is the entry point: it resolves a real conflict between the two 2026-10-07 specs and the new
 `docs/superpowers/specs/2026-10-08-monorepo-infrastructure-guide.md` (written by a sibling Atratus
 session, then corrected twice this session — naming `mt_`/`core/` → `mts_`/`rust/`, both real
@@ -83,7 +129,9 @@ changed. **`lbrnet`'s 86 files deliberately deferred** (operator: "separate sess
 blocking Stage 0 of the merge.
 
 **PICK UP HERE, 2026-10-07 — monorepo consolidation + Rust HMM lifecycle, design only (W0s's kill
-criterion now passed, see above).** Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
+criterion now passed, see above).** (**Note, 2026-10-09**: both specs below were consolidated into
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — see the top entry;
+the filenames below no longer exist on disk, read for history only.) Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
 consolidation-spec.md` (merge `schema`/`MindfulTrader`→`cpp`/`lbrnet`/`MTS`→`GUI` into
 `VSCode/MindfulTrader/`; §1a is the decision log; pre-work P1-P7; Rust ZMQ transport plan) and
 `docs/superpowers/specs/2026-10-07-rust-hmm-lifecycle-spec.md` (HMM training + offline posteriors +
