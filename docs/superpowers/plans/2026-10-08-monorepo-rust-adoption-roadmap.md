@@ -177,8 +177,22 @@ code, not inside a merged monorepo's `rust/`.
   `regenerate_schema.sh` (all three languages, checksums pass) → schema self-test (caught the
   not-yet-fixed `MTS`-repo consumers by name before I'd touched them, clean after) →
   `cargo build/clippy/test --workspace` → full clean `./build_dll.sh` → runtime Python import
-  verified in both `lbrnet` and `MTS` envs. §3.3/§3.4 remain open; round-trip proof still paused
-  until those are decided (open question §5.4 of the audit doc).
+  verified in both `lbrnet` and `MTS` envs.
+  **Update, same day**: audit §3.3 (the two-schema include relationship) also decided and
+  executed — `backtest_schema.fbs` merged into `mts_schema.fbs` entirely (one schema file, not two).
+  Reversed my own first recommendation (fix only the generation flags) after the operator's "we've
+  never run a backtest" point killed the one real objection to merging, and after testing showed
+  the "narrow Python-only fix" I'd proposed doesn't actually work in isolation anyway. Verified both
+  `Envelope`'s and `BacktestFrame`'s file identifiers were never embedded by any real code before
+  touching anything (so nothing provable was at risk), caught and fixed a real, pre-existing gap in
+  `rewrite_generated_python_imports.sh` (zero `MTS.Backtest` same-namespace rules, ever — found
+  because this was the first real attempt to import `BacktestFrame.py`), and simplified Rust's
+  generation back to plain `--rust` (one file, down from a 77-file `--rust-module-root-file` tree).
+  Full chain verified: schema syntax check → full `regenerate_schema.sh` run (single invocation per
+  language now) → self-test → `cargo build/clippy/test --workspace` → full clean `./build_dll.sh`
+  (one stale `#include` caught) → runtime Python imports for `BacktestFrame`/`BacktestRecord`/
+  `Envelope`/`TrainingEventT`. Updated all four mirror docs. Only §3.4 remains open in the audit;
+  round-trip proof work can resume once that's decided (open question §5.1 of the audit doc).
 - [x] **First two real `rust/observation_vector` (`mts_observation_vector`) ports, done 2026-10-08**:
   `SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` (+ their shared `EmpiricalQuantile`
   helper), ported from `include/SevcikFractalDimension.h`/`include/RobustMoments.h`. Chosen as

@@ -352,10 +352,12 @@ SCStudies.cpp (main ACSIL entry — calls all managers each tick)
 
 ### FlatBuffers / Schema
 
-Generated headers live in `include/generated/`. Two schemas exist:
+Generated headers live in `include/generated/`. One schema file (merged 2026-10-09, coherence
+audit §3.3 — previously two, `backtest_schema.fbs` included `mts_schema.fbs`, forcing opposite
+per-language codegen workarounds):
 
-- **`../schema/mts_schema.fbs`** — live wire schema; generates `mts_schema_generated.h`
-- **`../schema/backtest_schema.fbs`** — backtesting artifact schema; generates `backtest_schema_generated.h`
+- **`../schema/mts_schema.fbs`** — live wire schema + backtesting artifact tables (`BacktestFrame`,
+  `RunManifest`, `TradeRecord`, ...); generates `mts_schema_generated.h`
 
 Regenerate via the script above; never call `flatc` directly.
 
@@ -363,7 +365,6 @@ Regenerate via the script above; never call `flatc` directly.
 - Headers (`include/flatbuffers/base.h`): version **25.1.24**
 - System `flatc` binary (mamba mts env): version **24.3.25** — mismatch
 - `mts_schema_generated.h`: asserts 25.1.24 ✓
-- `backtest_schema_generated.h`: assertion updated to 25.1.24 ✓ (was stale at 24.3.25)
 - Long-term fix: upgrade `flatc` to 25.1.24 and run `regenerate_schema.sh`
 
 `CMakeLists.txt` enforces two schema contracts:

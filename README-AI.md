@@ -124,8 +124,9 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 
 - Headers (`include/flatbuffers/base.h`): **25.1.24**
 - System `flatc` binary (mamba mts env): **24.3.25** — mismatch
-- `mts_schema_generated.h`: asserts 25.1.24 ✓
-- `backtest_schema_generated.h`: asserts 25.1.24 ✓ (updated from stale 24.3.25)
+- `mts_schema_generated.h` (also holds the backtest-artifact tables, merged 2026-10-09,
+  coherence audit §3.3 — `backtest_schema.fbs` no longer exists as a separate file): asserts
+  25.1.24 ✓
 - Long-term fix: upgrade `flatc` to 25.1.24 and run `regenerate_schema.sh`
 
 ## Standalone Analysis Tools (`tools/`)

@@ -125,7 +125,7 @@ implied), not as a new open question.
 
 ### 3.3 Schema structural debt: the two-file include relationship has two independent workarounds
 
-`backtest_schema.fbs` includes `mts_schema.fbs`. This single relationship has already forced two
+`backtest_schema.fbs` includes `mts_schema.fbs`. This single relationship had already forced two
 separate, language-specific workarounds, found independently, months apart:
 
 - **Python** (pre-existing, documented in `regenerate_schema.sh` itself, dated 2026-07-15): flatc's
@@ -143,9 +143,45 @@ separate, language-specific workarounds, found independently, months apart:
   `mts_schema_generated.h` intact) — but only because C++ headers don't re-emit included types the
   way Python's and Rust's whole-tree codegen does.
 
-**Disposition: _(operator to decide — this is schema-structure, not naming; likely needs its own
-scoped investigation into whether the include relationship can be simplified, e.g. a single merged
-schema file, before deciding fix-now vs. defer)_**
+**Disposition: FIXED, 2026-10-09 — merged the two `.fbs` files into one.** My first recommendation
+(fix only the Python/Rust *generation flags*, leave the schema structure alone) turned out to be
+wrong on two counts, both caught before implementing: (1) the operator pointed out that backtesting
+has *never been run*, so my objection to merging — "`BacktestFrame`'s `file_identifier`
+verification is load-bearing" — assumed a proven mechanism that doesn't exist; (2) testing the
+"narrow, Python-only fix" directly showed it doesn't work in isolation (`--gen-onefile` only
+resolves cross-schema references if *both* schemas use it, so even that path would have touched the
+live schema's Python packaging). With both schemas' Python-migration costs equal either way, the
+merge became the better, more permanent option.
+**The one real technical risk, checked empirically, not assumed**: FlatBuffers allows only one
+`root_type`/`file_identifier` per schema file, and `flatc` silently keeps the *last* declared one on
+conflict with zero warning (verified directly: a two-root test schema silently dropped the first
+declaration). Resolved by checking what's actually load-bearing, not what's merely declared: **all 5
+real `BacktestFrame` write call sites** (`BackTesterStudy.cpp`) call the generic
+`FinishSizePrefixed(frameOff)` with no identifier argument, and **all 6 real `Envelope` write call
+sites** (`EliteFlatBufferHelper.cpp`, `PositionManager.cpp`, `TelemetryAdapter.h`) call the generic
+`Finish(envelope)` with no identifier argument either — neither `"LBRN"` nor `"BTST"` was ever
+actually embedded by any hand-written code. Recorded as a new, separate, out-of-scope finding (both
+identifiers are schema-declared but unused), not fixed here — fixing it would have been scope creep
+beyond the structural merge.
+**Real, non-hypothetical blast radius once past that**: this wasn't a zero-cost rename.
+`src/BackTesterStudy.cpp` had a stale `#include "generated/backtest_schema_generated.h"` (removed —
+already transitively available via the precompiled header). `rewrite_generated_python_imports.sh`
+had *never* had a same-namespace-sibling rule for `MTS.Backtest` (only `MTS.Schema`/`MTS.Training`)
+— a genuinely pre-existing gap (confirmed: the script has had zero `Backtest` rules since it was
+written, unrelated to anything I changed), caught only because this session ran the first-ever real
+import of `BacktestFrame.py` (`import MTS.Backtest.BacktestRecord` failed with
+`ModuleNotFoundError: No module named 'MTS'`) — direct, concrete evidence for the operator's "we've
+never run a backtest" point. Fixed (mirrored the existing `Schema`/`Training` rules).
+**Bonus simplification, not originally planned**: merging also let Rust drop
+`--rust-module-root-file` entirely — plain `--rust` now produces one clean `mts_schema_generated.rs`
+(down from a 77-file tree), since there's no cross-file reference left to need the merge flag for.
+**Full verification chain**: schema `flatc` syntax check → full `regenerate_schema.sh` run, all
+three languages, one invocation each, all checksums pass → self-test passed → `cargo
+build/clippy/test --workspace` clean for `mts_schema` → full clean `./build_dll.sh` (one real stale
+`#include` caught and fixed, not a false alarm) → runtime Python imports verified for
+`BacktestFrame`, `BacktestRecord`, `Envelope`, `TrainingEventT` in the `lbrnet` env. Updated the four
+mirror docs (`CLAUDE.md`/`README-AI.md`/`GEMINI.md`/`copilot-instructions.md`) and one stale code
+comment that named the now-nonexistent file.
 
 ### 3.4 `regenerate_schema.sh`'s organic complexity (process debt, same root cause)
 
@@ -178,24 +214,23 @@ Recorded here so they are **not** re-litigated as new findings:
 
 ## 4. What this audit deliberately does NOT do
 
-- It does not fix anything yet for the still-open findings (§3.3, §3.4 — marked `(operator to
-  decide)`). §3.1 and §3.2 are the two findings this pass already resolved — §3.1 by executing the
-  rename, §3.2 by recognizing it as already ruled elsewhere.
+- It does not fix anything yet for the one still-open finding (§3.4 — marked `(operator to
+  decide)`). §3.1, §3.2, and §3.3 are the three findings this pass already resolved — §3.1 and §3.3
+  by executing the fix, §3.2 by recognizing it as already ruled elsewhere.
 - It does not re-survey `lbrnet`'s or `MTS`'s internal (non-schema-touching) naming conventions —
   flagged as an open follow-up, not silently skipped (§5).
-- It does not re-decide §3.5's (or now §3.1's/§3.2's) already-settled items.
+- It does not re-decide §3.5's (or now §3.1's/§3.2's/§3.3's) already-settled items.
 
 ## 5. Open questions for the operator
 
-1. Which of §3.3, §3.4 should be fixed now, vs. deferred (with a reason), vs. accepted
-   permanently? (§3.1 and §3.2 no longer need a decision here — both resolved, see their own
-   sections.)
+1. Should §3.4 be fixed now, deferred (with a reason), or accepted permanently? (§3.1, §3.2, §3.3
+   no longer need a decision here — all three resolved, see their own sections.)
 2. Should the already-ruled `MTS` → `GUI/` consolidation step (§3.2) be reprioritized earlier than
    its current place in the Phase 3 merge sequencing, given it just resolved a real, live piece of
    confusion rather than being purely a structural tidy-up?
 3. Should a follow-up pass extend this audit to `lbrnet`'s and `MTS`'s own internal naming
    conventions (C++ class names, Python module names) beyond what touches the schema, or is the
    schema surface the right boundary to stop at for now?
-4. Now that §3.1 is resolved, does the Rust-adoption roadmap's Phase 2 sequencing (paused for this
-   audit) resume as-is, or does §3.3/§3.4 warrant finishing first so the round-trip proof is written
-   against final names/structure, not ones about to change?
+4. Now that §3.1 and §3.3 are both resolved, does the Rust-adoption roadmap's Phase 2 sequencing
+   (paused for this audit) resume as-is, or does §3.4 warrant finishing first so the round-trip
+   proof is written against a final, settled process, not one still being cleaned up?

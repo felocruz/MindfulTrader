@@ -1,5 +1,4 @@
 #include "MindfulTrader_Precompiled.h"
-#include "generated/backtest_schema_generated.h"
 #include "ActivityClockManager.h"
 
 #include <algorithm>
@@ -1211,7 +1210,8 @@ static MTS::Backtest::ExitReason MapExitReason(const std::string& reason)
     if (reason == "TARGET_HIT") return MTS::Backtest::ExitReason_PROFIT_TARGET;
     if (reason == "STOP_HIT")   return MTS::Backtest::ExitReason_STOP_LOSS;
     if (reason == "TIME_STOP")  return MTS::Backtest::ExitReason_TIME_STOP;
-    // TODO(schema): add ExitReason_TRAP (+ REGIME_INVALIDATION) to backtest_schema.fbs
+    // TODO(schema): add ExitReason_TRAP (+ REGIME_INVALIDATION) to mts_schema.fbs's
+    // MTS.Backtest ExitReason enum (merged from backtest_schema.fbs 2026-10-09)
     // and regenerate, so native TRAP exits are attributable in .btst for the F_0.25
     // deploy-gate measurement. Until then TRAP maps to MANUAL (the explicit "TRAP"
     // exit-reason tag is still preserved on the Trade object).
