@@ -12,6 +12,7 @@
 //   g++ -std=c++17 -I include tests/cpp/test_rust_observation_vector_parity.cpp \
 //     rust/target/release/libmts_ffi.a -lpthread -ldl -o /tmp/parity_test && /tmp/parity_test
 
+#include "BipowerVariation.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 #include "generated/mts_core.h"
@@ -86,6 +87,31 @@ int main() {
         const float rustKurt = mts::mts_observation_vector_moors_kurtosis(returns.data(), returns.size());
         check("MoorsKurtosis: Rust matches C++ exactly", std::fabs(cppKurt - rustKurt) < 1e-5f);
     }
+
+    // --- ComputeBipowerVariation: C++ production function vs. Rust FFI wrapper (double, not float) ---
+    {
+        const double r[] = {0.01, -0.02, 0.03};
+        const double cppBv = ComputeBipowerVariation(r, 3);
+        const double rustBv = mts::mts_observation_vector_compute_bipower_variation(r, 3);
+        check("ComputeBipowerVariation hand-computed window: Rust matches C++ exactly",
+              std::fabs(cppBv - rustBv) < 1e-12);
+    }
+    {
+        const auto walk = MakeWalk(101, 0.8, 999u);
+        std::vector<double> returns(100);
+        for (int i = 0; i < 100; ++i) {
+            returns[static_cast<std::size_t>(i)] =
+                std::log(static_cast<double>(walk[static_cast<std::size_t>(i + 1)]) /
+                          static_cast<double>(walk[static_cast<std::size_t>(i)]));
+        }
+        const double cppBv = ComputeBipowerVariation(returns.data(), static_cast<int>(returns.size()));
+        const double rustBv = mts::mts_observation_vector_compute_bipower_variation(returns.data(), returns.size());
+        check("ComputeBipowerVariation on real walk data: Rust matches C++ exactly",
+              std::fabs(cppBv - rustBv) < 1e-9);
+    }
+    check("ComputeBipowerVariation n<2: both return 0.0 (not NaN)",
+          ComputeBipowerVariation(nullptr, 0) == 0.0 &&
+          mts::mts_observation_vector_compute_bipower_variation(nullptr, 0) == 0.0);
 
     // Null/empty-input contract: Rust wrapper must not crash, must return NaN.
     {

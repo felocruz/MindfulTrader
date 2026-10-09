@@ -102,6 +102,23 @@ pub fn sevcik_fractal_dimension(prices: &[f32]) -> f32 {
     dim.clamp(1.0, 2.0)
 }
 
+/// Barndorff-Nielsen & Shephard (2004, 2006) bipower variation: a jump-robust estimator of the
+/// continuous-time variance component of a return series. Port of BipowerVariation.h's
+/// `ComputeBipowerVariation`. BV = (pi/2) * sum_{k=1}^{n-1} |returns[k-1]| * |returns[k]|.
+/// Undefined for n < 2 (no adjacent pair exists); returns 0.0 in that case, matching the C++
+/// original's neutral-value convention.
+pub fn compute_bipower_variation(returns: &[f64]) -> f64 {
+    const HALF_PI: f64 = std::f64::consts::FRAC_PI_2;
+    if returns.len() < 2 {
+        return 0.0;
+    }
+    let mut bv_sum = 0.0;
+    for k in 1..returns.len() {
+        bv_sum += returns[k - 1].abs() * returns[k].abs();
+    }
+    HALF_PI * bv_sum
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -229,5 +246,40 @@ mod tests {
         sample[0] = 50.0; // 50-sigma outlier
         let k = moors_kurtosis(&sample);
         assert!(k < 5.0, "got {k}");
+    }
+
+    // --- compute_bipower_variation: mirrors tests/cpp/test_bipower_variation.cpp exactly ---
+
+    #[test]
+    fn bipower_variation_n_below_2_returns_zero() {
+        assert_eq!(compute_bipower_variation(&[]), 0.0);
+        assert_eq!(compute_bipower_variation(&[0.01]), 0.0);
+    }
+
+    #[test]
+    fn bipower_variation_hand_computed_three_element_window() {
+        // r = {0.01, -0.02, 0.03}; BV = (pi/2) * (|0.01|*|-0.02| + |-0.02|*|0.03|)
+        //                             = (pi/2) * 0.0008
+        let r = [0.01, -0.02, 0.03];
+        let expected = std::f64::consts::FRAC_PI_2 * 0.0008;
+        let actual = compute_bipower_variation(&r);
+        assert!((actual - expected).abs() <= 1e-9 * expected.abs().max(1.0), "got {actual}, expected {expected}");
+    }
+
+    #[test]
+    fn bipower_variation_single_tick_jump_inflates_rv_far_more_than_bv() {
+        let calm = [0.001, -0.0012, 0.0009, -0.0011, 0.0010];
+        let rv_calm: f64 = calm.iter().map(|x| x * x).sum();
+        let bv_calm = compute_bipower_variation(&calm);
+
+        let mut jump = calm;
+        jump[2] = 0.05; // one 50-sigma-scale outlier tick
+        let rv_jump: f64 = jump.iter().map(|x| x * x).sum();
+        let bv_jump = compute_bipower_variation(&jump);
+
+        let rv_inflation = rv_jump / rv_calm;
+        let bv_inflation = bv_jump / bv_calm;
+        assert!(rv_inflation > 100.0, "got {rv_inflation}");
+        assert!(bv_inflation < rv_inflation / 10.0, "rv_inflation={rv_inflation} bv_inflation={bv_inflation}");
     }
 }

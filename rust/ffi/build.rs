@@ -8,7 +8,11 @@
 use std::path::PathBuf;
 
 fn main() {
-    println!("cargo:rerun-if-changed=src/lib.rs");
+    println!("cargo:rerun-if-changed=src");  // whole dir, not just lib.rs -- submodules (e.g.
+                                              // observation_vector.rs) need to trigger a regen too;
+                                              // a single-file watch silently goes stale otherwise
+                                              // (cargo only honors explicitly-listed paths once any
+                                              // rerun-if-changed is emitted at all)
     println!("cargo:rerun-if-changed=cbindgen.toml");
     println!("cargo:rerun-if-changed=build.rs");
 

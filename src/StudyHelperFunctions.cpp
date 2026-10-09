@@ -2581,6 +2581,31 @@ void UpdateObservationVectorSubgraphs(
 /// CANONICAL OBSERVATIONDATA VECTOR IMPLEMENTATIONS
 /// ============================================================================
 
+#ifdef MTS_WITH_RUST
+namespace {
+// Shadow-mode validation shared by CalculateLogScaleRatio/CalculateLogScaleExpansionRatio's
+// window-BV lambdas below (docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md
+// Phase 2). Compares and logs only -- `cppResult` remains the only value either lambda returns.
+// One shared loggedMatchOnce across both call sites: the goal is proof the Rust port executes and
+// matches at all, not per-call-site bookkeeping.
+void ShadowCheckBipowerVariation(const double* returns, int n, double cppResult) {
+    const double rustResult =
+        mts::mts_observation_vector_compute_bipower_variation(returns, static_cast<std::size_t>(n));
+    const bool matches = std::fabs(cppResult - rustResult) < 1e-9;
+    static bool loggedMatchOnce = false;
+    if (!matches) {
+        Logger::getInstance().log(
+            "MTS_WITH_RUST MISMATCH: ComputeBipowerVariation cpp=" + std::to_string(cppResult) +
+            " rust=" + std::to_string(rustResult) + " n=" + std::to_string(n));
+    } else if (!loggedMatchOnce) {
+        loggedMatchOnce = true;
+        Logger::getInstance().log(
+            "MTS_WITH_RUST: ComputeBipowerVariation shadow-mode OK (cpp==rust=" + std::to_string(cppResult) + ")");
+    }
+}
+}  // namespace
+#endif
+
 float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
     // Canonical metric: log(short_BV / long_BV) -- a short-vs-long-horizon
     // scale ratio (HAR-RV/Corsi 2009-style multi-horizon volatility
@@ -2616,7 +2641,11 @@ float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
                 logReturns[count++] = std::log(price / prevPrice);
             }
         }
-        return ComputeBipowerVariation(logReturns, count);
+        const double bv = ComputeBipowerVariation(logReturns, count);
+#ifdef MTS_WITH_RUST
+        ShadowCheckBipowerVariation(logReturns, count, bv);
+#endif
+        return bv;
     };
 
     const double short_bv = windowBipowerVariation(short_n);
@@ -2672,7 +2701,11 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
             if (idx < 1 || sc.Close[idx - 1] <= 0.0f) continue;
             window[count++] = std::log(static_cast<double>(sc.Close[idx]) / sc.Close[idx - 1]);
         }
-        return ComputeBipowerVariation(window, count);
+        const double bv = ComputeBipowerVariation(window, count);
+#ifdef MTS_WITH_RUST
+        ShadowCheckBipowerVariation(window, count, bv);
+#endif
+        return bv;
     };
 
     const double bv_full = window_bv(lookback_n);

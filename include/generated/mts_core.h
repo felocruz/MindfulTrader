@@ -29,6 +29,13 @@ float mts_observation_vector_bowley_skewness(const float *returns, uintptr_t len
 /// Port of RobustMoments.h's `MoorsKurtosis`. `returns` points to `len` log-return values.
 float mts_observation_vector_moors_kurtosis(const float *returns, uintptr_t len);
 
+/// Port of BipowerVariation.h's `ComputeBipowerVariation`. `returns` points to `len` return
+/// values (`double`, matching the C++ original -- not every dim in this codebase uses `float`).
+/// Unlike the other wrappers here, `None` (null/empty input) maps to `0.0`, not NaN -- matching
+/// `compute_bipower_variation`'s own "n < 2 -> 0.0" convention (BV has no NaN-returning case at
+/// all; a degenerate window is a genuinely zero-variance neutral reading, not "unknown").
+double mts_observation_vector_compute_bipower_variation(const double *returns, uintptr_t len);
+
 }  // extern "C"
 
 }  // namespace mts

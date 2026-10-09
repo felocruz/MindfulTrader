@@ -165,12 +165,33 @@ code, not inside a merged monorepo's `rust/`.
   and gained two new transitively-resolved system imports (`ntdll.dll`,
   `api-ms-win-core-synch-l1-2-0.dll` — Rust's panic/unwind runtime support, universally available
   OS components; `cargo rustc ... --print native-static-libs`'s own output is unchanged, so no
-  `CMakeLists.txt` edit was needed). **Not yet done**: a live Sierra Chart load to see the
-  shadow-mode log line appear on real tick data — build-level proof only so far.
+  `CMakeLists.txt` edit was needed). **Live Sierra Chart confirmation, same session**: deployed the
+  `MTS_WITH_RUST=ON` DLL to `Data/MindfulTrader.dll` (production backed up first), restarted Sierra
+  Chart — `MindfulTrader.log` showed `MTS_WITH_RUST: SevcikFractalDimension shadow-mode OK
+  (cpp==rust=1.362313)` on real TS2 bar data, zero mismatches, Sierra Chart stayed stable. This is
+  now the proven end-to-end pattern for every subsequent dim port.
+- [x] **Second port: `ComputeBipowerVariation` (`BipowerVariation.h`), done 2026-10-08** — a `double`
+  (not `float`) function, deliberately chosen for the type variety. Two real call sites
+  (`CalculateLogScaleRatio`/`CalculateLogScaleExpansionRatio`, each via a local lambda wrapping two
+  window calls) wired through one shared `ShadowCheckBipowerVariation()` helper. Same three-layer
+  proof: Rust unit tests (3 new, 9/9 total in the crate), extended
+  `test_rust_observation_vector_parity.cpp` (12/12), both cross-compiles clean, normal build
+  byte-identical (1,780,224 B), `MTS_WITH_RUST=ON` build grew 5,120 B. **Real bug found and fixed
+  along the way**: `rust/ffi/build.rs`'s `cargo:rerun-if-changed=src/lib.rs` only watched the entry
+  file, not submodules — editing `observation_vector.rs` alone silently left the cbindgen-generated
+  header stale (crate recompiled correctly; the header just didn't). Fixed to watch the whole `src`
+  directory; verified the fix by editing a submodule alone and confirming the header regenerated
+  without a manual `touch`. **Not yet done**: a live Sierra Chart confirmation for this specific
+  port (same low-urgency reasoning as the `mts_ffi` skeleton — the pattern is now proven twice over).
 - [ ] `rust/observation_vector` (`mts_observation_vector`) continues dim-by-dim against the P8
-  goldens — consolidation spec §10 steps 3-4, lifecycle-spec-equivalent gating. The two functions
-  above are the first two dims; the remaining ~16 follow the same pure-port + parity-test +
-  shadow-mode pattern.
+  goldens — consolidation spec §10 steps 3-4, lifecycle-spec-equivalent gating. Two functions landed
+  so far; remaining self-contained (no `FeatureScaler`/dim-index coupling) candidates identified:
+  `DfaHurstExponent.h` (`hurst_exponent` — this system's single worst HMM cross-state discriminator,
+  so a good next candidate), `MeanReversionCalculator.h` (`mean_rev_z`), `LiquidityFragilityEngine.h`
+  (`liq_fragility`). `EventVelocityEngine.h` (`burstiness_index`) and `CarryForwardCalculators.h` are
+  `FeatureScaler`-coupled — defer those until P2/P3 (one FlatBuffers version, `flatc --rust`) lands,
+  so their dim indices come from the schema, not literals (the exact bug class that's bitten this
+  repo twice already).
 - [ ] `rust/hmm` (`mts_hmm`) inference + regime engine against the P9 goldens — lifecycle spec Stages
   B-C.
 - [ ] Once a MindfulTrader `rust/` crate is useful to `lbrnet` or `GUI`, add it there via a cross-repo

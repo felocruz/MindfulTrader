@@ -53,12 +53,29 @@ result. `MTS_WITH_RUST=OFF` build confirmed byte-identical (1,780,224 B) to befo
 `MTS_WITH_RUST=ON` build grew 111,104 B (proves real linkage this time, not dead code) and gained 2
 new transitively-resolved system imports (Rust panic/unwind runtime support, no CMake change
 needed). Also fixed a real `scripts/build_rust.sh` arg-parsing bug (`--features <value>` never
-actually worked), found while using it for the first time. **Not yet done: a live Sierra Chart
-load** to see the shadow-mode log line on real tick data -- build-level proof only so far.
+actually worked), found while using it for the first time. **Live Sierra Chart confirmation, same
+session**: deployed the `-rust` DLL to `Data/MindfulTrader.dll` (production backed up, then
+restored after), restarted Sierra Chart -- `MindfulTrader.log` showed `MTS_WITH_RUST:
+SevcikFractalDimension shadow-mode OK (cpp==rust=1.362313)` on real tick data, zero mismatches,
+Sierra Chart stable. **The full port->wire->prove pattern is now closed end-to-end once.**
 
-Next action: plan §4 Phase 2's next items — continue `rust/observation_vector` dim-by-dim, or start
-the `rust/schema` `flatc --rust` target (P3), or `rust/hmm` against its own goldens (P9, not built).
-`lbrnet`'s P7 (86 files) remains deliberately deferred, still blocking the eventual merge's Stage 0.
+**Second port, same session: `ComputeBipowerVariation`** (`BipowerVariation.h`, a `double` function
+-- deliberate type variety vs. the first two `float` ports). Two real call sites
+(`CalculateLogScaleRatio`/`CalculateLogScaleExpansionRatio`), wired via one shared
+`ShadowCheckBipowerVariation()` helper. Same three-layer proof (Rust tests 9/9 total,
+cross-language parity test 12/12 total, both cross-compiles clean); normal build byte-identical,
+`-rust` build grew 5,120 B. **Real bug found+fixed**: `rust/ffi/build.rs` only watched `src/lib.rs`
+for rerun triggers, so editing a submodule (`observation_vector.rs`) alone left the generated
+header silently stale -- fixed to watch the whole `src` dir, verified by testing the fix directly.
+Not yet live-Sierra-tested for this specific port (low urgency -- pattern proven twice already).
+
+Next action: plan §4 Phase 2's remaining `rust/observation_vector` candidates --
+`DfaHurstExponent.h` (`hurst_exponent`, this system's single worst HMM cross-state discriminator),
+`MeanReversionCalculator.h` (`mean_rev_z`), `LiquidityFragilityEngine.h` (`liq_fragility`) are all
+clean (no `FeatureScaler`/dim-index coupling, portable right now). `EventVelocityEngine.h`
+(`burstiness_index`) and `CarryForwardCalculators.h` ARE `FeatureScaler`-coupled -- defer those
+until P2/P3 (one FlatBuffers version, `flatc --rust`) lands so dim indices come from the schema,
+not literals. `lbrnet`'s P7 (86 files) remains deliberately deferred, still blocking the merge.
 
 **P7 (settle uncommitted work) DONE for 3 of 4 repos, 2026-10-07**: `schema` (1 file), `MindfulTrader`
 (15 items), `MTS` (2 files) all committed — 11 commits total, build + native tests verified where code
