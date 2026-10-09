@@ -151,13 +151,26 @@ code, not inside a merged monorepo's `rust/`.
   authoritative cross-language proof — it feeds the *same* deterministic-LCG-generated input array
   into both the original C++ function and the Rust FFI wrapper and asserts exact equality (not just
   "similar", not just "same statistical shape"); (3) both native Linux and
-  `x86_64-pc-windows-msvc` cross-compiles build clean with the feature enabled. No production C++
-  call site wired yet (same deliberate deferral as the `mts_ffi` skeleton above) — this step's job
-  was proving the port-and-call pipeline works correctly, which the parity test now does
-  definitively.
+  `x86_64-pc-windows-msvc` cross-compiles build clean with the feature enabled.
+- [x] **First production C++ call site wired, done 2026-10-08**: `SevcikFractalDimension`'s one real
+  caller (`src/StudyHelperFunctions.cpp`'s `CalculateFractalDimension()`) now also calls
+  `mts::mts_observation_vector_sevcik_fractal_dimension()` on the exact same input, in **shadow
+  mode** — the Rust result is only ever compared and logged (via `Logger`, on mismatch always, on
+  match once per process to prove it ran without spamming every tick), never used; the C++ result
+  (`dim`) remains the only value this function returns. Guarded by the existing `MTS_WITH_RUST`
+  option throughout, so the normal (`MTS_WITH_RUST=OFF`) build is provably unaffected: rebuilt
+  `./build_dll.sh --no-clean` afterward and confirmed the DLL is byte-size-identical
+  (1,780,224 bytes) to before this change. The `MTS_WITH_RUST=ON` build grew by 111,104 bytes (real
+  evidence the Rust code is now genuinely linked in, not dead code, unlike the skeleton step above)
+  and gained two new transitively-resolved system imports (`ntdll.dll`,
+  `api-ms-win-core-synch-l1-2-0.dll` — Rust's panic/unwind runtime support, universally available
+  OS components; `cargo rustc ... --print native-static-libs`'s own output is unchanged, so no
+  `CMakeLists.txt` edit was needed). **Not yet done**: a live Sierra Chart load to see the
+  shadow-mode log line appear on real tick data — build-level proof only so far.
 - [ ] `rust/observation_vector` (`mts_observation_vector`) continues dim-by-dim against the P8
   goldens — consolidation spec §10 steps 3-4, lifecycle-spec-equivalent gating. The two functions
-  above are the first two dims; the remaining ~16 follow the same pure-port + parity-test pattern.
+  above are the first two dims; the remaining ~16 follow the same pure-port + parity-test +
+  shadow-mode pattern.
 - [ ] `rust/hmm` (`mts_hmm`) inference + regime engine against the P9 goldens — lifecycle spec Stages
   B-C.
 - [ ] Once a MindfulTrader `rust/` crate is useful to `lbrnet` or `GUI`, add it there via a cross-repo

@@ -1,12 +1,15 @@
 #!/bin/bash
-# build_rust.sh [--features hmm,obs,transport] -- cross-builds rust/ffi (mts_ffi.lib) for Sierra.
-# Called by build_dll.sh before CMake whenever MTS_WITH_RUST=ON; safe to run standalone too.
+# build_rust.sh [--features hmm,observation_vector,transport] -- cross-builds rust/ffi
+# (mts_ffi.lib) for Sierra. Called by build_dll.sh before CMake whenever MTS_WITH_RUST=ON; safe to
+# run standalone too.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/rust_windows_env.sh"
 
-FEATURES="${1:-}"
-FEATURES="${FEATURES#--features }"
+FEATURES=""
+if [ "${1:-}" = "--features" ]; then
+    FEATURES="${2:-}"
+fi
 
 cd "$ROOT/rust"   # .cargo/config.toml + rust-toolchain.toml discovery
 if [ -n "$FEATURES" ]; then

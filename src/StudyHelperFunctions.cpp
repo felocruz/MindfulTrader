@@ -13,6 +13,9 @@
 #include "BipowerVariation.h"
 #include "MeanReversionCalculator.h"
 #include "LiquidityFragilityEngine.h"
+#ifdef MTS_WITH_RUST
+#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#endif
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2781,6 +2784,28 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
     float& lastValidFractalDim = sc.GetPersistentFloat(persistentVarIndex);
 
     const float dim = SevcikFractalDimension(prices.data(), lookback_n);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md
+    // Phase 2): proves the Rust port stays correct on live data, without using its result for
+    // anything -- `dim` (computed above) remains the only value this function returns or that any
+    // downstream caller sees.
+    {
+        const float rustDim = mts::mts_observation_vector_sevcik_fractal_dimension(prices.data(), prices.size());
+        const bool bothNan = std::isnan(dim) && std::isnan(rustDim);
+        const bool matches = bothNan || std::fabs(dim - rustDim) < 1e-4f;
+        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: SevcikFractalDimension cpp=" + std::to_string(dim) +
+                " rust=" + std::to_string(rustDim) + " lookback_n=" + std::to_string(lookback_n));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: SevcikFractalDimension shadow-mode OK (cpp==rust=" + std::to_string(dim) + ")");
+        }
+    }
+#endif
 
     // Degenerate (flat price window or zero-length path) carries the last
     // valid value forward instead of a fabricated reading -- same
