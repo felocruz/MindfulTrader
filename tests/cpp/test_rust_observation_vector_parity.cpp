@@ -13,6 +13,7 @@
 //     rust/target/release/libmts_ffi.a -lpthread -ldl -o /tmp/parity_test && /tmp/parity_test
 
 #include "BipowerVariation.h"
+#include "DfaHurstExponent.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 #include "generated/mts_core.h"
@@ -119,6 +120,36 @@ int main() {
               std::isnan(mts::mts_observation_vector_sevcik_fractal_dimension(nullptr, 0)));
         check("Rust wrapper handles zero length without crashing",
               std::isnan(mts::mts_observation_vector_bowley_skewness(nullptr, 0)));
+    }
+
+    // --- DfaHurstExponent: C++ production function vs. Rust FFI wrapper, same input ---
+    for (int length : {50, 100, 200}) {
+        const auto walk = MakeWalk(length + 1, 0.8, 2026u);
+        std::array<float, 512> logReturns{};
+        for (int i = 0; i < length; ++i) {
+            const float cur = walk[static_cast<std::size_t>(i + 1)];
+            const float prev = walk[static_cast<std::size_t>(i)];
+            logReturns[static_cast<std::size_t>(i)] =
+                (cur > 0.0f && prev > 0.0f) ? std::log(cur / prev) : 0.0f;
+        }
+
+        const float cppResult = DfaHurstExponent(logReturns.data(), length, 8);
+        const float rustResult = mts::mts_observation_vector_dfa_hurst_exponent(
+            logReturns.data(), static_cast<std::size_t>(length), 8);
+
+        char label[128];
+        std::snprintf(label, sizeof(label), "DfaHurstExponent length=%d: Rust matches C++ exactly", length);
+        check(label, std::fabs(cppResult - rustResult) < 1e-5f);
+    }
+
+    // Degenerate case must agree too (both NaN): length=16 < minScale(8)*4=32.
+    {
+        const std::array<float, 16> small{0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f,
+                                           0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f};
+        const float cppResult = DfaHurstExponent(small.data(), 16, 8);
+        const float rustResult = mts::mts_observation_vector_dfa_hurst_exponent(small.data(), small.size(), 8);
+        check("DfaHurstExponent degenerate (length < minScale*4): both NaN",
+              std::isnan(cppResult) && std::isnan(rustResult));
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

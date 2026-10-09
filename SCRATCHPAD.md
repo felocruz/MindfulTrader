@@ -1,5 +1,31 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 (cont'd) — `ComputeHurstFromReturns` deleted; `hurst_exponent` ported to
+Rust (third dim), shadow-wired, build-verified; Sierra live confirmation still pending.** Entry point:
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+- **Dead code deleted** (commit `6343b41`): `ComputeHurstFromReturns` (legacy R/S Hurst, ~105 lines,
+  zero callers, superseded by DFA) — fresh usage search confirmed before deletion per Code Safety
+  Rules. `MTS_WITH_RUST=OFF` DLL shrank by exactly 512 bytes, confirming genuine removal.
+- **`hurst_exponent` (`DfaHurstExponent.h`) ported to Rust, third dim in the proven pattern**: Rust
+  unit tests (12/12 pass, 3 new) → `mts_observation_vector_dfa_hurst_exponent` FFI wrapper → 16/16
+  cross-language parity assertions pass (4 new, incl. the degenerate too-short-input NaN case) →
+  shadow-wired into the real `CalculateHurstExponent` call site in `StudyHelperFunctions.cpp`
+  (compare-and-log only, never used) → `MTS_WITH_RUST=OFF` build confirmed byte-identical
+  (1,779,712 bytes) → `=ON` build confirmed to link and genuinely grow (1,903,616 bytes, proving real
+  linkage not dead code; required re-running `scripts/build_rust.sh --features observation_vector`
+  for the Windows cross-target, since the native `cargo build` done for the parity test doesn't touch
+  `rust/target/x86_64-pc-windows-msvc/`).
+- **Not yet done**: live Sierra Chart confirmation (deferred — pattern already proven live twice for
+  the first two ports; reconsider if the user wants it before cutover planning begins). Not yet
+  committed/pushed as of this entry.
+
+Next action: commit + push this port, then continue `rust/observation_vector` (master spec §8.1 —
+`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (§7),
+which most other goals (§7.5, §10) explicitly depend on landing first. `lbrnet`'s P7 (86 files)
+remains deliberately deferred.
+
+---
+
 **PICK UP HERE, 2026-10-09 — five drifting specs consolidated into one; schema coherence fixes
 shipped; HMM lifecycle's `.context.parquet`/`.alpha` goal recorded.** Entry point now:
 `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — this single
@@ -41,6 +67,7 @@ Next action: continue `rust/observation_vector` (master spec §8.1 — `DfaHurst
 `MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (§7),
 which most of today's other goals (§7.5, §10) explicitly depend on landing first. `lbrnet`'s P7 (86
 files) remains deliberately deferred.
+
 
 **PICK UP HERE, 2026-10-08 — Rust-in-Sierra cleared; sequencing plan exists; `rust/ffi` skeleton
 scaffolded and link-proven.** (**Note, 2026-10-09**: the roadmap plan and infrastructure guide this

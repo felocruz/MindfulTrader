@@ -2217,6 +2217,30 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
     }
 
     const float hurst = DfaHurstExponent(logReturns.data(), length, minScale);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
+    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // anything -- `hurst` (computed above) remains the only value this function returns or that
+    // any downstream caller sees.
+    {
+        const float rustHurst = mts::mts_observation_vector_dfa_hurst_exponent(
+            logReturns.data(), static_cast<std::size_t>(length), minScale);
+        const bool bothNan = std::isnan(hurst) && std::isnan(rustHurst);
+        const bool matches = bothNan || std::fabs(hurst - rustHurst) < 1e-4f;
+        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: DfaHurstExponent cpp=" + std::to_string(hurst) +
+                " rust=" + std::to_string(rustHurst) + " length=" + std::to_string(length));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: DfaHurstExponent shadow-mode OK (cpp==rust=" + std::to_string(hurst) + ")");
+        }
+    }
+#endif
+
     if (std::isnan(hurst)) {
         return fallback_hurst();
     }

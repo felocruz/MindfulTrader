@@ -119,6 +119,142 @@ pub fn compute_bipower_variation(returns: &[f64]) -> f64 {
     HALF_PI * bv_sum
 }
 
+/// Largest window this estimator supports (matches DfaHurstExponent.h's own capacity constant --
+/// fixed-capacity stack buffers, no heap allocation, same hot-path discipline as the C++ original).
+pub const DFA_MAX_WINDOW: usize = 512;
+
+/// Detrended Fluctuation Analysis (DFA) Hurst-exponent estimator. Port of DfaHurstExponent.h.
+/// `log_returns` must already be log-returns (not prices), oldest first, most recent last -- exactly
+/// `ImbalanceBarEngine::GetImbalanceBarReturns()`'s own ordering.
+///
+/// Returns NaN for a degenerate/insufficient-data window -- callers own the carry-forward/cold-start
+/// fallback decision (this function holds no persistent state, same as the C++ original).
+///
+/// Note on the sub-16-element case: the C++ original does `length = std::clamp(length, 16,
+/// kDfaMaxWindow)`, which, if `length` is requested smaller than 16 against an *already
+/// fixed-capacity-512 buffer*, deliberately reads up to 16 elements regardless. The real call site
+/// (`CalculateHurstExponent`) already pre-clamps to >= 16 before calling, so this never fires in
+/// practice. A Rust slice has no capacity beyond its own length, so reading "up to 16" from a
+/// shorter slice would be unsound; this port instead treats a slice shorter than 16 as insufficient
+/// data (NaN) -- behaviorally identical for every reachable real input, safe for the unreachable one.
+pub fn dfa_hurst_exponent(log_returns: &[f32], min_scale: i32) -> f32 {
+    let min_scale = min_scale.clamp(4, 64) as usize;
+    if log_returns.len() < 16 {
+        return f32::NAN;
+    }
+    let length = log_returns.len().min(DFA_MAX_WINDOW);
+    if length < min_scale * 4 {
+        return f32::NAN;
+    }
+    let log_returns = &log_returns[..length];
+
+    let mut profile = [0.0f64; DFA_MAX_WINDOW];
+    let mut log_scales = [0.0f64; DFA_MAX_WINDOW];
+    let mut log_fluctuations = [0.0f64; DFA_MAX_WINDOW];
+
+    let sum_returns: f64 = log_returns.iter().map(|&x| x as f64).sum();
+    let mean_return = sum_returns / length as f64;
+
+    let mut cumulative = 0.0f64;
+    for i in 0..length {
+        cumulative += log_returns[i] as f64 - mean_return;
+        profile[i] = cumulative;
+    }
+
+    let max_scale = length / 4;
+    if max_scale <= min_scale {
+        return f32::NAN;
+    }
+
+    let step = if max_scale - min_scale > 50 { 2 } else { 1 };
+    let mut valid_scale_count = 0usize;
+
+    let mut s = min_scale;
+    while s <= max_scale {
+        let num_segments = length / s;
+        if num_segments < 1 {
+            s += step;
+            continue;
+        }
+
+        let mut total_variance = 0.0f64;
+        let mut used_segments = 0usize;
+
+        for v in 0..num_segments {
+            let start_index = v * s;
+            let n = s as f64;
+            let sum_x = n * (n - 1.0) * 0.5;
+            let sum_x2 = n * (n - 1.0) * (2.0 * n - 1.0) / 6.0;
+            let denom = n * sum_x2 - sum_x * sum_x;
+            if denom.abs() < 1e-12 {
+                continue;
+            }
+
+            let mut sum_y = 0.0f64;
+            let mut sum_xy = 0.0f64;
+            for k in 0..s {
+                let y = profile[start_index + k];
+                sum_y += y;
+                sum_xy += k as f64 * y;
+            }
+
+            let slope = (n * sum_xy - sum_x * sum_y) / denom;
+            let intercept = (sum_y - slope * sum_x) / n;
+
+            let mut ssr = 0.0f64;
+            for k in 0..s {
+                let trend = slope * k as f64 + intercept;
+                let diff = profile[start_index + k] - trend;
+                ssr += diff * diff;
+            }
+
+            total_variance += ssr / n;
+            used_segments += 1;
+        }
+
+        if used_segments > 0 {
+            let f_s = (total_variance / used_segments as f64).sqrt();
+            if f_s > 1e-12 && valid_scale_count < DFA_MAX_WINDOW {
+                log_scales[valid_scale_count] = (s as f64).ln();
+                log_fluctuations[valid_scale_count] = f_s.ln();
+                valid_scale_count += 1;
+            }
+        }
+
+        s += step;
+    }
+
+    if valid_scale_count < 2 {
+        return f32::NAN;
+    }
+
+    let n = valid_scale_count as f64;
+    let mut sum_x = 0.0f64;
+    let mut sum_y = 0.0f64;
+    let mut sum_xy = 0.0f64;
+    let mut sum_x2 = 0.0f64;
+    for i in 0..valid_scale_count {
+        let x = log_scales[i];
+        let y = log_fluctuations[i];
+        sum_x += x;
+        sum_y += y;
+        sum_xy += x * y;
+        sum_x2 += x * x;
+    }
+
+    let regression_denom = n * sum_x2 - sum_x * sum_x;
+    if regression_denom.abs() < 1e-12 {
+        return f32::NAN;
+    }
+
+    let mut hurst = ((n * sum_xy - sum_x * sum_y) / regression_denom) as f32;
+    hurst = hurst.clamp(0.0, 1.5);
+    if !hurst.is_finite() {
+        return f32::NAN;
+    }
+    hurst
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -281,5 +417,150 @@ mod tests {
         let bv_inflation = bv_jump / bv_calm;
         assert!(rv_inflation > 100.0, "got {rv_inflation}");
         assert!(bv_inflation < rv_inflation / 10.0, "rv_inflation={rv_inflation} bv_inflation={bv_inflation}");
+    }
+
+    // --- dfa_hurst_exponent: mirrors tests/cpp/test_dfa_hurst_exponent.cpp exactly ---
+
+    // Converts a chronological price walk of length+1 points into the log-returns array
+    // dfa_hurst_exponent expects (oldest first, most recent last) -- same conversion as the C++
+    // test's own `ToLogReturns`.
+    fn to_log_returns(prices: &[f32], length: usize) -> Vec<f32> {
+        (0..length)
+            .map(|i| {
+                let cur = prices[i + 1] as f64;
+                let prev = prices[i] as f64;
+                if cur > 0.0 && prev > 0.0 { (cur / prev).ln() as f32 } else { 0.0 }
+            })
+            .collect()
+    }
+
+    // Independent brute-force reference, a second implementation of the same DFA math (not calling
+    // dfa_hurst_exponent itself), matching tests/cpp/test_dfa_hurst_exponent.cpp's own
+    // `BruteForceHurst` line for line -- operating on the chronological `prices` slice directly,
+    // same price-to-return conversion, same DFA math, using Vec since this is a test-only reference,
+    // not the hot-path production function.
+    fn brute_force_hurst(prices: &[f32], length: usize, min_scale: usize) -> f64 {
+        let min_scale = min_scale.clamp(4, 64);
+        if length < min_scale * 4 {
+            return f64::NAN;
+        }
+        let log_returns = to_log_returns(prices, length);
+        let sum_returns: f64 = log_returns.iter().map(|&x| x as f64).sum();
+        let mean_return = sum_returns / length as f64;
+
+        let mut profile = vec![0.0f64; length];
+        let mut cumulative = 0.0f64;
+        for i in 0..length {
+            cumulative += log_returns[i] as f64 - mean_return;
+            profile[i] = cumulative;
+        }
+
+        let max_scale = length / 4;
+        if max_scale <= min_scale {
+            return f64::NAN;
+        }
+        let step = if max_scale - min_scale > 50 { 2 } else { 1 };
+
+        let mut log_scales = Vec::new();
+        let mut log_fluctuations = Vec::new();
+        let mut s = min_scale;
+        while s <= max_scale {
+            let num_segments = length / s;
+            if num_segments < 1 {
+                s += step;
+                continue;
+            }
+            let mut total_variance = 0.0f64;
+            let mut used_segments = 0usize;
+            for v in 0..num_segments {
+                let start_index = v * s;
+                let n = s as f64;
+                let sum_x = n * (n - 1.0) * 0.5;
+                let sum_x2 = n * (n - 1.0) * (2.0 * n - 1.0) / 6.0;
+                let denom = n * sum_x2 - sum_x * sum_x;
+                if denom.abs() < 1e-12 {
+                    continue;
+                }
+                let mut sum_y = 0.0f64;
+                let mut sum_xy = 0.0f64;
+                for k in 0..s {
+                    let y = profile[start_index + k];
+                    sum_y += y;
+                    sum_xy += k as f64 * y;
+                }
+                let slope = (n * sum_xy - sum_x * sum_y) / denom;
+                let intercept = (sum_y - slope * sum_x) / n;
+                let mut ssr = 0.0f64;
+                for k in 0..s {
+                    let trend = slope * k as f64 + intercept;
+                    let diff = profile[start_index + k] - trend;
+                    ssr += diff * diff;
+                }
+                total_variance += ssr / n;
+                used_segments += 1;
+            }
+            if used_segments > 0 {
+                let f_s = (total_variance / used_segments as f64).sqrt();
+                if f_s > 1e-12 {
+                    log_scales.push((s as f64).ln());
+                    log_fluctuations.push(f_s.ln());
+                }
+            }
+            s += step;
+        }
+        if log_scales.len() < 2 {
+            return f64::NAN;
+        }
+
+        let n = log_scales.len() as f64;
+        let mut sum_x = 0.0f64;
+        let mut sum_y = 0.0f64;
+        let mut sum_xy = 0.0f64;
+        let mut sum_x2 = 0.0f64;
+        for i in 0..log_scales.len() {
+            sum_x += log_scales[i];
+            sum_y += log_fluctuations[i];
+            sum_xy += log_scales[i] * log_fluctuations[i];
+            sum_x2 += log_scales[i] * log_scales[i];
+        }
+        let denom = n * sum_x2 - sum_x * sum_x;
+        if denom.abs() < 1e-12 {
+            return f64::NAN;
+        }
+        let hurst = (n * sum_xy - sum_x * sum_y) / denom;
+        hurst.clamp(0.0, 1.5)
+    }
+
+    #[test]
+    fn dfa_hurst_lookback_too_short_for_min_scale_times_4_is_nan() {
+        let flat = [0.001f32; 16];
+        assert!(dfa_hurst_exponent(&flat, 8).is_nan());
+    }
+
+    #[test]
+    fn dfa_hurst_matches_brute_force_reference_across_window_sizes() {
+        for &length in &[50usize, 100, 200] {
+            let walk = make_walk(length + 1, 0.8, 2026);
+            let log_returns = to_log_returns(&walk, length);
+
+            let expected = brute_force_hurst(&walk, length, 8);
+            let actual = dfa_hurst_exponent(&log_returns, 8);
+
+            assert!(
+                (expected - actual as f64).abs() < 1e-4,
+                "length={length}: expected {expected}, got {actual}"
+            );
+            assert!((0.0..=1.5).contains(&actual), "length={length}: out of contract range: {actual}");
+        }
+    }
+
+    #[test]
+    fn dfa_hurst_random_walk_estimate_is_finite_and_in_plausible_mid_range() {
+        // A pure random walk (no persistence) should land near H=0.5, not at either extreme --
+        // sanity check that the estimator actually discriminates, not just "doesn't crash".
+        let walk = make_walk(201, 1.0, 555);
+        let log_returns = to_log_returns(&walk, 200);
+        let hurst = dfa_hurst_exponent(&log_returns, 8);
+        assert!(hurst.is_finite() && hurst > 0.2 && hurst < 0.9, "got {hurst}");
     }
 }

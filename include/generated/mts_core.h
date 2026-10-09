@@ -36,6 +36,12 @@ float mts_observation_vector_moors_kurtosis(const float *returns, uintptr_t len)
 /// all; a degenerate window is a genuinely zero-variance neutral reading, not "unknown").
 double mts_observation_vector_compute_bipower_variation(const double *returns, uintptr_t len);
 
+/// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
+/// recent last.
+float mts_observation_vector_dfa_hurst_exponent(const float *log_returns,
+                                                uintptr_t len,
+                                                int32_t min_scale);
+
 }  // extern "C"
 
 }  // namespace mts

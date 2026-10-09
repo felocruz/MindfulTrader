@@ -75,3 +75,17 @@ pub extern "C" fn mts_observation_vector_compute_bipower_variation(returns: *con
         None => 0.0,
     })
 }
+
+/// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
+/// recent last.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_dfa_hurst_exponent(
+    log_returns: *const f32,
+    len: usize,
+    min_scale: i32,
+) -> f32 {
+    guard_f32(|| match unsafe { slice_or_none(log_returns, len) } {
+        Some(s) => mts_observation_vector::dfa_hurst_exponent(s, min_scale),
+        None => f32::NAN,
+    })
+}

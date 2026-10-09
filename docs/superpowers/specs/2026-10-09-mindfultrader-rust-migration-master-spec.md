@@ -40,6 +40,11 @@ here instead.
   (commit `9c2b738`). Three-layer proof pattern established (Rust unit tests mirroring C++ goldens →
   cross-language parity test → shadow-mode C++ call site, compare-only, never used → live Sierra Chart
   log confirmation). This pattern is now the template for every future port in this initiative.
+- **Third `rust/observation_vector` dim ported and shadow-wired, 2026-10-09**: `DfaHurstExponent.h`
+  (`hurst_exponent`) — same proof pattern through parity test + shadow wiring + build verification
+  (`MTS_WITH_RUST=OFF` byte-identical at 1,779,712 bytes, `=ON` links and grows to 1,903,616 bytes);
+  live Sierra Chart confirmation deferred (pattern already twice proven live). `ComputeHurstFromReturns`
+  (dead legacy R/S Hurst, zero callers) deleted in the same session (commit `6343b41`).
 - **`rust/schema` (`mts_schema`) crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -53,9 +58,8 @@ here instead.
   standalone meaning in this codebase; confirmed against the schema's own distinct `ObservationData`).
 
 **Not yet started (the next real pieces of work, in rough order):**
-1. Continue `rust/observation_vector` dim-by-dim: `DfaHurstExponent.h` (`hurst_exponent`),
-   `MeanReversionCalculator.h` (`mean_rev_z`), `LiquidityFragilityEngine.h` (`liq_fragility`) are
-   self-contained and ready now (§8.1).
+1. Continue `rust/observation_vector` dim-by-dim: `MeanReversionCalculator.h` (`mean_rev_z`),
+   `LiquidityFragilityEngine.h` (`liq_fragility`) are self-contained and ready now (§8.1).
 2. `rust/hmm` (`mts_hmm`): the Student-t HMM lifecycle (train → posteriors → live inference) — §7.
    This is the big one; most of the rest of this initiative (the `.context.parquet`/`.alpha` goal in
    §7.5, the execution-layer "all Rust" scope in §10) explicitly depends on it landing first.
@@ -582,15 +586,19 @@ changes, which don't depend on that resolution either way.
 
 **Ported, shadow-wired, live-confirmed**: `SevcikFractalDimension`, `ComputeBipowerVariation` (§0).
 
-**Ready now** (self-contained, no `FeatureScaler`/dim-index coupling): `DfaHurstExponent.h`
-(`hurst_exponent` — this system's single worst HMM cross-state discriminator, a good next candidate),
-`MeanReversionCalculator.h` (`mean_rev_z`), `LiquidityFragilityEngine.h` (`liq_fragility`).
+**Ported, shadow-wired, build-verified (OFF byte-identical, ON links+grows), not yet live-confirmed
+in Sierra Chart, 2026-10-09**: `DfaHurstExponent.h` (`hurst_exponent` — this system's single worst
+HMM cross-state discriminator). 16/16 cross-language parity assertions pass (4 new); 12/12 Rust unit
+tests pass (3 new).
+
+**Ready now** (self-contained, no `FeatureScaler`/dim-index coupling): `MeanReversionCalculator.h`
+(`mean_rev_z`), `LiquidityFragilityEngine.h` (`liq_fragility`).
 
 **Deferred until P2/P3 settle** (one FlatBuffers version lands, dim indices need to come from the
 schema, not literals — the exact bug class that has bitten this repo twice already): `EventVelocityEngine.h`
 (`burstiness_index`), `CarryForwardCalculators.h`-coupled dims.
 
-**Methodology, proven twice**: port the function → Rust unit tests mirroring the C++ test's exact
+**Methodology, proven three times**: port the function → Rust unit tests mirroring the C++ test's exact
 golden values → `mts_ffi` FFI wrapper (`(ptr, len)` shape, panic-guarded) → cross-language parity test
 (same deterministic-LCG input into both the C++ original and the Rust wrapper, exact equality) → wire
 into the real C++ call site in shadow mode (compare-and-log only, never used, logged once per process
@@ -628,9 +636,10 @@ Two dims already fully Sierra-free (bypass this file entirely): `lempel_ziv` (`I
 (reads `Subgraph_MicroAsymmetry[sc.Index]`, a Sierra subgraph array used as storage — a second kind of
 coupling besides `sc.GetPersistent*`), and exactly where `burstiness_index` is finally assembled.
 
-**Dead-code candidate, found during this trace**: `ComputeHurstFromReturns` (the old R/S Hurst, ~98
-lines) has zero callers anywhere (`src/`, `include/`, `tests/`, `tools/`) since DFA replaced it — delete
-under the standing not-in-production rule, after a full-repo usage search per the Code Safety Rules.
+**Dead code, deleted 2026-10-09**: `ComputeHurstFromReturns` (the old R/S Hurst, ~105 lines) had zero
+callers anywhere (`src/`, `include/`, `tests/`, `tools/`) since DFA replaced it — deleted under the
+standing not-in-production rule (commit `6343b41`), after a fresh full-repo usage search per the Code
+Safety Rules.
 
 ### 8.3 Port-by-port approach
 
