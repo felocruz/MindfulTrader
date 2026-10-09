@@ -138,6 +138,15 @@ code, not inside a merged monorepo's `rust/`.
 - [ ] `schema/regenerate_schema.sh` gains a `flatc --rust` target, writing into MindfulTrader's
   `rust/schema/` (P3, consolidation spec §7, infrastructure guide §5). Lives in the `schema` repo;
   no merge needed since `regenerate_schema.sh` already writes into sibling-repo paths today.
+  **Concrete implementation patterns found in `../Atratus/schema/regenerate_schema.sh` (2026-10-09,
+  infrastructure guide §5.1 has the full writeup)**: copy its atomic scratch-dir generation
+  (`.work_gen/` then copy-on-success, never generate straight into the target) and its
+  lint-suppressing `#[allow(unused_imports, dead_code, clippy::all)] pub mod ..._generated;`
+  wrapper (**necessary, not optional** — our own `[workspace.lints.clippy] all = "deny"` would
+  otherwise fail the build the moment this lands). Do NOT copy Atratus's crate placement (it dumps
+  generated Rust straight into its one do-everything `sensor_core`; we've already correctly chosen
+  a dedicated `mts_schema` crate instead) or its C++-dropping end state (not applicable — `cpp/` is
+  nowhere near a thin pump).
 - [x] **First two real `rust/observation_vector` (`mts_observation_vector`) ports, done 2026-10-08**:
   `SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` (+ their shared `EmpiricalQuantile`
   helper), ported from `include/SevcikFractalDimension.h`/`include/RobustMoments.h`. Chosen as

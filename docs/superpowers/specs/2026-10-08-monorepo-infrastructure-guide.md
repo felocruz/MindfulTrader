@@ -476,6 +476,48 @@ endif()
 - **`flatc` comes from the pinned env:** add `flatbuffers=FB_VERSION` (conda-forge ships `flatc`) to
   the env that runs the regen. The script already refuses a mismatched `flatc`; keep that check.
 
+### 5.1 From Atratus's `schema/regenerate_schema.sh`: copy this, not that (2026-10-09)
+
+Atratus already has a working `flatc --rust` pipeline (`../Atratus/schema/regenerate_schema.sh`).
+Surveyed read-only; concrete patterns worth reusing when P3 adds the Rust target to **our own**
+`schema/regenerate_schema.sh` (not a replacement for it):
+
+**Copy:**
+- **Atomic generation via a scratch directory.** Generate into a throwaway `.work_gen/` first, copy
+  into place only on success, then clean up — a failed/partial `flatc` run can never leave a
+  half-written, broken target:
+  ```bash
+  rm -rf "$WORK_DIR"; mkdir -p "$WORK_DIR"
+  flatc --rust -o "$WORK_DIR" "$SCHEMA_FILE"
+  cp "$WORK_DIR"/*.rs "$RUST_TARGET/"
+  rm -rf "$WORK_DIR"
+  ```
+- **A lint-suppressing wrapper module** around the generated code:
+  ```rust
+  #[allow(unused_imports)]
+  #[allow(dead_code)]
+  #[allow(clippy::all)]
+  pub mod mts_schema_generated;
+  ```
+  Directly necessary for us, not optional: `rust/Cargo.toml`'s `[workspace.lints.clippy] all =
+  "deny"` (§3.3) would otherwise fail the build the moment P3 lands — `flatc`-generated code is
+  noise we don't control and can't fix.
+- **A lightweight post-generation verification** (does the expected `*_generated.rs` file exist?)
+  — fold into our own script's existing freshness checks (§2.4), don't invent a second mechanism.
+
+**Do NOT copy:**
+- **Dumping the generated Rust straight into one do-everything crate.** Atratus writes directly
+  into `sensor_core/src/generated/`, so anything needing the schema must depend on all of
+  `sensor_core`. We've already correctly diverged from this (§0, §3.3): a **dedicated `mts_schema`
+  crate**, so `mts_hmm`/`mts_observation_vector`/`mts_transport` each depend on just the schema, not
+  on each other transitively — the right call given we have more, more-separable consumers than
+  Atratus does. Don't regress this under the influence of "but Atratus does it this way."
+- **Dropping C++ bindings entirely.** Atratus's script generates only Python and Rust now ("since
+  2026-10-05 the Sierra study is a tick pump linked to the Rust sensor... C++ -> Rust transition").
+  Not applicable to us: `cpp/` is nowhere near being reduced to a thin pump, so P3 is additive (a
+  third target alongside the existing C++/Python generation), never a replacement for either.
+
+
 ---
 
 ## 6. Cross-cutting runtime rules (bake into code reviews)
