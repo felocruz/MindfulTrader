@@ -2219,8 +2219,8 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
     const float hurst = DfaHurstExponent(logReturns.data(), length, minScale);
 
 #ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
-    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for
     // anything -- `hurst` (computed above) remains the only value this function returns or that
     // any downstream caller sees.
     {
@@ -2374,8 +2374,8 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) 
                                                             barRange, liveVolumeSoFar, prev_fragility);
 
 #ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
-    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for
     // anything -- `fragility` (computed above) remains the only value this function returns or
     // that any downstream caller sees.
     {
@@ -2529,8 +2529,8 @@ void UpdateObservationVectorSubgraphs(
 #ifdef MTS_WITH_RUST
 namespace {
 // Shadow-mode validation shared by CalculateLogScaleRatio/CalculateLogScaleExpansionRatio's
-// window-BV lambdas below (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
-// §8.1). Compares and logs only -- `cppResult` remains the only value either lambda returns.
+// window-BV lambdas below (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+// §5.2). Compares and logs only -- `cppResult` remains the only value either lambda returns.
 // One shared loggedMatchOnce across both call sites: the goal is proof the Rust port executes and
 // matches at all, not per-call-site bookkeeping.
 void ShadowCheckBipowerVariation(const double* returns, int n, double cppResult) {
@@ -2764,8 +2764,8 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
     const float dim = SevcikFractalDimension(prices.data(), lookback_n);
 
 #ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
-    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for
     // anything -- `dim` (computed above) remains the only value this function returns or that any
     // downstream caller sees.
     {
@@ -2832,8 +2832,8 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     const float meanRevZ = mrc::ComputeMeanReversionZ(prices.data(), n, lastValidMeanRevZ);
 
 #ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
-    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for
     // anything -- `meanRevZ` (computed above) remains the only value this function returns or that
     // any downstream caller sees.
     {

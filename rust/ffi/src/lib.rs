@@ -1,8 +1,8 @@
-//! C-ABI for MindfulTrader.dll. Rules (master spec §5/§11.5, W0s): every entry point is
+//! C-ABI for MindfulTrader.dll. Rules (plan §2/§6.5, W0s): every entry point is
 //! catch_unwind-guarded and returns a status; state is created by an explicit init and destroyed by
 //! an explicit shutdown, which the study calls on `sc.LastCallToFunction` -- never in a static
 //! destructor or DLL_PROCESS_DETACH; no thread outlives shutdown; no allocation inside a `*_step`
-//! hot-path function. See docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md.
+//! hot-path function. See docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

@@ -1,8 +1,23 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 (cont'd) — the combined "master spec & plan" doc split back into a
+separate spec + plan pair, per the operator's actual intent.** Entry points now:
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` (vision, decisions, target
+architecture, per-component design) and
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` (status, execution plan,
+infrastructure mechanics, port-by-port methodology — read its §0 first). The operator had asked
+earlier today for "a single unifying spec/plan," which I executed as one combined document; the
+operator then clarified they meant two separate documents ("I should have said spec and plan docs")
+— this is that correction, done the same day, with care taken to map every section's old number to
+its new location in whichever file it belongs in, and every external reference (CMakeLists.txt,
+rust/Cargo.toml, rust/ffi/src/lib.rs, 5 shadow-check comments in StudyHelperFunctions.cpp, this file)
+repointed accordingly. No content was lost in either direction.
+
+---
+
 **PICK UP HERE, 2026-10-09 (cont'd) — `liq_fragility` ported to Rust (fifth and final
 self-contained dim), shadow-wired, build-verified.** Entry point:
-`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0/§5.1.
 - **`liq_fragility` (`LiquidityFragilityEngine.h`) ported to Rust, fifth dim in the proven
   pattern**: Rust unit tests (22/22 pass, 5 new) →
   `mts_observation_vector_compute_liquidity_fragility` FFI wrapper (null/empty/too-short window
@@ -17,15 +32,15 @@ self-contained dim), shadow-wired, build-verified.** Entry point:
   dim-index coupling) — every remaining dim needs P2/P3 (schema-driven dim indices) first. Next
   observation-vector work is blocked until then; `rust/hmm` is the next unblocked initiative.
 
-Next action: start `rust/hmm` (master spec §7) — most other goals (§7.5 `.context.parquet`/`.alpha`
-collapse, §10 execution-layer "all Rust" scope) explicitly depend on it landing first. `lbrnet`'s P7
-(86 files) remains deliberately deferred.
+Next action: start `rust/hmm` (spec §5) — most other goals (spec §5.4 `.context.parquet`/`.alpha`
+collapse, spec §8 execution-layer "all Rust" scope) explicitly depend on it landing first. `lbrnet`'s
+P7 (86 files) remains deliberately deferred.
 
 ---
 
 **PICK UP HERE, 2026-10-09 (cont'd) — `mean_rev_z` ported to Rust (fourth dim), shadow-wired,
 build-verified; two stale duplicate ContextManager docs deleted; .vscode/settings.json now tracked.**
-Entry point: `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+Entry point: `docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0/§5.1.
 - **`mean_rev_z` (`MeanReversionCalculator.h`) ported to Rust, fourth dim in the proven pattern**:
   Rust unit tests (17/17 pass, 5 new) → `mts_observation_vector_compute_mean_reversion_z` FFI wrapper
   (note: unlike most wrappers, null/empty input carries `last_valid_value` forward, not NaN,
@@ -50,15 +65,15 @@ Entry point: `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-mas
   (ported from Atratus) travels with the repo — was previously git-ignored under a generic
   "can contain local paths/secrets" rule; reviewed its actual content first, confirmed portable.
 
-Next action: continue `rust/observation_vector` (master spec §8.1 — `LiquidityFragilityEngine.h` is
-ready now), or start `rust/hmm` (§7), which most other goals (§7.5, §10) explicitly depend on landing
+Next action: continue `rust/observation_vector` (plan §5.1 — `LiquidityFragilityEngine.h` is
+ready now), or start `rust/hmm` (spec §5), which most other goals (spec §5.4, spec §8) explicitly depend on landing
 first. `lbrnet`'s P7 (86 files) remains deliberately deferred.
 
 ---
 
 **PICK UP HERE, 2026-10-09 (cont'd) — `ComputeHurstFromReturns` deleted; `hurst_exponent` ported to
 Rust (third dim), shadow-wired, build-verified; Sierra live confirmation still pending.** Entry point:
-`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0/§5.1.
 - **Dead code deleted** (commit `6343b41`): `ComputeHurstFromReturns` (legacy R/S Hurst, ~105 lines,
   zero callers, superseded by DFA) — fresh usage search confirmed before deletion per Code Safety
   Rules. `MTS_WITH_RUST=OFF` DLL shrank by exactly 512 bytes, confirming genuine removal.
@@ -75,15 +90,20 @@ Rust (third dim), shadow-wired, build-verified; Sierra live confirmation still p
   the first two ports; reconsider if the user wants it before cutover planning begins). Not yet
   committed/pushed as of this entry.
 
-Next action: commit + push this port, then continue `rust/observation_vector` (master spec §8.1 —
-`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (§7),
-which most other goals (§7.5, §10) explicitly depend on landing first. `lbrnet`'s P7 (86 files)
+Next action: commit + push this port, then continue `rust/observation_vector` (plan §5.1 —
+`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (spec §5),
+which most other goals (spec §5.4, spec §8) explicitly depend on landing first. `lbrnet`'s P7 (86 files)
 remains deliberately deferred.
 
 ---
 
 **PICK UP HERE, 2026-10-09 — five drifting specs consolidated into one; schema coherence fixes
-shipped; HMM lifecycle's `.context.parquet`/`.alpha` goal recorded.** Entry point now:
+shipped; HMM lifecycle's `.context.parquet`/`.alpha` goal recorded.** (**Note, same day**: the
+"single document" this entry describes was itself split back into
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` +
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` a few hours later, per the
+operator's actual intent — "spec and plan docs", not one combined file — see the top entry; the
+filename below no longer exists on disk, read for history only.) Entry point then:
 `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — this single
 document replaces (deleted, content folded in) the former
 `2026-10-07-mindfultrader-monorepo-consolidation-spec.md`, `2026-10-07-rust-hmm-lifecycle-spec.md`,
@@ -104,7 +124,7 @@ this initiative; add a section to the master spec instead.**
 - A genuinely pre-existing bug caught and fixed along the way:
   `rewrite_generated_python_imports.sh` never had a same-namespace rule for `MTS.Backtest` — found
   because this was the first-ever real attempt to import `BacktestFrame.py` in this system's history.
-- HMM lifecycle spec's `.context.parquet`/`.alpha` goal recorded (master spec §7.5): once the HMM is
+- HMM lifecycle spec's `.context.parquet`/`.alpha` goal recorded (spec §5.4): once the HMM is
   in-process Rust, `EventDataCollectorStudy.cpp` can write `.context.parquet` directly, and
   `.alpha`/`TrainingEvent` can drop its redundant embedded `ObservationData` copy for a join key.
   Confirmed today's `.alpha` pipeline is genuinely two-phase (collect, then a separate later Python
@@ -114,22 +134,23 @@ this initiative; add a section to the master spec instead.**
   consumer not accounted for by the HMM-in-process goal alone.
 - Execution-layer Rust-porting scope confirmed explicit ("all Rust", not just HMM/observation_vector):
   `RiskManager`/`PositionManager`/`ExecutionGate`'s own low-level computations are equal-footing
-  candidates, no special caution tier (master spec §10).
+  candidates, no special caution tier (spec §8).
 - A DOD/performance finding from comparing against Atratus's schema: `RiskGateContext`/
-  `ImbalanceRiskGateContext` are struct-vs-table candidates (master spec §6.3) — proposed, not yet
+  `ImbalanceRiskGateContext` are struct-vs-table candidates (spec §4.3) — proposed, not yet
   implemented.
 
-Next action: continue `rust/observation_vector` (master spec §8.1 — `DfaHurstExponent.h`,
-`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (§7),
-which most of today's other goals (§7.5, §10) explicitly depend on landing first. `lbrnet`'s P7 (86
+Next action: continue `rust/observation_vector` (plan §5.1 — `DfaHurstExponent.h`,
+`MeanReversionCalculator.h`, `LiquidityFragilityEngine.h` are ready now), or start `rust/hmm` (spec §5),
+which most of today's other goals (spec §5.4, spec §8) explicitly depend on landing first. `lbrnet`'s P7 (86
 files) remains deliberately deferred.
 
 
 **PICK UP HERE, 2026-10-08 — Rust-in-Sierra cleared; sequencing plan exists; `rust/ffi` skeleton
 scaffolded and link-proven.** (**Note, 2026-10-09**: the roadmap plan and infrastructure guide this
-entry references were consolidated into
-`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — see the entry
-above; the filenames below no longer exist on disk, read for history only.)
+entry references were consolidated into a single master doc, then split back into
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` +
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` (same day) — see the top
+entry; the filenames below no longer exist on disk, read for history only.)
 `docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md`
 is the entry point: it resolves a real conflict between the two 2026-10-07 specs and the new
 `docs/superpowers/specs/2026-10-08-monorepo-infrastructure-guide.md` (written by a sibling Atratus
@@ -213,8 +234,10 @@ blocking Stage 0 of the merge.
 
 **PICK UP HERE, 2026-10-07 — monorepo consolidation + Rust HMM lifecycle, design only (W0s's kill
 criterion now passed, see above).** (**Note, 2026-10-09**: both specs below were consolidated into
-`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` — see the top entry;
-the filenames below no longer exist on disk, read for history only.) Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
+a single master doc, then split back into
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` +
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` (same day) — see the top
+entry; the filenames below no longer exist on disk, read for history only.) Two specs: `docs/superpowers/specs/2026-10-07-mindfultrader-monorepo-
 consolidation-spec.md` (merge `schema`/`MindfulTrader`→`cpp`/`lbrnet`/`MTS`→`GUI` into
 `VSCode/MindfulTrader/`; §1a is the decision log; pre-work P1-P7; Rust ZMQ transport plan) and
 `docs/superpowers/specs/2026-10-07-rust-hmm-lifecycle-spec.md` (HMM training + offline posteriors +
