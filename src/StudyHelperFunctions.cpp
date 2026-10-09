@@ -2619,6 +2619,30 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {
     float currentPrice = sc.BaseData[SC_LAST][sc.Index];
     float& lastValidFisherInfo = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::FISHER_INFO_LAST_VALID_VALUE);
     const float fisherInfo = cfc::ComputeFisherInformation(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
+    // -- `fisherInfo` (computed above) remains the only value this function returns or that any
+    // downstream caller sees.
+    {
+        const float rustFisherInfo =
+            mts::mts_observation_vector_compute_fisher_information(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
+        const bool matches = std::fabs(fisherInfo - rustFisherInfo) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeFisherInformation cpp=" + std::to_string(fisherInfo) +
+                " rust=" + std::to_string(rustFisherInfo));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeFisherInformation shadow-mode OK (cpp==rust=" +
+                std::to_string(fisherInfo) + ")");
+        }
+    }
+#endif
+
     lastValidFisherInfo = fisherInfo;
     return fisherInfo;
 }
@@ -2670,6 +2694,30 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
     // audit against the new BV-based signal (see FeatureScaler.h's dim3
     // comment).
     const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
+    // -- `logScaleExpansionRatio` (computed above) remains the only value this function returns or
+    // that any downstream caller sees.
+    {
+        const float rustLogScaleExpansionRatio = mts::mts_observation_vector_compute_burstiness_index(
+            bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
+        const bool matches = std::fabs(logScaleExpansionRatio - rustLogScaleExpansionRatio) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeBurstinessIndex(dim3) cpp=" +
+                std::to_string(logScaleExpansionRatio) + " rust=" + std::to_string(rustLogScaleExpansionRatio));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeBurstinessIndex(dim3) shadow-mode OK (cpp==rust=" +
+                std::to_string(logScaleExpansionRatio) + ")");
+        }
+    }
+#endif
+
     lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
     return logScaleExpansionRatio;
 }
@@ -2738,6 +2786,29 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
 
     float& lastValidAmihud = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE);
     const float amihud = cfc::ComputeAmihudIlliquidity(sumLogRatio, count, lastValidAmihud);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
+    // -- `amihud` (computed above) remains the only value this function returns or that any
+    // downstream caller sees.
+    {
+        const float rustAmihud = mts::mts_observation_vector_compute_amihud_illiquidity(sumLogRatio, count, lastValidAmihud);
+        const bool matches = std::fabs(amihud - rustAmihud) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeAmihudIlliquidity cpp=" + std::to_string(amihud) +
+                " rust=" + std::to_string(rustAmihud));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeAmihudIlliquidity shadow-mode OK (cpp==rust=" +
+                std::to_string(amihud) + ")");
+        }
+    }
+#endif
+
     lastValidAmihud = amihud;
     return amihud;
 }

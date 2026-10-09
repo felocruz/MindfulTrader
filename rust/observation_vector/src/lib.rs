@@ -411,6 +411,132 @@ pub fn compute_liquidity_fragility(
     (alpha * fragility_raw + (1.0 - alpha) * prev_fragility).clamp(0.0, 1.0)
 }
 
+/// Port of CarryForwardCalculators.h's `ComputeBurstinessIndex`. Despite the name, this is dim 3's
+/// (`log_scale_expansion_ratio`) real caller today, not dim 1's (`burstiness_index`, which moved to
+/// `eve::CalculateBurstinessIndex`/`calculate_burstiness_index` below, 2026-08-29) -- a historical
+/// artifact of the function name, not a current caller list; see the C++ header's own doc comment.
+/// `rv_older_rate` below the numerical floor (near-flat reference window) carries `last_valid_value`
+/// forward. `clamp_low`/`clamp_high`: the C++ original defaults to (-6.0, 6.0); callers needing that
+/// default must pass it explicitly here (Rust has no default arguments).
+pub fn compute_burstiness_index(
+    rv_recent_rate: f64,
+    rv_older_rate: f64,
+    last_valid_value: f32,
+    clamp_low: f32,
+    clamp_high: f32,
+) -> f32 {
+    const FLOOR: f64 = 1e-12;
+    if rv_older_rate < FLOOR {
+        return last_valid_value;
+    }
+    let ratio = (rv_recent_rate.max(FLOOR) / rv_older_rate).ln() as f32;
+    ratio.clamp(clamp_low, clamp_high)
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`):
+/// (high - low) / atr. `atr` at/near zero (unpopulated ATR array) carries `last_valid_value` forward.
+pub fn compute_relative_range(high: f32, low: f32, atr: f32, last_valid_value: f32) -> f32 {
+    const ATR_FLOOR: f32 = 0.00001;
+    if atr <= ATR_FLOOR {
+        return last_valid_value;
+    }
+    (high - low) / atr
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeFisherInformation` (dim 8, `fisher_info`): Fisher
+/// transform of price position within its lookback range. A flat lookback range (`max_price <=
+/// min_price`) carries `last_valid_value` forward.
+pub fn compute_fisher_information(
+    min_price: f32,
+    max_price: f32,
+    current_price: f32,
+    last_valid_value: f32,
+) -> f32 {
+    if max_price <= min_price {
+        return last_valid_value;
+    }
+    let raw_pos = (current_price - min_price) / (max_price - min_price);
+    let x = (2.0 * (raw_pos - 0.5)).clamp(-0.99, 0.99);
+    0.5 * ((1.0 + x) / (1.0 - x)).ln()
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeAmihudIlliquidity` (dim 11, `amihud_illiquidity`):
+/// geometric mean of the window's |log-return|/sqrt(dollar-volume) ratios, computed as
+/// `exp(mean of logs)` -- `sum_log_ratio` is the accumulated SUM OF LOGS of each sample's ratio (the
+/// caller accumulates `ln(ratio + eps)` per sample, not the raw ratios). Fewer than 2 valid samples
+/// carries `last_valid_value` forward.
+pub fn compute_amihud_illiquidity(sum_log_ratio: f64, count: i32, last_valid_value: f32) -> f32 {
+    if count < 2 {
+        return last_valid_value;
+    }
+    (sum_log_ratio / count as f64).exp() as f32
+}
+
+/// Burstiness Index (dim 1, `burstiness_index`): robust Index of Dispersion for Counts (IDC) over
+/// K=10 fixed-width time sub-bins spanning the rolling event-timestamp window. Port of
+/// EventVelocityEngine.h's `CalculateBurstinessIndex`. `timestamps` must be chronologically ordered
+/// (oldest first); the C++ original reads this straight out of a `RingBuffer`, which iterates in that
+/// same order.
+///
+/// Degenerate defaults: fewer than `MIN_SAMPLES` (20) timestamps returns 0.0 (Poisson-neutral,
+/// insufficient data); `span == 0` (every tick in the same instant) or a zero median bin count both
+/// return +1.0 (maximally bursty by definition, not "unknown"). Range is otherwise exactly [-1, +1]
+/// via the Goh & Barabási (2008) bounded transform. See the C++ header's own doc comment for the full
+/// derivation (Daley & Vere-Jones 2003 Index of Dispersion for Counts; the `1.58113883` consistency
+/// constant is `sqrt(10)/2`, the exact Poisson(10) sigma/MAD ratio, not the standard-Normal `1.4826`).
+pub fn calculate_burstiness_index(timestamps: &[u64]) -> f32 {
+    const BINS: usize = 10;
+    const MIN_SAMPLES: usize = 20;
+    let n = timestamps.len();
+    if n < MIN_SAMPLES {
+        return 0.0;
+    }
+
+    let first = timestamps[0];
+    let last = timestamps[n - 1];
+    let span = last - first;
+    if span == 0 {
+        return 1.0;
+    }
+
+    let mut counts = [0u32; BINS];
+    for &t in timestamps {
+        let dt = t - first;
+        let mut bin = ((dt as f64 / span as f64) * BINS as f64) as usize;
+        if bin >= BINS {
+            bin = BINS - 1;
+        }
+        counts[bin] += 1;
+    }
+
+    let mut vals = [0.0f32; BINS];
+    for i in 0..BINS {
+        vals[i] = counts[i] as f32;
+    }
+
+    // Median count -- matches this repo's own nth_element(mid=K/2) convention (FeatureScaler.h's
+    // RobustLocation()), NOT the textbook averaged-middle-two for even n. A full sort gives the same
+    // value at that index as nth_element, since only the single value at `mid` is read.
+    let mut sorted = vals;
+    const MID: usize = BINS / 2;
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let median = sorted[MID];
+    if median <= 0.0 {
+        return 1.0;
+    }
+
+    let mut abs_dev = [0.0f32; BINS];
+    for i in 0..BINS {
+        abs_dev[i] = (vals[i] - median).abs();
+    }
+    abs_dev.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mad = abs_dev[MID];
+
+    const POISSON_CONSISTENCY: f32 = 1.58113883;
+    let idc = (POISSON_CONSISTENCY * mad) * (POISSON_CONSISTENCY * mad) / median;
+    (idc - 1.0) / (idc + 1.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -793,5 +919,109 @@ mod tests {
         let vol_w = [10.0f32; 10];
         let result = compute_liquidity_fragility(&range_w, &vol_w, 4.0, 400.0, 0.37);
         assert!((result - 0.37).abs() <= 1e-6);
+    }
+
+    // --- compute_burstiness_index: golden values from tests/cpp/test_carry_forward_calculators.cpp ---
+
+    #[test]
+    fn burstiness_normal_case_matches_log_ratio() {
+        let result = compute_burstiness_index(4.0, 2.0, 0.0, -6.0, 6.0);
+        assert!((result - (4.0f64 / 2.0).ln() as f32).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn burstiness_degenerate_older_rate_carries_forward() {
+        assert!((compute_burstiness_index(4.0, 1e-13, 0.42, -6.0, 6.0) - 0.42).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn burstiness_clamps_extreme_ratio() {
+        assert!((compute_burstiness_index(1e12, 1e-12, 0.0, -6.0, 6.0) - 6.0).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn burstiness_dim3_custom_bounds_preserve_real_extreme() {
+        assert!((compute_burstiness_index(0.0021062, 1.0, 0.0, -10.0, 6.0) - (-6.16)).abs() <= 0.01);
+    }
+
+    // --- compute_relative_range: golden values from tests/cpp/test_carry_forward_calculators.cpp ---
+
+    #[test]
+    fn relative_range_normal_case() {
+        assert!((compute_relative_range(105.0, 100.0, 2.5, 0.0) - 2.0).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn relative_range_degenerate_atr_carries_forward() {
+        assert!((compute_relative_range(105.0, 100.0, 0.0, 1.3) - 1.3).abs() <= 1e-4);
+    }
+
+    // --- compute_fisher_information: golden values from tests/cpp/test_carry_forward_calculators.cpp ---
+
+    #[test]
+    fn fisher_info_midpoint_price_is_zero() {
+        assert!((compute_fisher_information(100.0, 110.0, 105.0, 0.0)).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn fisher_info_near_high_is_positive() {
+        let expected = 0.5 * (1.8f32 / 0.2).ln();
+        assert!((compute_fisher_information(100.0, 110.0, 109.0, 0.0) - expected).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn fisher_info_degenerate_flat_price_carries_forward() {
+        assert!((compute_fisher_information(100.0, 100.0, 100.0, -0.85) - (-0.85)).abs() <= 1e-4);
+    }
+
+    // --- compute_amihud_illiquidity: golden values from tests/cpp/test_carry_forward_calculators.cpp ---
+
+    #[test]
+    fn amihud_normal_case_is_geometric_mean() {
+        let sum_log_ratio = 0.002f64.ln() + 0.003f64.ln() + 0.001f64.ln();
+        let result = compute_amihud_illiquidity(sum_log_ratio, 3, 0.0);
+        assert!((result - 0.0018171206).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn amihud_degenerate_count_carries_forward() {
+        assert!((compute_amihud_illiquidity(0.006f64.ln(), 1, 0.42) - 0.42).abs() <= 1e-4);
+    }
+
+    // --- calculate_burstiness_index: golden values from tests/cpp/test_event_velocity_engine.cpp ---
+
+    #[test]
+    fn calc_burstiness_below_minimum_samples_is_neutral() {
+        let ts: Vec<u64> = (0..10_000_000u64).step_by(1_000_000).collect();
+        assert_eq!(calculate_burstiness_index(&ts), 0.0);
+    }
+
+    #[test]
+    fn calc_burstiness_regular_spacing_is_minimum() {
+        let ts: Vec<u64> = (0..20_000_000u64).step_by(1_000_000).collect();
+        assert_eq!(calculate_burstiness_index(&ts), -1.0);
+    }
+
+    #[test]
+    fn calc_burstiness_all_same_instant_is_maximum() {
+        let ts = vec![5_000_000u64; 20];
+        assert_eq!(calculate_burstiness_index(&ts), 1.0);
+    }
+
+    #[test]
+    fn calc_burstiness_extreme_clustering_is_maximum() {
+        let mut ts = vec![0u64; 19];
+        ts.push(100_000_000);
+        assert_eq!(calculate_burstiness_index(&ts), 1.0);
+    }
+
+    #[test]
+    fn calc_burstiness_irregular_spacing_matches_verified_idc() {
+        let ts: Vec<u64> = vec![
+            0, 50_000, 100_000, 300_000, 1_100_000, 1_150_000, 1_200_000, 1_250_000, 2_150_000,
+            2_250_000, 2_350_000, 3_050_000, 3_100_000, 3_150_000, 3_200_000, 3_800_000,
+            4_000_000, 4_050_000, 4_950_000, 5_000_000,
+        ];
+        assert!((calculate_burstiness_index(&ts) - 0.6666667).abs() <= 1e-4);
     }
 }

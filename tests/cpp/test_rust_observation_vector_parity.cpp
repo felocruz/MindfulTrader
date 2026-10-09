@@ -13,9 +13,12 @@
 //     rust/target/release/libmts_ffi.a -lpthread -ldl -o /tmp/parity_test && /tmp/parity_test
 
 #include "BipowerVariation.h"
+#include "CarryForwardCalculators.h"
 #include "DfaHurstExponent.h"
+#include "EventVelocityEngine.h"
 #include "LiquidityFragilityEngine.h"
 #include "MeanReversionCalculator.h"
+#include "RingBuffer.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 #include "generated/mts_core.h"
@@ -227,6 +230,79 @@ int main() {
             mts::mts_observation_vector_compute_liquidity_fragility(nullptr, nullptr, 0, 4.0f, 400.0f, 0.63f);
         check("ComputeLiquidityFragility Rust wrapper: null input carries prev_fragility forward",
               std::fabs(rustResult - 0.63f) < 1e-6f);
+    }
+
+    // --- ComputeBurstinessIndex (dim3's real caller): C++ vs. Rust FFI wrapper ---
+    {
+        const float cppResult = cfc::ComputeBurstinessIndex(0.0021062, 1.0, 0.0f, -10.0f, 6.0f);
+        const float rustResult =
+            mts::mts_observation_vector_compute_burstiness_index(0.0021062, 1.0, 0.0f, -10.0f, 6.0f);
+        check("ComputeBurstinessIndex: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
+    }
+    {
+        const float cppResult = cfc::ComputeBurstinessIndex(4.0, 1e-13, 0.42f, -6.0f, 6.0f);
+        const float rustResult =
+            mts::mts_observation_vector_compute_burstiness_index(4.0, 1e-13, 0.42f, -6.0f, 6.0f);
+        check("ComputeBurstinessIndex degenerate: both carry last_valid_value=0.42 forward",
+              std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
+    }
+
+    // --- ComputeRelativeRange (dim 2): C++ vs. Rust FFI wrapper ---
+    {
+        const float cppResult = cfc::ComputeRelativeRange(105.0f, 100.0f, 2.5f, 0.0f);
+        const float rustResult = mts::mts_observation_vector_compute_relative_range(105.0f, 100.0f, 2.5f, 0.0f);
+        check("ComputeRelativeRange: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
+    }
+
+    // --- ComputeFisherInformation (dim 8): C++ vs. Rust FFI wrapper ---
+    {
+        const float cppResult = cfc::ComputeFisherInformation(100.0f, 110.0f, 109.0f, 0.0f);
+        const float rustResult = mts::mts_observation_vector_compute_fisher_information(100.0f, 110.0f, 109.0f, 0.0f);
+        check("ComputeFisherInformation: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
+    }
+    {
+        const float cppResult = cfc::ComputeFisherInformation(100.0f, 100.0f, 100.0f, -0.85f);
+        const float rustResult =
+            mts::mts_observation_vector_compute_fisher_information(100.0f, 100.0f, 100.0f, -0.85f);
+        check("ComputeFisherInformation degenerate: both carry last_valid_value=-0.85 forward",
+              std::fabs(cppResult - (-0.85f)) < 1e-6f && std::fabs(rustResult - (-0.85f)) < 1e-6f);
+    }
+
+    // --- ComputeAmihudIlliquidity (dim 11): C++ vs. Rust FFI wrapper ---
+    {
+        const double sumLogRatio = std::log(0.002) + std::log(0.003) + std::log(0.001);
+        const float cppResult = cfc::ComputeAmihudIlliquidity(sumLogRatio, 3, 0.0f);
+        const float rustResult = mts::mts_observation_vector_compute_amihud_illiquidity(sumLogRatio, 3, 0.0f);
+        check("ComputeAmihudIlliquidity: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
+    }
+
+    // --- CalculateBurstinessIndex (dim 1): C++ (RingBuffer input) vs. Rust FFI wrapper (raw slice) ---
+    {
+        RingBuffer<uint64_t, 24> ts;
+        for (uint64_t t : {0ULL, 50'000ULL, 100'000ULL, 300'000ULL, 1'100'000ULL, 1'150'000ULL,
+                           1'200'000ULL, 1'250'000ULL, 2'150'000ULL, 2'250'000ULL, 2'350'000ULL,
+                           3'050'000ULL, 3'100'000ULL, 3'150'000ULL, 3'200'000ULL, 3'800'000ULL,
+                           4'000'000ULL, 4'050'000ULL, 4'950'000ULL, 5'000'000ULL}) {
+            ts.push_back(t);
+        }
+        std::vector<uint64_t> flat;
+        for (size_t i = 0; i < ts.size(); ++i) flat.push_back(ts[i]);
+
+        const float cppResult = eve::CalculateBurstinessIndex(ts);
+        const float rustResult = mts::mts_observation_vector_calculate_burstiness_index(flat.data(), flat.size());
+        check("CalculateBurstinessIndex: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-4f);
+    }
+    {
+        // Degenerate: fewer than kMinSamples(20) -- both return the neutral 0.0 default.
+        RingBuffer<uint64_t, 16> ts;
+        for (uint64_t t = 0; t < 10'000'000; t += 1'000'000) ts.push_back(t);
+        std::vector<uint64_t> flat;
+        for (size_t i = 0; i < ts.size(); ++i) flat.push_back(ts[i]);
+
+        const float cppResult = eve::CalculateBurstinessIndex(ts);
+        const float rustResult = mts::mts_observation_vector_calculate_burstiness_index(flat.data(), flat.size());
+        check("CalculateBurstinessIndex below-minimum-samples: Rust matches C++ (both neutral 0.0)",
+              cppResult == 0.0f && rustResult == 0.0f);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

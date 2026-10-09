@@ -63,6 +63,40 @@ float mts_observation_vector_compute_liquidity_fragility(const float *range_wind
                                                          float live_volume_so_far,
                                                          float prev_fragility);
 
+/// Port of CarryForwardCalculators.h's `ComputeBurstinessIndex` (dim 3's real caller today, see the
+/// pure function's own doc comment). No null-input case (all scalar args) -- panics are still
+/// guarded, since a NaN input could still trip an unexpected path.
+float mts_observation_vector_compute_burstiness_index(double rv_recent_rate,
+                                                      double rv_older_rate,
+                                                      float last_valid_value,
+                                                      float clamp_low,
+                                                      float clamp_high);
+
+/// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).
+float mts_observation_vector_compute_relative_range(float high,
+                                                    float low,
+                                                    float atr,
+                                                    float last_valid_value);
+
+/// Port of CarryForwardCalculators.h's `ComputeFisherInformation` (dim 8, `fisher_info`).
+float mts_observation_vector_compute_fisher_information(float min_price,
+                                                        float max_price,
+                                                        float current_price,
+                                                        float last_valid_value);
+
+/// Port of CarryForwardCalculators.h's `ComputeAmihudIlliquidity` (dim 11, `amihud_illiquidity`).
+float mts_observation_vector_compute_amihud_illiquidity(double sum_log_ratio,
+                                                        int32_t count,
+                                                        float last_valid_value);
+
+/// Port of EventVelocityEngine.h's `CalculateBurstinessIndex` (dim 1, `burstiness_index`).
+/// `timestamps` points to `len` chronologically-ordered (oldest first) event timestamps. Null/empty
+/// input maps to NaN (not the C++ original's own "insufficient data" 0.0 -- that sentinel means
+/// something specific here, distinct from "couldn't read the input at all"; callers already must
+/// distinguish a real 0.0 reading from a dropped call via the wrapper boundary like every other
+/// wrapper in this file).
+float mts_observation_vector_calculate_burstiness_index(const uint64_t *timestamps, uintptr_t len);
+
 }  // extern "C"
 
 }  // namespace mts

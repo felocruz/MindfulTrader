@@ -1,5 +1,8 @@
 #include "MindfulTrader_Precompiled.h"
 #include "CarryForwardCalculators.h"
+#ifdef MTS_WITH_RUST
+#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#endif
 
 /*==========================================================================*/
 // Helper Functions (Pure Logic)
@@ -271,6 +274,29 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
     float atr = Array_ImpulseATR[sc.Index];
     float& lastValidRelRange = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::RELATIVE_RANGE_LAST_VALID_VALUE);
     float relRange = cfc::ComputeRelativeRange(sc.High[sc.Index], sc.Low[sc.Index], atr, lastValidRelRange);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
+    // -- `relRange` (computed above) remains the only value used below.
+    {
+        const float rustRelRange =
+            mts::mts_observation_vector_compute_relative_range(sc.High[sc.Index], sc.Low[sc.Index], atr, lastValidRelRange);
+        const bool matches = std::fabs(relRange - rustRelRange) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeRelativeRange cpp=" + std::to_string(relRange) +
+                " rust=" + std::to_string(rustRelRange));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeRelativeRange shadow-mode OK (cpp==rust=" +
+                std::to_string(relRange) + ")");
+        }
+    }
+#endif
+
     lastValidRelRange = relRange;
     // Push directly to ContextManager.
 
@@ -796,6 +822,30 @@ SCSFExport scsf_Screen2_KeltnerChannel(SCStudyInterfaceRef sc)
         // (docs/superpowers/plans/2026-08-12-statistical-context-relrange-sentinel-gap.md).
         float& lastValidCtxRelRange = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::CTX_REL_RANGE_LAST_VALID_VALUE);
         ctx.relRange = cfc::ComputeRelativeRange(sc.High[sc.Index], sc.Low[sc.Index], Array_AtrKeltner[sc.Index], lastValidCtxRelRange);
+
+#ifdef MTS_WITH_RUST
+        // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+        // §5.2): second, independent call site for the same Rust port (StatisticalContext's sibling
+        // of dim 2's own relative_range, see this block's own comment above) -- proves the Rust port
+        // stays correct here too, without using its result for anything.
+        {
+            const float rustCtxRelRange = mts::mts_observation_vector_compute_relative_range(
+                sc.High[sc.Index], sc.Low[sc.Index], Array_AtrKeltner[sc.Index], lastValidCtxRelRange);
+            const bool matches = std::fabs(ctx.relRange - rustCtxRelRange) < 1e-4f;
+            static bool loggedMatchOnce = false;
+            if (!matches) {
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST MISMATCH: ComputeRelativeRange(ctx) cpp=" + std::to_string(ctx.relRange) +
+                    " rust=" + std::to_string(rustCtxRelRange));
+            } else if (!loggedMatchOnce) {
+                loggedMatchOnce = true;
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST: ComputeRelativeRange(ctx) shadow-mode OK (cpp==rust=" +
+                    std::to_string(ctx.relRange) + ")");
+            }
+        }
+#endif
+
         lastValidCtxRelRange = ctx.relRange;
 
         // 4. Velocity: Change in oscillator_310 (momentum acceleration)

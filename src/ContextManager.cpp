@@ -11,6 +11,9 @@
 #include "RQAEpsilonSelector.h"
 #include "DfaHurstExponent.h"
 #include "ActivityClockMeanReversion.h"
+#ifdef MTS_WITH_RUST
+#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#endif
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -1477,7 +1480,37 @@ float ContextManager::CalculateBurstinessIndex(uint64_t now_us) {
     // §3.3, Round 2) so it's independently unit-tested -- it has zero ACSIL
     // dependency and was only unreachable by a standalone test as a
     // ContextManager member function, behind sierrachart.h.
-    return eve::CalculateBurstinessIndex(m_eventTimestampsUS);
+    const float burstiness = eve::CalculateBurstinessIndex(m_eventTimestampsUS);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
+    // -- `burstiness` (computed above) remains the only value this function returns. Flattened into
+    // a fixed-size stack array (no heap allocation) to cross the (ptr, len) FFI boundary.
+    {
+        std::array<uint64_t, EVENT_VELOCITY_MAX + 1> flatTimestamps{};
+        const size_t n = m_eventTimestampsUS.size();
+        for (size_t i = 0; i < n; ++i) {
+            flatTimestamps[i] = m_eventTimestampsUS[i];
+        }
+        const float rustBurstiness =
+            mts::mts_observation_vector_calculate_burstiness_index(flatTimestamps.data(), n);
+        const bool matches = std::fabs(burstiness - rustBurstiness) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: CalculateBurstinessIndex cpp=" + std::to_string(burstiness) +
+                " rust=" + std::to_string(rustBurstiness));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: CalculateBurstinessIndex shadow-mode OK (cpp==rust=" +
+                std::to_string(burstiness) + ")");
+        }
+    }
+#endif
+
+    return burstiness;
 }
 
 // Assemble PredatorContext from the two already-computed sources — no new computation,

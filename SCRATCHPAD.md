@@ -1,17 +1,39 @@
 # Session Scratchpad — Where We Left Off
 
-**PICK UP HERE, 2026-10-09 (cont'd) — the combined "master spec & plan" doc split back into a
-separate spec + plan pair, per the operator's actual intent.** Entry points now:
-`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` (vision, decisions, target
-architecture, per-component design) and
-`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` (status, execution plan,
-infrastructure mechanics, port-by-port methodology — read its §0 first). The operator had asked
-earlier today for "a single unifying spec/plan," which I executed as one combined document; the
-operator then clarified they meant two separate documents ("I should have said spec and plan docs")
-— this is that correction, done the same day, with care taken to map every section's old number to
-its new location in whichever file it belongs in, and every external reference (CMakeLists.txt,
-rust/Cargo.toml, rust/ffi/src/lib.rs, 5 shadow-check comments in StudyHelperFunctions.cpp, this file)
-repointed accordingly. No content was lost in either direction.
+**PICK UP HERE, 2026-10-09 (cont'd) — 5 more `rust/observation_vector` dims ported (sixth through
+tenth overall), correcting a wrong "blocked on P2/P3" claim in the plan doc.** Entry point:
+`docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0/§5.1.
+- **Found and fixed a real documentation error, not just a port**: the plan claimed
+  `EventVelocityEngine.h`/`CarryForwardCalculators.h` were blocked on P2/P3 (schema-driven dim
+  indices) landing first. Direct code read (both files, plus all their real call sites in
+  `StudyHelperFunctions.cpp`/`TripleScreen2.cpp`/`ContextManager.cpp`) found **zero** schema/
+  `Contract::`/dim-index coupling anywhere — these are exactly as self-contained as the first 5
+  ported dims. The real dim-index coupling lives entirely in `FeatureScaler.h`, downstream of every
+  dim equally. **Take-away for future sessions: re-verify a "blocked" claim by direct code read
+  before trusting it, even one this plan document itself made.**
+- **Ported, 2026-10-09, same proven pattern**: `ComputeRelativeRange` (dim 2, 2 call sites in
+  `TripleScreen2.cpp`), `ComputeBurstinessIndex` (dim 3's real caller despite the name --
+  `log_scale_expansion_ratio`, not `burstiness_index`, in `StudyHelperFunctions.cpp`),
+  `ComputeFisherInformation` (dim 8, `StudyHelperFunctions.cpp`), `ComputeAmihudIlliquidity`
+  (dim 11, `StudyHelperFunctions.cpp`) -- all four from `CarryForwardCalculators.h` -- plus
+  `eve::CalculateBurstinessIndex` (dim 1, `burstiness_index`/`raschkeBurst`, `ContextManager.cpp`)
+  from `EventVelocityEngine.h`. **First ports to touch production files other than
+  `StudyHelperFunctions.cpp`** -- `TripleScreen2.cpp` and `ContextManager.cpp` both needed the
+  `MTS_WITH_RUST`/`mts_core.h` include guard added for the first time.
+- 38/38 Rust unit tests pass (16 new); 33/33 cross-language parity assertions pass (7 new); all 6
+  real call sites shadow-wired (compare-and-log only, never used). `MTS_WITH_RUST=OFF` build
+  confirmed byte-identical (1,779,712 bytes); `=ON` build confirmed to link and genuinely grow
+  (2,009,088 bytes, up from the fifth port's 1,953,280). Live Sierra Chart confirmation deferred.
+- **Every genuinely self-contained observation-vector dim is now ported (10 of ~18)** -- every
+  remaining dim has real `FeatureScaler`/dim-index coupling (not just assumed to, per the correction
+  above). Flagged one more thing worth re-checking before assuming it's genuinely blocked:
+  `recurrence_rate`/`micro_asymmetry`/wherever `burstiness_index`'s `FeatureScaler`-side calibration
+  is finally read -- not yet re-verified the same way.
+
+Next action: either re-verify the remaining "blocked" dims the same way (confirm they really do have
+`FeatureScaler`/dim-index coupling, not just assumed), or start `rust/hmm` (spec §5) -- most other
+goals (spec §5.4, spec §8) explicitly depend on it landing first. `lbrnet`'s P7 (86 files) remains
+deliberately deferred.
 
 ---
 

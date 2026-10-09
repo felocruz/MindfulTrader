@@ -62,9 +62,25 @@ design content) instead.**
 - **Fifth and final self-contained `rust/observation_vector` dim ported and shadow-wired, 2026-10-09**:
   `LiquidityFragilityEngine.h` (`liq_fragility`) — same proof pattern (26/26 cross-language parity
   assertions incl. the thin-volume/null-input carry-forward cases; `MTS_WITH_RUST=OFF` byte-identical,
-  `=ON` links and grows to 1,953,280 bytes); live Sierra Chart confirmation deferred. All dims that
-  were self-contained (no `FeatureScaler`/dim-index coupling) per §5.1 are now ported — the next
-  observation-vector dims all require P2/P3 (schema-driven dim indices) first.
+  `=ON` links and grows to 1,953,280 bytes); live Sierra Chart confirmation deferred. (This bullet's
+  "all self-contained dims now ported" claim was corrected the same day — see the next bullet; it was
+  true of the 5 dims identified *at the time*, not of every genuinely self-contained dim.)
+- **Correction + sixth through tenth `rust/observation_vector` dims ported and shadow-wired, same
+  day**: the §5.1/§1.3 "blocked on P2/P3" claim for `EventVelocityEngine.h`/`CarryForwardCalculators.h`
+  was **wrong** — verified by direct code read that neither file (nor their real production call
+  sites in `StudyHelperFunctions.cpp`/`TripleScreen2.cpp`/`ContextManager.cpp`) has any
+  schema/`Contract::`/dim-index coupling at all; the actual dim-index coupling lives entirely in
+  `FeatureScaler.h`, downstream of all 18 dims equally, not a blocker unique to these five. Ported:
+  `ComputeRelativeRange` (dim 2, 2 call sites), `ComputeBurstinessIndex` (dim 3's real caller despite
+  its name — `log_scale_expansion_ratio`, not `burstiness_index`), `ComputeFisherInformation` (dim 8),
+  `ComputeAmihudIlliquidity` (dim 11) — all four in `CarryForwardCalculators.h` — plus
+  `eve::CalculateBurstinessIndex` (dim 1, `burstiness_index`/`raschkeBurst`) in
+  `EventVelocityEngine.h`. 38/38 Rust unit tests pass (16 new); 33/33 cross-language parity
+  assertions pass (7 new). Six real production call sites shadow-wired (3 in
+  `StudyHelperFunctions.cpp`, 2 in `TripleScreen2.cpp`, 1 in `ContextManager.cpp` — the first ports
+  to touch files other than `StudyHelperFunctions.cpp`). `MTS_WITH_RUST=OFF` byte-identical
+  (1,779,712 bytes); `=ON` links and grows to 2,009,088 bytes. Live Sierra Chart confirmation
+  deferred.
 - **`rust/schema` (`mts_schema`) crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -164,7 +180,7 @@ pre-commit hook's real source needs locating before moving it; Windows-side path
 | W2 | `rust/` workspace bootstrap (toolchain, cbindgen, DLL link, CI) | P2/P3, W0s | **Mostly done** — `rust-toolchain.toml`, workspace, `mts_ffi` skeleton all exist and are proven; not yet done: `install_py_ext.sh`, `check_all.sh`, CI |
 | W3 | `mts_hmm` inference + regime engine | W2, P9 | Not started |
 | W4 | Offline posteriors tool | W3 | Not started |
-| W5 | `mts_observation_vector` port, dim by dim | W2, P8 | **Self-contained dims done** (5 of ~15); rest blocked on P2/P3 |
+| W5 | `mts_observation_vector` port, dim by dim | W2, P8 | **10 of ~18 dims done** (every genuinely self-contained one, confirmed by direct code read 2026-10-09, not just the first 5 initially found); remaining dims have real `FeatureScaler`/dim-index coupling |
 | W6 | In-process shadow mode in a full `BackTesterStudy` replay | W3, W5 | Not started |
 | W7 | Event-schema cutover: HMM output rides the event; Transformer reads it | W6 | Not started |
 | W8 | Rust training | W6 | Not started |
@@ -233,7 +249,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `mts_ffi` | Skeleton shipped, 2026-10-08 | One staticlib, features `hmm`/`observation_vector`/`transport` turn subsystems on |
-| `mts_observation_vector` | 5 of ~15 dims ported (all self-contained ones; rest blocked on P2/P3) | spec §6 / §5 below |
+| `mts_observation_vector` | 10 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
 | `mts_schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `mts_hmm` | Not started | Spec §5 |
 | `mts_transport` | Not started | Deliberately last; spec §7 |
@@ -271,15 +287,33 @@ tests pass (3 new). `MeanReversionCalculator.h` (`mean_rev_z`) — 21/21 cross-l
 assertions pass (5 new, incl. flat-window and null-input carry-forward); 17/17 Rust unit tests pass
 (5 new). `LiquidityFragilityEngine.h` (`liq_fragility`) — 26/26 cross-language parity assertions
 pass (5 new, incl. thin-volume and null-input carry-forward); 22/22 Rust unit tests pass (5 new).
+`CarryForwardCalculators.h`'s four functions — `ComputeRelativeRange` (dim 2), `ComputeBurstinessIndex`
+(dim 3's real caller, `log_scale_expansion_ratio` — the name is a historical artifact, it no longer
+feeds dim 1), `ComputeFisherInformation` (dim 8), `ComputeAmihudIlliquidity` (dim 11) — plus
+`EventVelocityEngine.h`'s `CalculateBurstinessIndex` (dim 1, `burstiness_index`/`raschkeBurst`).
+38/38 Rust unit tests pass (16 new); 33/33 cross-language parity assertions pass (7 new). Six real
+production call sites shadow-wired across three files (`StudyHelperFunctions.cpp` ×3,
+`TripleScreen2.cpp` ×2, `ContextManager.cpp` ×1 — the first ports to touch files other than
+`StudyHelperFunctions.cpp`).
 
-**None remaining self-contained** (no `FeatureScaler`/dim-index coupling) — all five such dims are
-now ported (§0 lists all five). Every remaining dim is blocked on P2/P3 (§1.1).
+**Correction, 2026-10-09 (same day)**: the "blocked on P2/P3" claim below for
+`EventVelocityEngine.h`/`CarryForwardCalculators.h` was wrong — verified by direct code read that
+neither file, nor their real call sites, has any schema/dim-index coupling. The real coupling lives
+entirely in `FeatureScaler.h`, downstream of every dim equally (including the first five ported) —
+not a blocker unique to these five. **Lesson for future sessions: re-verify a "blocked" claim by
+direct code read before accepting it, even (especially) one this document itself made.**
 
-**Deferred until P2/P3 settle** (one FlatBuffers version lands, dim indices need to come from the
-schema, not literals — the exact bug class that has bitten this repo twice already): `EventVelocityEngine.h`
-(`burstiness_index`), `CarryForwardCalculators.h`-coupled dims.
+**None remaining self-contained** (no `FeatureScaler`/dim-index coupling) — all ten dims identified
+as self-contained are now ported. Every remaining dim genuinely has `FeatureScaler`/dim-index coupling
+(not merely assumed to, per the correction above) and is blocked on P2/P3 (§1.1).
 
-**Methodology, proven five times**: see §5.2 below.
+**Not yet traced to a specific dim-index-coupled function** (spec §6.1): `relative_range`'s
+`StatisticalContext`-sibling path already ported above; still unconfirmed whether any of
+`recurrence_rate`, `micro_asymmetry`, or wherever `burstiness_index`'s `FeatureScaler`-side
+calibration is finally read have the same "looks coupled but isn't" property — worth re-checking
+before assuming they're genuinely blocked, given this session's correction above.
+
+**Methodology, proven ten times**: see §5.2 below.
 
 ### 5.2 Port-by-port approach
 

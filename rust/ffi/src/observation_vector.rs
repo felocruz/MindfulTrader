@@ -34,6 +34,15 @@ unsafe fn slice_or_none_f64<'a>(ptr: *const f64, len: usize) -> Option<&'a [f64]
     }
 }
 
+/// `u64` counterpart of `slice_or_none`, for `calculate_burstiness_index`'s timestamp buffer.
+unsafe fn slice_or_none_u64<'a>(ptr: *const u64, len: usize) -> Option<&'a [u64]> {
+    if ptr.is_null() || len == 0 {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+    }
+}
+
 /// Port of SevcikFractalDimension.h. `prices` must point to `len` chronologically-ordered points
 /// (`prices[len-1]` = the live/current bar); see `mts_observation_vector::sevcik_fractal_dimension`'s
 /// own doc comment for the exact windowing convention this replicates.
@@ -140,5 +149,75 @@ pub extern "C" fn mts_observation_vector_compute_liquidity_fragility(
             live_volume_so_far,
             prev_fragility,
         )
+    })
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeBurstinessIndex` (dim 3's real caller today, see the
+/// pure function's own doc comment). No null-input case (all scalar args) -- panics are still
+/// guarded, since a NaN input could still trip an unexpected path.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_burstiness_index(
+    rv_recent_rate: f64,
+    rv_older_rate: f64,
+    last_valid_value: f32,
+    clamp_low: f32,
+    clamp_high: f32,
+) -> f32 {
+    guard_f32(|| {
+        mts_observation_vector::compute_burstiness_index(
+            rv_recent_rate,
+            rv_older_rate,
+            last_valid_value,
+            clamp_low,
+            clamp_high,
+        )
+    })
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_relative_range(
+    high: f32,
+    low: f32,
+    atr: f32,
+    last_valid_value: f32,
+) -> f32 {
+    guard_f32(|| mts_observation_vector::compute_relative_range(high, low, atr, last_valid_value))
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeFisherInformation` (dim 8, `fisher_info`).
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_fisher_information(
+    min_price: f32,
+    max_price: f32,
+    current_price: f32,
+    last_valid_value: f32,
+) -> f32 {
+    guard_f32(|| {
+        mts_observation_vector::compute_fisher_information(min_price, max_price, current_price, last_valid_value)
+    })
+}
+
+/// Port of CarryForwardCalculators.h's `ComputeAmihudIlliquidity` (dim 11, `amihud_illiquidity`).
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_amihud_illiquidity(
+    sum_log_ratio: f64,
+    count: i32,
+    last_valid_value: f32,
+) -> f32 {
+    guard_f32(|| mts_observation_vector::compute_amihud_illiquidity(sum_log_ratio, count, last_valid_value))
+}
+
+/// Port of EventVelocityEngine.h's `CalculateBurstinessIndex` (dim 1, `burstiness_index`).
+/// `timestamps` points to `len` chronologically-ordered (oldest first) event timestamps. Null/empty
+/// input maps to NaN (not the C++ original's own "insufficient data" 0.0 -- that sentinel means
+/// something specific here, distinct from "couldn't read the input at all"; callers already must
+/// distinguish a real 0.0 reading from a dropped call via the wrapper boundary like every other
+/// wrapper in this file).
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_calculate_burstiness_index(timestamps: *const u64, len: usize) -> f32 {
+    guard_f32(|| match unsafe { slice_or_none_u64(timestamps, len) } {
+        Some(s) => mts_observation_vector::calculate_burstiness_index(s),
+        None => f32::NAN,
     })
 }
