@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["ffi", "observation_vector"]
+members = ["ffi", "observation_vector", "schema"]
 
 [workspace.package]
 edition = "2024"
@@ -15,6 +15,12 @@ publish = false
 # docs/superpowers/plans/2026-10-08-monorepo-rust-adoption-roadmap.md Phase 2.
 [workspace.dependencies]
 cbindgen = "0.29"
+# Pinned to the same 25.x line as flatc (25.1.24) and the vendored C++ runtime
+# headers (include/flatbuffers/base.h) -- "one version of everything that
+# crosses a language boundary" (infrastructure guide §2.3). The Rust runtime
+# crate doesn't embed a version static_assert like the C++ headers do, but
+# drift here would still be a silent generator/runtime API mismatch.
+flatbuffers = "25.12"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

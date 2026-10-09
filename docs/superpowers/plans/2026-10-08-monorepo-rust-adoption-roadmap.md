@@ -135,18 +135,40 @@ code, not inside a merged monorepo's `rust/`.
   expected static-linking behavior). **Not done, deliberately deferred**: no C++ call site wired, so
   no fresh Sierra Chart round-trip for this specific skeleton — operator judged the W0s spikes
   already sufficient evidence; revisit once a real subsystem gives the call site something to prove.
-- [ ] `schema/regenerate_schema.sh` gains a `flatc --rust` target, writing into MindfulTrader's
-  `rust/schema/` (P3, consolidation spec §7, infrastructure guide §5). Lives in the `schema` repo;
-  no merge needed since `regenerate_schema.sh` already writes into sibling-repo paths today.
-  **Concrete implementation patterns found in `../Atratus/schema/regenerate_schema.sh` (2026-10-09,
-  infrastructure guide §5.1 has the full writeup)**: copy its atomic scratch-dir generation
-  (`.work_gen/` then copy-on-success, never generate straight into the target) and its
-  lint-suppressing `#[allow(unused_imports, dead_code, clippy::all)] pub mod ..._generated;`
-  wrapper (**necessary, not optional** — our own `[workspace.lints.clippy] all = "deny"` would
-  otherwise fail the build the moment this lands). Do NOT copy Atratus's crate placement (it dumps
-  generated Rust straight into its one do-everything `sensor_core`; we've already correctly chosen
-  a dedicated `mts_schema` crate instead) or its C++-dropping end state (not applicable — `cpp/` is
-  nowhere near a thin pump).
+- [x] **`schema/regenerate_schema.sh` gains a `flatc --rust` target, done 2026-10-09** (schema repo
+  commit `2e9528d`), writing into MindfulTrader's `rust/schema/src/generated/` (P3, consolidation
+  spec §7, infrastructure guide §5). No merge needed — `regenerate_schema.sh` already writes into
+  sibling-repo paths today (`CPP_TARGET`/`PYTHON_TARGET`); `RUST_TARGET` is a third line in the same
+  pattern. New `--rust-only` flag; `--cpp-only`/`--python-only` now also skip Rust, matching their
+  existing "only" semantics.
+  **Two real findings from manual validation before wiring this in (both load-bearing, not
+  style)**, superseding the infrastructure guide §5.1's Atratus-derived assumptions:
+  1. **`--rust-module-root-file` is REQUIRED, not plain `--rust`.** `backtest_schema.fbs` includes
+     `mts_schema.fbs`; without this flag flatc emits two self-contained single-file modules whose
+     cross-references don't resolve (`E0433: cannot find \`schema\` in \`super\``). With it, both
+     schemas generate into the SAME output directory and merge into one shared
+     `mts::{schema,backtest,training}` module tree rooted at `generated/mod.rs` — the opposite of
+     Python's isolated-staging requirement for the same include relationship (see the new coherence
+     audit, §3.3, for why that asymmetry itself is a flagged finding).
+  2. **The lint-suppressing wrapper needs two more entries than the generic pattern
+     (infrastructure guide §5.1) assumed**: this workspace's `[workspace.lints]` additionally denies
+     `unsafe_op_in_unsafe_fn` (119 occurrences in generated code) and `clippy::unwrap_used` (446
+     occurrences — a *restriction*-group lint, not part of `clippy::all`). The real wrapper is
+     `#[allow(unused_imports, dead_code, clippy::all, clippy::unwrap_used, unsafe_op_in_unsafe_fn,
+     missing_debug_implementations)]`, not the narrower 3-item list Atratus's own crate gets away
+     with.
+  Verified: `--rust-only`/`--cpp-only`/`--python-only` dry-runs, a real (non-dry-run) `--rust-only`
+  deploy with checksum validation passing, and the `mts_schema` crate (scaffolded the same day,
+  `rust/schema/Cargo.toml`) builds + `cargo clippy` clean + `cargo test --workspace` all pass against
+  the script's real output.
+  **Paused here, 2026-10-09, before the planned cross-language round-trip proof (the schema
+  equivalent of the parity-test discipline)**: surveying the schema naming (`MTS_Envelope` is the
+  only non-PascalCase table name in either `.fbs` file) surfaced a broader operator concern about
+  incremental naming/structural incoherence across all four repos. A dedicated audit was opened
+  instead of continuing mechanically: `docs/superpowers/specs/
+  2026-10-09-cross-repo-naming-schema-coherence-audit.md`. **Do not resume the round-trip proof
+  until that audit's dispositions are decided** — writing a proof against names that are about to
+  change would need rework.
 - [x] **First two real `rust/observation_vector` (`mts_observation_vector`) ports, done 2026-10-08**:
   `SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` (+ their shared `EmpiricalQuantile`
   helper), ported from `include/SevcikFractalDimension.h`/`include/RobustMoments.h`. Chosen as
