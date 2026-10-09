@@ -195,7 +195,7 @@ re-scoring already-collected data against a newer/retrained model.
 | Crate | Status | Notes |
 |---|---|---|
 | `mts_ffi` | Skeleton shipped, 2026-10-08 | One staticlib, features `hmm`/`observation_vector`/`transport` turn subsystems on |
-| `mts_observation_vector` | 2 of ~15 dims ported | §8 |
+| `mts_observation_vector` | 5 of ~15 dims ported (all self-contained ones; rest blocked on P2/P3) | §8 |
 | `mts_schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see §6.2 for the merge that simplified this |
 | `mts_hmm` | Not started | §7 |
 | `mts_transport` | Not started | Deliberately last; §9 |
@@ -283,7 +283,7 @@ pre-commit hook's real source needs locating before moving it; Windows-side path
 | W2 | `rust/` workspace bootstrap (toolchain, cbindgen, DLL link, CI) | P2/P3, W0s | **Mostly done** — `rust-toolchain.toml`, workspace, `mts_ffi` skeleton all exist and are proven; not yet done: `install_py_ext.sh`, `check_all.sh`, CI |
 | W3 | `mts_hmm` inference + regime engine | W2, P9 | Not started |
 | W4 | Offline posteriors tool | W3 | Not started |
-| W5 | `mts_observation_vector` port, dim by dim | W2, P8 | **In progress** — 2 of ~15 dims done |
+| W5 | `mts_observation_vector` port, dim by dim | W2, P8 | **Self-contained dims done** (5 of ~15); rest blocked on P2/P3 |
 | W6 | In-process shadow mode in a full `BackTesterStudy` replay | W3, W5 | Not started |
 | W7 | Event-schema cutover: HMM output rides the event; Transformer reads it | W6 | Not started |
 | W8 | Rust training | W6 | Not started |
