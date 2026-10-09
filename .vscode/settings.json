@@ -1,0 +1,83 @@
+{
+    // ==========================================
+    // FlatBuffers Language Server Configuration
+    // ==========================================
+    "flatbuffers.languageServer.flatcPath": "flatc",
+    "flatbuffers.languageServer.importPaths": [
+        "${workspaceFolder}/../schema"
+    ],
+
+    // ==========================================
+    // Python (Ruff & Mypy Integration)
+    // ==========================================
+    "[python]": {
+        "editor.defaultFormatter": "charliermarsh.ruff",
+        "editor.formatOnSave": true,
+        "editor.codeActionsOnSave": {
+            "source.organizeImports": "explicit",
+            "source.fixAll.ruff": "explicit"
+        }
+    },
+    "python.linting.enabled": true,
+    "python.linting.mypyEnabled": true,
+    "python.linting.mypyPath": "mypy",
+
+    // ==========================================
+    // C++ and Clangd Integration
+    // ==========================================
+    "[cpp]": {
+        "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd",
+        "editor.formatOnSave": true
+    },
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--compile-commands-dir=${workspaceFolder}",
+        "--background-index",
+        "--header-insertion=never"
+    ],
+
+    // ==========================================
+    // General Editor & File Exclusion Settings
+    // ==========================================
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/Thumbs.db": true,
+        "**/build-windows": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true
+    },
+    "files.associations": {
+        "*.fbs": "flatbuffers"
+    },
+
+    // ==========================================
+    // Markdown Preview & Editing (Institutional Zinc/Cyan theme)
+    // ==========================================
+    "markdown.styles": [
+        "./assets/preview_theme.css"
+    ],
+    "markdown.preview.fontSize": 15,
+    "markdown.preview.lineHeight": 1.6,
+    "markdown.preview.scrollPreviewWithEditor": true,
+    "markdown.preview.scrollEditorWithPreview": true,
+    "markdown.preview.markEditorSelection": true,
+    "[markdown]": {
+        "editor.wordWrap": "bounded",
+        "editor.wordWrapColumn": 120,
+        "editor.lineHeight": 1.6,
+        "editor.fontSize": 14,
+        "editor.lineNumbers": "off",
+        "editor.minimap.enabled": false,
+        "editor.quickSuggestions": {
+            "comments": "off",
+            "strings": "off",
+            "other": "off"
+        },
+        "editor.parameterHints.enabled": false,
+        "editor.renderWhitespace": "none",
+        "editor.occurrencesHighlight": "off",
+        "editor.guides.indentation": false,
+        "editor.semanticHighlighting.enabled": true
+    }
+}

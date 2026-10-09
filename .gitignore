@@ -55,8 +55,11 @@ __pycache__/
 # --------------------------------
 # 2. VS Code Files
 # --------------------------------
-# Workspace settings (can contain local paths/secrets)
-.vscode/settings.json
+# Workspace settings (can contain local paths/secrets) -- EXCEPT this repo's own
+# .vscode/settings.json, which is deliberately tracked (markdown.styles preview theme,
+# clangd/ruff tool wiring) because it contains no machine-specific paths or secrets;
+# mirrors Atratus's own convention of tracking this file. (Intentionally no ignore rule
+# for .vscode/settings.json below -- do not re-add one.)
 # Task runner history
 .vscode/tasks.json
 # Launch configurations (often specific to local environment)
