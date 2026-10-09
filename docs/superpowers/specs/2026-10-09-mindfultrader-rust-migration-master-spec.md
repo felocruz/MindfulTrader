@@ -469,6 +469,24 @@ writing `<name>.context.posteriors.npy` (measured: 21,967,249 rows, record =
 `ts_us i8, bar_index i4, dominant_regime i1, p_coiled/p_gaussian_stable/p_gaussian_fragile/p_pareto f4,
 mahal_distance f4, obs_vec f4[18]`).
 
+**`ContextManager` producer-side ingress ownership (folded in from two deleted docs,
+`docs/CONTEXTMANAGER_USAGE_ASSESSMENT.md`/`docs/CONTEXTMANAGER_ASSESSMENT_SUMMARY.md`, dated March
+2026 — re-verified still accurate 2026-10-09 via fresh grep, not trusted as-is)**: statistical ingress
+into `ContextManager` is split by owning timeframe, not a single generic setter —
+`TripleScreen2.cpp` → `SetWaveContext(std::move(ctx))` (owns `volatility`/`efficiency`),
+`TripleScreen3.cpp` → `SetRippleContext(std::move(ctx))` (owns `relRange`/`velocity`) and
+`SetNormalizedAnchors(std::move(anchors))`. `EventDataCollectorStudy.cpp`/`SCStudies.cpp` both call
+`ContextManager::CheckAndTriggerHMM(...)` (collection vs. live boundary, `isDataCollection` flag) and
+`EventDataCollectorStudy.cpp` separately calls `AddToTrainingEventFB(...)` for payload enrichment. The
+legacy generic `SetStatisticalContext(...)` has zero production call sites (confirmed). This is
+background for whoever eventually Rust-ports `ContextManager` (§7.2) — it is the real shape of the
+C++-side API that port must replicate, not a single `Update(ctx)` entry point. Note: the two deleted
+docs' own "(16D)" dimensionality claim was stale even before deletion — current is 18D (§8). The
+authoritative, still-current `ContextManager` architecture doc is the workspace-shared
+`/home/rcruz/devel/VSCode/docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` (not a MindfulTrader-repo-local
+file) — it already covers this ownership split in more depth but doesn't name the
+`CheckAndTriggerHMM`/`AddToTrainingEventFB` call sites this paragraph adds.
+
 ### 7.2 Target architecture
 
 ```
