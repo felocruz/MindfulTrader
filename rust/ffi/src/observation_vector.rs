@@ -89,3 +89,23 @@ pub extern "C" fn mts_observation_vector_dfa_hurst_exponent(
         None => f32::NAN,
     })
 }
+
+/// Port of MeanReversionCalculator.h's `ComputeMeanReversionZ`. `prices` points to `len`
+/// chronologically-ordered points (`prices[len-1]` = the live/current bar). Unlike most wrappers
+/// here, a null/empty `prices` maps to `last_valid_value` (not NaN) -- matching
+/// `compute_mean_reversion_z`'s own carry-forward convention for every degenerate case, including
+/// no data at all.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_compute_mean_reversion_z(
+    prices: *const f32,
+    len: usize,
+    last_valid_value: f32,
+) -> f32 {
+    guard_f32(|| {
+        let slice: &[f32] = match unsafe { slice_or_none(prices, len) } {
+            Some(s) => s,
+            None => &[],
+        };
+        mts_observation_vector::compute_mean_reversion_z(slice, last_valid_value)
+    })
+}

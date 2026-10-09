@@ -255,6 +255,99 @@ pub fn dfa_hurst_exponent(log_returns: &[f32], min_scale: i32) -> f32 {
     hurst
 }
 
+/// Matches `MeanReversionCalculator.h`'s `kMaxLookback` -- the adaptive observation window's upper
+/// bound ([10, 40] clamp), so the stack arrays below can never be written out of range.
+pub const MEAN_REV_MAX_LOOKBACK: usize = 40;
+
+/// Median/MAD (Kim & White 2004) price z-score, suppressed by lag-1 log-return autocorrelation
+/// elasticity gating (dim 16, mean_rev_z). Port of MeanReversionCalculator.h's
+/// `ComputeMeanReversionZ`. `prices` is the chronological price window ending at the current
+/// (still-forming) bar, i.e. `prices[prices.len() - 1]` is "now".
+///
+/// Degenerate (flat window, MAD collapses below the numerical floor) returns `last_valid_value`
+/// carried forward, matching the C++ original's carry-forward convention -- not a fabricated
+/// exact-zero "no stretch" reading. Contract: result in [0, 5] for the non-degenerate path.
+///
+/// The C++ original takes a precondition on its caller ("n in [4, kMaxLookback]") that it does not
+/// enforce itself -- its fixed `std::array<double, kMaxLookback>` scratch buffers would be written
+/// out of bounds if ever called with more elements, which never happens in practice (the real call
+/// site, `CalculateMeanReversionSpeed`, always sizes its window within that bound). A Rust slice
+/// can't be written past its own bounds either way, so this port stays sound regardless by
+/// keeping only the most recent `MEAN_REV_MAX_LOOKBACK` prices (anchored at the end, since the
+/// *current* bar -- the last element -- must never be dropped) -- behaviorally identical to the
+/// C++ original for every reachable real input.
+pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
+    const MAD_CONSISTENCY: f64 = 1.4826;
+    const PRICE_EPS: f64 = 1e-6;
+
+    if prices.is_empty() {
+        return last_valid_value;
+    }
+    let n = prices.len().min(MEAN_REV_MAX_LOOKBACK);
+    let prices = &prices[prices.len() - n..];
+
+    let mut log_prices = [0.0f64; MEAN_REV_MAX_LOOKBACK];
+    for i in 0..n {
+        let p = (prices[i] as f64).max(PRICE_EPS);
+        log_prices[i] = p.ln();
+    }
+
+    let mut scratch = log_prices;
+    scratch[..n].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let price_mid = n / 2;
+    let median_log_p = scratch[price_mid];
+
+    let mut dev_scratch = [0.0f64; MEAN_REV_MAX_LOOKBACK];
+    for i in 0..n {
+        dev_scratch[i] = (log_prices[i] - median_log_p).abs();
+    }
+    dev_scratch[..n].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let mad_log_p = dev_scratch[price_mid];
+    let scale_log_p = mad_log_p * MAD_CONSISTENCY;
+
+    if scale_log_p < 1e-6 {
+        return last_valid_value;
+    }
+
+    let current_log_p = log_prices[n - 1];
+    let abs_z_price = ((current_log_p - median_log_p) / scale_log_p).abs();
+
+    // Lag-1 autocorrelation on log-returns: positive rho => momentum, negative => reversion.
+    let m = n - 1;
+    if m < 3 {
+        // Too few samples for the autocorrelation term -- genuinely computed, not degenerate, just
+        // skips the elasticity gate.
+        return (abs_z_price as f32).clamp(0.0, 5.0);
+    }
+
+    let mut returns = [0.0f64; MEAN_REV_MAX_LOOKBACK];
+    for i in 0..m {
+        let p = (prices[i + 1] as f64).max(PRICE_EPS);
+        let p_prev = (prices[i] as f64).max(PRICE_EPS);
+        returns[i] = (p / p_prev).ln();
+    }
+
+    let mut ret_scratch = returns;
+    ret_scratch[..m].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let ret_mid = m / 2;
+    let median_r = ret_scratch[ret_mid];
+
+    let mut num = 0.0f64;
+    let mut den = 0.0f64;
+    for t in 1..m {
+        let r_t = returns[t] - median_r;
+        let r_prev = returns[t - 1] - median_r;
+        num += r_t * r_prev;
+        den += r_prev * r_prev;
+    }
+
+    let rho = if den > 1e-12 { num / den } else { 0.0 };
+    let elasticity_gate = (1.0 - rho.max(0.0)).clamp(0.0, 1.0);
+    let score = abs_z_price * elasticity_gate;
+
+    (score as f32).clamp(0.0, 5.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +655,38 @@ mod tests {
         let log_returns = to_log_returns(&walk, 200);
         let hurst = dfa_hurst_exponent(&log_returns, 8);
         assert!(hurst.is_finite() && hurst > 0.2 && hurst < 0.9, "got {hurst}");
+    }
+
+    // --- compute_mean_reversion_z: golden values from tests/cpp/test_mean_reversion_calculator.cpp ---
+
+    #[test]
+    fn mean_rev_z_flat_window_carries_last_valid_forward() {
+        let prices = [100.0f32; 7];
+        assert!((compute_mean_reversion_z(&prices, 0.33) - 0.33).abs() <= 1e-4);
+    }
+
+    #[test]
+    fn mean_rev_z_n7_full_path_matches_reference() {
+        let prices = [100.0f32, 101.0, 99.0, 102.0, 98.0, 103.0, 110.0];
+        assert!((compute_mean_reversion_z(&prices, 0.0) - 2.8224230).abs() <= 1e-3);
+    }
+
+    #[test]
+    fn mean_rev_z_n4_full_path_matches_reference() {
+        let prices = [100.0f32, 102.0, 101.0, 105.0];
+        assert!((compute_mean_reversion_z(&prices, 0.0) - 0.9873349).abs() <= 1e-3);
+    }
+
+    #[test]
+    fn mean_rev_z_n3_skips_autocorrelation_matches_reference() {
+        let prices = [100.0f32, 102.0, 108.0];
+        assert!((compute_mean_reversion_z(&prices, 0.0) - 1.9468539).abs() <= 1e-3);
+    }
+
+    #[test]
+    fn mean_rev_z_result_stays_within_contract_bounds() {
+        let prices = [100.0f32, 100.0, 100.0, 100.0, 100000.0];
+        let result = compute_mean_reversion_z(&prices, 0.0);
+        assert!((0.0..=5.0).contains(&result), "got {result}");
     }
 }

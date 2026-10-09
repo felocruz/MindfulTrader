@@ -1,5 +1,38 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 (cont'd) — `mean_rev_z` ported to Rust (fourth dim), shadow-wired,
+build-verified; two stale duplicate ContextManager docs deleted; .vscode/settings.json now tracked.**
+Entry point: `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.
+- **`mean_rev_z` (`MeanReversionCalculator.h`) ported to Rust, fourth dim in the proven pattern**:
+  Rust unit tests (17/17 pass, 5 new) → `mts_observation_vector_compute_mean_reversion_z` FFI wrapper
+  (note: unlike most wrappers, null/empty input carries `last_valid_value` forward, not NaN,
+  matching the pure function's own convention) → 21/21 cross-language parity assertions pass (5 new,
+  incl. flat-window and null-input carry-forward cases) → shadow-wired into the real
+  `CalculateMeanReversionSpeed` call site in `StudyHelperFunctions.cpp` (compare-and-log only, never
+  used) → `MTS_WITH_RUST=OFF` build confirmed byte-identical (1,779,712 bytes) → `=ON` build confirmed
+  to link and genuinely grow (1,932,800 bytes, up from the third port's 1,903,616). Live Sierra Chart
+  confirmation deferred (pattern now proven 3x live/build-verified-only across 4 total ports).
+- **Two stale, duplicative docs deleted** (commit `2a659b6`): `docs/CONTEXTMANAGER_USAGE_ASSESSMENT.md`
+  and `docs/CONTEXTMANAGER_ASSESSMENT_SUMMARY.md` (both dated March 2026, zero cross-references,
+  stale "16D" dimensionality claim vs. current 18D) — re-verified their core architectural claims
+  were still accurate via fresh grep before folding the useful call-site detail into the master
+  spec's §7.1 and deleting. **Learned the hard way**: initially misdiagnosed their shared
+  `docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md` reference as a dangling link to a nonexistent file and
+  started rewriting CLAUDE.md/GEMINI.md's correct pointers to it — caught before committing: that
+  file genuinely exists, just at the **workspace-shared** `/home/rcruz/devel/VSCode/docs/` level, not
+  inside `MindfulTrader/docs/`. Reverted those two edits back to original before they were ever
+  committed. Lesson: verify file non-existence across the whole workspace tree, not just the current
+  repo, before concluding a reference is dangling.
+- `.vscode/settings.json` force-added and tracked (commit `f28c3b6`) so the markdown preview theme
+  (ported from Atratus) travels with the repo — was previously git-ignored under a generic
+  "can contain local paths/secrets" rule; reviewed its actual content first, confirmed portable.
+
+Next action: continue `rust/observation_vector` (master spec §8.1 — `LiquidityFragilityEngine.h` is
+ready now), or start `rust/hmm` (§7), which most other goals (§7.5, §10) explicitly depend on landing
+first. `lbrnet`'s P7 (86 files) remains deliberately deferred.
+
+---
+
 **PICK UP HERE, 2026-10-09 (cont'd) — `ComputeHurstFromReturns` deleted; `hurst_exponent` ported to
 Rust (third dim), shadow-wired, build-verified; Sierra live confirmation still pending.** Entry point:
 `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md` §0/§8.1.

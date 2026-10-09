@@ -2804,6 +2804,29 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
 
     float& lastValidMeanRevZ = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MEAN_REV_Z_LAST_VALID_VALUE);
     const float meanRevZ = mrc::ComputeMeanReversionZ(prices.data(), n, lastValidMeanRevZ);
+
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-master-spec.md
+    // §8.1): proves the Rust port stays correct on live data, without using its result for
+    // anything -- `meanRevZ` (computed above) remains the only value this function returns or that
+    // any downstream caller sees.
+    {
+        const float rustMeanRevZ = mts::mts_observation_vector_compute_mean_reversion_z(
+            prices.data(), static_cast<std::size_t>(n), lastValidMeanRevZ);
+        const bool matches = std::fabs(meanRevZ - rustMeanRevZ) < 1e-4f;
+        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: ComputeMeanReversionZ cpp=" + std::to_string(meanRevZ) +
+                " rust=" + std::to_string(rustMeanRevZ) + " n=" + std::to_string(n));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: ComputeMeanReversionZ shadow-mode OK (cpp==rust=" + std::to_string(meanRevZ) + ")");
+        }
+    }
+#endif
+
     lastValidMeanRevZ = meanRevZ;
     return meanRevZ;
 }

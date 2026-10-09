@@ -42,6 +42,15 @@ float mts_observation_vector_dfa_hurst_exponent(const float *log_returns,
                                                 uintptr_t len,
                                                 int32_t min_scale);
 
+/// Port of MeanReversionCalculator.h's `ComputeMeanReversionZ`. `prices` points to `len`
+/// chronologically-ordered points (`prices[len-1]` = the live/current bar). Unlike most wrappers
+/// here, a null/empty `prices` maps to `last_valid_value` (not NaN) -- matching
+/// `compute_mean_reversion_z`'s own carry-forward convention for every degenerate case, including
+/// no data at all.
+float mts_observation_vector_compute_mean_reversion_z(const float *prices,
+                                                      uintptr_t len,
+                                                      float last_valid_value);
+
 }  // extern "C"
 
 }  // namespace mts

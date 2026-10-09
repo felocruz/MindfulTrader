@@ -14,6 +14,7 @@
 
 #include "BipowerVariation.h"
 #include "DfaHurstExponent.h"
+#include "MeanReversionCalculator.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
 #include "generated/mts_core.h"
@@ -150,6 +151,37 @@ int main() {
         const float rustResult = mts::mts_observation_vector_dfa_hurst_exponent(small.data(), small.size(), 8);
         check("DfaHurstExponent degenerate (length < minScale*4): both NaN",
               std::isnan(cppResult) && std::isnan(rustResult));
+    }
+
+    // --- ComputeMeanReversionZ: C++ production function vs. Rust FFI wrapper, same input ---
+    for (int n : {10, 20, 40}) {
+        const auto walk = MakeWalk(n, 1.5, 3131u);
+
+        const float cppResult = mrc::ComputeMeanReversionZ(walk.data(), n, 0.0f);
+        const float rustResult = mts::mts_observation_vector_compute_mean_reversion_z(walk.data(), walk.size(), 0.0f);
+
+        char label[128];
+        std::snprintf(label, sizeof(label), "ComputeMeanReversionZ n=%d: Rust matches C++ exactly", n);
+        check(label, std::fabs(cppResult - rustResult) < 1e-4f);
+    }
+
+    // Degenerate case (flat window, MAD collapses to 0) must agree too: both carry the same
+    // last-valid-value forward.
+    {
+        const std::array<float, 7> flat{100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f};
+        const float cppResult = mrc::ComputeMeanReversionZ(flat.data(), 7, 0.42f);
+        const float rustResult =
+            mts::mts_observation_vector_compute_mean_reversion_z(flat.data(), flat.size(), 0.42f);
+        check("ComputeMeanReversionZ degenerate flat window: both carry last_valid_value=0.42 forward",
+              std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
+    }
+
+    // Null/empty input must also carry last_valid_value forward (the FFI wrapper's own documented
+    // convention, distinct from most other wrappers here, which map null/empty to NaN).
+    {
+        const float rustResult = mts::mts_observation_vector_compute_mean_reversion_z(nullptr, 0, 0.77f);
+        check("ComputeMeanReversionZ Rust wrapper: null input carries last_valid_value forward",
+              std::fabs(rustResult - 0.77f) < 1e-6f);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);
