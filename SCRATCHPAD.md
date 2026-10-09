@@ -46,6 +46,16 @@ unit tests (6/6), a new cross-language parity test `tests/cpp/test_rust_observat
 (9/9 -- feeds the SAME deterministic-LCG input into both the C++ original and the Rust FFI wrapper,
 asserts exact equality), and both native + Windows cross-compiles build clean.
 
+**First production call site wired in shadow mode, same session**: `CalculateFractalDimension()`
+(`src/StudyHelperFunctions.cpp`) now also calls the Rust FFI version alongside the real one,
+compares, logs via `Logger` on mismatch (always) or match (once per process), never uses the Rust
+result. `MTS_WITH_RUST=OFF` build confirmed byte-identical (1,780,224 B) to before the change;
+`MTS_WITH_RUST=ON` build grew 111,104 B (proves real linkage this time, not dead code) and gained 2
+new transitively-resolved system imports (Rust panic/unwind runtime support, no CMake change
+needed). Also fixed a real `scripts/build_rust.sh` arg-parsing bug (`--features <value>` never
+actually worked), found while using it for the first time. **Not yet done: a live Sierra Chart
+load** to see the shadow-mode log line on real tick data -- build-level proof only so far.
+
 Next action: plan §4 Phase 2's next items — continue `rust/observation_vector` dim-by-dim, or start
 the `rust/schema` `flatc --rust` target (P3), or `rust/hmm` against its own goldens (P9, not built).
 `lbrnet`'s P7 (86 files) remains deliberately deferred, still blocking the eventual merge's Stage 0.
