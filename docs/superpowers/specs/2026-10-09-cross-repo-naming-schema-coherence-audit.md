@@ -71,25 +71,34 @@ suppressing it in every language's generated-code wrapper forever.
 
 **Disposition: _(operator to decide)_**
 
-### 3.2 "MTS" is overloaded across the workspace — four different things, same four letters
+### 3.2 "MTS" is not actually overloaded — it's one acronym, correctly used, colliding with one
+already-scheduled repo rename
 
-- `/home/rcruz/devel/VSCode/MTS/` — a separate **repo** (the Plotly Dash GUI).
-- `namespace MTS.Schema` / `MTS.Training` / `MTS.Backtest` — the FlatBuffers **namespace** for the
-  entire wire protocol (consumed by `MindfulTrader`, `lbrnet`, and, confusingly, also by the `MTS`
-  repo itself, which imports `lbrnet.generated.MTS.Schema.Event`).
-- `mts_schema.fbs`, `mts_ffi`, `mts_observation_vector`, `mts_schema` — the Rust crate-naming prefix
-  introduced this session (lowercase, underscore-separated).
-- `MindfulTrader` — the repo that actually owns the schema source files, named differently from all
-  of the above.
+**Correction (operator, 2026-10-09): "MTS" = "Mindful Trading System" — the name of the entire
+system**, already documented as such elsewhere (`docs/PENDING_USER_ACTIONS.md`,
+`docs/SIERRA_CHART_SETUP.md`: the Sierra Chart study itself is literally named `Mindful Trading
+System` / `scsf_MindfulTrader`). So `namespace MTS.Schema`/`MTS.Training`/`MTS.Backtest` is **correctly
+named** — it's the wire protocol for the Mindful Trading System. The `mts_*` Rust crate prefix is
+the same acronym, consistently applied. This is not four unrelated things; it's one term, used
+correctly, in three of the four places originally listed.
 
-A newcomer reading `from lbrnet.generated.MTS.Schema.Event import Event` inside the **`MTS`** GUI
-repo has no textual signal that "`MTS`" here means "the wire-protocol namespace," not "this repo."
-This isn't cosmetic — it's a real source of the "which MTS do you mean" confusion that likely
-contributed to the fogginess prompting this audit.
+**The actual collision was narrower than first framed**: `/home/rcruz/devel/VSCode/MTS/` (the Plotly
+Dash GUI repo) happens to share the acronym with the system-wide namespace it's a client of — so
+`from lbrnet.generated.MTS.Schema.Event import Event`, read *inside* the `MTS` repo, has no textual
+signal that this `MTS` means "the wire protocol," not "this repo." That reading confusion is real
+(and is exactly the "fogginess" this audit was opened to address) — but it isn't a fresh naming
+decision to make. **It's already ruled**: `docs/superpowers/specs/
+2026-10-07-mindfultrader-monorepo-consolidation-spec.md`'s decision register (§12.4) already decided
+`MTS` (repo) → `GUI/` (subdirectory of the merged monorepo) — "ruled," not proposed. Once that merge
+step executes, the repo-path/namespace collision disappears on its own: `MTS` will unambiguously mean
+only the system-wide acronym everywhere it appears (schema namespace, Rust crate prefix, Sierra Chart
+study name), and the GUI will be addressed by path (`GUI/`), not by an acronym that collides with it.
 
-**Disposition: _(operator to decide — this is a bigger, more disruptive rename than §3.1 if pursued;
-likely a "defer, with a written reason" candidate given the GUI repo's own name is probably harder to
-change than a schema identifier)_**
+**Disposition: RESOLVED — no new action from this audit.** Tracked by the existing, already-ruled
+`MTS` → `GUI/` consolidation step. Recorded here as validating evidence for why that step matters
+(this is a second, independent case — after `backtest_schema.fbs`'s live cross-language friction,
+§3.3 — of a pre-existing ruled decision turning out to matter sooner than its own merge timeline
+implied), not as a new open question.
 
 ### 3.3 Schema structural debt: the two-file include relationship has two independent workarounds
 
@@ -146,22 +155,27 @@ Recorded here so they are **not** re-litigated as new findings:
 
 ## 4. What this audit deliberately does NOT do
 
-- It does not fix anything yet. Every disposition above is marked `(operator to decide)`.
+- It does not fix anything yet for the still-open findings (§3.1, §3.3, §3.4 — marked `(operator to
+  decide)`). §3.2 is the one finding this pass already resolved, by recognizing it as already ruled
+  elsewhere, not by deciding anything new here.
 - It does not re-survey `lbrnet`'s or `MTS`'s internal (non-schema-touching) naming conventions —
   flagged as an open follow-up, not silently skipped (§5).
-- It does not re-decide §3.5's already-settled items.
+- It does not re-decide §3.5's (or now §3.2's) already-settled items.
 
 ## 5. Open questions for the operator
 
-1. Which of §3.1-§3.4 should be fixed now, vs. deferred (with a reason), vs. accepted permanently?
-2. §3.1 (`MTS_Envelope` → `MtsEnvelope`) is the narrowest, cheapest fix here — is it the right first
-   mover, or does it need to wait for a decision on §3.2 (the broader "MTS" naming) so they don't
-   need two separate rename passes over the same identifiers?
-3. Does §3.2 (the GUI repo name vs. the wire-protocol namespace) warrant its own dedicated spec,
-   given it's more disruptive than a single schema identifier rename?
+1. Which of §3.1, §3.3, §3.4 should be fixed now, vs. deferred (with a reason), vs. accepted
+   permanently? (§3.2 no longer needs a decision here — resolved, see §3.2.)
+2. §3.1 (`MTS_Envelope` → `MtsEnvelope`) is the narrowest, cheapest fix here, and — now that §3.2 is
+   understood to be a repo-path/acronym collision rather than a naming-convention question — it no
+   longer needs to wait on anything else. Is it the right first mover?
+3. Should the already-ruled `MTS` → `GUI/` consolidation step (§3.2) be reprioritized earlier than
+   its current place in the Phase 3 merge sequencing, given it just resolved a real, live piece of
+   confusion rather than being purely a structural tidy-up?
 4. Should a follow-up pass extend this audit to `lbrnet`'s and `MTS`'s own internal naming
    conventions (C++ class names, Python module names) beyond what touches the schema, or is the
    schema surface the right boundary to stop at for now?
-5. Once dispositions are decided, does the Rust-adoption roadmap's Phase 2 sequencing (paused for
-   this audit) resume as-is, or does it need reordering so schema-naming fixes land before the
-   round-trip proof work (so the proof is written against final names, not names about to change)?
+5. Once §3.1/§3.3/§3.4 dispositions are decided, does the Rust-adoption roadmap's Phase 2 sequencing
+   (paused for this audit) resume as-is, or does it need reordering so schema-naming fixes land
+   before the round-trip proof work (so the proof is written against final names, not names about
+   to change)?
