@@ -453,6 +453,34 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // as fast_hurst_exponent's own additive twin just below.
             static float s_lastValidFastTalebKurtosis = 1.23f;
             const float moorsKurtosisRaw = MoorsKurtosis(returnsArray);
+
+#ifdef MTS_WITH_RUST
+            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+            // §5.2): proves the Rust port stays correct on live data, without using its result for
+            // anything -- `moorsKurtosisRaw` (computed above) remains the only value used below. This
+            // port (and bowleySkewnessRaw's just below) existed in rust/observation_vector/src/lib.rs
+            // with a cross-language parity test and an FFI wrapper well before this call site was
+            // found and wired -- found 2026-10-09 via a direct audit for exactly this gap (ported but
+            // never actually shadow-wired to live data).
+            {
+                const float rustMoorsKurtosis =
+                    mts::mts_observation_vector_moors_kurtosis(returnsArray.data(), returnsArray.size());
+                const bool bothNan = std::isnan(moorsKurtosisRaw) && std::isnan(rustMoorsKurtosis);
+                const bool matches = bothNan || std::fabs(moorsKurtosisRaw - rustMoorsKurtosis) < 1e-4f;
+                static bool loggedMatchOnce = false;
+                if (!matches) {
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST MISMATCH: MoorsKurtosis cpp=" + std::to_string(moorsKurtosisRaw) +
+                        " rust=" + std::to_string(rustMoorsKurtosis));
+                } else if (!loggedMatchOnce) {
+                    loggedMatchOnce = true;
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST: MoorsKurtosis shadow-mode OK (cpp==rust=" +
+                        std::to_string(moorsKurtosisRaw) + ")");
+                }
+            }
+#endif
+
             m_localRiskContext.fastTalebKurtosis = std::isfinite(moorsKurtosisRaw) ? moorsKurtosisRaw : s_lastValidFastTalebKurtosis;
             if (std::isfinite(moorsKurtosisRaw)) { s_lastValidFastTalebKurtosis = m_localRiskContext.fastTalebKurtosis; }
 
@@ -462,6 +490,30 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // old value, unlike kurtosis, so no additive twin was needed.
             static float s_lastValidSkewnessIdx = 0.0f;
             const float bowleySkewnessRaw = BowleySkewness(returnsArray);
+
+#ifdef MTS_WITH_RUST
+            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+            // §5.2): proves the Rust port stays correct on live data, without using its result for
+            // anything -- `bowleySkewnessRaw` (computed above) remains the only value used below.
+            {
+                const float rustBowleySkewness =
+                    mts::mts_observation_vector_bowley_skewness(returnsArray.data(), returnsArray.size());
+                const bool bothNan = std::isnan(bowleySkewnessRaw) && std::isnan(rustBowleySkewness);
+                const bool matches = bothNan || std::fabs(bowleySkewnessRaw - rustBowleySkewness) < 1e-4f;
+                static bool loggedMatchOnce = false;
+                if (!matches) {
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST MISMATCH: BowleySkewness cpp=" + std::to_string(bowleySkewnessRaw) +
+                        " rust=" + std::to_string(rustBowleySkewness));
+                } else if (!loggedMatchOnce) {
+                    loggedMatchOnce = true;
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST: BowleySkewness shadow-mode OK (cpp==rust=" +
+                        std::to_string(bowleySkewnessRaw) + ")");
+                }
+            }
+#endif
+
             obs[OBS_SKEWNESS] = std::isfinite(bowleySkewnessRaw) ? bowleySkewnessRaw : s_lastValidSkewnessIdx;
             if (std::isfinite(bowleySkewnessRaw)) { s_lastValidSkewnessIdx = obs[OBS_SKEWNESS]; }
 
@@ -472,6 +524,33 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // overload (StudyHelperFunctions.cpp), not borrowed from kurtosis by analogy.
             static float s_lastValidFastHurst = 0.5f;
             const float fastHurstRaw = DfaHurstExponent(returnsArray.data(), 100, 8);
+
+#ifdef MTS_WITH_RUST
+            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+            // §5.2): second, independent call site for the hurst_exponent port (the other one,
+            // StudyHelperFunctions.cpp's CalculateHurstExponent, was already shadow-wired) -- proves
+            // the Rust port stays correct here too, without using its result for anything. Found
+            // 2026-10-09 via a direct audit for exactly this kind of gap (a second real call site
+            // that was missed when the dim was first ported).
+            {
+                const float rustFastHurst = mts::mts_observation_vector_dfa_hurst_exponent(
+                    returnsArray.data(), returnsArray.size(), 8);
+                const bool bothNan = std::isnan(fastHurstRaw) && std::isnan(rustFastHurst);
+                const bool matches = bothNan || std::fabs(fastHurstRaw - rustFastHurst) < 1e-4f;
+                static bool loggedMatchOnce = false;
+                if (!matches) {
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST MISMATCH: DfaHurstExponent(fast) cpp=" + std::to_string(fastHurstRaw) +
+                        " rust=" + std::to_string(rustFastHurst));
+                } else if (!loggedMatchOnce) {
+                    loggedMatchOnce = true;
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST: DfaHurstExponent(fast) shadow-mode OK (cpp==rust=" +
+                        std::to_string(fastHurstRaw) + ")");
+                }
+            }
+#endif
+
             m_localRiskContext.fastHurstExponent = std::isfinite(fastHurstRaw) ? fastHurstRaw : s_lastValidFastHurst;
             if (std::isfinite(fastHurstRaw)) { s_lastValidFastHurst = m_localRiskContext.fastHurstExponent; }
 

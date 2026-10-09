@@ -1,5 +1,30 @@
 # Session Scratchpad — Where We Left Off
 
+**PICK UP HERE, 2026-10-09 (cont'd) — operator-directed audit of `rust/observation_vector` for
+blindly-ported dead/legacy C++ code: found none, but found and fixed two orphaned shadow-wires.**
+Entry point: `docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0.
+- **Audit result: clean.** All 13 functions in `rust/observation_vector/src/lib.rs` (12 ported +
+  `empirical_quantile`, an internal helper also itself a direct port of RobustMoments.h's
+  `EmpiricalQuantile<N>`) re-verified via direct grep of `src/*.cpp` for real production callers --
+  every one traces to a live, actually-called C++ function. No dead/legacy code in the crate.
+- **Two real gaps found as a byproduct, not dead code but *orphaned* ports** (ported, unit-tested,
+  FFI-wrapped, parity-tested, but never actually shadow-wired to their live call site): (1)
+  `bowley_skewness`/`moors_kurtosis` -- ported at some earlier point (not tracked/counted in this
+  plan's own port bookkeeping, hence easy to miss) but their real call site
+  (`ContextManager.cpp`, feeding `OBS_SKEWNESS`/dim 10 and `LocalRiskContext::fastTalebKurtosis`) was
+  never wired; (2) `dfa_hurst_exponent` had a SECOND live call site in `ContextManager.cpp`
+  (`fastHurstRaw`/dim 9's additive twin) that was missed when this dim was first ported -- only
+  `StudyHelperFunctions.cpp`'s call site got wired at the time.
+- **Both fixed**: shadow-wired now, same compare-and-log-only pattern. `MTS_WITH_RUST=OFF` build
+  reconfirmed byte-identical (1,779,712 bytes); `=ON` build reconfirmed to link and grow
+  (2,042,368 bytes, up from 2,009,088 before this fix). Rust unit tests (38/38) and the
+  cross-language parity test (33/33) both still pass clean.
+- **Lesson recorded in the plan**: after porting a dim, grep for *every* real call site of the
+  underlying C++ function, not just the first one found -- a function can have more than one live
+  caller, and only wiring one leaves the others' Rust port unproven against live data.
+
+---
+
 **PICK UP HERE, 2026-10-09 (cont'd) — 5 more `rust/observation_vector` dims ported (sixth through
 tenth overall), correcting a wrong "blocked on P2/P3" claim in the plan doc.** Entry point:
 `docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md` §0/§5.1.

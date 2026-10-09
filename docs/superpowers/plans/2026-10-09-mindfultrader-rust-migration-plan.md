@@ -81,6 +81,20 @@ design content) instead.**
   to touch files other than `StudyHelperFunctions.cpp`). `MTS_WITH_RUST=OFF` byte-identical
   (1,779,712 bytes); `=ON` links and grows to 2,009,088 bytes. Live Sierra Chart confirmation
   deferred.
+- **Operator-directed audit, same day: verified no dead/legacy C++ code was blindly ported into
+  `rust/observation_vector`** — every function in the crate (13 total, incl. the internal
+  `empirical_quantile` helper) re-traced to a live, actually-called C++ function via direct grep of
+  `src/*.cpp` for real (non-test) callers; none are dead. Found two real gaps as a result, not dead
+  code but *orphaned* ports: `bowley_skewness`/`moors_kurtosis` had been ported, unit-tested, FFI-
+  wrapped, and parity-tested, but never shadow-wired to their real call site
+  (`ContextManager.cpp`, feeding `OBS_SKEWNESS`/dim 10 and `LocalRiskContext::fastTalebKurtosis`);
+  `dfa_hurst_exponent` had a second, independent live call site in `ContextManager.cpp`
+  (`fastHurstRaw`/`LocalRiskContext::fastHurstExponent`, dim 9's additive twin) that was missed when
+  the dim was first ported — only `StudyHelperFunctions.cpp`'s call site had been wired. Both gaps
+  fixed: shadow-wired now, `MTS_WITH_RUST=OFF` reconfirmed byte-identical, `=ON` reconfirmed to link
+  and grow (2,042,368 bytes). **Lesson: after porting a dim, grep for every real call site of the
+  underlying C++ function, not just the first one found — a function can have more than one live
+  caller.**
 - **`rust/schema` (`mts_schema`) crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
