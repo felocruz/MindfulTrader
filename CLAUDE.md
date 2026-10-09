@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **NOT IN PRODUCTION — read before applying any caution, risk-tiering, or "this is higher-stakes"
+> framing to a decision in this repo.** No capital is at risk; none of the sibling repos (`lbrnet`,
+> `MindfulTrader`, `MTS`, `schema`) have shipped to a live, capital-at-risk deployment
+> (`PRODUCTION_TRIAGE.md` `READY_FOR_PRODUCTION=NO`, standing rule set 2026-08-26). Do not invent
+> production-safety caution for engineering/design discussions where none is warranted — there is
+> no live consumer, no real-money execution path, and no external contract to protect today. The
+> one place this status does **not** relax normal hygiene: verify there's truly no live/test usage
+> before deleting a symbol — once verified, default to deletion, not preservation. This flips the
+> moment `READY_FOR_PRODUCTION` reads `YES`. Full statement: `PRODUCTION_TRIAGE.md` (search
+> "STANDING RULE, set 2026-08-26").
+
 ## North Star — read this before anything else, every session
 
 `/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
@@ -370,10 +381,14 @@ Regenerate via the script above; never call `flatc` directly.
 ## Code Safety Rules
 
 - **Standing rule, set 2026-08-26 in `PRODUCTION_TRIAGE.md`'s top banner (read it there for the
-  full statement): this system is not in production. Once you've verified there's truly no live/
+  full statement): this system is not in production.** This isn't just a dead-code-deletion
+  default — don't apply production-grade caution, risk-tiering, or "this is higher-stakes" framing
+  to ANY engineering or design decision in this repo, including execution-layer code
+  (`PositionManager`/`RiskManager`/`ExecutionGate`), on the grounds that "real capital" is at
+  stake. It is not; no sibling repo has shipped live. Once you've verified there's truly no live/
   test usage, the default is deletion, not preservation — remove dead code, legacy paths, and
   backward-compatibility shims on sight. This flips the moment `READY_FOR_PRODUCTION` there reads
-  YES.**
+  YES.
 - Before removing any symbol, search the full repo for usages in `.h`, `.cpp`, and PCH files
 - Fix root causes; do not remove symbols to silence compile errors
 - If unsure whether code is used cross-project, preserve it and document concern

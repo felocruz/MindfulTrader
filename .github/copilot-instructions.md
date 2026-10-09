@@ -2,6 +2,17 @@
 
 **Doc Sync Contract**: Update this file, `../README-AI.md`, `../CLAUDE.md`, and `../GEMINI.md` in the same change when guidance changes.
 
+> **NOT IN PRODUCTION — read before applying any caution, risk-tiering, or "this is higher-stakes"
+> framing to a decision in this repo.** No capital is at risk; none of the sibling repos (`lbrnet`,
+> `MindfulTrader`, `MTS`, `schema`) have shipped to a live, capital-at-risk deployment
+> (`PRODUCTION_TRIAGE.md` `READY_FOR_PRODUCTION=NO`, standing rule set 2026-08-26). Do not invent
+> production-safety caution for engineering/design discussions where none is warranted — there is
+> no live consumer, no real-money execution path, and no external contract to protect today. The
+> one place this status does **not** relax normal hygiene: verify there's truly no live/test usage
+> before deleting a symbol — once verified, default to deletion, not preservation. This flips the
+> moment `READY_FOR_PRODUCTION` reads `YES`. Full statement: `PRODUCTION_TRIAGE.md` (search
+> "STANDING RULE, set 2026-08-26").
+
 ## AI Context Pointer
 - Primary project context: `../README-AI.md`
 - Workspace integration map: `../../docs/README-AI-WORKSPACE.md`
