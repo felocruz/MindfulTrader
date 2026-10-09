@@ -249,6 +249,20 @@ code, not inside a merged monorepo's `rust/`.
   repo twice already).
 - [ ] `rust/hmm` (`mts_hmm`) inference + regime engine against the P9 goldens — lifecycle spec Stages
   B-C.
+- [ ] **Scope confirmed 2026-10-09 (operator): this is "all Rust," not "HMM plus observation_vector
+  math."** `RiskManager`/`PositionManager`/`ExecutionGate`'s own low-level computations are explicit,
+  equal-footing candidates for the same methodical port (surveyed earlier this session: `Scoring.h`,
+  `LocalRiskContext.h`, `TailRiskEngine.h` are pure/zero-SC-coupled, same shape as the
+  `observation_vector` candidates already ported; `TradeDecisionEngine.h` is already its own
+  shadow-mode-only layer by design (PAER §9 Phase 1), arguably the safest starting point since it
+  already can't affect real decisions; `KellyCalculator.h` is stateful — needs the init/step/reset
+  handle pattern already planned for `mts_hmm`, not the stateless-function pattern used so far).
+  **No special caution tier for this code** — corrected earlier in this same session after
+  initially (wrongly) reaching for "real capital is at stake" framing: there is no live capital,
+  this system is not in production (`PRODUCTION_TRIAGE.md` standing rule), so the discipline is
+  identical to every other port — parity-test, shadow-wire, live-confirm, cutover — not elevated.
+  Not yet sequenced relative to `rust/hmm`/`rust/observation_vector`'s own remaining dims; which
+  crate(s) these land in (new `rust/risk` sibling vs. folded into `mts_hmm`) also not yet decided.
 - [ ] Once a MindfulTrader `rust/` crate is useful to `lbrnet` or `GUI`, add it there via a cross-repo
   relative path dependency (§1) — first candidate is likely `mts_hmm` via PyO3, closing the
   already-named Python-port parity gap (execution findings Finding 12).

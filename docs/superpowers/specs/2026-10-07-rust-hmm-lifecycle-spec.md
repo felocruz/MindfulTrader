@@ -4,6 +4,11 @@
 monorepo-consolidation brainstorm (`2026-10-07-mindfultrader-monorepo-consolidation-spec.md` §9,
 operator decision: the whole HMM lifecycle moves to Rust). Written against the real code in
 `lbrnet/` and `MindfulTrader/` as read on 2026-10-07; items not verified are listed in §9.
+**Extended 2026-10-09 (§10)**: operator goal, not yet decided in full, work to begin soon — collapse
+the two-phase collect-then-materialize-posteriors offline workflow into one pass, and de-duplicate
+`.alpha`'s embedded observation vector against a direct `.context.parquet` collection artifact. This
+revises §1's "no change to `.context`/`.alpha` formats" non-goal; see §10 for why and what's still
+undecided.
 
 **Standing caution.** This is a re-platforming, not a validated trading edge. The Vision section of
 `PRODUCTION_TRIAGE.md` still says the HMM was trained on a contaminated vector and has never passed
@@ -26,7 +31,9 @@ standalone tool (offline posterior files for Transformer training).
 
 **Non-goals.** No change to the model family (diagonal Student-t, weighted emissions), to K, to the
 observation vector, or to any threshold. No Transformer change beyond where it reads HMM output from.
-No change to `.context` / `.alpha` formats.
+~~No change to `.context` / `.alpha` formats.~~ **Revised 2026-10-09 — see §10**: this specific
+non-goal is superseded by an explicit operator goal to change both formats, for reasons §10 lays out.
+Everything else in this non-goals list stands unchanged.
 
 ## 2. What exists today (verified 2026-10-07)
 
@@ -106,6 +113,11 @@ consolidation spec P3; hard-refuse on `schema_version` mismatch exactly as `cont
 the filter and writes the **existing** sidecar byte layout so Transformer training code is unchanged in
 the first version. The npy structured-dtype header is hand-written (`ndarray-npy` does not do structured
 dtypes). The meta cache key switches from path/size/mtime to a content hash of model + context.
+**Superseded by §10's goal**: this paragraph describes a *separate, later* Rust pass still streaming
+through an already-collected `.context` file to produce a sidecar — i.e., porting today's two-phase
+collect-then-materialize workflow to Rust unchanged. §10's goal is to collapse it to one phase,
+computed at collection time. This paragraph's mechanism remains the right shape for the *re-labeling*
+case (scoring already-collected data against a newer/retrained model) — see §10.
 
 **Transformer coupling (inverted, one-way).** C++ publishes the HMM output with each event on the
 existing event stream: additive schema fields (non-breaking, same pattern as
@@ -238,3 +250,69 @@ retrained model should carry its own) or stay as crate constants.
 7. The four-name probability sidecar (`p_coiled`, `p_gaussian_stable`, `p_gaussian_fragile`, `p_pareto`)
    bakes in K=4; keep for compatibility in Stage D, generalize later.
 8. CPU vs GPU training time at 22M rows (Stage G).
+
+## 10. Extension (2026-10-09, operator goal — not yet decided in full, work to begin soon):
+collapsing the two-phase offline pipeline and de-duplicating `.alpha`
+
+**Trigger.** Working through the schema coherence audit's DOD/performance thread
+(`2026-10-09-cross-repo-naming-schema-coherence-audit.md`) surfaced a bigger realization than a struct-
+vs-table question: once the HMM lives in-process (§3's whole point), the *reason* `ObservationData`
+needs to cross a process/language boundary at all — to reach a separate Python HMM process — disappears
+for the live path, and the *reason* `.alpha`/`TrainingEvent` embeds a full redundant copy of the
+observation vector (duplicated against `.context`) gets weaker too, once there's a cheap way to join
+it back instead.
+
+**The goal, stated plainly.** `EventDataCollectorStudy.cpp` writes `.context.parquet` directly during
+collection (replacing today's two-step "C++ writes `.context` as a FlatBuffers stream → a separate,
+later Python pass materializes it to Parquet" — this repo already writes Parquet directly from C++/
+native code elsewhere: `tools/scid_processing/scid_to_ticks_parquet.cpp`, so there's real precedent,
+not a new capability to build from scratch). `.alpha`/`TrainingEvent` keeps exactly "whatever the
+Transformer needs from the HMM" (the already-existing `regime_prob_*`/`regime_confidence`/
+`regime_entropy`/etc. fields — not new fields, see §2's table) plus labels plus a join key
+(`sequence_id`), and drops its own embedded `observation: MTS.Schema.ObservationData` copy, joining
+back to `.context.parquet` instead when the training pipeline needs the raw vector alongside the
+labels. This mirrors a pattern this schema already uses elsewhere (`BacktestFrame`'s own `run_id`
+field is documented as "redundant with the payload's own run_id; enables random-access correlation...
+without deserializing the union" — carry a join key, don't duplicate the payload).
+
+**The operational win this adds on top of §3's architectural one.** §3 already establishes that the
+in-process Rust HMM means live posteriors don't need a network hop. What §10 adds: *today's offline
+pipeline is two-phase* — confirmed 2026-10-09, not assumed: `EventDataCollectorStudy.cpp` writes
+`.alpha`/`TrainingEvent` records with the observation vector populated but the `regime_prob_*` fields
+sitting at schema defaults (reserved space, unfilled); a separate, later pass
+(`lbrnet/scripts/materialize_hmm_features.py`, confirmed via `tests/test_attach_regime_to_event.py`)
+runs the HMM over the already-collected data and fills them in. Once the HMM is in-process at
+collection time, this collapses to one pass: `.alpha`/`TrainingEvent` records get written *fully
+populated* — observation vector (or its join key) and posteriors together — the first time, for newly
+collected data. The separate offline pass doesn't disappear as a *capability* — re-scoring
+already-collected data against a newer/retrained model is a real, legitimate, intentionally-occasional
+operation (§3's "Offline" paragraph's mechanism is still the right shape for exactly that case) — it
+just stops being a *mandatory* step in routine data collection.
+
+**Three distinct consumers of `ObservationData` today, found by direct consumer survey 2026-10-09 —
+each needs its own answer, this goal does not resolve all three uniformly:**
+
+1. **HMM live inference** (today: `MarketObservation` over ZMQ port 5561 to a separate Python
+   process) — cleanly eliminated by §3's in-process Rust HMM. No remaining question.
+2. **Training data** (`.alpha`/`TrainingEvent`'s embedded `observation` field) — this section's goal:
+   de-duplicate against `.context.parquet` via a join key instead of an embedded copy.
+3. **Live GUI display** (`MTS/zmq_client.py` genuinely decodes `MarketObservation` live today —
+   `GetRootAs`, aligned with `SystemState` by `sequence_id`, feeding
+   `lbrnet.feature_spine.MarketObservationData` — confirmed via direct code read, not assumed) — **not
+   resolved by this goal.** If `MarketObservation` disappears from the live wire protocol entirely, the
+   GUI loses whatever it currently shows from that data. Two ways this resolves, not yet decided:
+   either something still publishes the vector live for display purposes even though the HMM no longer
+   needs it transported, or the GUI's display gets redesigned to show something else (e.g., posteriors
+   only) — the second is a product decision about what the GUI shows, not a backend plumbing one, and
+   needs an explicit operator call before `MarketObservation` can be removed from the live schema.
+
+**Status: operator goal, confirmed directionally correct, not yet decided in full.** Does not yet have
+its own stage breakdown (§5's existing stages still apply to the core HMM port; this section's
+`.context.parquet`/`.alpha` changes are a parallel, not-yet-sequenced thread against the same goal).
+Explicitly depends on §3's in-process Rust HMM landing first — writing `.alpha` records "fully
+populated the first time" requires the HMM to already be callable in-process from
+`EventDataCollectorStudy.cpp`, which doesn't exist yet. The GUI question (consumer 3 above) should be
+resolved before any schema change that removes `MarketObservation` from the live wire protocol,
+independent of this section's `.alpha`/`.context.parquet` changes, which don't depend on that
+resolution either way.
+
