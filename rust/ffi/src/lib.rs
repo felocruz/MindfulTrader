@@ -32,6 +32,9 @@ pub extern "C" fn mts_abi_version() -> u32 {
     1
 }
 
+#[cfg(feature = "observation_vector")]
+pub mod observation_vector; // mts_observation_vector_sevcik_fractal_dimension / _bowley_skewness / _moors_kurtosis
+
 #[cfg(test)]
 mod tests {
     use super::*;

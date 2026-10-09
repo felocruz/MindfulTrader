@@ -13,8 +13,11 @@ crate-type = ["staticlib", "rlib"]    # rlib so its tests run natively on Linux
 [features]
 default = []
 # hmm = ["dep:mts_hmm"]           # added when rust/hmm lands (plan Phase 2)
-# obs = ["dep:mts_obs"]           # added when rust/obs lands
+observation_vector = ["dep:mts_observation_vector"]
 # transport = ["dep:mts_transport"]  # added when rust/transport lands
+
+[dependencies]
+mts_observation_vector = { path = "../observation_vector", optional = true }
 
 [build-dependencies]
 cbindgen.workspace = true

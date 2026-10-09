@@ -34,10 +34,20 @@ the non-Rust build via `llvm-objdump-22 -p` (nothing calls `mts_abi_version()` y
 got pulled in — expected static-linking behavior, not a failure). **Deliberately not yet done**: no
 C++ call site wired, so no fresh Sierra Chart round-trip for this specific skeleton (operator:
 sufficient confidence already exists from the W0s spikes; defer the live test until a real subsystem
--- `rust/schema`, `rust/obs`, or `rust/hmm` -- actually exists with logic worth testing).
+-- `rust/schema`, `rust/observation_vector`, or `rust/hmm` -- actually exists with logic worth testing).
 
-Next action: plan §4 Phase 2's next item — either the `rust/schema` `flatc --rust` target (P3) or
-starting `rust/obs`/`rust/hmm` against their respective goldens (P8/P9, not yet built either).
+**First two real `rust/observation_vector` ports DONE, 2026-10-08** (naming settled after real back-
+and-forth: `obs`/`observation`/`observations` all rejected -- `obs` too vague, bare "observation" has
+no standalone meaning in this codebase which only ever uses the compound `ObservationVector`/
+`ObservationData`; landed on `observation_vector`, matching that exact established term):
+`SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` ported from the existing pure C++
+headers, exposed via `mts_ffi`'s new `observation_vector` feature. Proven three ways: Rust's own
+unit tests (6/6), a new cross-language parity test `tests/cpp/test_rust_observation_vector_parity.cpp`
+(9/9 -- feeds the SAME deterministic-LCG input into both the C++ original and the Rust FFI wrapper,
+asserts exact equality), and both native + Windows cross-compiles build clean.
+
+Next action: plan §4 Phase 2's next items — continue `rust/observation_vector` dim-by-dim, or start
+the `rust/schema` `flatc --rust` target (P3), or `rust/hmm` against its own goldens (P9, not built).
 `lbrnet`'s P7 (86 files) remains deliberately deferred, still blocking the eventual merge's Stage 0.
 
 **P7 (settle uncommitted work) DONE for 3 of 4 repos, 2026-10-07**: `schema` (1 file), `MindfulTrader`

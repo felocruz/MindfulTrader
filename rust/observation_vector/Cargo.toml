@@ -1,0 +1,17 @@
+# rust/observation_vector/Cargo.toml -- pure crate: the 18D observation-vector dim math, ported one
+# function at a time (plan Phase 2). No zmq/pyo3/Sierra dependency -- see infrastructure guide §2.1
+# "pure core, thin edges". Named to mirror this codebase's own established compound term
+# (ObservationVector/ObservationData/BuildObservationVector()), never "observation" bare -- that word
+# has no standalone meaning here.
+#
+# First two ports (2026-10-08): SevcikFractalDimension.h, RobustMoments.h's
+# BowleySkewness/MoorsKurtosis/EmpiricalQuantile.
+[package]
+name = "mts_observation_vector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true

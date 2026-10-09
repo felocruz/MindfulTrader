@@ -33,7 +33,7 @@ VSCode/MindfulTrader/                      repo root = the monorepo
 ├── rust/                                  ← THE Cargo workspace (umbrella §8/§12.1)
 │   ├── Cargo.toml  Cargo.lock  .cargo/config.toml
 │   ├── schema/   mts_schema    generated FlatBuffers Rust + dim/contract constants   (pure)
-│   ├── obs/      mts_obs       18 dims, FeatureScaler, Mahalanobis gate              (pure)
+│   ├── observation_vector/  mts_observation_vector  18 dims, FeatureScaler, Mahalanobis gate     (pure)
 │   ├── hmm/      mts_hmm       Student-t HMM: train, filter, regime engine, artifacts (pure)
 │   ├── transport/mts_transport every ZMQ socket                                       (zmq)
 │   ├── ffi/      mts_ffi       ONE staticlib + cbindgen header → linked into the DLL  (§2.2)
@@ -73,7 +73,7 @@ and **`cpp/config.py:22` (MindfulTrader)**, including their git history. §9.4 h
 
 ### 2.1 Pure core, thin edges
 
-- **The pure crates `mts_schema`, `mts_obs` and `mts_hmm` carry no `pyo3`, `zmq` or Sierra code.** Only
+- **The pure crates `mts_schema`, `mts_observation_vector` and `mts_hmm` carry no `pyo3`, `zmq` or Sierra code.** Only
   `std` and math crates. They build and test natively on Linux in seconds, and every golden test lives
   there.
 - **The I/O and language edges are separate crates:**
@@ -88,11 +88,11 @@ and **`cpp/config.py:22` (MindfulTrader)**, including their git history. §9.4 h
 - **Each Rust `staticlib` bundles its own copy of `std` and `core`.** Linking two of them into one
   `MindfulTrader.dll` gives duplicate-symbol link errors, a known Rust limitation; the alternative is
   `/FORCE:MULTIPLE`, which is not acceptable here.
-- So there is **one** `mts_ffi` staticlib, with Cargo features `hmm`, `obs` and `transport`. It
-  re-exports each subsystem's `extern "C"` functions from modules (`mts_ffi::hmm`, `mts_ffi::obs`, …).
+- So there is **one** `mts_ffi` staticlib, with Cargo features `hmm`, `observation_vector` and `transport`. It
+  re-exports each subsystem's `extern "C"` functions from modules (`mts_ffi::hmm`, `mts_ffi::observation_vector`, …).
   Staged rollout = turning features on, not adding libraries.
 - **Python likewise gets one `mindful_core` extension** with submodules (`mindful_core.hmm`,
-  `.transport`, `.obs`):
+  `.transport`, `.observation_vector`):
   - one build;
   - one install per env;
   - shared Rust types across submodules.
@@ -170,8 +170,8 @@ target-dir = "target"                      # rust/target — one cache for every
 ```toml
 [workspace]
 resolver = "3"
-members = ["schema", "obs", "hmm", "transport", "ffi", "py", "tools"]
-default-members = ["schema", "obs", "hmm", "transport", "tools"]   # `cargo test` never builds the cdylib/staticlib
+members = ["schema", "observation_vector", "hmm", "transport", "ffi", "py", "tools"]
+default-members = ["schema", "observation_vector", "hmm", "transport", "tools"]   # `cargo test` never builds the cdylib/staticlib
 
 [workspace.package]
 edition = "2024"
@@ -184,7 +184,7 @@ publish = false
 # (Atratus repeats versions per crate — ndarray/flatbuffers/zmq drift risk. Don't.)
 [workspace.dependencies]
 mts_schema    = { path = "schema" }
-mts_obs       = { path = "obs" }
+mts_observation_vector = { path = "observation_vector" }
 mts_hmm       = { path = "hmm" }
 mts_transport = { path = "transport" }
 flatbuffers  = "=FB_VERSION"               # P2: exactly the flatc / C++ header / Python version
@@ -268,12 +268,12 @@ crate-type = ["staticlib", "rlib"]          # rlib so its tests run natively on 
 [features]
 default = []
 hmm = ["dep:mts_hmm"]
-obs = ["dep:mts_obs"]
+observation_vector = ["dep:mts_observation_vector"]
 transport = ["dep:mts_transport"]
 
 [dependencies]
 mts_hmm = { workspace = true, optional = true }
-mts_obs = { workspace = true, optional = true }
+mts_observation_vector = { workspace = true, optional = true }
 mts_transport = { workspace = true, optional = true }
 
 [build-dependencies]
@@ -294,7 +294,7 @@ crate-type = ["cdylib"]
 pyo3 = { workspace = true, features = ["extension-module"] }
 numpy.workspace = true
 mts_hmm.workspace = true
-mts_obs.workspace = true
+mts_observation_vector.workspace = true
 mts_transport.workspace = true
 ```
 
@@ -342,8 +342,8 @@ pub extern "C" fn mts_abi_version() -> u32 { 1 }   // the study refuses to run o
 
 #[cfg(feature = "hmm")]
 pub mod hmm;          // mts_hmm_init / mts_hmm_step / mts_hmm_reset / mts_hmm_shutdown
-#[cfg(feature = "obs")]
-pub mod obs;
+#[cfg(feature = "observation_vector")]
+pub mod observation_vector;
 #[cfg(feature = "transport")]
 pub mod transport;    // submit(request) -> ticket / poll(ticket) — never blocks Sierra's thread (umbrella §8)
 ```
@@ -462,7 +462,7 @@ endif()
   `--gen-object-api` only if Rust needs owned types) writing to `rust/schema/src/generated/`. The C++
   and Python targets are unchanged.
 - **Rust contract constants:** extend `schema/scripts/generate_contract_header.py` to also emit
-  `rust/schema/src/contract.rs` (dim indices, `OBSERVATION_FIELDS`, enum IDs), so `mts_obs`/`mts_hmm`
+  `rust/schema/src/contract.rs` (dim indices, `OBSERVATION_FIELDS`, enum IDs), so `mts_observation_vector`/`mts_hmm`
   never hard-code a dim index.
 - **The script's paths become monorepo-relative:** `ROOT="$(cd "$(dirname "$0")/.." && pwd)"`;
   targets `$ROOT/cpp/include/generated`, `$ROOT/lbrnet/lbrnet/generated`, `$ROOT/rust/schema/src/generated`.
@@ -529,7 +529,7 @@ export CXXFLAGS_x86_64_pc_windows_msvc="$CFLAGS_x86_64_pc_windows_msvc"
 ```
 
 ```bash
-# build_rust.sh [--features hmm,obs,transport]
+# build_rust.sh [--features hmm,observation_vector,transport]
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/rust_windows_env.sh"
@@ -735,7 +735,7 @@ still apply to each step individually; only the relative order across steps 5-7 
 | 6 | The merge, Stages 0–6, with §9.1's `.gitignore` in place **before** the first `git add` in the scratch repo | §4–5 | umbrella gates + the MB-not-GB check; **deferred to its own schedule, 2026-10-08** — no longer a prerequisite for step 7 |
 | 7 | **W2 bootstrap:** root files (§9), `rust-toolchain.toml`, `rust/` workspace with **empty** crates, `mts_ffi` exporting only `mts_abi_version`, `MTS_WITH_RUST` preset, `build_rust.sh`, `install_py_ext.sh` (`mindful_core.version()`), `check_all.sh`, CI | W2 | **Partly done, 2026-10-08** (commit `63bcc63`): `rust-toolchain.toml`, `rust/` workspace, `mts_ffi` skeleton, `MTS_WITH_RUST` preset, `build_rust.sh` all exist and are proven (DLL builds with `-rust` preset; imports confirmed unchanged via objdump). **Not yet done**: Sierra load-and-log round-trip for this specific skeleton (deferred — W0s spikes already give that confidence independently), `install_py_ext.sh`, `check_all.sh`, CI. |
 | 8 | P3: `flatc --rust` + `contract.rs` into `rust/schema`; `mts_schema` compiles; freshness job | P3 | `schema-fresh` CI job green |
-| 9 | Then the umbrella's W3 (`mts_hmm` inference vs P9 goldens) ∥ W5 (`mts_obs` vs P8 goldens) → W6 → W7 → W9 | §12.3 | as specified there |
+| 9 | Then the umbrella's W3 (`mts_hmm` inference vs P9 goldens) ∥ W5 (`mts_observation_vector` vs P8 goldens) → W6 → W7 → W9 | §12.3 | as specified there |
 
 **Doc sync, when W2 lands:** "Rust is a build prerequisite for `cpp/`" goes into the four mirror docs
 (umbrella §6-8); the deviation in §2.2 goes into the umbrella's decision register (§12.4); and a

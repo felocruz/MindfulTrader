@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["ffi"]
+members = ["ffi", "observation_vector"]
 
 [workspace.package]
 edition = "2024"

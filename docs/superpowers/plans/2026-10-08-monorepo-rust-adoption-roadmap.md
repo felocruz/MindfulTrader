@@ -42,7 +42,7 @@ Stage 3) — no new risk category, just one more line in an already-understood r
 **`rust/`'s placement, confirmed (operator, 2026-10-08):** `rust/` is the single, permanent home for
 *every* Rust crate in the system, regardless of which of the four current repos the logic
 conceptually belongs to (`schema`'s FlatBuffers bindings, `lbrnet`'s future PyO3 wrapper, `GUI`'s
-future transport client, as well as `MindfulTrader`'s own `obs`/`hmm`/`transport`/`ffi`). In the
+future transport client, as well as `MindfulTrader`'s own `observation_vector`/`hmm`/`transport`/`ffi`). In the
 merged monorepo (still named/hosted as `felocruz/MindfulTrader`, consolidation spec §1), `rust/` is a
 **top-level sibling of `cpp/`, `lbrnet/`, `GUI/`, `schema/`** — never nested inside any of them.
 **Consequence for the merge's own mechanics (consolidation spec §4 step 1, "one commit moves
@@ -109,7 +109,7 @@ thread that isn't explicitly joined, or a dependency with its own `Drop`-based c
   spec §7. Infrastructure guide proposes `mts` stays `lbrnet`'s, `GUI` gets its own (`mts-gui`
   proposed, open question).
 - [ ] P8: C++ observation seam + language-neutral goldens (consolidation spec §10 step 1-2) — the
-  acceptance tests `rust/obs` will be ported against.
+  acceptance tests `rust/observation_vector` will be ported against.
 - [ ] P9: HMM golden harness (lifecycle spec Stage A, Python-only, no Rust) — the acceptance tests
   `rust/hmm` will be ported against.
 - [ ] Hardcoded Google API key in `MindfulTrader/config.py:22` and `MTS/config.py:21` — confirmed
@@ -120,7 +120,7 @@ thread that isn't explicitly joined, or a dependency with its own `Drop`-based c
 ## 4. Phase 2 — Incremental Rust, per-repo, pre-merge
 
 This is the part that starts **now**, independent of Phase 1's remaining items and independent of
-the merge. Order within this phase follows the existing specs' own dependency chain (schema → obs ∥
+the merge. Order within this phase follows the existing specs' own dependency chain (schema → observation_vector ∥
 hmm → transport), adapted only in that each step happens inside whichever repo currently owns the
 code, not inside a merged monorepo's `rust/`.
 
@@ -138,8 +138,26 @@ code, not inside a merged monorepo's `rust/`.
 - [ ] `schema/regenerate_schema.sh` gains a `flatc --rust` target, writing into MindfulTrader's
   `rust/schema/` (P3, consolidation spec §7, infrastructure guide §5). Lives in the `schema` repo;
   no merge needed since `regenerate_schema.sh` already writes into sibling-repo paths today.
-- [ ] `rust/obs` (`mts_obs`) built dim-by-dim against the P8 goldens — consolidation spec §10 steps
-  3-4, lifecycle-spec-equivalent gating.
+- [x] **First two real `rust/observation_vector` (`mts_observation_vector`) ports, done 2026-10-08**:
+  `SevcikFractalDimension` and `BowleySkewness`/`MoorsKurtosis` (+ their shared `EmpiricalQuantile`
+  helper), ported from `include/SevcikFractalDimension.h`/`include/RobustMoments.h`. Chosen as
+  low-hanging fruit: pure, zero-SC-dependency, already-tested C++ headers. Exposed via `mts_ffi`'s
+  new `observation_vector` feature (`mts_observation_vector_sevcik_fractal_dimension`,
+  `_bowley_skewness`, `_moors_kurtosis`, each taking a raw `(ptr, len)` pair — the only shape that
+  crosses a C ABI cleanly). **Three layers of proof, not just "it compiles"**: (1) `rust/
+  observation_vector`'s own unit tests (6/6 pass) mirror each C++ test file's structure
+  (brute-force-reference comparison for Sevcik; Gaussian-sample statistical-property checks for
+  Bowley/Moors); (2) a new `tests/cpp/test_rust_observation_vector_parity.cpp` (9/9 pass) is the
+  authoritative cross-language proof — it feeds the *same* deterministic-LCG-generated input array
+  into both the original C++ function and the Rust FFI wrapper and asserts exact equality (not just
+  "similar", not just "same statistical shape"); (3) both native Linux and
+  `x86_64-pc-windows-msvc` cross-compiles build clean with the feature enabled. No production C++
+  call site wired yet (same deliberate deferral as the `mts_ffi` skeleton above) — this step's job
+  was proving the port-and-call pipeline works correctly, which the parity test now does
+  definitively.
+- [ ] `rust/observation_vector` (`mts_observation_vector`) continues dim-by-dim against the P8
+  goldens — consolidation spec §10 steps 3-4, lifecycle-spec-equivalent gating. The two functions
+  above are the first two dims; the remaining ~16 follow the same pure-port + parity-test pattern.
 - [ ] `rust/hmm` (`mts_hmm`) inference + regime engine against the P9 goldens — lifecycle spec Stages
   B-C.
 - [ ] Once a MindfulTrader `rust/` crate is useful to `lbrnet` or `GUI`, add it there via a cross-repo

@@ -212,7 +212,12 @@ name = "mts_ffi"
 version = "0.1.0"
 dependencies = [
  "cbindgen",
+ "mts_observation_vector",
 ]
+
+[[package]]
+name = "mts_observation_vector"
+version = "0.1.0"
 
 [[package]]
 name = "once_cell"

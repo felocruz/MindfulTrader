@@ -1,0 +1,50 @@
+//! C-ABI wrappers around `mts_observation_vector`'s pure functions. Each function takes a raw
+//! `(ptr, len)` pair (the only shape that crosses a C ABI cleanly) and returns `f32::NAN` on a
+//! caught panic or a null/empty input, rather than using `MtsStatus` -- a NaN sentinel is the
+//! existing convention these same functions already use for "degenerate input" (see each pure
+//! function's own doc comment), so callers already have to handle it.
+
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
+fn guard_f32(f: impl FnOnce() -> f32) -> f32 {
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or(f32::NAN)
+}
+
+/// Builds a `&[f32]` from a C pointer + length, or `None` if the input is unusable (null pointer,
+/// or `len == 0`, which every caller here already treats identically to "degenerate -> NaN").
+unsafe fn slice_or_none<'a>(ptr: *const f32, len: usize) -> Option<&'a [f32]> {
+    if ptr.is_null() || len == 0 {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts(ptr, len) })
+    }
+}
+
+/// Port of SevcikFractalDimension.h. `prices` must point to `len` chronologically-ordered points
+/// (`prices[len-1]` = the live/current bar); see `mts_observation_vector::sevcik_fractal_dimension`'s
+/// own doc comment for the exact windowing convention this replicates.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_sevcik_fractal_dimension(prices: *const f32, len: usize) -> f32 {
+    guard_f32(|| match unsafe { slice_or_none(prices, len) } {
+        Some(s) => mts_observation_vector::sevcik_fractal_dimension(s),
+        None => f32::NAN,
+    })
+}
+
+/// Port of RobustMoments.h's `BowleySkewness`. `returns` points to `len` log-return values.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_bowley_skewness(returns: *const f32, len: usize) -> f32 {
+    guard_f32(|| match unsafe { slice_or_none(returns, len) } {
+        Some(s) => mts_observation_vector::bowley_skewness(s),
+        None => f32::NAN,
+    })
+}
+
+/// Port of RobustMoments.h's `MoorsKurtosis`. `returns` points to `len` log-return values.
+#[unsafe(no_mangle)]
+pub extern "C" fn mts_observation_vector_moors_kurtosis(returns: *const f32, len: usize) -> f32 {
+    guard_f32(|| match unsafe { slice_or_none(returns, len) } {
+        Some(s) => mts_observation_vector::moors_kurtosis(s),
+        None => f32::NAN,
+    })
+}

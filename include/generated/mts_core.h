@@ -17,6 +17,18 @@ extern "C" {
 /// rather than risk a struct-layout skew between what C++ expects and what this crate provides.
 uint32_t mts_abi_version();
 
+/// Port of SevcikFractalDimension.h. `prices` must point to `len` chronologically-ordered points
+/// (`prices[len-1]` = the live/current bar); see `mts_observation_vector::sevcik_fractal_dimension`'s
+/// own doc comment for the exact windowing convention this replicates.
+float mts_observation_vector_sevcik_fractal_dimension(const float *prices,
+                                                      uintptr_t len);
+
+/// Port of RobustMoments.h's `BowleySkewness`. `returns` points to `len` log-return values.
+float mts_observation_vector_bowley_skewness(const float *returns, uintptr_t len);
+
+/// Port of RobustMoments.h's `MoorsKurtosis`. `returns` points to `len` log-return values.
+float mts_observation_vector_moors_kurtosis(const float *returns, uintptr_t len);
+
 }  // extern "C"
 
 }  // namespace mts
