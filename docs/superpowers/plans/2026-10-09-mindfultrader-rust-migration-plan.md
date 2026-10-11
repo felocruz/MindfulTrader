@@ -724,6 +724,25 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
     formula the bug chain centers on) — both match Python's own printed output to the full `f64`
     precision captured. 13 new tests (digamma/Brent unit tests, one-sided convergence-check
     tests, 2 golden-parity tests). Workspace: 141/141 tests pass, clippy clean.
+  - **Orchestration loop (`fit()`) SHIPPED, same session**: completes `train.rs` from a bare
+    single-iteration M-step into an actually-usable "train to convergence" entry point —
+    `compute_log_prior` (ported verbatim from `_compute_log_prior()`, the MAP-EM log-prior kernel
+    needed to score `L_MAP = total_loglik + log_prior`), a `Checkpoint` snapshot/restore
+    mechanism, and `fit()` itself: iterate `fit_one_iteration` until `check_convergence` trips or
+    `n_iter` exhausts, track the best-observed `L_MAP` checkpoint on a strict `>` (first-found
+    wins on ties, matching Python), and restore it if the final iteration's `L_MAP` ends up worse
+    — ported verbatim from `fit_streaming()`'s own post-loop "declined overall, restore the best
+    snapshot" guard. Deliberately does NOT port the validation-based early-stopping path
+    (orthogonal generalization mechanism, out of scope) and does NOT initialize `model` — k-means
+    ++ seeding needs a real PRNG with no numpy-`default_rng`-bit-exact Rust equivalent, flagged as
+    a genuinely separate open question rather than silently folded in; callers must pass an
+    already-initialized model. **Golden-parity validated against two more real Python
+    invocations**: a healthy 5-iteration ascending trace (no priors, no restore needed — the
+    common path) and a deliberately adversarial K=3/all-priors-active 15-iteration trace
+    engineered specifically to force a real decline (found by trial, not assumed) — Python's own
+    `checkpoint_restored_=True`/`best_train_iter=0` output reproduced exactly, the one fixture
+    that actually exercises the restore branch rather than just the "ascended cleanly" case. 2 new
+    tests. Workspace: 143/143 tests pass, clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
   formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
   `registry.rs` (`MarketClimate` classification cascade, consumes `model.rs`'s posterior/state

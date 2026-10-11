@@ -580,8 +580,194 @@ pub fn fit_one_iteration<const D: usize, const K: usize>(
     total_loglik
 }
 
+/// MAP-EM log-prior kernel -- ported verbatim from `student_t_hmm.py`'s own `_compute_log_prior()`
+/// (Green 1990: MAP-EM guarantees ascent of `L_MAP = L_raw + log p(theta)`, not raw LL alone).
+/// Additive normalizing constants that don't vary across iterations are omitted (irrelevant for
+/// both of this value's real uses -- `argmax_t` comparison for checkpoint-restore, and relative-
+/// delta convergence checks -- matching the Python docstring's own justification). Must be called
+/// with `model`'s CURRENT (post-M-step) parameters, since `fit()` below scores each iteration's
+/// L_MAP after that iteration's own M-step has already run.
+// Mixed 1D (`global_mean`/`global_var`) and 2D (`model.means`/`model.covars`/`model.transmat`)
+// indexing in the same loop bodies below -- a loop index, not `.enumerate()`, same convention as
+// `model.rs`'s/this file's own `m_step`.
+#[allow(clippy::needless_range_loop)]
+pub fn compute_log_prior<const D: usize, const K: usize>(
+    model: &StudentTHmm<D, K>,
+    global_mean: &[f64; D],
+    global_var: &[f64; D],
+    priors: &EmPriors,
+) -> f64 {
+    let mut log_prior = 0.0;
+
+    if priors.mean_prior_kappa > 0.0 {
+        let kappa = priors.mean_prior_kappa;
+        let mut sum = 0.0;
+        for k in 0..K {
+            for j in 0..D {
+                let diff2 = (model.means[k][j] - global_mean[j]).powi(2);
+                sum += diff2 / model.covars[k][j];
+            }
+        }
+        log_prior += -0.5 * kappa * sum;
+    }
+
+    if priors.covar_prior_eta_effective > 0.0 {
+        let eta = priors.covar_prior_eta_effective;
+        let mut sum = 0.0;
+        for k in 0..K {
+            for j in 0..D {
+                sum += model.covars[k][j].ln() + global_var[j] / model.covars[k][j];
+            }
+        }
+        log_prior += -0.5 * eta * sum;
+    }
+
+    if priors.trans_prior_alpha > 0.0 || priors.sticky_diag_alpha > 0.0 {
+        let mut sum = 0.0;
+        for i in 0..K {
+            for j in 0..K {
+                let alpha_minus_1 =
+                    priors.trans_prior_alpha + if i == j { priors.sticky_diag_alpha } else { 0.0 };
+                let safe_trans = model.transmat[i][j].max(1e-300);
+                sum += alpha_minus_1 * safe_trans.ln();
+            }
+        }
+        log_prior += sum;
+    }
+
+    log_prior
+}
+
+/// Best-training-checkpoint snapshot of the parameters this crate actually trains (mirrors
+/// `fit_streaming()`'s own `best_train_params` dict -- `feature_weights`/`dof_min`/`dof_max` are
+/// never touched by the M-step, so they don't need snapshotting here).
+#[derive(Debug, Clone, Copy)]
+struct Checkpoint<const D: usize, const K: usize> {
+    means: [[f64; D]; K],
+    covars: [[f64; D]; K],
+    transmat: [[f64; K]; K],
+    startprob: [f64; K],
+    dof: [f64; K],
+    map_ll: f64,
+    raw_ll: f64,
+    iter: usize,
+}
+
+impl<const D: usize, const K: usize> Checkpoint<D, K> {
+    fn capture(model: &StudentTHmm<D, K>, map_ll: f64, raw_ll: f64, iter: usize) -> Self {
+        Self {
+            means: model.means,
+            covars: model.covars,
+            transmat: model.transmat,
+            startprob: model.startprob,
+            dof: model.dof,
+            map_ll,
+            raw_ll,
+            iter,
+        }
+    }
+
+    fn restore(&self, model: &mut StudentTHmm<D, K>) {
+        model.means = self.means;
+        model.covars = self.covars;
+        model.transmat = self.transmat;
+        model.startprob = self.startprob;
+        model.dof = self.dof;
+    }
+}
+
+/// Diagnostics from a full `fit()` run -- mirrors the subset of `fit_streaming()`'s own
+/// post-training attributes (`map_ll_history_`/`monitor_.converged`/`checkpoint_restored_`/
+/// `checkpoint_restore_info_`) this crate's own test/calling code actually needs.
+#[derive(Debug, Clone)]
+pub struct FitResult {
+    pub map_ll_history: Vec<f64>,
+    pub converged: bool,
+    pub iterations_run: usize,
+    pub checkpoint_restored: bool,
+    pub best_train_iter: usize,
+    pub best_train_map_ll: f64,
+    pub best_train_raw_ll: f64,
+}
+
+/// Runs EM to convergence (or `n_iter` exhaustion), scoring each iteration by
+/// `L_MAP = total_loglik + compute_log_prior(...)` and restoring the best-observed checkpoint if the final iteration's
+/// L_MAP ends up worse than an earlier one -- ported verbatim from `fit_streaming()`'s own
+/// iteration loop (lines ~1518-1583): `best_train_map_ll` is updated on a STRICT `>` (first-found
+/// wins on ties, matching Python), `_check_convergence` is one-sided (declines never "converge" --
+/// see this module's own `check_convergence` doc comment), and the post-loop restore-if-worse
+/// check runs unconditionally, independent of whether the loop exited by convergence or by
+/// exhausting `n_iter`. Deliberately does NOT port `fit_streaming()`'s validation-based early-
+/// stopping path (`early_stopping_patience`/`X_val`) -- a separate, orthogonal generalization
+/// mechanism, out of scope for this orchestration slice; also does not initialize `model` --
+/// k-means++ seeding needs a real PRNG with no numpy-`default_rng`-bit-exact Rust equivalent, a
+/// separate open question not silently folded in here -- callers must pass an already-initialized
+/// model, exactly as this file's own golden-parity tests already do.
+#[allow(clippy::too_many_arguments)] // one named field per real EM-loop parameter; matches
+// `StudentTHmm::new`'s own established "a builder would hide which fields are actually required"
+// rationale.
+pub fn fit<const D: usize, const K: usize>(
+    model: &mut StudentTHmm<D, K>,
+    segments: &[&[[f64; D]]],
+    global_mean: &[f64; D],
+    global_var: &[f64; D],
+    priors: &EmPriors,
+    update_dof: bool,
+    n_iter: usize,
+    min_iter: usize,
+    tol: f64,
+) -> FitResult {
+    let mut map_ll_history = Vec::with_capacity(n_iter);
+    let mut prev_map_ll: Option<f64> = None;
+    let mut best: Option<Checkpoint<D, K>> = None;
+    let mut converged = false;
+    let mut iterations_run = 0;
+    let mut final_map_ll = f64::NEG_INFINITY;
+
+    for em_iter in 0..n_iter {
+        iterations_run = em_iter + 1;
+        let total_loglik = fit_one_iteration(model, segments, global_mean, global_var, priors, update_dof);
+        let log_prior = compute_log_prior(model, global_mean, global_var, priors);
+        let map_ll = total_loglik + log_prior;
+        map_ll_history.push(map_ll);
+        final_map_ll = map_ll;
+
+        let is_new_best = match &best {
+            None => true,
+            Some(b) => map_ll > b.map_ll,
+        };
+        if is_new_best {
+            best = Some(Checkpoint::capture(model, map_ll, total_loglik, em_iter));
+        }
+
+        if check_convergence(map_ll, prev_map_ll, tol, iterations_run, min_iter) {
+            converged = true;
+            break;
+        }
+        prev_map_ll = Some(map_ll);
+    }
+
+    // `best` is always `Some` after at least one iteration (seeded on the very first pass above).
+    let best = best.expect("fit() requires n_iter >= 1 and at least one segment");
+    let (checkpoint_restored, best_train_iter, best_train_map_ll, best_train_raw_ll) =
+        (final_map_ll < best.map_ll, best.iter, best.map_ll, best.raw_ll);
+    if checkpoint_restored {
+        best.restore(model);
+    }
+
+    FitResult {
+        map_ll_history,
+        converged,
+        iterations_run,
+        checkpoint_restored,
+        best_train_iter,
+        best_train_map_ll,
+        best_train_raw_ll,
+    }
+}
+
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::needless_range_loop)]
 mod tests {
     use super::*;
 
@@ -733,6 +919,133 @@ mod tests {
             for j in 0..2 {
                 assert_close(&format!("means[{k}][{j}]"), model.means[k][j], want_means[k][j], EPS);
                 assert_close(&format!("covars[{k}][{j}]"), model.covars[k][j], want_covars[k][j], EPS);
+                assert_close(&format!("transmat[{k}][{j}]"), model.transmat[k][j], want_transmat[k][j], EPS);
+            }
+            assert_close(&format!("startprob[{k}]"), model.startprob[k], want_startprob[k], EPS);
+            assert_close(&format!("dof[{k}]"), model.dof[k], want_dof[k], 1e-6);
+        }
+    }
+
+    #[test]
+    fn golden_parity_fit_ascending_no_restore() {
+        // Same no-priors fixture as `golden_parity_m_step_no_priors`, but n_iter=5/min_iter=1/
+        // tol=1e-9 (real Python invocation, mts env, 2026-10-11): map_ll strictly ascends every
+        // iteration here, so the loop runs all 5 iterations without converging early (tol is too
+        // tight to trip) and without ever needing a checkpoint restore -- the common/healthy path.
+        let mut model = StudentTHmm::<2, 2>::new_unweighted(
+            [[0.1, 0.2], [3.0, 3.0]],
+            [[0.05, 0.05], [0.05, 0.05]],
+            [[0.9, 0.1], [0.1, 0.9]],
+            [0.5, 0.5],
+            [6.0, 6.0],
+            2.1,
+            100.0,
+        );
+        let obs = golden_observations();
+        let global_mean: [f64; 2] = {
+            let n = obs.len() as f64;
+            std::array::from_fn(|j| obs.iter().map(|x| x[j]).sum::<f64>() / n)
+        };
+        let global_var = [0.0; 2];
+        let priors = EmPriors { min_covar: 1e-6, ..Default::default() };
+
+        let result = fit(&mut model, &[obs.as_slice()], &global_mean, &global_var, &priors, true, 5, 1, 1e-9);
+
+        let want_map_ll_history =
+            [0.180218619413351, 19.648454784379755, 20.08657779393678, 20.12970400101858, 20.15377884825991];
+        assert_eq!(result.iterations_run, 5);
+        assert!(!result.converged, "tol=1e-9 should not trip in exactly 5 iterations here");
+        assert!(!result.checkpoint_restored, "map_ll ascends monotonically in this fixture");
+        assert_eq!(result.map_ll_history.len(), 5);
+        for (i, (&got, &want)) in result.map_ll_history.iter().zip(want_map_ll_history.iter()).enumerate() {
+            assert_close(&format!("map_ll_history[{i}]"), got, want, EPS);
+        }
+
+        let want_means = [[0.10580231279435258, 0.2123714949525511], [3.0591387017280667, 3.0154223664902404]];
+        let want_covars = [[0.0011822415057624075, 0.0006038456330330049], [0.00882305195613155, 0.005171370255533211]];
+        let want_dof = [16.797609840992884, 32.3743235968432];
+        for k in 0..2 {
+            for j in 0..2 {
+                assert_close(&format!("means[{k}][{j}]"), model.means[k][j], want_means[k][j], EPS);
+                assert_close(&format!("covars[{k}][{j}]"), model.covars[k][j], want_covars[k][j], EPS);
+            }
+            assert_close(&format!("dof[{k}]"), model.dof[k], want_dof[k], 1e-6);
+        }
+    }
+
+    #[test]
+    fn golden_parity_fit_declining_triggers_restore() {
+        // K=3/D=2, every prior active (mean_prior_kappa=5.0, covar_prior_eta_effective=8.0 --
+        // covar_prior_min_share=0.5 * n=8 = 4.0 < 8.0, so eta itself wins -- trans_prior_alpha=0.1,
+        // sticky_diag_alpha=2.0, bullet_dims=(1,)/bullet_weight=1.4), n_iter=15/min_iter=1/
+        // tol=1e-12, deliberately adversarial starting point (3 states crammed onto an 8-row/
+        // 2-cluster dataset). Real Python invocation (mts env, 2026-10-11) genuinely declines
+        // after iteration 0 and never recovers -- `checkpoint_restored_=True`, restoring
+        // iteration 0's own parameters. This is the one golden fixture that exercises the actual
+        // restore branch, not just the "ascended, no restore needed" common path above.
+        let mut model = StudentTHmm::<2, 3>::new(
+            [[0.1, 0.2], [3.0, 3.0], [1.5, 1.5]],
+            [[0.05, 0.05], [0.05, 0.05], [0.05, 0.05]],
+            [[0.8, 0.1, 0.1], [0.1, 0.8, 0.1], [0.1, 0.1, 0.8]],
+            [0.34, 0.33, 0.33],
+            [6.0, 6.0, 6.0],
+            2.1,
+            100.0,
+            [1.0, 1.4],
+        );
+        let obs = golden_observations();
+        let global_mean: [f64; 2] = {
+            let n = obs.len() as f64;
+            std::array::from_fn(|j| obs.iter().map(|x| x[j]).sum::<f64>() / n)
+        };
+        let global_var: [f64; 2] = {
+            let n = obs.len() as f64;
+            std::array::from_fn(|j| {
+                let mean = obs.iter().map(|x| x[j]).sum::<f64>() / n;
+                obs.iter().map(|x| (x[j] - mean).powi(2)).sum::<f64>() / n
+            })
+        };
+        let priors = EmPriors {
+            mean_prior_kappa: 5.0,
+            covar_prior_eta_effective: 8.0,
+            trans_prior_alpha: 0.1,
+            sticky_diag_alpha: 2.0,
+            min_covar: 1e-6,
+        };
+
+        let result = fit(&mut model, &[obs.as_slice()], &global_mean, &global_var, &priors, true, 15, 1, 1e-12);
+
+        assert_eq!(result.iterations_run, 15);
+        assert!(!result.converged, "real Python trace runs all 15 iterations without tripping tol");
+        assert!(result.checkpoint_restored, "real Python trace genuinely declines and restores");
+        assert_eq!(result.best_train_iter, 0);
+        assert_close("best_train_map_ll", result.best_train_map_ll, -47.75961273352509, EPS);
+        assert_close("best_train_raw_ll", result.best_train_raw_ll, 0.5421763962281108, EPS);
+
+        let want_means = [
+            [0.8235281753599829, 0.8927535098083917],
+            [2.3209312519420693, 2.314316427999073],
+            [1.583749545886866, 1.612499566428662],
+        ];
+        let want_covars = [
+            [1.7818506509682766, 1.671347006983636],
+            [1.7703101126628777, 1.6654345099104966],
+            [1.9484142232944837, 1.7449443220762553],
+        ];
+        let want_transmat = [
+            [0.650795864496576, 0.33332942135629856, 0.015874714147125404],
+            [0.2075424434813158, 0.7735856320128301, 0.01887192450585412],
+            [0.043479295678761645, 0.04348776506791534, 0.913032939253323],
+        ];
+        let want_startprob = [0.9999978475171508, 6.543354241535294e-09, 2.145939495040652e-06];
+        let want_dof = [10.092464825871533, 10.593527140770762, 23.871273412170524];
+
+        for k in 0..3 {
+            for j in 0..2 {
+                assert_close(&format!("means[{k}][{j}]"), model.means[k][j], want_means[k][j], EPS);
+                assert_close(&format!("covars[{k}][{j}]"), model.covars[k][j], want_covars[k][j], EPS);
+            }
+            for j in 0..3 {
                 assert_close(&format!("transmat[{k}][{j}]"), model.transmat[k][j], want_transmat[k][j], EPS);
             }
             assert_close(&format!("startprob[{k}]"), model.startprob[k], want_startprob[k], EPS);
