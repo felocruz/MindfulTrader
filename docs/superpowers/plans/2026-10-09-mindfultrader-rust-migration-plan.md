@@ -743,6 +743,30 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
     `checkpoint_restored_=True`/`best_train_iter=0` output reproduced exactly, the one fixture
     that actually exercises the restore branch rather than just the "ascended cleanly" case. 2 new
     tests. Workspace: 143/143 tests pass, clippy clean.
+  - **Initialization (`init.rs`) SHIPPED, same session** (operator: K-selection deprioritized,
+    K=4 fixed is fine for now — narrows this slice to "seed one K=4 model," not multi-restart/
+    BIC screening): k-means++ seeding (Arthur & Vassilvitskii 2007), ported from the ALGORITHM
+    STRUCTURE of `tools/observation_vector/FeatureSaliencyEM.h`'s existing `KMeansPlusPlusSeed`
+    (per the plan's own earlier note — starts from that institutional C++ port, not
+    `student_t_hmm.py`'s `_kmeans_plusplus_seed_indices` cold), itself a verbatim-method port of
+    that same Python function. Backed by a hand-rolled `SplitMix64` PRNG (Vigna's public spec,
+    not a crate) — deliberately NOT chasing bit-exact parity with either the C++ port's
+    `std::mt19937_64` or Python's `np.random.default_rng`/PCG64: the layer above the raw bit
+    generator (turning `u64`s into a uniform draw) is itself implementation-defined even within
+    the C++ standard alone (libstdc++ vs. libc++ differ), so no choice of raw generator buys real
+    cross-language parity at the distribution layer — a deliberately flagged scope boundary, not
+    a silently-accepted gap. One confirmed, deliberately-not-silently-resolved divergence from the
+    Python original carried over from the C++ port instead: the degenerate all-points-coincide
+    fallback draws uniformly over ALL indices (could re-pick an already-chosen one), where Python
+    explicitly excludes already-chosen indices — not fixed, since the existing C++ port already
+    made this call and this module was told to start from it. Validated three ways: `SplitMix64`
+    reproduces Vigna's own reference C implementation's published output bit-for-bit (compiled and
+    run directly via `gcc`, not trusted from memory); k-means++ itself is deterministic for a
+    fixed seed, always returns distinct indices, and correctly handles the fully-coincident-points
+    degenerate case without divide-by-zero/NaN; and a 200-trial statistical sanity check confirms
+    it favors one seed per well-separated cluster in the clear majority of random seeds (the whole
+    point of the algorithm over uniform seeding). 8 new tests. Workspace: 151/151 tests pass,
+    clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
   formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
   `registry.rs` (`MarketClimate` classification cascade, consumes `model.rs`'s posterior/state
@@ -757,10 +781,18 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   (spec §5.2) actually calls.
 - **G5 — training orchestration (`train.rs`)**: EM/MAP-EM loop, ECME dof (Brent's method),
   multi-restart screening, BIC-based K-selection. Depends on `model.rs` (shares core math),
-  `artifact.rs` (to save), and G0(b)'s defaults reconciliation. Most of F4's ~20-test correctness
-  checklist lives here (it's almost entirely about the M-step/EM loop) — budget this sub-stage the
-  most time and the most test-writing effort of the whole crate, consistent with F3's warning that
-  this exact code region has an eight-bug documented history plus one still-unexplained residual.
+  `artifact.rs` (to save), and G0(b)'s defaults reconciliation (now resolved). **EM/MAP-EM loop +
+  ECME dof + k-means++ initialization SHIPPED, 2026-10-11** (see the progress notes under G2
+  above — `fit_one_iteration`/`fit`/`init.rs`). **Multi-restart screening and BIC-based K-selection
+  deprioritized, 2026-10-11 (operator directive): "Using K=4 may work for now so K-selection is
+  not a priority right now"** — `model.rs`'s own `PRODUCTION_K: usize = 4` is already the intended
+  fixed value (the runbook's own Smart Tuner V1 "frozen contract"), so this crate can train a
+  single K=4 model end-to-end without either. Not dropped from scope entirely, just not next —
+  revisit if a real need to search K (or re-screen multiple random restarts for the same K)
+  resurfaces. Most of F4's ~20-test correctness checklist lives here (it's almost entirely about
+  the M-step/EM loop) — budget this sub-stage the most time and the most test-writing effort of
+  the whole crate, consistent with F3's warning that this exact code region has an eight-bug
+  documented history plus one still-unexplained residual.
 - **G6 — post-training pipeline**: `runtime_calibration.rs` (temporal half-life from the trained
   transition matrix — small, depends only on G5's output); `calibration.rs` (gate-threshold
   calibration methodology — depends on G0(e)'s `arch`-crate spike resolving; can proceed in

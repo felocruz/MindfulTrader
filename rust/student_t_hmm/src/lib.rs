@@ -6,5 +6,6 @@
 
 pub mod audit;
 pub mod gate_metrics;
+pub mod init;
 pub mod model;
 pub mod train;
