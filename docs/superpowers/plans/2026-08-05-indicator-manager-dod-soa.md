@@ -4,6 +4,21 @@
 
 **Goal:** Evolve `IndicatorManager`/`Indicator` from a hand-written heterogeneous `IndicatorStore` + virtual-dispatch pointer array into packed SoA storage with compile-time devirtualized access for every read/trigger/serialize hot path, root-causing the live `OSCILLATOR_310` virtual-dispatch crash, while keeping `IndicatorManager` as the sole facade callers interact with.
 
+> **PARTIALLY SUPERSEDED, 2026-10-10 (operator directive, post-Rust-adoption):** this plan's own
+> "Revised end-state"/Task 15 declaration that the `IndicatorStore`/`BaseIndicator`/`Indicator<T>`
+> write-side compute engine stays **permanently** in C++, with "a full write-side rewrite... out of
+> scope" (user decision, 2026-08-05), **predates this codebase's Rust adoption (opened 2026-10-07)**
+> and is no longer the standing decision. Per the operator's 2026-10-10 architecture ruling
+> (`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` — scope now covers
+> trade execution/risk, the HMM + observation vector, **and indicator computation**), the full
+> write-side rewrite this plan called "Phase III" and scoped out IS happening — as a Rust port,
+> not the free-function-in-C++ extraction this plan originally envisioned for it. Everything below
+> this notice (the dual-write packed-array mechanics, the hybrid-read-path work actually completed
+> through Task 14, Task 15's narrower "delete the 4 dead orphans" scope) **remains accurate and
+> stays as the correct history of what shipped** — only the "permanent"/"intended end-state"
+> framing for the *write side* is superseded. Do not re-open this plan's completed tasks; the
+> indicator-computation Rust port is tracked in the rust-migration spec/plan instead, not here.
+
 **Architecture:** Two new pure, header-only components (`IndicatorLayout.h`'s descriptor table, `IndicatorPackedState.h`'s packed arrays) are introduced and unit-tested standalone, then wired into `IndicatorManager` as a dual-write alongside the existing `IndicatorStore` (parity-verified, zero behavior change), then call sites are migrated indicator-family by indicator-family, then the hot-path dispatch (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`) is rewritten against the packed arrays directly, then every remaining genuinely-migratable read call site (scattered across `IndicatorManager.cpp` itself, `EventSerializer.cpp`, `BackTesterStudy.cpp`, `StudyHelperFunctions.cpp`, and two Triple Screen files) is cut over, and finally the small set of fully-dead orphan indicator classes is deleted.
 
 **Revised end-state (Tasks 11-16, added 2026-08-05 after Task 11's original Step 1 safety check falsified its own premise):** the original plan assumed Tasks 5-10 had migrated every live call site off `GetIndicator<T>()`. A full inventory of the ~85 remaining call sites proved otherwise, for reasons that are architectural, not oversights:
