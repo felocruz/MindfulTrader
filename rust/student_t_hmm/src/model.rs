@@ -24,11 +24,22 @@ use std::f64::consts::PI;
 
 /// Variance floor -- matches `student_t_hmm.py`'s own `min_covar` default (1e-12), itself the fix
 /// for the documented `min_covar`/`global_var`-anchor miscalibration (L_MAP bug chain item 6:
-/// a flat 0.1 floor bound continuously on real low-variance dims).
+/// a flat 0.1 floor bound continuously on real low-variance dims). Unlike `dof_min`/`dof_max`
+/// below, `min_covar` is NOT CLI-configurable anywhere in `train_student_t_hmm.py` (no
+/// `--min-covar` flag exists) -- confirmed 2026-10-11 while tracing where `gate_metrics.rs`'s own
+/// `dof_min`/`dof_max` parameters actually come from. Genuinely a fixed constant, correctly a
+/// module `const`.
 pub const MIN_COVAR: f64 = 1e-12;
-/// Degrees-of-freedom clamp bounds -- match `student_t_hmm.py`'s own `dof_min`/`dof_max` defaults.
-pub const DOF_MIN: f64 = 2.1;
-pub const DOF_MAX: f64 = 100.0;
+/// Default degrees-of-freedom clamp bounds -- match `student_t_hmm.py`'s own constructor
+/// defaults. **Not** module `const`s used directly in the math (corrected 2026-10-11): the real
+/// system's `--dof-min`/`--dof-max` CLI flags feed `trainer.config.dof_min`/`dof_max`, which
+/// become `model.dof_min`/`model.dof_max` -- genuinely per-training-run configuration every real
+/// `gate_metrics.rs` call site reads off the model object, not a hardcoded default. `StudentTHmm`
+/// carries `dof_min`/`dof_max` as its own fields (below); these two constants exist only so a
+/// caller constructing a model with the ordinary bounds doesn't need to spell out the magic
+/// numbers `2.1`/`100.0` themselves.
+pub const DEFAULT_DOF_MIN: f64 = 2.1;
+pub const DEFAULT_DOF_MAX: f64 = 100.0;
 /// Sentinel log-probability returned when a numerical result is non-finite, instead of
 /// propagating NaN/Inf into a posterior. Matches Atratus's own `LOG_PROB_PENALTY` convention
 /// (same defensive idea, independently useful, not formula-specific -- safe to reuse the pattern).
@@ -57,32 +68,48 @@ pub struct StudentTHmm<const D: usize, const K: usize> {
     pub startprob: [f64; K],
     /// Per-state Student-t degrees of freedom (nu), shape (K,).
     pub dof: [f64; K],
+    /// Degrees-of-freedom clamp bounds -- per-model, not a module constant (see `DEFAULT_DOF_MIN`/
+    /// `DEFAULT_DOF_MAX`'s own doc comment for why: the real system's `--dof-min`/`--dof-max` CLI
+    /// flags make these genuinely vary per training run).
+    pub dof_min: f64,
+    pub dof_max: f64,
     /// Per-feature weights applied to the Mahalanobis delta ("bullet dims" weighting). All-1.0
     /// is the unweighted case; `log_emission_prob`'s Jacobian-correction term is a no-op then.
     pub feature_weights: [f64; D],
 }
 
 impl<const D: usize, const K: usize> StudentTHmm<D, K> {
+    #[allow(clippy::too_many_arguments)] // one named field per real model parameter; a builder
+    // would hide which fields are actually required, not simplify anything for this struct's
+    // genuinely-flat parameter set.
     pub fn new(
         means: [[f64; D]; K],
         covars: [[f64; D]; K],
         transmat: [[f64; K]; K],
         startprob: [f64; K],
         dof: [f64; K],
+        dof_min: f64,
+        dof_max: f64,
         feature_weights: [f64; D],
     ) -> Self {
-        Self { means, covars, transmat, startprob, dof, feature_weights }
+        Self { means, covars, transmat, startprob, dof, dof_min, dof_max, feature_weights }
     }
 
-    /// Unweighted convenience constructor (`feature_weights` all 1.0).
+    /// Unweighted convenience constructor (`feature_weights` all 1.0). `dof_min`/`dof_max` are
+    /// still required explicitly, not defaulted -- see their own field doc comment for why
+    /// silently defaulting them would be the exact inconsistency this constructor was fixed to
+    /// avoid.
+    #[allow(clippy::too_many_arguments)]
     pub fn new_unweighted(
         means: [[f64; D]; K],
         covars: [[f64; D]; K],
         transmat: [[f64; K]; K],
         startprob: [f64; K],
         dof: [f64; K],
+        dof_min: f64,
+        dof_max: f64,
     ) -> Self {
-        Self::new(means, covars, transmat, startprob, dof, [1.0; D])
+        Self::new(means, covars, transmat, startprob, dof, dof_min, dof_max, [1.0; D])
     }
 
     /// Weighted squared Mahalanobis distance: `delta = sum(w_j * (x_j - mu_j)^2 / var_j)`.
@@ -112,7 +139,7 @@ impl<const D: usize, const K: usize> StudentTHmm<D, K> {
     /// dimension being integrated over. Verified against `student_t_hmm.py`'s own documented
     /// numerical check (D=2, w=[1.4, 1.0]) in this module's tests.
     pub fn log_emission_prob(&self, k: usize, x: &[f64; D]) -> f64 {
-        let nu = self.dof[k].clamp(DOF_MIN, DOF_MAX);
+        let nu = self.dof[k].clamp(self.dof_min, self.dof_max);
         let d = D as f64;
         let var = &self.covars[k];
 
@@ -138,7 +165,7 @@ impl<const D: usize, const K: usize> StudentTHmm<D, K> {
     /// Student-t tail weight: `w = (nu + D) / (nu + delta)`. Low values mean `x` is a tail
     /// observation relative to state `k`; matches `compute_tail_diagnostics`'s own formula.
     pub fn compute_tail_weight(&self, k: usize, x: &[f64; D]) -> f64 {
-        let nu = self.dof[k].clamp(DOF_MIN, DOF_MAX);
+        let nu = self.dof[k].clamp(self.dof_min, self.dof_max);
         let delta = self.weighted_delta(k, x);
         (nu + D as f64) / (nu + delta)
     }
@@ -294,9 +321,10 @@ impl<const D: usize, const K: usize> StudentTHmm<D, K> {
 /// not a crate dependency (`f64::ln_gamma` is nightly-only `float_gamma`; adding a crate like
 /// `special` purely for this one function would be a dependency this codebase's own
 /// `observation_vector` crate deliberately avoids). Accurate to ~15 significant digits across the
-/// domain this HMM actually evaluates it on (`nu/2`, `(nu+D)/2` for `nu` in `[DOF_MIN, DOF_MAX]`,
-/// `D` up to a few dozen -- always comfortably positive, the reflection branch below exists for
-/// completeness/correctness, not because this HMM is expected to hit it).
+/// domain this HMM actually evaluates it on (`nu/2`, `(nu+D)/2` for `nu` in the model's own
+/// `[dof_min, dof_max]` clamp range, `D` up to a few dozen -- always comfortably positive, the
+/// reflection branch below exists for completeness/correctness, not because this HMM is expected
+/// to hit it).
 fn ln_gamma(x: f64) -> f64 {
     const G: f64 = 7.0;
     const COEF: [f64; 9] = [
@@ -357,6 +385,8 @@ mod tests {
             [[1.0]],
             [1.0],
             [8.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let integral = simpson_integrate(-50.0, 50.0, 200_000, |x| {
             hmm.log_emission_prob(0, &[x]).exp()
@@ -378,6 +408,8 @@ mod tests {
             [[1.0]],
             [1.0],
             [8.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
             [1.4, 1.0],
         );
         // Double integral via nested Simpson's rule over a wide-enough box; coarser grid than the
@@ -401,6 +433,8 @@ mod tests {
             [[0.9, 0.1], [0.1, 0.9]],
             [0.5, 0.5],
             [4.0, 4.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let observations = [[1.0e9, -1.0e9, 1.0e9]];
         let posterior = hmm.predict(&observations);
@@ -419,6 +453,8 @@ mod tests {
             [[0.9, 0.1], [0.1, 0.9]],
             [0.5, 0.5],
             [300.0, 300.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let alpha_prev = [0.5, 0.5];
         let alpha_curr = hmm.forward_step(&alpha_prev, &[0.0]);
@@ -435,6 +471,8 @@ mod tests {
             [[0.99, 0.01], [0.01, 0.99]],
             [0.5, 0.5],
             [300.0, 300.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let observations = [[4.9], [5.1], [5.0]];
         let posterior = hmm.predict(&observations);
@@ -450,6 +488,8 @@ mod tests {
             [[0.95, 0.05], [0.05, 0.95]],
             [0.5, 0.5],
             [300.0, 300.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let observations = [[-5.1], [-4.9], [-5.0], [5.0], [5.1], [4.9]];
         let path = hmm.decode(&observations);
@@ -464,12 +504,42 @@ mod tests {
             [[1.0]],
             [1.0],
             [4.0],
+            DEFAULT_DOF_MIN,
+            DEFAULT_DOF_MAX,
         );
         let w_center = hmm.compute_tail_weight(0, &[0.0, 0.0]);
         assert_close(w_center, 1.5, 1e-9); // (nu+D)/(nu+0) = (4+2)/4 = 1.5
 
         let w_outlier = hmm.compute_tail_weight(0, &[10.0, 10.0]);
         assert!(w_outlier < 0.1, "expected a low tail weight for a gross outlier, got {w_outlier}");
+    }
+
+    /// Two models differing *only* in their `dof_min`/`dof_max` clamp bounds -- not module
+    /// constants, per-instance fields -- must clamp the same raw `dof` differently. This is the
+    /// regression test for the fix itself: before it, `DOF_MIN`/`DOF_MAX` were crate-wide
+    /// constants and no two `StudentTHmm` instances could ever disagree on clamp bounds, which is
+    /// wrong given the real system's `--dof-min`/`--dof-max` CLI flags make this genuinely
+    /// per-training-run configuration (confirmed by tracing every real `gate_metrics.rs` call
+    /// site, which reads `dof_min`/`dof_max` off the model object, not a hardcoded default).
+    #[test]
+    fn dof_clamp_bounds_are_per_model_not_global() {
+        let raw_dof = 150.0; // above both configurations' dof_min, above only one's dof_max
+        let narrow = StudentTHmm::<1, 1>::new_unweighted(
+            [[0.0]], [[1.0]], [[1.0]], [1.0], [raw_dof], 2.1, 50.0,
+        );
+        let wide = StudentTHmm::<1, 1>::new_unweighted(
+            [[0.0]], [[1.0]], [[1.0]], [1.0], [raw_dof], 2.1, 200.0,
+        );
+        // Same raw `dof`, different `dof_max` -- the clamped value used by the emission density
+        // must differ between the two models. Probe it indirectly via log_emission_prob, since
+        // the clamped `nu` isn't itself exposed.
+        let lp_narrow = narrow.log_emission_prob(0, &[0.0]);
+        let lp_wide = wide.log_emission_prob(0, &[0.0]);
+        assert!(
+            (lp_narrow - lp_wide).abs() > 1e-9,
+            "models with different dof_max clamp bounds must disagree on log_emission_prob when \
+             raw dof exceeds the narrower bound, got narrow={lp_narrow} wide={lp_wide}"
+        );
     }
 
     /// 1D composite Simpson's rule over `[a, b]` with `n` (must be even) intervals.
