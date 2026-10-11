@@ -1,0 +1,25 @@
+# rust/student_t_hmm/Cargo.toml -- the Student-t HMM (spec
+# docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md §5): train, posteriors,
+# live inference, in one pure crate. Zero Sierra/zmq/pyo3 dependency -- same "pure core, thin
+# edges" discipline as observation_vector/execution; `ffi` wraps this for the DLL, `rust/py`
+# wraps it for lbrnet (spec §5.4a), a standalone tool wraps it for offline training.
+#
+# D (observation-vector dimension count) is a compile-time constant (model.rs), not a runtime
+# parameter -- deliberate, 2026-10-11: the dimension set is still being decided (Elite Feature Set
+# Curation's Phase 2 saliency finding, §5.1a), but every change in this codebase already goes
+# through a full rebuild cycle regardless, so a const-D change costs nothing extra; it does not
+# justify a heap-allocating dependency (ndarray) this codebase's own observation_vector crate
+# deliberately avoids.
+#
+# First module (2026-10-11): model.rs -- the golden-independent pure-math slice (emission density,
+# Hamilton forward-backward, Viterbi decode) with zero model-file/training dependency. Plan
+# §4 Stage G1/G2's "doesn't wait for Stage A/P9" sub-stage.
+[package]
+name = "student_t_hmm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
