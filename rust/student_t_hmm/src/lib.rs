@@ -4,4 +4,6 @@
 //! for the DLL's `hmm_step`, `rust/py` wraps it for `lbrnet` (spec §5.4a), a standalone tool
 //! wraps it for offline training (plan Stage G).
 
+pub mod audit;
+pub mod gate_metrics;
 pub mod model;

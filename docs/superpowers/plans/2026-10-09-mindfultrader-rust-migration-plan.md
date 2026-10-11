@@ -642,6 +642,17 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   deterministic JSON-in/JSON-out); `gate_metrics.rs` (operates on labeled state-sequence arrays —
   testable against synthetic/hand-built sequences, doesn't need a real trained model). Lowest risk,
   highest reuse, per F2 — the intentional first real code in this crate.
+  - **SHIPPED, 2026-10-11**: both ports land. `audit.rs` adds `serde`/`serde_json` to the crate
+    (and the workspace dependency table) — justified here, unlike `model.rs`'s own
+    zero-dependency math: this is once-per-training-run offline tooling, not hot-path code, so
+    the heap-allocation discipline that ruled out `ndarray` for `model.rs` doesn't apply.
+    `gate_metrics.rs` ports every function except `extract_means_by_state()` (a Python
+    API-shape-ambiguity problem — `(K,D)` vs `(K,1,D)` `means_` arrays — that doesn't exist for
+    `StudentTHmm<D,K>`'s own always-`[[f64;D];K]` field); `compute_pareto_thrust_shares`'s
+    signature deliberately diverges from the Python original (takes the already-extracted
+    per-state `relative_range` component directly, not `(counts, means, idx_rel_range)`, since
+    this crate doesn't embed a dimension-index convention). 27 new tests (10 `audit.rs`, 17
+    `gate_metrics.rs`). Workspace: 135/135 tests pass, clippy clean.
 - **G2 — core math (`model.rs`): highest risk, most other sub-stages depend on it**. Emission
   density, Hamilton forward-backward, Viterbi decode, predict. Must embed the F3 "L_MAP bug chain"
   lessons as tests written *alongside* the port, not bolted on after (density normalization, τ/σ²

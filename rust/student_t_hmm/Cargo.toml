@@ -21,5 +21,11 @@ edition.workspace = true
 rust-version.workspace = true
 publish.workspace = true
 
+[dependencies]
+# audit.rs only (offline GO/NO-GO gate-report tooling) -- model.rs's hot-path math stays
+# zero-dependency, see this crate's own header comment above.
+serde = { workspace = true }
+serde_json = { workspace = true }
+
 [lints]
 workspace = true

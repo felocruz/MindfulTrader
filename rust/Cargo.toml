@@ -21,6 +21,13 @@ cbindgen = "0.29"
 # crate doesn't embed a version static_assert like the C++ headers do, but
 # drift here would still be a silent generator/runtime API mismatch.
 flatbuffers = "25.12"
+# For `student_t_hmm`'s offline-tooling modules (audit.rs's GO/NO-GO gate reports) -- NOT used by
+# model.rs's hot-path math, which stays zero-dependency. JSON parsing/serialization is exactly
+# what serde_json exists for; hand-rolling one for a once-per-training-run audit tool would be
+# large, error-prone, and lower quality than the well-established crate, unlike ndarray (hot-path
+# allocation concern, model.rs's own header) -- no such concern applies to batch tooling.
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
