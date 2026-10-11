@@ -14,7 +14,7 @@
 #include "MeanReversionCalculator.h"
 #include "LiquidityFragilityEngine.h"
 #ifdef MTS_WITH_RUST
-#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
 #endif
 
 /// ============================================================================
@@ -2224,7 +2224,7 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
     // anything -- `hurst` (computed above) remains the only value this function returns or that
     // any downstream caller sees.
     {
-        const float rustHurst = mts::mts_observation_vector_dfa_hurst_exponent(
+        const float rustHurst = mts::observation_vector_dfa_hurst_exponent(
             logReturns.data(), static_cast<std::size_t>(length), minScale);
         const bool bothNan = std::isnan(hurst) && std::isnan(rustHurst);
         const bool matches = bothNan || std::fabs(hurst - rustHurst) < 1e-4f;
@@ -2379,7 +2379,7 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) 
     // anything -- `fragility` (computed above) remains the only value this function returns or
     // that any downstream caller sees.
     {
-        const float rustFragility = mts::mts_observation_vector_compute_liquidity_fragility(
+        const float rustFragility = mts::observation_vector_compute_liquidity_fragility(
             rangeWindow.data(), sqrtVolWindow.data(), rangeWindow.size(), barRange, liveVolumeSoFar,
             prev_fragility);
         const bool matches = std::fabs(fragility - rustFragility) < 1e-4f;
@@ -2535,7 +2535,7 @@ namespace {
 // matches at all, not per-call-site bookkeeping.
 void ShadowCheckBipowerVariation(const double* returns, int n, double cppResult) {
     const double rustResult =
-        mts::mts_observation_vector_compute_bipower_variation(returns, static_cast<std::size_t>(n));
+        mts::observation_vector_compute_bipower_variation(returns, static_cast<std::size_t>(n));
     const bool matches = std::fabs(cppResult - rustResult) < 1e-9;
     static bool loggedMatchOnce = false;
     if (!matches) {
@@ -2627,7 +2627,7 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {
     // downstream caller sees.
     {
         const float rustFisherInfo =
-            mts::mts_observation_vector_compute_fisher_information(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
+            mts::observation_vector_compute_fisher_information(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
         const bool matches = std::fabs(fisherInfo - rustFisherInfo) < 1e-4f;
         static bool loggedMatchOnce = false;
         if (!matches) {
@@ -2701,7 +2701,7 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
     // -- `logScaleExpansionRatio` (computed above) remains the only value this function returns or
     // that any downstream caller sees.
     {
-        const float rustLogScaleExpansionRatio = mts::mts_observation_vector_compute_burstiness_index(
+        const float rustLogScaleExpansionRatio = mts::observation_vector_compute_burstiness_index(
             bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
         const bool matches = std::fabs(logScaleExpansionRatio - rustLogScaleExpansionRatio) < 1e-4f;
         static bool loggedMatchOnce = false;
@@ -2793,7 +2793,7 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
     // -- `amihud` (computed above) remains the only value this function returns or that any
     // downstream caller sees.
     {
-        const float rustAmihud = mts::mts_observation_vector_compute_amihud_illiquidity(sumLogRatio, count, lastValidAmihud);
+        const float rustAmihud = mts::observation_vector_compute_amihud_illiquidity(sumLogRatio, count, lastValidAmihud);
         const bool matches = std::fabs(amihud - rustAmihud) < 1e-4f;
         static bool loggedMatchOnce = false;
         if (!matches) {
@@ -2840,7 +2840,7 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
     // anything -- `dim` (computed above) remains the only value this function returns or that any
     // downstream caller sees.
     {
-        const float rustDim = mts::mts_observation_vector_sevcik_fractal_dimension(prices.data(), prices.size());
+        const float rustDim = mts::observation_vector_sevcik_fractal_dimension(prices.data(), prices.size());
         const bool bothNan = std::isnan(dim) && std::isnan(rustDim);
         const bool matches = bothNan || std::fabs(dim - rustDim) < 1e-4f;
         static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
@@ -2908,7 +2908,7 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
     // anything -- `meanRevZ` (computed above) remains the only value this function returns or that
     // any downstream caller sees.
     {
-        const float rustMeanRevZ = mts::mts_observation_vector_compute_mean_reversion_z(
+        const float rustMeanRevZ = mts::observation_vector_compute_mean_reversion_z(
             prices.data(), static_cast<std::size_t>(n), lastValidMeanRevZ);
         const bool matches = std::fabs(meanRevZ - rustMeanRevZ) < 1e-4f;
         static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick

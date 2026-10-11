@@ -15,79 +15,100 @@ extern "C" {
 
 /// The study checks this against its own compiled-in expectation and refuses to run on a mismatch,
 /// rather than risk a struct-layout skew between what C++ expects and what this crate provides.
-uint32_t mts_abi_version();
+uint32_t abi_version();
 
 /// Port of SevcikFractalDimension.h. `prices` must point to `len` chronologically-ordered points
-/// (`prices[len-1]` = the live/current bar); see `mts_observation_vector::sevcik_fractal_dimension`'s
+/// (`prices[len-1]` = the live/current bar); see `observation_vector::sevcik_fractal_dimension`'s
 /// own doc comment for the exact windowing convention this replicates.
-float mts_observation_vector_sevcik_fractal_dimension(const float *prices,
-                                                      uintptr_t len);
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_sevcik_fractal_dimension(const float *prices, uintptr_t len);
 
 /// Port of RobustMoments.h's `BowleySkewness`. `returns` points to `len` log-return values.
-float mts_observation_vector_bowley_skewness(const float *returns, uintptr_t len);
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_bowley_skewness(const float *returns, uintptr_t len);
 
 /// Port of RobustMoments.h's `MoorsKurtosis`. `returns` points to `len` log-return values.
-float mts_observation_vector_moors_kurtosis(const float *returns, uintptr_t len);
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_moors_kurtosis(const float *returns, uintptr_t len);
 
 /// Port of BipowerVariation.h's `ComputeBipowerVariation`. `returns` points to `len` return
 /// values (`double`, matching the C++ original -- not every dim in this codebase uses `float`).
 /// Unlike the other wrappers here, `None` (null/empty input) maps to `0.0`, not NaN -- matching
 /// `compute_bipower_variation`'s own "n < 2 -> 0.0" convention (BV has no NaN-returning case at
 /// all; a degenerate window is a genuinely zero-variance neutral reading, not "unknown").
-double mts_observation_vector_compute_bipower_variation(const double *returns, uintptr_t len);
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f64` elements.
+double observation_vector_compute_bipower_variation(const double *returns, uintptr_t len);
 
 /// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
 /// recent last.
-float mts_observation_vector_dfa_hurst_exponent(const float *log_returns,
-                                                uintptr_t len,
-                                                int32_t min_scale);
+///
+/// # Safety
+/// `log_returns` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_dfa_hurst_exponent(const float *log_returns,
+                                            uintptr_t len,
+                                            int32_t min_scale);
 
 /// Port of MeanReversionCalculator.h's `ComputeMeanReversionZ`. `prices` points to `len`
 /// chronologically-ordered points (`prices[len-1]` = the live/current bar). Unlike most wrappers
 /// here, a null/empty `prices` maps to `last_valid_value` (not NaN) -- matching
 /// `compute_mean_reversion_z`'s own carry-forward convention for every degenerate case, including
 /// no data at all.
-float mts_observation_vector_compute_mean_reversion_z(const float *prices,
-                                                      uintptr_t len,
-                                                      float last_valid_value);
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_compute_mean_reversion_z(const float *prices,
+                                                  uintptr_t len,
+                                                  float last_valid_value);
 
 /// Port of LiquidityFragilityEngine.h's `ComputeLiquidityFragility`. `range_window`/
 /// `sqrt_vol_window` each point to `len` elements (the real call site always sizes both to
-/// `mts_observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
+/// `observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
 /// null/empty/too-short window maps to `prev_fragility` (not NaN), matching
 /// `compute_liquidity_fragility`'s own carry-forward convention.
-float mts_observation_vector_compute_liquidity_fragility(const float *range_window,
-                                                         const float *sqrt_vol_window,
-                                                         uintptr_t len,
-                                                         float live_bar_range,
-                                                         float live_volume_so_far,
-                                                         float prev_fragility);
+///
+/// # Safety
+/// `range_window` and `sqrt_vol_window` must each be either null or valid for reads of `len`
+/// contiguous `f32` elements.
+float observation_vector_compute_liquidity_fragility(const float *range_window,
+                                                     const float *sqrt_vol_window,
+                                                     uintptr_t len,
+                                                     float live_bar_range,
+                                                     float live_volume_so_far,
+                                                     float prev_fragility);
 
 /// Port of CarryForwardCalculators.h's `ComputeBurstinessIndex` (dim 3's real caller today, see the
 /// pure function's own doc comment). No null-input case (all scalar args) -- panics are still
 /// guarded, since a NaN input could still trip an unexpected path.
-float mts_observation_vector_compute_burstiness_index(double rv_recent_rate,
-                                                      double rv_older_rate,
-                                                      float last_valid_value,
-                                                      float clamp_low,
-                                                      float clamp_high);
+float observation_vector_compute_burstiness_index(double rv_recent_rate,
+                                                  double rv_older_rate,
+                                                  float last_valid_value,
+                                                  float clamp_low,
+                                                  float clamp_high);
 
 /// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).
-float mts_observation_vector_compute_relative_range(float high,
-                                                    float low,
-                                                    float atr,
-                                                    float last_valid_value);
+float observation_vector_compute_relative_range(float high,
+                                                float low,
+                                                float atr,
+                                                float last_valid_value);
 
 /// Port of CarryForwardCalculators.h's `ComputeFisherInformation` (dim 8, `fisher_info`).
-float mts_observation_vector_compute_fisher_information(float min_price,
-                                                        float max_price,
-                                                        float current_price,
-                                                        float last_valid_value);
+float observation_vector_compute_fisher_information(float min_price,
+                                                    float max_price,
+                                                    float current_price,
+                                                    float last_valid_value);
 
 /// Port of CarryForwardCalculators.h's `ComputeAmihudIlliquidity` (dim 11, `amihud_illiquidity`).
-float mts_observation_vector_compute_amihud_illiquidity(double sum_log_ratio,
-                                                        int32_t count,
-                                                        float last_valid_value);
+float observation_vector_compute_amihud_illiquidity(double sum_log_ratio,
+                                                    int32_t count,
+                                                    float last_valid_value);
 
 /// Port of EventVelocityEngine.h's `CalculateBurstinessIndex` (dim 1, `burstiness_index`).
 /// `timestamps` points to `len` chronologically-ordered (oldest first) event timestamps. Null/empty
@@ -95,7 +116,41 @@ float mts_observation_vector_compute_amihud_illiquidity(double sum_log_ratio,
 /// something specific here, distinct from "couldn't read the input at all"; callers already must
 /// distinguish a real 0.0 reading from a dropped call via the wrapper boundary like every other
 /// wrapper in this file).
-float mts_observation_vector_calculate_burstiness_index(const uint64_t *timestamps, uintptr_t len);
+///
+/// # Safety
+/// `timestamps` must be either null or valid for reads of `len` contiguous `u64` elements.
+float observation_vector_calculate_burstiness_index(const uint64_t *timestamps, uintptr_t len);
+
+/// Port of OrderFlowAsymmetryEngine.h's `ComputeMicroAsymmetry` (dim 7, `micro_asymmetry`). No
+/// null-input case (all scalar args) -- panics are still guarded, since a NaN input could still
+/// trip an unexpected path.
+float observation_vector_micro_asymmetry(float ask_volume,
+                                         float bid_volume,
+                                         float last_valid_value);
+
+/// Port of RQAEpsilonSelector.h's `SelectEpsilonForTargetRecurrenceRate`. `prices` points to `len`
+/// chronologically-ordered points. Unlike most wrappers here, a null/empty `prices` maps to the
+/// pure function's own `n < 2` degenerate case (returns `1e-6`), not a NaN sentinel -- this
+/// selector has no "unknown" case, only "infeasible," matching the C++ original.
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
+double observation_vector_select_epsilon_for_target_recurrence_rate(const float *prices,
+                                                                    uintptr_t len,
+                                                                    double target_rr);
+
+/// Port of RecurrenceRateEngine.h's `RebuildClosedBarWindow` + `ComputeRate`, combined into one
+/// stateless call (see `observation_vector::recurrence_rate`'s own doc comment for why this is
+/// behaviorally identical to the incremental engine for every real input). `closed_bars` points to
+/// `len` closed-bar values; a null/empty `closed_bars` maps to the pure function's own
+/// zero-closed-bars case (just the live point against itself), not a NaN sentinel.
+///
+/// # Safety
+/// `closed_bars` must be either null or valid for reads of `len` contiguous `f32` elements.
+float observation_vector_recurrence_rate(const float *closed_bars,
+                                         uintptr_t len,
+                                         float live_price,
+                                         float epsilon);
 
 }  // extern "C"
 

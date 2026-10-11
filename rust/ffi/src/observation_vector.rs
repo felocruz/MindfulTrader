@@ -1,6 +1,6 @@
-//! C-ABI wrappers around `mts_observation_vector`'s pure functions. Each function takes a raw
+//! C-ABI wrappers around `observation_vector`'s pure functions. Each function takes a raw
 //! `(ptr, len)` pair (the only shape that crosses a C ABI cleanly) and returns `f32::NAN` on a
-//! caught panic or a null/empty input, rather than using `MtsStatus` -- a NaN sentinel is the
+//! caught panic or a null/empty input, rather than using `Status` -- a NaN sentinel is the
 //! existing convention these same functions already use for "degenerate input" (see each pure
 //! function's own doc comment), so callers already have to handle it.
 
@@ -44,30 +44,39 @@ unsafe fn slice_or_none_u64<'a>(ptr: *const u64, len: usize) -> Option<&'a [u64]
 }
 
 /// Port of SevcikFractalDimension.h. `prices` must point to `len` chronologically-ordered points
-/// (`prices[len-1]` = the live/current bar); see `mts_observation_vector::sevcik_fractal_dimension`'s
+/// (`prices[len-1]` = the live/current bar); see `observation_vector::sevcik_fractal_dimension`'s
 /// own doc comment for the exact windowing convention this replicates.
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_sevcik_fractal_dimension(prices: *const f32, len: usize) -> f32 {
+pub unsafe extern "C" fn observation_vector_sevcik_fractal_dimension(prices: *const f32, len: usize) -> f32 {
     guard_f32(|| match unsafe { slice_or_none(prices, len) } {
-        Some(s) => mts_observation_vector::sevcik_fractal_dimension(s),
+        Some(s) => observation_vector::sevcik_fractal_dimension(s),
         None => f32::NAN,
     })
 }
 
 /// Port of RobustMoments.h's `BowleySkewness`. `returns` points to `len` log-return values.
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_bowley_skewness(returns: *const f32, len: usize) -> f32 {
+pub unsafe extern "C" fn observation_vector_bowley_skewness(returns: *const f32, len: usize) -> f32 {
     guard_f32(|| match unsafe { slice_or_none(returns, len) } {
-        Some(s) => mts_observation_vector::bowley_skewness(s),
+        Some(s) => observation_vector::bowley_skewness(s),
         None => f32::NAN,
     })
 }
 
 /// Port of RobustMoments.h's `MoorsKurtosis`. `returns` points to `len` log-return values.
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_moors_kurtosis(returns: *const f32, len: usize) -> f32 {
+pub unsafe extern "C" fn observation_vector_moors_kurtosis(returns: *const f32, len: usize) -> f32 {
     guard_f32(|| match unsafe { slice_or_none(returns, len) } {
-        Some(s) => mts_observation_vector::moors_kurtosis(s),
+        Some(s) => observation_vector::moors_kurtosis(s),
         None => f32::NAN,
     })
 }
@@ -77,24 +86,30 @@ pub extern "C" fn mts_observation_vector_moors_kurtosis(returns: *const f32, len
 /// Unlike the other wrappers here, `None` (null/empty input) maps to `0.0`, not NaN -- matching
 /// `compute_bipower_variation`'s own "n < 2 -> 0.0" convention (BV has no NaN-returning case at
 /// all; a degenerate window is a genuinely zero-variance neutral reading, not "unknown").
+///
+/// # Safety
+/// `returns` must be either null or valid for reads of `len` contiguous `f64` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_bipower_variation(returns: *const f64, len: usize) -> f64 {
+pub unsafe extern "C" fn observation_vector_compute_bipower_variation(returns: *const f64, len: usize) -> f64 {
     guard_f64(|| match unsafe { slice_or_none_f64(returns, len) } {
-        Some(s) => mts_observation_vector::compute_bipower_variation(s),
+        Some(s) => observation_vector::compute_bipower_variation(s),
         None => 0.0,
     })
 }
 
 /// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
 /// recent last.
+///
+/// # Safety
+/// `log_returns` must be either null or valid for reads of `len` contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_dfa_hurst_exponent(
+pub unsafe extern "C" fn observation_vector_dfa_hurst_exponent(
     log_returns: *const f32,
     len: usize,
     min_scale: i32,
 ) -> f32 {
     guard_f32(|| match unsafe { slice_or_none(log_returns, len) } {
-        Some(s) => mts_observation_vector::dfa_hurst_exponent(s, min_scale),
+        Some(s) => observation_vector::dfa_hurst_exponent(s, min_scale),
         None => f32::NAN,
     })
 }
@@ -104,8 +119,11 @@ pub extern "C" fn mts_observation_vector_dfa_hurst_exponent(
 /// here, a null/empty `prices` maps to `last_valid_value` (not NaN) -- matching
 /// `compute_mean_reversion_z`'s own carry-forward convention for every degenerate case, including
 /// no data at all.
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_mean_reversion_z(
+pub unsafe extern "C" fn observation_vector_compute_mean_reversion_z(
     prices: *const f32,
     len: usize,
     last_valid_value: f32,
@@ -115,17 +133,21 @@ pub extern "C" fn mts_observation_vector_compute_mean_reversion_z(
             Some(s) => s,
             None => &[],
         };
-        mts_observation_vector::compute_mean_reversion_z(slice, last_valid_value)
+        observation_vector::compute_mean_reversion_z(slice, last_valid_value)
     })
 }
 
 /// Port of LiquidityFragilityEngine.h's `ComputeLiquidityFragility`. `range_window`/
 /// `sqrt_vol_window` each point to `len` elements (the real call site always sizes both to
-/// `mts_observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
+/// `observation_vector::LIQ_FRAGILITY_WINDOW`). Like `compute_mean_reversion_z`'s wrapper, a
 /// null/empty/too-short window maps to `prev_fragility` (not NaN), matching
 /// `compute_liquidity_fragility`'s own carry-forward convention.
+///
+/// # Safety
+/// `range_window` and `sqrt_vol_window` must each be either null or valid for reads of `len`
+/// contiguous `f32` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_liquidity_fragility(
+pub unsafe extern "C" fn observation_vector_compute_liquidity_fragility(
     range_window: *const f32,
     sqrt_vol_window: *const f32,
     len: usize,
@@ -142,7 +164,7 @@ pub extern "C" fn mts_observation_vector_compute_liquidity_fragility(
             Some(s) => s,
             None => &[],
         };
-        mts_observation_vector::compute_liquidity_fragility(
+        observation_vector::compute_liquidity_fragility(
             range_slice,
             vol_slice,
             live_bar_range,
@@ -156,7 +178,7 @@ pub extern "C" fn mts_observation_vector_compute_liquidity_fragility(
 /// pure function's own doc comment). No null-input case (all scalar args) -- panics are still
 /// guarded, since a NaN input could still trip an unexpected path.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_burstiness_index(
+pub extern "C" fn observation_vector_compute_burstiness_index(
     rv_recent_rate: f64,
     rv_older_rate: f64,
     last_valid_value: f32,
@@ -164,7 +186,7 @@ pub extern "C" fn mts_observation_vector_compute_burstiness_index(
     clamp_high: f32,
 ) -> f32 {
     guard_f32(|| {
-        mts_observation_vector::compute_burstiness_index(
+        observation_vector::compute_burstiness_index(
             rv_recent_rate,
             rv_older_rate,
             last_valid_value,
@@ -176,36 +198,36 @@ pub extern "C" fn mts_observation_vector_compute_burstiness_index(
 
 /// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_relative_range(
+pub extern "C" fn observation_vector_compute_relative_range(
     high: f32,
     low: f32,
     atr: f32,
     last_valid_value: f32,
 ) -> f32 {
-    guard_f32(|| mts_observation_vector::compute_relative_range(high, low, atr, last_valid_value))
+    guard_f32(|| observation_vector::compute_relative_range(high, low, atr, last_valid_value))
 }
 
 /// Port of CarryForwardCalculators.h's `ComputeFisherInformation` (dim 8, `fisher_info`).
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_fisher_information(
+pub extern "C" fn observation_vector_compute_fisher_information(
     min_price: f32,
     max_price: f32,
     current_price: f32,
     last_valid_value: f32,
 ) -> f32 {
     guard_f32(|| {
-        mts_observation_vector::compute_fisher_information(min_price, max_price, current_price, last_valid_value)
+        observation_vector::compute_fisher_information(min_price, max_price, current_price, last_valid_value)
     })
 }
 
 /// Port of CarryForwardCalculators.h's `ComputeAmihudIlliquidity` (dim 11, `amihud_illiquidity`).
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_compute_amihud_illiquidity(
+pub extern "C" fn observation_vector_compute_amihud_illiquidity(
     sum_log_ratio: f64,
     count: i32,
     last_valid_value: f32,
 ) -> f32 {
-    guard_f32(|| mts_observation_vector::compute_amihud_illiquidity(sum_log_ratio, count, last_valid_value))
+    guard_f32(|| observation_vector::compute_amihud_illiquidity(sum_log_ratio, count, last_valid_value))
 }
 
 /// Port of EventVelocityEngine.h's `CalculateBurstinessIndex` (dim 1, `burstiness_index`).
@@ -214,10 +236,71 @@ pub extern "C" fn mts_observation_vector_compute_amihud_illiquidity(
 /// something specific here, distinct from "couldn't read the input at all"; callers already must
 /// distinguish a real 0.0 reading from a dropped call via the wrapper boundary like every other
 /// wrapper in this file).
+///
+/// # Safety
+/// `timestamps` must be either null or valid for reads of `len` contiguous `u64` elements.
 #[unsafe(no_mangle)]
-pub extern "C" fn mts_observation_vector_calculate_burstiness_index(timestamps: *const u64, len: usize) -> f32 {
+pub unsafe extern "C" fn observation_vector_calculate_burstiness_index(timestamps: *const u64, len: usize) -> f32 {
     guard_f32(|| match unsafe { slice_or_none_u64(timestamps, len) } {
-        Some(s) => mts_observation_vector::calculate_burstiness_index(s),
+        Some(s) => observation_vector::calculate_burstiness_index(s),
         None => f32::NAN,
+    })
+}
+
+/// Port of OrderFlowAsymmetryEngine.h's `ComputeMicroAsymmetry` (dim 7, `micro_asymmetry`). No
+/// null-input case (all scalar args) -- panics are still guarded, since a NaN input could still
+/// trip an unexpected path.
+#[unsafe(no_mangle)]
+pub extern "C" fn observation_vector_micro_asymmetry(
+    ask_volume: f32,
+    bid_volume: f32,
+    last_valid_value: f32,
+) -> f32 {
+    guard_f32(|| observation_vector::micro_asymmetry(ask_volume, bid_volume, last_valid_value))
+}
+
+/// Port of RQAEpsilonSelector.h's `SelectEpsilonForTargetRecurrenceRate`. `prices` points to `len`
+/// chronologically-ordered points. Unlike most wrappers here, a null/empty `prices` maps to the
+/// pure function's own `n < 2` degenerate case (returns `1e-6`), not a NaN sentinel -- this
+/// selector has no "unknown" case, only "infeasible," matching the C++ original.
+///
+/// # Safety
+/// `prices` must be either null or valid for reads of `len` contiguous `f32` elements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn observation_vector_select_epsilon_for_target_recurrence_rate(
+    prices: *const f32,
+    len: usize,
+    target_rr: f64,
+) -> f64 {
+    guard_f64(|| {
+        let slice: &[f32] = match unsafe { slice_or_none(prices, len) } {
+            Some(s) => s,
+            None => &[],
+        };
+        observation_vector::select_epsilon_for_target_recurrence_rate(slice, target_rr)
+    })
+}
+
+/// Port of RecurrenceRateEngine.h's `RebuildClosedBarWindow` + `ComputeRate`, combined into one
+/// stateless call (see `observation_vector::recurrence_rate`'s own doc comment for why this is
+/// behaviorally identical to the incremental engine for every real input). `closed_bars` points to
+/// `len` closed-bar values; a null/empty `closed_bars` maps to the pure function's own
+/// zero-closed-bars case (just the live point against itself), not a NaN sentinel.
+///
+/// # Safety
+/// `closed_bars` must be either null or valid for reads of `len` contiguous `f32` elements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn observation_vector_recurrence_rate(
+    closed_bars: *const f32,
+    len: usize,
+    live_price: f32,
+    epsilon: f32,
+) -> f32 {
+    guard_f32(|| {
+        let slice: &[f32] = match unsafe { slice_or_none(closed_bars, len) } {
+            Some(s) => s,
+            None => &[],
+        };
+        observation_vector::recurrence_rate(slice, live_price, epsilon)
     })
 }

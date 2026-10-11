@@ -16,9 +16,12 @@ fn main() {
     println!("cargo:rerun-if-changed=cbindgen.toml");
     println!("cargo:rerun-if-changed=build.rs");
 
-    let crate_dir = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
+    let crate_dir = PathBuf::from(
+        std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR is always set by cargo"),
+    );
     let header = crate_dir.join("../../include/generated/mts_core.h");
-    let config = cbindgen::Config::from_file(crate_dir.join("cbindgen.toml")).unwrap();
+    let config = cbindgen::Config::from_file(crate_dir.join("cbindgen.toml"))
+        .expect("failed to parse ffi/cbindgen.toml");
     cbindgen::Builder::new()
         .with_src(crate_dir.join("src/lib.rs"))
         .with_config(config)

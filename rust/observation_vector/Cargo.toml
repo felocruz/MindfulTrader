@@ -7,7 +7,7 @@
 # First two ports (2026-10-08): SevcikFractalDimension.h, RobustMoments.h's
 # BowleySkewness/MoorsKurtosis/EmpiricalQuantile.
 [package]
-name = "mts_observation_vector"
+name = "observation_vector"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

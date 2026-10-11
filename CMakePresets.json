@@ -18,7 +18,7 @@
     {
       "name": "wsl-clang-cl-release-rust",
       "displayName": "WSL Clang-cl (Windows DLL + rust/ffi)",
-      "description": "Same as wsl-clang-cl-release, with rust/ffi (mts_ffi.lib) linked in. Build rust/ffi first (scripts/build_rust.sh).",
+      "description": "Same as wsl-clang-cl-release, with rust/ffi (ffi.lib) linked in. Build rust/ffi first (scripts/build_rust.sh).",
       "inherits": "wsl-clang-cl-release",
       "binaryDir": "${sourceDir}/build-windows-rust",
       "cacheVariables": {

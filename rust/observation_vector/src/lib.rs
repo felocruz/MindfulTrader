@@ -1,4 +1,4 @@
-//! mts_observation_vector -- pure ports of this codebase's C++ observation-vector dim math.
+//! observation_vector -- pure ports of this codebase's C++ observation-vector dim math.
 //! Zero ACSIL/zmq/pyo3 dependency (infrastructure guide §2.1 "pure core, thin edges").
 //!
 //! Every function here is a byte-for-byte port of an existing, natively-tested C++ header; the
@@ -27,7 +27,7 @@ pub fn empirical_quantile(sorted: &[f32], p: f64) -> f32 {
 /// convention as the C++ original.
 pub fn bowley_skewness(returns: &[f32]) -> f32 {
     let mut sorted: Vec<f32> = returns.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(f32::total_cmp);
     let q1 = empirical_quantile(&sorted, 0.25);
     let q2 = empirical_quantile(&sorted, 0.50);
     let q3 = empirical_quantile(&sorted, 0.75);
@@ -42,7 +42,7 @@ pub fn bowley_skewness(returns: &[f32]) -> f32 {
 /// RobustMoments.h's `MoorsKurtosis`. Returns NaN if Q(6/8)==Q(2/8) (degenerate window).
 pub fn moors_kurtosis(returns: &[f32]) -> f32 {
     let mut sorted: Vec<f32> = returns.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(f32::total_cmp);
     let q1_8 = empirical_quantile(&sorted, 1.0 / 8.0);
     let q2_8 = empirical_quantile(&sorted, 2.0 / 8.0);
     let q3_8 = empirical_quantile(&sorted, 3.0 / 8.0);
@@ -293,7 +293,7 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     }
 
     let mut scratch = log_prices;
-    scratch[..n].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    scratch[..n].sort_by(f64::total_cmp);
     let price_mid = n / 2;
     let median_log_p = scratch[price_mid];
 
@@ -301,7 +301,7 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     for i in 0..n {
         dev_scratch[i] = (log_prices[i] - median_log_p).abs();
     }
-    dev_scratch[..n].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    dev_scratch[..n].sort_by(f64::total_cmp);
     let mad_log_p = dev_scratch[price_mid];
     let scale_log_p = mad_log_p * MAD_CONSISTENCY;
 
@@ -328,7 +328,7 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     }
 
     let mut ret_scratch = returns;
-    ret_scratch[..m].sort_by(|a, b| a.partial_cmp(b).unwrap());
+    ret_scratch[..m].sort_by(f64::total_cmp);
     let ret_mid = m / 2;
     let median_r = ret_scratch[ret_mid];
 
@@ -387,12 +387,12 @@ pub fn compute_liquidity_fragility(
 
     let mut range_scratch = [0.0f32; LIQ_FRAGILITY_WINDOW];
     range_scratch.copy_from_slice(&range_window[..LIQ_FRAGILITY_WINDOW]);
-    range_scratch.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    range_scratch.sort_by(f32::total_cmp);
     let med_range = range_scratch[MID];
 
     let mut vol_scratch = [0.0f32; LIQ_FRAGILITY_WINDOW];
     vol_scratch.copy_from_slice(&sqrt_vol_window[..LIQ_FRAGILITY_WINDOW]);
-    vol_scratch.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    vol_scratch.sort_by(f32::total_cmp);
     let med_sqrt_vol = vol_scratch[MID];
     let scale_ref = med_range / (med_sqrt_vol + EPS);
 
@@ -519,7 +519,7 @@ pub fn calculate_burstiness_index(timestamps: &[u64]) -> f32 {
     // value at that index as nth_element, since only the single value at `mid` is read.
     let mut sorted = vals;
     const MID: usize = BINS / 2;
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(f32::total_cmp);
     let median = sorted[MID];
     if median <= 0.0 {
         return 1.0;
@@ -529,15 +529,135 @@ pub fn calculate_burstiness_index(timestamps: &[u64]) -> f32 {
     for i in 0..BINS {
         abs_dev[i] = (vals[i] - median).abs();
     }
-    abs_dev.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    abs_dev.sort_by(f32::total_cmp);
     let mad = abs_dev[MID];
 
-    const POISSON_CONSISTENCY: f32 = 1.58113883;
+    const POISSON_CONSISTENCY: f32 = 1.581_138_8;
     let idc = (POISSON_CONSISTENCY * mad) * (POISSON_CONSISTENCY * mad) / median;
     (idc - 1.0) / (idc + 1.0)
 }
 
+/// Order-flow asymmetry in [-1, 1]: +1 = all buying (aggressor at ask), -1 = all selling
+/// (aggressor at bid), 0 = balanced. Port of OrderFlowAsymmetryEngine.h's
+/// `ComputeMicroAsymmetry` (dim 7, `micro_asymmetry`). A true no-trade bar (`ask_volume ==
+/// bid_volume == 0`) carries `last_valid_value` forward instead of fabricating a misleading
+/// exact-zero "balanced" reading.
+pub fn micro_asymmetry(ask_volume: f32, bid_volume: f32, last_valid_value: f32) -> f32 {
+    let total = ask_volume + bid_volume;
+    if total <= 0.0 {
+        return last_valid_value;
+    }
+    (ask_volume - bid_volume) / total
+}
+
+/// Largest window `select_epsilon_for_target_recurrence_rate` supports. Port of
+/// RQAEpsilonSelector.h's `kRQASelectorMaxN`. Windows larger than this are clamped to the first
+/// `RQA_SELECTOR_MAX_N` samples, matching the C++ original's truncation (`if (n >
+/// kRQASelectorMaxN) n = kRQASelectorMaxN;`) rather than silently reading past it.
+pub const RQA_SELECTOR_MAX_N: usize = 256;
+
+/// Selects epsilon such that the recurrence rate over `prices` is as close as possible to
+/// `target_rr`, via the Schinkel, Dimigen & Marwan (2008) fixed-recurrence-rate method: sort all
+/// pairwise absolute distances, epsilon = the distance at the rank implied by the target. Port of
+/// RQAEpsilonSelector.h's `SelectEpsilonForTargetRecurrenceRate`.
+///
+/// `target_rr` is the desired FULL-MATRIX recurrence rate, matching exactly what
+/// `recurrence_rate` below measures: RR = recur_count / n^2 with the line of identity (LOI, the
+/// i==j diagonal) included. Since this selector can only rank the n(n-1)/2 OFF-diagonal
+/// distances, the off-diagonal target is back-solved from the desired full-matrix rate (see the
+/// C++ header's own derivation comment for the full algebra). Infeasible targets (`target_rr <=
+/// 1/n`, the LOI alone already meets or exceeds the requested rate) return the smallest
+/// achievable epsilon (the minimum pairwise distance), matching production's strict `dist <
+/// epsilon` test yielding `RR == 1/n` exactly.
+pub fn select_epsilon_for_target_recurrence_rate(prices: &[f32], target_rr: f64) -> f64 {
+    let n_full = prices.len();
+    if n_full < 2 {
+        return 1e-6;
+    }
+    let n = n_full.min(RQA_SELECTOR_MAX_N);
+    let prices = &prices[..n];
+
+    let mut distances: Vec<f32> = Vec::with_capacity(n * (n.saturating_sub(1)) / 2);
+    for i in 0..n {
+        for j in (i + 1)..n {
+            distances.push((prices[i] - prices[j]).abs());
+        }
+    }
+    if distances.is_empty() {
+        return 1e-6;
+    }
+    distances.sort_by(f32::total_cmp);
+
+    let nd = n as f64;
+    let off_diag_target = (target_rr * nd * nd - nd) / (nd * (nd - 1.0));
+
+    // Infeasible: the LOI alone already meets or exceeds the requested full-matrix rate. Negated
+    // form (not `<= 0.0`) is deliberate -- matches the C++ original's `!(offDiagTarget > 0.0)`
+    // bit-for-bit, including its NaN handling: a NaN `off_diag_target` (e.g. n==1, division by
+    // zero in the n*(n-1) denominator) must also route into this defensive fallback branch, and
+    // `NaN > 0.0` and `NaN <= 0.0` are NOT the same false here -- `!(NaN > 0.0)` is `true`,
+    // `NaN <= 0.0` is `false`, so rewriting this as `<=` would silently change NaN behavior.
+    #[allow(clippy::neg_cmp_op_on_partial_ord)]
+    if !(off_diag_target > 0.0) {
+        return (distances[0] as f64).max(1e-6);
+    }
+
+    let clamped_target = off_diag_target.min(1.0);
+    let num_pairs = distances.len();
+    // Round (not floor): distances[rank] leaves exactly `rank` distances strictly below epsilon
+    // (ties aside), so `rank` IS the achieved M -- rounding puts M closest to the back-solved target.
+    let rank_f = (clamped_target * num_pairs as f64 + 0.5).floor().max(0.0);
+    let rank = (rank_f as usize).min(num_pairs - 1);
+
+    (distances[rank] as f64).max(1e-6)
+}
+
+/// Largest closed-bar window `recurrence_rate` supports. Port of RecurrenceRateEngine.h's
+/// `kMaxClosedBars`. Windows larger than this are clamped to the first
+/// `RECURRENCE_RATE_MAX_CLOSED_BARS` samples, matching the C++ original's clamp.
+pub const RECURRENCE_RATE_MAX_CLOSED_BARS: usize = 256;
+
+/// Recurrence rate (dim 13, `recurrence_rate`): fraction of pairwise distances below `epsilon`
+/// across `closed_bars` plus the live point, including the line-of-identity diagonal. Port of
+/// RecurrenceRateEngine.h's `RebuildClosedBarWindow` + `ComputeRate`, combined into one stateless
+/// call -- both real production call sites (`ContextManager.cpp`'s `s_recurrenceEngine`,
+/// `ImbalanceContextManager.h`'s `ComputeImbalanceRecurrenceRate`) always call the two together,
+/// gated on bar-close (`if (completedBarCount != s_lastRecurrenceBarCount)`), never streaming
+/// across many ticks with the closed-bar window held fixed -- a fresh full-matrix computation is
+/// therefore behaviorally identical to the incremental engine for every real input, not a
+/// simplification that changes the answer (`RecurrenceRateEngine.h`'s own native test proves
+/// exactly this equivalence against a brute-force n*n reference). Result is clamped to [0, 1].
+pub fn recurrence_rate(closed_bars: &[f32], live_price: f32, epsilon: f32) -> f32 {
+    let closed_count = closed_bars.len().min(RECURRENCE_RATE_MAX_CLOSED_BARS);
+    let closed_bars = &closed_bars[..closed_count];
+    let n = closed_count + 1;
+
+    let mut closed_pair_count = 0i32;
+    for i in 0..closed_count {
+        for j in (i + 1)..closed_count {
+            if (closed_bars[i] - closed_bars[j]).abs() < epsilon {
+                closed_pair_count += 1;
+            }
+        }
+    }
+
+    let mut live_vs_closed = 0i32;
+    for &c in closed_bars {
+        if (live_price - c).abs() < epsilon {
+            live_vs_closed += 1;
+        }
+    }
+
+    let recur_count = n as i32 + 2 * closed_pair_count + 2 * live_vs_closed; // n = diagonal
+    let total_count = (n * n) as f32;
+    (recur_count as f32 / total_count).clamp(0.0, 1.0)
+}
+
 #[cfg(test)]
+// Several tests assert exact sentinel/boundary return values (e.g. early-return 0.0 for
+// below-minimum-samples, clamped -1.0/1.0 extremes) that the implementation guarantees bit-exactly,
+// not the result of arithmetic subject to rounding -- strict equality is the correct check there.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -602,7 +722,7 @@ mod tests {
 
     #[test]
     fn sevcik_degenerate_flat_window_is_nan() {
-        assert!(sevcik_fractal_dimension(&vec![100.0f32; 41]).is_nan());
+        assert!(sevcik_fractal_dimension(&[100.0f32; 41]).is_nan());
     }
 
     #[test]
@@ -857,7 +977,7 @@ mod tests {
     #[test]
     fn mean_rev_z_n7_full_path_matches_reference() {
         let prices = [100.0f32, 101.0, 99.0, 102.0, 98.0, 103.0, 110.0];
-        assert!((compute_mean_reversion_z(&prices, 0.0) - 2.8224230).abs() <= 1e-3);
+        assert!((compute_mean_reversion_z(&prices, 0.0) - 2.822_423).abs() <= 1e-3);
     }
 
     #[test]
@@ -886,7 +1006,7 @@ mod tests {
         let range_w = [2.0f32; LIQ_FRAGILITY_WINDOW];
         let vol_w = [10.0f32; LIQ_FRAGILITY_WINDOW];
         let result = compute_liquidity_fragility(&range_w, &vol_w, 4.0, 400.0, 0.5);
-        assert!((result - 0.5000000).abs() <= 1e-3);
+        assert!((result - 0.5).abs() <= 1e-3);
     }
 
     #[test]
@@ -1023,5 +1143,170 @@ mod tests {
             4_000_000, 4_050_000, 4_950_000, 5_000_000,
         ];
         assert!((calculate_burstiness_index(&ts) - 0.6666667).abs() <= 1e-4);
+    }
+
+    // --- micro_asymmetry: golden values from tests/cpp/test_order_flow_asymmetry_engine.cpp ---
+
+    #[test]
+    fn micro_asymmetry_balanced_flow_is_zero() {
+        assert!((micro_asymmetry(50.0, 50.0, 0.0) - 0.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_all_buying_is_plus_one() {
+        assert!((micro_asymmetry(100.0, 0.0, 0.0) - 1.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_all_selling_is_minus_one() {
+        assert!((micro_asymmetry(0.0, 100.0, 0.0) - (-1.0)).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_partial_buy_skew() {
+        assert!((micro_asymmetry(75.0, 25.0, 0.0) - 0.5).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_no_trade_bar_with_no_prior_value_returns_neutral() {
+        assert!((micro_asymmetry(0.0, 0.0, 0.0) - 0.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_no_trade_bar_carries_forward_prior_value() {
+        assert!((micro_asymmetry(0.0, 0.0, 0.7) - 0.7).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn micro_asymmetry_negative_no_trade_carry_forward() {
+        assert!((micro_asymmetry(0.0, 0.0, -0.35) - (-0.35)).abs() <= 1e-6);
+    }
+
+    // --- select_epsilon_for_target_recurrence_rate / recurrence_rate: golden values from
+    // tests/cpp/test_rqa_epsilon.cpp and tests/cpp/test_recurrence_rate_engine.cpp ---
+
+    // Replicates production's full n*n matrix measurement verbatim (line of identity included,
+    // strict `dist < epsilon`, symmetric pairs counted twice) -- the same independent reference
+    // both C++ test files use to prove the selector/engine against, not the functions under test.
+    fn measured_full_matrix_rr(prices: &[f32], epsilon: f64) -> f64 {
+        let n = prices.len();
+        let mut recur_count = n as i64;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                if ((prices[i] - prices[j]).abs() as f64) < epsilon {
+                    recur_count += 2;
+                }
+            }
+        }
+        recur_count as f64 / (n * n) as f64
+    }
+
+    #[test]
+    fn epsilon_selector_low_volatility_hits_target_rr() {
+        const N: usize = 30;
+        const TARGET: f64 = 0.05;
+        const TOL: f64 = 0.008;
+        let low_vol = make_walk(N, 0.05, 12345);
+        let eps = select_epsilon_for_target_recurrence_rate(&low_vol, TARGET);
+        let rr = measured_full_matrix_rr(&low_vol, eps);
+        assert!((rr - TARGET).abs() < TOL);
+        assert!(eps > 0.0);
+    }
+
+    #[test]
+    fn epsilon_selector_high_volatility_hits_same_target_with_larger_epsilon() {
+        const TARGET: f64 = 0.05;
+        let low_vol = make_walk(30, 0.05, 12345);
+        let eps_low = select_epsilon_for_target_recurrence_rate(&low_vol, TARGET);
+        let high_vol = make_walk(30, 5.0, 987_654_321);
+        let eps_high = select_epsilon_for_target_recurrence_rate(&high_vol, TARGET);
+        let rr_high = measured_full_matrix_rr(&high_vol, eps_high);
+        assert!((rr_high - TARGET).abs() < 0.008);
+        assert!(eps_high > eps_low * 10.0);
+    }
+
+    #[test]
+    fn epsilon_selector_is_scale_invariant() {
+        const N: usize = 30;
+        const TARGET: f64 = 0.05;
+        let low_vol = make_walk(N, 0.05, 12345);
+        let eps_low = select_epsilon_for_target_recurrence_rate(&low_vol, TARGET);
+        let rr_low = measured_full_matrix_rr(&low_vol, eps_low);
+
+        let scaled: Vec<f32> = low_vol.iter().map(|&p| 100.0 + (p - 100.0) * 250.0).collect();
+        let eps_scaled = select_epsilon_for_target_recurrence_rate(&scaled, TARGET);
+        let rr_scaled = measured_full_matrix_rr(&scaled, eps_scaled);
+        assert!((rr_scaled - rr_low).abs() < 1e-12);
+    }
+
+    #[test]
+    fn epsilon_selector_infeasible_target_falls_back_to_smallest_achievable_rr() {
+        const N: usize = 30;
+        let low_vol = make_walk(N, 0.05, 12345);
+        let eps = select_epsilon_for_target_recurrence_rate(&low_vol, 0.02);
+        let rr = measured_full_matrix_rr(&low_vol, eps);
+        assert!((rr - 1.0 / N as f64).abs() < 1e-12);
+        assert!(eps > 0.0);
+    }
+
+    #[test]
+    fn epsilon_selector_n40_hits_target_rr() {
+        const TARGET: f64 = 0.05;
+        let wide = make_walk(40, 0.4, 42);
+        let eps = select_epsilon_for_target_recurrence_rate(&wide, TARGET);
+        let rr = measured_full_matrix_rr(&wide, eps);
+        assert!((rr - TARGET).abs() < 0.008);
+    }
+
+    #[test]
+    fn recurrence_rate_matches_brute_force_n30() {
+        let walk = make_walk(30, 0.5, 12345);
+        let closed = &walk[1..]; // 29 closed bars, walk[0] plays the live point
+        let epsilon = 0.7f32;
+        for &live_price in &[walk[0], walk[0] + 0.2, walk[0] - 1.3, walk[5], walk[10] + 0.05] {
+            let mut full_window = vec![live_price];
+            full_window.extend_from_slice(closed);
+            let expected = measured_full_matrix_rr(&full_window, epsilon as f64);
+            let actual = recurrence_rate(closed, live_price, epsilon);
+            assert!((expected - actual as f64).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn recurrence_rate_matches_brute_force_n150() {
+        let walk = make_walk(150, 1.2, 999);
+        let closed = &walk[1..];
+        let epsilon = 1.5f32;
+        let mut full_window = vec![walk[0]];
+        full_window.extend_from_slice(closed);
+        let expected = measured_full_matrix_rr(&full_window, epsilon as f64);
+        let actual = recurrence_rate(closed, walk[0], epsilon);
+        assert!((expected - actual as f64).abs() < 1e-6);
+    }
+
+    #[test]
+    fn recurrence_rate_oversized_window_is_clamped_not_overrun() {
+        // All-identical values -- doesn't matter which elements survive the clamp, only that this
+        // doesn't panic/overrun and returns a sane, fully-recurrent result (every pairwise distance
+        // is 0.0, strictly below any positive epsilon).
+        let big = vec![1.0f32; RECURRENCE_RATE_MAX_CLOSED_BARS + 10];
+        let actual = recurrence_rate(&big, 1.0, 0.5);
+        assert!((actual - 1.0).abs() <= 1e-6);
+    }
+
+    #[test]
+    fn recurrence_rate_is_unit_agnostic_return_scale_reuse() {
+        // Mirrors recurrence_rate's real activity-clock production call: a 100-element array of
+        // return-scale (not price-scale) values, epsilon selected over all 100, first 99 as
+        // "closed," the 100th as "live" (test_recurrence_rate_engine.cpp's own reuse check).
+        let mut rng = Lcg(7);
+        let returns: Vec<f32> = (0..100)
+            .map(|_| (0.002 * (2.0 * rng.next_unit() - 1.0)) as f32)
+            .collect();
+        let epsilon = select_epsilon_for_target_recurrence_rate(&returns, 0.05);
+        let actual = recurrence_rate(&returns[..99], returns[99], epsilon as f32);
+        let expected = measured_full_matrix_rr(&returns, epsilon);
+        assert!((expected - actual as f64).abs() < 1e-6);
+        assert!(actual.is_finite() && (0.0..=1.0).contains(&actual));
     }
 }

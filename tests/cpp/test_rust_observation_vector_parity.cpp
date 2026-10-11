@@ -1,16 +1,16 @@
 // tests/cpp/test_rust_observation_vector_parity.cpp -- the authoritative cross-language proof that
 // rust/observation_vector's Rust ports produce IDENTICAL output to the original C++ functions, not
 // just "ported independently and hoping": this test feeds the SAME input array into both the
-// original C++ function and the Rust FFI wrapper (rust/ffi's mts_observation_vector_* functions,
+// original C++ function and the Rust FFI wrapper (rust/ffi's observation_vector_* functions,
 // via the cbindgen-generated include/generated/mts_core.h) and asserts equality. Each language's own
 // unit tests (tests/cpp/test_sevcik_fractal_dimension.cpp, tests/cpp/test_robust_moments.cpp,
 // rust/observation_vector/src/lib.rs's #[cfg(test)]) separately prove each side matches its own
 // reference/golden values; this test is the missing link between them.
 //
-// Build & run natively (links the Linux-native rust/target/release/libmts_ffi.a -- build that first
-// with `cd rust && cargo build -p mts_ffi --release --features observation_vector`):
+// Build & run natively (links the Linux-native rust/target/release/libffi.a -- build that first
+// with `cd rust && cargo build -p ffi --release --features observation_vector`):
 //   g++ -std=c++17 -I include tests/cpp/test_rust_observation_vector_parity.cpp \
-//     rust/target/release/libmts_ffi.a -lpthread -ldl -o /tmp/parity_test && /tmp/parity_test
+//     rust/target/release/libffi.a -lpthread -ldl -o /tmp/parity_test && /tmp/parity_test
 
 #include "BipowerVariation.h"
 #include "CarryForwardCalculators.h"
@@ -18,6 +18,9 @@
 #include "EventVelocityEngine.h"
 #include "LiquidityFragilityEngine.h"
 #include "MeanReversionCalculator.h"
+#include "OrderFlowAsymmetryEngine.h"
+#include "RQAEpsilonSelector.h"
+#include "RecurrenceRateEngine.h"
 #include "RingBuffer.h"
 #include "RobustMoments.h"
 #include "SevcikFractalDimension.h"
@@ -59,7 +62,7 @@ int main() {
         const auto prices = MakeWalk(lookback_n + 1, 0.8, 4242u);
 
         const float cppResult = SevcikFractalDimension(prices.data(), lookback_n);
-        const float rustResult = mts::mts_observation_vector_sevcik_fractal_dimension(
+        const float rustResult = mts::observation_vector_sevcik_fractal_dimension(
             prices.data(), prices.size());
 
         char label[128];
@@ -71,7 +74,7 @@ int main() {
     {
         const std::vector<float> flat(41, 100.0f);
         const float cppResult = SevcikFractalDimension(flat.data(), 40);
-        const float rustResult = mts::mts_observation_vector_sevcik_fractal_dimension(flat.data(), flat.size());
+        const float rustResult = mts::observation_vector_sevcik_fractal_dimension(flat.data(), flat.size());
         check("SevcikFractalDimension degenerate flat window: both NaN",
               std::isnan(cppResult) && std::isnan(rustResult));
     }
@@ -86,11 +89,11 @@ int main() {
         }
 
         const float cppSkew = BowleySkewness(returns);
-        const float rustSkew = mts::mts_observation_vector_bowley_skewness(returns.data(), returns.size());
+        const float rustSkew = mts::observation_vector_bowley_skewness(returns.data(), returns.size());
         check("BowleySkewness: Rust matches C++ exactly", std::fabs(cppSkew - rustSkew) < 1e-5f);
 
         const float cppKurt = MoorsKurtosis(returns);
-        const float rustKurt = mts::mts_observation_vector_moors_kurtosis(returns.data(), returns.size());
+        const float rustKurt = mts::observation_vector_moors_kurtosis(returns.data(), returns.size());
         check("MoorsKurtosis: Rust matches C++ exactly", std::fabs(cppKurt - rustKurt) < 1e-5f);
     }
 
@@ -98,7 +101,7 @@ int main() {
     {
         const double r[] = {0.01, -0.02, 0.03};
         const double cppBv = ComputeBipowerVariation(r, 3);
-        const double rustBv = mts::mts_observation_vector_compute_bipower_variation(r, 3);
+        const double rustBv = mts::observation_vector_compute_bipower_variation(r, 3);
         check("ComputeBipowerVariation hand-computed window: Rust matches C++ exactly",
               std::fabs(cppBv - rustBv) < 1e-12);
     }
@@ -111,20 +114,20 @@ int main() {
                           static_cast<double>(walk[static_cast<std::size_t>(i)]));
         }
         const double cppBv = ComputeBipowerVariation(returns.data(), static_cast<int>(returns.size()));
-        const double rustBv = mts::mts_observation_vector_compute_bipower_variation(returns.data(), returns.size());
+        const double rustBv = mts::observation_vector_compute_bipower_variation(returns.data(), returns.size());
         check("ComputeBipowerVariation on real walk data: Rust matches C++ exactly",
               std::fabs(cppBv - rustBv) < 1e-9);
     }
     check("ComputeBipowerVariation n<2: both return 0.0 (not NaN)",
           ComputeBipowerVariation(nullptr, 0) == 0.0 &&
-          mts::mts_observation_vector_compute_bipower_variation(nullptr, 0) == 0.0);
+          mts::observation_vector_compute_bipower_variation(nullptr, 0) == 0.0);
 
     // Null/empty-input contract: Rust wrapper must not crash, must return NaN.
     {
         check("Rust wrapper handles null pointer without crashing",
-              std::isnan(mts::mts_observation_vector_sevcik_fractal_dimension(nullptr, 0)));
+              std::isnan(mts::observation_vector_sevcik_fractal_dimension(nullptr, 0)));
         check("Rust wrapper handles zero length without crashing",
-              std::isnan(mts::mts_observation_vector_bowley_skewness(nullptr, 0)));
+              std::isnan(mts::observation_vector_bowley_skewness(nullptr, 0)));
     }
 
     // --- DfaHurstExponent: C++ production function vs. Rust FFI wrapper, same input ---
@@ -139,7 +142,7 @@ int main() {
         }
 
         const float cppResult = DfaHurstExponent(logReturns.data(), length, 8);
-        const float rustResult = mts::mts_observation_vector_dfa_hurst_exponent(
+        const float rustResult = mts::observation_vector_dfa_hurst_exponent(
             logReturns.data(), static_cast<std::size_t>(length), 8);
 
         char label[128];
@@ -152,7 +155,7 @@ int main() {
         const std::array<float, 16> small{0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f,
                                            0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f, 0.001f};
         const float cppResult = DfaHurstExponent(small.data(), 16, 8);
-        const float rustResult = mts::mts_observation_vector_dfa_hurst_exponent(small.data(), small.size(), 8);
+        const float rustResult = mts::observation_vector_dfa_hurst_exponent(small.data(), small.size(), 8);
         check("DfaHurstExponent degenerate (length < minScale*4): both NaN",
               std::isnan(cppResult) && std::isnan(rustResult));
     }
@@ -162,7 +165,7 @@ int main() {
         const auto walk = MakeWalk(n, 1.5, 3131u);
 
         const float cppResult = mrc::ComputeMeanReversionZ(walk.data(), n, 0.0f);
-        const float rustResult = mts::mts_observation_vector_compute_mean_reversion_z(walk.data(), walk.size(), 0.0f);
+        const float rustResult = mts::observation_vector_compute_mean_reversion_z(walk.data(), walk.size(), 0.0f);
 
         char label[128];
         std::snprintf(label, sizeof(label), "ComputeMeanReversionZ n=%d: Rust matches C++ exactly", n);
@@ -175,7 +178,7 @@ int main() {
         const std::array<float, 7> flat{100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f, 100.0f};
         const float cppResult = mrc::ComputeMeanReversionZ(flat.data(), 7, 0.42f);
         const float rustResult =
-            mts::mts_observation_vector_compute_mean_reversion_z(flat.data(), flat.size(), 0.42f);
+            mts::observation_vector_compute_mean_reversion_z(flat.data(), flat.size(), 0.42f);
         check("ComputeMeanReversionZ degenerate flat window: both carry last_valid_value=0.42 forward",
               std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
     }
@@ -183,7 +186,7 @@ int main() {
     // Null/empty input must also carry last_valid_value forward (the FFI wrapper's own documented
     // convention, distinct from most other wrappers here, which map null/empty to NaN).
     {
-        const float rustResult = mts::mts_observation_vector_compute_mean_reversion_z(nullptr, 0, 0.77f);
+        const float rustResult = mts::observation_vector_compute_mean_reversion_z(nullptr, 0, 0.77f);
         check("ComputeMeanReversionZ Rust wrapper: null input carries last_valid_value forward",
               std::fabs(rustResult - 0.77f) < 1e-6f);
     }
@@ -204,7 +207,7 @@ int main() {
               std::make_tuple(2.0f, 1000.0f, 0.1f)}) {
             const float cppResult =
                 lfe::ComputeLiquidityFragility(rangeW.data(), volW.data(), liveBarRange, liveVol, prevFrag);
-            const float rustResult = mts::mts_observation_vector_compute_liquidity_fragility(
+            const float rustResult = mts::observation_vector_compute_liquidity_fragility(
                 rangeW.data(), volW.data(), rangeW.size(), liveBarRange, liveVol, prevFrag);
             check("ComputeLiquidityFragility: Rust matches C++ exactly",
                   std::fabs(cppResult - rustResult) < 1e-4f);
@@ -218,7 +221,7 @@ int main() {
         rangeW.fill(2.0f);
         volW.fill(10.0f);
         const float cppResult = lfe::ComputeLiquidityFragility(rangeW.data(), volW.data(), 4.0f, 10.0f, 0.42f);
-        const float rustResult = mts::mts_observation_vector_compute_liquidity_fragility(
+        const float rustResult = mts::observation_vector_compute_liquidity_fragility(
             rangeW.data(), volW.data(), rangeW.size(), 4.0f, 10.0f, 0.42f);
         check("ComputeLiquidityFragility thin-volume degenerate: both carry prev_fragility=0.42 forward",
               std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
@@ -227,7 +230,7 @@ int main() {
     // Null/zero-length window input must also carry prev_fragility forward.
     {
         const float rustResult =
-            mts::mts_observation_vector_compute_liquidity_fragility(nullptr, nullptr, 0, 4.0f, 400.0f, 0.63f);
+            mts::observation_vector_compute_liquidity_fragility(nullptr, nullptr, 0, 4.0f, 400.0f, 0.63f);
         check("ComputeLiquidityFragility Rust wrapper: null input carries prev_fragility forward",
               std::fabs(rustResult - 0.63f) < 1e-6f);
     }
@@ -236,13 +239,13 @@ int main() {
     {
         const float cppResult = cfc::ComputeBurstinessIndex(0.0021062, 1.0, 0.0f, -10.0f, 6.0f);
         const float rustResult =
-            mts::mts_observation_vector_compute_burstiness_index(0.0021062, 1.0, 0.0f, -10.0f, 6.0f);
+            mts::observation_vector_compute_burstiness_index(0.0021062, 1.0, 0.0f, -10.0f, 6.0f);
         check("ComputeBurstinessIndex: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
     }
     {
         const float cppResult = cfc::ComputeBurstinessIndex(4.0, 1e-13, 0.42f, -6.0f, 6.0f);
         const float rustResult =
-            mts::mts_observation_vector_compute_burstiness_index(4.0, 1e-13, 0.42f, -6.0f, 6.0f);
+            mts::observation_vector_compute_burstiness_index(4.0, 1e-13, 0.42f, -6.0f, 6.0f);
         check("ComputeBurstinessIndex degenerate: both carry last_valid_value=0.42 forward",
               std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
     }
@@ -250,20 +253,20 @@ int main() {
     // --- ComputeRelativeRange (dim 2): C++ vs. Rust FFI wrapper ---
     {
         const float cppResult = cfc::ComputeRelativeRange(105.0f, 100.0f, 2.5f, 0.0f);
-        const float rustResult = mts::mts_observation_vector_compute_relative_range(105.0f, 100.0f, 2.5f, 0.0f);
+        const float rustResult = mts::observation_vector_compute_relative_range(105.0f, 100.0f, 2.5f, 0.0f);
         check("ComputeRelativeRange: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
     }
 
     // --- ComputeFisherInformation (dim 8): C++ vs. Rust FFI wrapper ---
     {
         const float cppResult = cfc::ComputeFisherInformation(100.0f, 110.0f, 109.0f, 0.0f);
-        const float rustResult = mts::mts_observation_vector_compute_fisher_information(100.0f, 110.0f, 109.0f, 0.0f);
+        const float rustResult = mts::observation_vector_compute_fisher_information(100.0f, 110.0f, 109.0f, 0.0f);
         check("ComputeFisherInformation: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
     }
     {
         const float cppResult = cfc::ComputeFisherInformation(100.0f, 100.0f, 100.0f, -0.85f);
         const float rustResult =
-            mts::mts_observation_vector_compute_fisher_information(100.0f, 100.0f, 100.0f, -0.85f);
+            mts::observation_vector_compute_fisher_information(100.0f, 100.0f, 100.0f, -0.85f);
         check("ComputeFisherInformation degenerate: both carry last_valid_value=-0.85 forward",
               std::fabs(cppResult - (-0.85f)) < 1e-6f && std::fabs(rustResult - (-0.85f)) < 1e-6f);
     }
@@ -272,7 +275,7 @@ int main() {
     {
         const double sumLogRatio = std::log(0.002) + std::log(0.003) + std::log(0.001);
         const float cppResult = cfc::ComputeAmihudIlliquidity(sumLogRatio, 3, 0.0f);
-        const float rustResult = mts::mts_observation_vector_compute_amihud_illiquidity(sumLogRatio, 3, 0.0f);
+        const float rustResult = mts::observation_vector_compute_amihud_illiquidity(sumLogRatio, 3, 0.0f);
         check("ComputeAmihudIlliquidity: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-5f);
     }
 
@@ -289,7 +292,7 @@ int main() {
         for (size_t i = 0; i < ts.size(); ++i) flat.push_back(ts[i]);
 
         const float cppResult = eve::CalculateBurstinessIndex(ts);
-        const float rustResult = mts::mts_observation_vector_calculate_burstiness_index(flat.data(), flat.size());
+        const float rustResult = mts::observation_vector_calculate_burstiness_index(flat.data(), flat.size());
         check("CalculateBurstinessIndex: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-4f);
     }
     {
@@ -300,9 +303,58 @@ int main() {
         for (size_t i = 0; i < ts.size(); ++i) flat.push_back(ts[i]);
 
         const float cppResult = eve::CalculateBurstinessIndex(ts);
-        const float rustResult = mts::mts_observation_vector_calculate_burstiness_index(flat.data(), flat.size());
+        const float rustResult = mts::observation_vector_calculate_burstiness_index(flat.data(), flat.size());
         check("CalculateBurstinessIndex below-minimum-samples: Rust matches C++ (both neutral 0.0)",
               cppResult == 0.0f && rustResult == 0.0f);
+    }
+
+    // --- ComputeMicroAsymmetry (dim 7): C++ vs. Rust FFI wrapper ---
+    {
+        const float cppResult = ofae::ComputeMicroAsymmetry(75.0f, 25.0f, 0.0f);
+        const float rustResult = mts::observation_vector_micro_asymmetry(75.0f, 25.0f, 0.0f);
+        check("ComputeMicroAsymmetry: Rust matches C++ exactly", std::fabs(cppResult - rustResult) < 1e-6f);
+    }
+    {
+        const float cppResult = ofae::ComputeMicroAsymmetry(0.0f, 0.0f, 0.42f);
+        const float rustResult = mts::observation_vector_micro_asymmetry(0.0f, 0.0f, 0.42f);
+        check("ComputeMicroAsymmetry no-trade bar: both carry last_valid_value=0.42 forward",
+              std::fabs(cppResult - 0.42f) < 1e-6f && std::fabs(rustResult - 0.42f) < 1e-6f);
+    }
+
+    // --- SelectEpsilonForTargetRecurrenceRate + RecurrenceRateEngine (dim 13): C++ vs. Rust FFI
+    // wrapper, run together exactly as the real production call site composes them
+    // (ContextManager.cpp's s_recurrenceEngine / ImbalanceContextManager.h's
+    // ComputeImbalanceRecurrenceRate) ---
+    {
+        const auto walk = MakeWalk(30, 0.5, 12345u);
+        const std::vector<float> closed(walk.begin() + 1, walk.end());  // 29 closed bars
+        constexpr double kTargetRR = 0.05;
+
+        const double cppEpsilon = SelectEpsilonForTargetRecurrenceRate(walk.data(),
+                                                                        static_cast<int>(walk.size()), kTargetRR);
+        const double rustEpsilon =
+            mts::observation_vector_select_epsilon_for_target_recurrence_rate(walk.data(), walk.size(), kTargetRR);
+        check("SelectEpsilonForTargetRecurrenceRate: Rust matches C++ exactly",
+              std::fabs(cppEpsilon - rustEpsilon) < 1e-9);
+
+        RecurrenceRateEngine engine;
+        engine.RebuildClosedBarWindow(closed.data(), static_cast<int>(closed.size()), static_cast<float>(cppEpsilon));
+        const float cppRate = engine.ComputeRate(walk[0], static_cast<float>(cppEpsilon));
+        const float rustRate = mts::observation_vector_recurrence_rate(
+            closed.data(), closed.size(), walk[0], static_cast<float>(rustEpsilon));
+        check("RecurrenceRateEngine ComputeRate: Rust matches C++ exactly",
+              std::fabs(cppRate - rustRate) < 1e-6f);
+    }
+    {
+        // Oversized window: both clamp to their respective max (kMaxClosedBars /
+        // RECURRENCE_RATE_MAX_CLOSED_BARS, both 256) rather than overrunning.
+        const std::vector<float> big(RecurrenceRateEngine::kMaxClosedBars + 10, 1.0f);
+        RecurrenceRateEngine engine;
+        engine.RebuildClosedBarWindow(big.data(), static_cast<int>(big.size()), 0.5f);
+        const float cppRate = engine.ComputeRate(1.0f, 0.5f);
+        const float rustRate = mts::observation_vector_recurrence_rate(big.data(), big.size(), 1.0f, 0.5f);
+        check("RecurrenceRateEngine oversized window: Rust matches C++ exactly (both fully recurrent)",
+              std::fabs(cppRate - 1.0f) < 1e-6f && std::fabs(rustRate - 1.0f) < 1e-6f);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);

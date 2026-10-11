@@ -1,4 +1,4 @@
-//! `mts_schema` -- the FlatBuffers-generated Rust bindings for `mts_schema.fbs` (owned by the
+//! `schema` -- the FlatBuffers-generated Rust bindings for `mts_schema.fbs` (owned by the
 //! separate `schema` repo). As of 2026-10-09 (coherence audit §3.3) this one file also holds the
 //! backtest-artifact tables (`BacktestFrame`, `RunManifest`, `TradeRecord`, ...) -- formerly a
 //! separate `backtest_schema.fbs` that `include`d this one, merged because the include
@@ -18,6 +18,10 @@
 //! `unsafe_op_in_unsafe_fn` and `clippy::unwrap_used` at `[workspace.lints]` (neither is part of
 //! the `clippy::all` group Atratus relies on), and flatc's generated code trips both. Both must
 //! stay in this list or `cargo build`/`cargo clippy` hard-fail the moment this crate is touched.
+//! `mismatched_lifetime_syntaxes` was added 2026-10-10 (found via `cargo clippy --all-targets`,
+//! unrelated pre-existing issue): it's a plain rustc lint, not under `clippy::all`, so the
+//! existing list didn't cover it; flatc's current codegen elides a lifetime on `&[u8]` while
+//! spelling it out on the `Envelope` return type in the same signature (`root_as_envelope` et al.).
 #[path = "generated/mts_schema_generated.rs"]
 #[allow(
     unused_imports,
@@ -25,6 +29,7 @@
     clippy::all,
     clippy::unwrap_used,
     unsafe_op_in_unsafe_fn,
-    missing_debug_implementations
+    missing_debug_implementations,
+    mismatched_lifetime_syntaxes
 )]
 pub mod generated;

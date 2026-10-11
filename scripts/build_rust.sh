@@ -1,6 +1,6 @@
 #!/bin/bash
-# build_rust.sh [--features hmm,observation_vector,transport] -- cross-builds rust/ffi
-# (mts_ffi.lib) for Sierra. Called by build_dll.sh before CMake whenever MTS_WITH_RUST=ON; safe to
+# build_rust.sh [--features student_t_hmm,observation_vector,transport] -- cross-builds rust/ffi
+# (ffi.lib) for Sierra. Called by build_dll.sh before CMake whenever MTS_WITH_RUST=ON; safe to
 # run standalone too.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -13,9 +13,9 @@ fi
 
 cd "$ROOT/rust"   # .cargo/config.toml + rust-toolchain.toml discovery
 if [ -n "$FEATURES" ]; then
-    cargo build -p mts_ffi --release --target x86_64-pc-windows-msvc --features "$FEATURES"
+    cargo build -p ffi --release --target x86_64-pc-windows-msvc --features "$FEATURES"
 else
-    cargo build -p mts_ffi --release --target x86_64-pc-windows-msvc
+    cargo build -p ffi --release --target x86_64-pc-windows-msvc
 fi
 
 GENERATED_HEADER="$ROOT/include/generated/mts_core.h"

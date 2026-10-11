@@ -14,22 +14,22 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 # (docs/CROSS_COMPILE_SYSROOT_MIGRATION.md Phase A)
 set(VCPKG_SYSROOT "$ENV{HOME}/.local/sysroots/x86_64-pc-windows-msvc/vcpkg/x64-windows")
 
-# --- Rust (rust/ffi, the mts_ffi staticlib) -------------------------------------------------
+# --- Rust (rust/ffi, the ffi staticlib) -------------------------------------------------
 # OFF by default; flip ON via -DMTS_WITH_RUST=ON (or the wsl-clang-cl-release-rust preset) once
 # built. See docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md §6.2.
 # Path note: today rust/ is a
 # direct child of this repo root (pre-merge); post-merge, once this C++ moves into cpp/ and rust/
 # becomes a top-level sibling, this path gains a "../" -- update in the same commit as that move.
-option(MTS_WITH_RUST "Link rust/ffi (mts_ffi.lib) into the DLL" OFF)
+option(MTS_WITH_RUST "Link rust/ffi (ffi.lib) into the DLL" OFF)
 if(MTS_WITH_RUST)
-    set(MTS_FFI_LIB "${CMAKE_SOURCE_DIR}/rust/target/x86_64-pc-windows-msvc/release/mts_ffi.lib")
+    set(MTS_FFI_LIB "${CMAKE_SOURCE_DIR}/rust/target/x86_64-pc-windows-msvc/release/ffi.lib")
     if(NOT EXISTS "${MTS_FFI_LIB}")
         message(FATAL_ERROR "Missing ${MTS_FFI_LIB} -- run scripts/build_rust.sh (or build_dll.sh, which will call it) first.")
     endif()
-    add_library(mts_ffi STATIC IMPORTED GLOBAL)
-    set_target_properties(mts_ffi PROPERTIES
+    add_library(ffi STATIC IMPORTED GLOBAL)
+    set_target_properties(ffi PROPERTIES
         IMPORTED_LOCATION "${MTS_FFI_LIB}"
-        # `cargo rustc -p mts_ffi --target x86_64-pc-windows-msvc --release -- --print
+        # `cargo rustc -p ffi --target x86_64-pc-windows-msvc --release -- --print
         # native-static-libs` -- re-run whenever a Rust dependency changes.
         INTERFACE_LINK_LIBRARIES "kernel32;ntdll;userenv;ws2_32;dbghelp")
 endif()
@@ -43,11 +43,17 @@ include_directories(
 )
 
 # High-performance flags for Clang/WSL (Elite/Institutional Grade)
+# -ffast-math REMOVED 2026-10-11 (operator decision, Rust migration spec §2 decision #11): empirically
+# confirmed (see spec §2/§10) that it silently breaks std::isnan() detection on this exact clang-22
+# toolchain with these exact flags -- the compiler assumes no value is ever NaN/Inf and folds isnan()
+# to false. This codebase's degenerate-window carry-forward convention (RobustMoments.h, Hurst/
+# fractal-dim, every rust/observation_vector FFI consumer) depends entirely on isnan() correctly
+# detecting the NaN sentinel; without this flag that detection is reliable again. Do not re-add
+# without first replacing every isnan()-based sentinel check with a fast-math-safe bit-pattern test.
 if(NOT MSVC)
     add_compile_options(
         -O3
         -march=native
-        -ffast-math
         -mavx2
     )
 endif()
@@ -188,7 +194,7 @@ target_link_libraries(MindfulTrader
 )
 
 if(MTS_WITH_RUST)
-    target_link_libraries(MindfulTrader PRIVATE mts_ffi)
+    target_link_libraries(MindfulTrader PRIVATE ffi)
     target_compile_definitions(MindfulTrader PRIVATE MTS_WITH_RUST=1)
     # Rust links the dynamic CRT (/MD); the toolchain forces /DEFAULTLIB:libcmt.lib. Proven twice:
     # Atratus/cpp/CMakeLists.txt and the 2026-10-07/08 Sierra spikes (consolidation spec §12.8).

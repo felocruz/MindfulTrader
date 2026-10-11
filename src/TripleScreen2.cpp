@@ -1,7 +1,7 @@
 #include "MindfulTrader_Precompiled.h"
 #include "CarryForwardCalculators.h"
 #ifdef MTS_WITH_RUST
-#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
 #endif
 
 /*==========================================================================*/
@@ -281,7 +281,7 @@ SCSFExport scsf_Screen2_Impulse(SCStudyInterfaceRef sc)
     // -- `relRange` (computed above) remains the only value used below.
     {
         const float rustRelRange =
-            mts::mts_observation_vector_compute_relative_range(sc.High[sc.Index], sc.Low[sc.Index], atr, lastValidRelRange);
+            mts::observation_vector_compute_relative_range(sc.High[sc.Index], sc.Low[sc.Index], atr, lastValidRelRange);
         const bool matches = std::fabs(relRange - rustRelRange) < 1e-4f;
         static bool loggedMatchOnce = false;
         if (!matches) {
@@ -829,7 +829,7 @@ SCSFExport scsf_Screen2_KeltnerChannel(SCStudyInterfaceRef sc)
         // of dim 2's own relative_range, see this block's own comment above) -- proves the Rust port
         // stays correct here too, without using its result for anything.
         {
-            const float rustCtxRelRange = mts::mts_observation_vector_compute_relative_range(
+            const float rustCtxRelRange = mts::observation_vector_compute_relative_range(
                 sc.High[sc.Index], sc.Low[sc.Index], Array_AtrKeltner[sc.Index], lastValidCtxRelRange);
             const bool matches = std::fabs(ctx.relRange - rustCtxRelRange) < 1e-4f;
             static bool loggedMatchOnce = false;

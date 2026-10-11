@@ -12,7 +12,7 @@
 #include "DfaHurstExponent.h"
 #include "ActivityClockMeanReversion.h"
 #ifdef MTS_WITH_RUST
-#include "generated/mts_core.h"  // mts::mts_observation_vector_* (rust/ffi, cbindgen-generated)
+#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
 #endif
 #include <cmath>
 #include <algorithm>
@@ -464,7 +464,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // never actually shadow-wired to live data).
             {
                 const float rustMoorsKurtosis =
-                    mts::mts_observation_vector_moors_kurtosis(returnsArray.data(), returnsArray.size());
+                    mts::observation_vector_moors_kurtosis(returnsArray.data(), returnsArray.size());
                 const bool bothNan = std::isnan(moorsKurtosisRaw) && std::isnan(rustMoorsKurtosis);
                 const bool matches = bothNan || std::fabs(moorsKurtosisRaw - rustMoorsKurtosis) < 1e-4f;
                 static bool loggedMatchOnce = false;
@@ -497,7 +497,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // anything -- `bowleySkewnessRaw` (computed above) remains the only value used below.
             {
                 const float rustBowleySkewness =
-                    mts::mts_observation_vector_bowley_skewness(returnsArray.data(), returnsArray.size());
+                    mts::observation_vector_bowley_skewness(returnsArray.data(), returnsArray.size());
                 const bool bothNan = std::isnan(bowleySkewnessRaw) && std::isnan(rustBowleySkewness);
                 const bool matches = bothNan || std::fabs(bowleySkewnessRaw - rustBowleySkewness) < 1e-4f;
                 static bool loggedMatchOnce = false;
@@ -533,7 +533,7 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // 2026-10-09 via a direct audit for exactly this kind of gap (a second real call site
             // that was missed when the dim was first ported).
             {
-                const float rustFastHurst = mts::mts_observation_vector_dfa_hurst_exponent(
+                const float rustFastHurst = mts::observation_vector_dfa_hurst_exponent(
                     returnsArray.data(), returnsArray.size(), 8);
                 const bool bothNan = std::isnan(fastHurstRaw) && std::isnan(rustFastHurst);
                 const bool matches = bothNan || std::fabs(fastHurstRaw - rustFastHurst) < 1e-4f;
@@ -592,6 +592,35 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
                 s_recurrenceEngine.RebuildClosedBarWindow(returnsArray.data(), 99, epsilon);
                 s_cachedRecurrenceRate = s_recurrenceEngine.ComputeRate(returnsArray[99], epsilon);
                 s_lastRecurrenceBarCount = completedBarCount;
+
+#ifdef MTS_WITH_RUST
+                // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-
+                // migration-plan.md §5.1): recurrence_rate (dim 13) shadow-wired, 2026-10-11 --
+                // proves the Rust port of SelectEpsilonForTargetRecurrenceRate + RecurrenceRateEngine
+                // (combined into one stateless recurrence_rate() call, spec §6.1) matches here,
+                // without using its result for anything.
+                {
+                    const double rustEpsilonD = mts::observation_vector_select_epsilon_for_target_recurrence_rate(
+                        returnsArray.data(), returnsArray.size(), 0.05);
+                    const float rustEpsilon = static_cast<float>(rustEpsilonD);
+                    const float rustRecurrenceRate = mts::observation_vector_recurrence_rate(
+                        returnsArray.data(), 99, returnsArray[99], rustEpsilon);
+                    const bool epsilonMatches = std::fabs(epsilon - rustEpsilon) < 1e-5f;
+                    const bool rateMatches = std::fabs(s_cachedRecurrenceRate - rustRecurrenceRate) < 1e-5f;
+                    static bool loggedMatchOnce = false;
+                    if (!epsilonMatches || !rateMatches) {
+                        Logger::getInstance().log(
+                            "MTS_WITH_RUST MISMATCH: RecurrenceRate cpp_eps=" + std::to_string(epsilon) +
+                            " rust_eps=" + std::to_string(rustEpsilon) + " cpp_rr=" +
+                            std::to_string(s_cachedRecurrenceRate) + " rust_rr=" + std::to_string(rustRecurrenceRate));
+                    } else if (!loggedMatchOnce) {
+                        loggedMatchOnce = true;
+                        Logger::getInstance().log(
+                            "MTS_WITH_RUST: RecurrenceRate shadow-mode OK (cpp==rust, eps=" +
+                            std::to_string(epsilon) + " rr=" + std::to_string(s_cachedRecurrenceRate) + ")");
+                    }
+                }
+#endif
             }
             obs[OBS_RECURRENCE_RATE] = s_cachedRecurrenceRate;
             // Keeps AreTs2StructuralDimsReady()'s direct m_observationData read live even
@@ -1573,7 +1602,7 @@ float ContextManager::CalculateBurstinessIndex(uint64_t now_us) {
             flatTimestamps[i] = m_eventTimestampsUS[i];
         }
         const float rustBurstiness =
-            mts::mts_observation_vector_calculate_burstiness_index(flatTimestamps.data(), n);
+            mts::observation_vector_calculate_burstiness_index(flatTimestamps.data(), n);
         const bool matches = std::fabs(burstiness - rustBurstiness) < 1e-4f;
         static bool loggedMatchOnce = false;
         if (!matches) {
