@@ -1,0 +1,18 @@
+# rust/execution/Cargo.toml -- the execution layer (spec
+# docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md §8): broker connectivity
+# (ibapi/tokio) + the order lifecycle (gate, position state, stop/trap management). Business-logic
+# modules (order_gate, stop_manager, trap_exit) are pure crates with zero Sierra/zmq/pyo3
+# dependency, same "pure core, thin edges" discipline as observation_vector -- ibapi/tokio/zmq
+# deps get added only to the modules that actually need them (ibkr_session, order_watcher,
+# signal_feed/intent_client/position_feed), never to this crate's pure business-logic core.
+#
+# First port (2026-10-10): ExecutionGate.h/.cpp -> order_gate.rs.
+[package]
+name = "execution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
