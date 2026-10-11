@@ -116,7 +116,7 @@ impl<const D: usize, const K: usize> StudentTHmm<D, K> {
     /// Shared by `log_emission_prob` and `compute_tail_weight` so the two can never disagree on
     /// what "delta" means -- a real risk the Python original's duplicated inline computation
     /// didn't have to guard against (one function, `_log_emission_and_delta`, computes both).
-    fn weighted_delta(&self, k: usize, x: &[f64; D]) -> f64 {
+    pub(crate) fn weighted_delta(&self, k: usize, x: &[f64; D]) -> f64 {
         let mean = &self.means[k];
         let var = &self.covars[k];
         let mut delta = 0.0;

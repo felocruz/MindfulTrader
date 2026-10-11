@@ -7,3 +7,4 @@
 pub mod audit;
 pub mod gate_metrics;
 pub mod model;
+pub mod train;
