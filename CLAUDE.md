@@ -13,6 +13,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > moment `READY_FOR_PRODUCTION` reads `YES`. Full statement: `PRODUCTION_TRIAGE.md` (search
 > "STANDING RULE, set 2026-08-26").
 
+> **HARDWARE CONTEXT (set 2026-10-11) — read before preserving a memory-/CPU-conservative code
+> pattern by reflex.** Nearly all of this system's existing C++/Python (HMM, Transformer, data
+> pipelines) was developed on a 10-year-old Dell Precision workstation — 15GB RAM, a slow CPU, no
+> GPU — which explains several real patterns found in the code (chunked `predict()` added after a
+> real OOM kill, bounded E-step thread pools, 2M-row chunking conventions across `tools/`, CPU-only
+> `joblib` parallelism throughout HMM training). A new ML-capable workstation (Puget Systems) has
+> since lifted those constraints. When refactoring/porting this code (Rust or otherwise):
+> investigate whether a given conservative pattern is a genuine architectural requirement (bounded
+> peak memory for determinism, correct sequence-boundary handling — keep these) or a narrow
+> workaround tuned to the old 15GB ceiling (reconsider/relax these) — don't reflexively preserve or
+> reflexively strip either category. Concrete examples + full account: `docs/superpowers/specs/
+> 2026-10-09-mindfultrader-rust-migration-spec.md` §1.5.
+
 ## North Star — read this before anything else, every session
 
 `/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
@@ -32,6 +45,31 @@ mirrored here promptly). Any session that changes one of those rows' status must
 `PRODUCTION_TRIAGE.md`'s `§1`/`§1.1` *and* its `NORTH_STAR_STATUS` block in the same edit (Triage
 Protocol rule 7) — a status change that isn't reflected there didn't really happen, for planning
 purposes across the other three repos.
+
+**NEWEST MAJOR INITIATIVE — the "all Rust" migration, spec+plan pair updated 2026-10-10:**
+`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` + its companion plan are
+the single authoritative pair for this entire effort — one Rust core (behind a C-ABI) eventually
+owns every computation with separate train/offline/live implementations today (HMM, the
+observation vector, ZMQ transport, and the execution layer), ported incrementally
+(port → parity-test → shadow-wire → live-confirm → cutover), never a big-bang rewrite. Status:
+`observation_vector` 10 of ~18 dims ported; `student_t_hmm`/`transport`/`py` not started.
+**§8 (folded in 2026-10-10, previously a short-lived standalone doc, now merged back per this
+pair's own "one spec, one plan, no sibling docs per sub-topic" rule)**: the execution layer
+replatforms off Sierra Chart's `SCTradingInterface`→IBKR routing onto a standalone Rust service
+(`ibapi` + `tokio`, IBKR's own algos for order-working), inspired by (never dependent on)
+`../Atratus`'s Predator/Sniper options-execution design. Confirmed scope: Sierra Chart/ACSIL keeps
+owning market data + signal generation — only order placement/management moves, but *all* of it
+(position state, fills, Chandelier trailing stop, trap-detection-driven exits, emergency flatten).
+Every ZMQ socket this needs (a split channel: reused port-5555 PUB for continuous ticks; a new
+acknowledged execution-intent channel; a new position/fill feed) rides on the same plan's
+`transport` crate, pulling its skeleton + those two new ports forward ahead of the plan's
+"transport goes last" ordering for its original six ports. IBKR algo support on MES *futures* was
+de-risked by teammate documentation research (Adaptive/TWAP/VWAP/Balance Impact and Risk all named
+as supporting CME futures) but still needs an empirical what-if check against a reachable
+TWS/Gateway before the order-watcher design is fully committed. Full detail: spec §8, plan W0e/W12.
+Not to be confused with `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`
+(a same-named-in-spirit but unrelated document — that one is the signal-decision pipeline, which
+stays in C++ under this initiative's scope).
 
 **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — founding question ANSWERED 2026-09-04,
 see recommendations before implementing:** `LocalRiskContext`/`RiskGateContext` (the execution-layer
@@ -375,7 +413,7 @@ Regenerate via the script above; never call `flatc` directly.
 
 - **No heap allocations** in recurring ACSIL update paths (all three TS screens, every tick)
 - **`IndicatorManager`** currently uses a hand-written heterogeneous `IndicatorStore` (~44 differently-typed named members) plus a separate `std::array<BaseIndicator*, MAX_INDICATORS>` pointer-index array for O(1) `IndicatorKey`-enum lookup (`GetIndicator<T>(key)`, never string hashes or map lookups) — this is being migrated to true packed-array (SoA) storage with compile-time devirtualized access; see `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md`.
-- **Permanent hybrid architecture (indicator-manager-dod-soa plan, Task 15):** the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) are the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 exports). `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and its leaf classes remain permanently as (a) the write-side compute engine Triple Screen calls into every tick, and (b) the read path for keys marked `StorageBlock::NotPacked`. This is not a partially-finished migration — it is the intended end-state per the design spec's "true DOD while maintaining OOD goodness" framing. A full write-side rewrite (extracting all remaining indicators' compute logic to free functions, as Task 6 did for `Macd`) remains possible as a future initiative but is out of scope. Task 15 deleted the only 4 fully-dead orphan classes with zero live callers (`Ema`, `AdxIndicator`, and the dead `IndicatorManager::GetIndicator<T>()` instantiations for `HmmStateIndicator`/`MarketClimateIndicator` — those two classes remain live, owned by `InferenceManager`, not `IndicatorManager`). All other leaf classes have live callers and stay.
+- **Hybrid architecture, write side now superseded by Rust adoption (indicator-manager-dod-soa plan, Task 15; superseded 2026-10-10):** the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) remain the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 exports) — this part is accurate and unchanged. `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and its leaf classes are the write-side compute engine Triple Screen calls into every tick today, and the read path for keys marked `StorageBlock::NotPacked` — but the 2026-08-05 plan's claim that this write side stays **permanently** in C++, with the full write-side rewrite declared "out of scope," predates this codebase's Rust adoption (opened 2026-10-07) and no longer holds: per the rust-migration spec §1.2/§9 (2026-10-10), indicator computation is now an explicit third Rust pillar alongside execution/risk and the HMM — the rewrite is happening, just in Rust, not as a C++ free-function extraction. Task 15 deleted the only 4 fully-dead orphan classes with zero live callers (`Ema`, `AdxIndicator`, and the dead `IndicatorManager::GetIndicator<T>()` instantiations for `HmmStateIndicator`/`MarketClimateIndicator` — those two classes remain live, owned by `InferenceManager`, not `IndicatorManager`); that part of Task 15 stands. All other leaf classes have live callers and stay, for now — their fate is the new Rust-port design question, not this older plan's.
 - **ZMQ** calls must be non-blocking on UI-sensitive paths
 - Preserve microsecond timing conventions where latency is tracked
 

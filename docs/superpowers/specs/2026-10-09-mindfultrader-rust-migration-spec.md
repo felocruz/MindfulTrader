@@ -23,7 +23,7 @@ precisely so that stops happening. **When this spec's content changes, it is the
 updating; do not open a new sibling spec for a sub-topic of this initiative — add a section here (or to
 the plan, if it's execution/status content) instead.**
 
-**Last updated**: 2026-10-09.
+**Last updated**: 2026-10-11.
 
 ---
 
@@ -52,6 +52,52 @@ the same code — train/serve skew becomes impossible by construction, not just 
 candidates for the same methodical port — see §8. There is no special caution tier for this code: this
 system is not in production, so the discipline is identical everywhere in this initiative.
 
+**Scope stated precisely, 2026-10-10 (operator): three pillars, one hard rule.** Rust owns (1) trade
+execution + risk management (§8), (2) the HMM + observation vector (§5/§6), and (3) **indicator
+computation** — the actual math behind every indicator (MACD, RSI, Kangaroo Tail, Turtle Soup, NR7,
+stochastic, etc.), not just the 18D observation vector's dims. C++ owns exactly the ACSIL studies —
+the thin orchestration layer that reads `sc.*` data and calls into Rust with plain values. **The hard
+rule: Rust code never references any ACSIL function or variable, full stop** — the same "pure core,
+thin edges" discipline already proven for `observation_vector`, now stated as universal, not
+crate-specific. Component spec for pillar 3: §9 (opened 2026-10-10, scope only — design not yet
+started).
+
+**Naming ruling (operator, 2026-10-11): no `mts_` prefix on any Rust crate, directory, or file.**
+"We 'know' the overall system is named MTS — no need to pollute dir/file names with it." Every
+crate dropped the prefix (`mts_execution`→`execution`, `mts_observation_vector`→`observation_vector`,
+`mts_schema`→`schema`, `mts_ffi`→`ffi`); the planned HMM crate is named `student_t_hmm`, not the
+genuinely-ambiguous bare `hmm` (operator, 2026-10-10). Scope of this ruling: Rust package/crate
+names, directory names, Rust-side doc-comment/prose references to them, and (ruled 2026-10-11,
+resolving the question originally left open) the exported `extern "C"`/C-ABI symbol names too —
+`mts_observation_vector_*` → `observation_vector_*` (12 functions), `mts_abi_version` → `abi_version`,
+the `MtsStatus` enum → `Status`. This is a no-op for every C++ call site's actual meaning: cbindgen's
+`namespace = "mts"` (`cbindgen.toml`) already wraps every symbol for C++ callers
+(`mts::observation_vector_sevcik_fractal_dimension(...)`, not a bare global), so the `mts_` prefix on
+the symbol name itself was redundant namespacing, not load-bearing C-ABI uniqueness — the namespace
+already does that job. The 3 live C++ call sites (`ContextManager.cpp`/`StudyHelperFunctions.cpp`/
+`TripleScreen2.cpp`) plus the cross-language parity test (`tests/cpp/test_rust_observation_vector_
+parity.cpp`) were updated in the same change and re-verified (33/33 parity assertions still pass).
+**Still explicitly out of scope, left as-is, different naming domain**: CMake option/variable names
+(`MTS_WITH_RUST`, `MTS_FFI_LIB`); the shared cross-language schema file itself (`schema/mts_schema.fbs`,
+`mts_schema_generated.h`/`.rs` — flatc's own naming, not a Rust crate); and the cbindgen `namespace =
+"mts"` itself (that one stays — it's the actual C++-side project namespace, not redundant symbol-name
+decoration, and removing it would make every one of these functions a bare global in the C++ global
+namespace).
+Verified: full `cargo test --workspace` + `cargo clippy --workspace --all-targets -- -D warnings`
+clean after the rename; both C++ build paths (`MTS_WITH_RUST=OFF` default and `=ON` with the renamed
+`ffi.lib` actually linked) rebuilt clean from scratch; the cross-language parity test recompiled and
+rerun natively against the renamed symbols.
+
+**Standing principle (operator, 2026-10-10): Rust's adoption is itself recent (opened 2026-10-07) —
+any design spec or decision made before that date is presumptively open for rethinking in light of
+it, not grandfathered in.** This already overturned one such decision: `docs/superpowers/plans/
+2026-08-05-indicator-manager-dod-soa.md` had explicitly declared the C++ `IndicatorStore`/
+`BaseIndicator`/`Indicator<T>` write-side compute engine "permanent" and scoped a full write-side
+rewrite out as a deferred "Phase III" (user decision, 2026-08-05) — that plan is now marked
+partially superseded (its own header), since pillar 3 above is exactly that rewrite, just in Rust
+rather than C++ free functions. Apply the same scrutiny to any other pre-2026-10-07 "permanent"/
+"intended end-state" claim found later — don't assume this was the only one.
+
 ### 1.3 Non-goals
 
 No change to the model family (diagonal Student-t HMM, weighted emissions), to K, to the observation
@@ -61,10 +107,51 @@ from. The merge (plan §1.2) is separately gated and does not change code or wir
 
 ### 1.4 What stays as-is
 
-The execution layer's *orchestration* (not its low-level computations, see §8), the Triple Screens,
-the Transformer, the labeler, and the GUI's display logic are not part of this initiative's current
-scope. `BackTesterStudy`/`backtest_server`: every workstream gates on `.btst`-identical replays; the
+The execution layer's *orchestration* (not its low-level computations, see §8); the Triple Screens'
+and other studies' *ACSIL orchestration shell* (not the indicator computation they call into, see
+§1.2 pillar 3/§9 — this line previously said "the Triple Screens... are not part of this
+initiative's current scope" without that distinction, corrected 2026-10-10); the Transformer; the
+labeler; and the GUI's display logic are not part of this initiative's current scope.
+`BackTesterStudy`/`backtest_server`: every workstream gates on `.btst`-identical replays; the
 acceptance gates in `docs/BACKTESTING_FRAMEWORK.md` apply unchanged.
+
+### 1.5 Hardware context (set 2026-10-11) — read before preserving a memory-/CPU-conservative pattern by reflex
+
+Operator context, recorded for every future porting decision in this initiative: nearly all of this
+system's existing C++/Python (HMM, Transformer, data pipelines) was developed on a **10-year-old
+Dell Precision workstation — 15GB RAM, a slow CPU, no GPU**. A new ML-capable workstation (Puget
+Systems) has since lifted those constraints. This matters because several real, already-found code
+patterns in this codebase look like deliberate architectural choices but may instead be narrow
+workarounds tuned to that specific 15GB ceiling — concrete examples found this session, not
+speculation:
+- `test_student_t_hmm_predict_chunking.py` — chunked `predict()` was added specifically after
+  unchunked `_posterior()` OOM-killed real sign-off workers (~1.7-2.2GB transient at N=13.5M).
+- `estep_max_workers`-bounded E-step thread pool — explicitly guards against unbounded
+  `executor.map()` over a whole chunk generator.
+- `context_to_parquet.cpp`/`tools/market_data_replay/MarketDataReplay.cpp`'s shared
+  `kChunkRows = 2'000'000` chunking convention, plus the latter's `--max-rss-mb` flag.
+- CPU-only `joblib`/`loky` process parallelism throughout `train_student_t_hmm.py`, never GPU —
+  and `student_t_hmm_gpu.py`'s own "20-33x slower than CPU" finding (§5.1a) was measured somewhere,
+  but not necessarily on hardware representative of the new workstation; worth re-measuring before
+  trusting it as a reason to drop that path, not just citing the old number.
+- The orphaned (examples-only-referenced) `fast_ingestor.py`'s entire premise ("Handle 35M+ events
+  without loading into RAM") is itself evidence of real historical memory pressure (§5.4a).
+
+**The actionable principle for every port/refactor in this initiative, not a blanket directive
+either way**: when a memory- or CPU-conservative pattern is found during porting, investigate which
+of two things it actually is before carrying it forward unchanged.
+- **Genuine architectural requirement — keep it**: e.g. bounded peak memory for determinism
+  regardless of input scale, or a chunking boundary that correctly respects sequence/session
+  edges (`test_student_t_hmm_predict_chunking.py`'s own "must respect true sequence boundaries"
+  requirement) — these remain good engineering on any hardware, not a workaround.
+- **A narrow workaround for the old 15GB ceiling — reconsider it**: e.g. an arbitrarily conservative
+  chunk size, worker-pool bound, or batch size tuned down specifically to survive that machine,
+  where a larger value would be strictly better (more throughput, simpler code, fewer chunking edge
+  cases to get right) on the new hardware with no correctness cost.
+Don't reflexively preserve either category by default — and don't reflexively strip memory-bounding
+either, since §9's "no heap allocations in recurring ACSIL update paths" rule and similar
+hot-path-performance constraints are independent of the old machine's RAM ceiling and stay regardless
+of hardware.
 
 ---
 
@@ -74,19 +161,28 @@ acceptance gates in `docs/BACKTESTING_FRAMEWORK.md` apply unchanged.
 |---|---|---|
 | 1 | Monorepo at `VSCode/MindfulTrader/`; `MindfulTrader`→`cpp/`, `MTS`→`GUI/`; `Atratus/` stays separate | **ruled**, deferred own schedule (plan §1.2) |
 | 2 | Sequencing: pre-work → merge → `hmm`/`obs` → `transport`; merge decoupled from Rust work | **ruled** (2026-10-08) |
-| 3 | HMM lifecycle (train, posteriors, live) moves to Rust; ZMQ port 5561 deleted, not migrated | **ruled** |
+| 3 | HMM lifecycle (train, posteriors, live) moves to Rust; ZMQ port 5561 deleted, not migrated | **ruled**; `HMMClient` class itself (not just the port) confirmed fully obsolete, concrete replacement design in §5.2, 2026-10-11 |
 | 4 | Observation pipeline moves to Rust; `ContextManager.cpp` itself ports later | **direction set**; dims-first order and numeric policy open |
 | 5 | Transformer/HMM coherence rule: C++ HMM state authoritative, sequence-stamped; stale actions (inferred before the current regime began) are not acted on | **ruled**; wording to confirm (regime-epoch vs literal older-sequence, §5.5-1) |
 | 6 | Execution-layer computations (`RiskManager`/`PositionManager`/`ExecutionGate`) are in scope, same discipline, no special caution tier | **ruled** (2026-10-09) |
-| 7 | One `mts_ffi` staticlib (not per-subsystem `*_ffi` crates) | **ratified by implementation**, 2026-10-08 |
-| 8 | `.context.parquet` written directly at collection time; `.alpha`/`TrainingEvent` drops its embedded `ObservationData` copy for a join key | **operator goal, 2026-10-09, not yet decided in full** — depends on `rust/hmm` landing first; §5.4 |
+| 7 | One `ffi` staticlib (not per-subsystem `*_ffi` crates) | **ratified by implementation**, 2026-10-08 |
+| 8 | `.context.parquet` written directly at collection time; `.alpha`/`TrainingEvent` drops its embedded `ObservationData` copy for a join key | **ruled** (2026-10-10) — depends on `rust/student_t_hmm` landing first for sequencing, not for the decision itself; §5.4 |
 | 9 | `backtest_schema.fbs` merged into `mts_schema.fbs` | **done**, 2026-10-09 (§4.2) |
 | 10 | `MTS_Envelope` → `Envelope` | **done**, 2026-10-09 (§4.2) |
-| 11 | Numeric policy (fast-math or not, tolerances) | **open** |
+| 11 | Numeric policy (fast-math or not, tolerances) | **ruled** (operator, 2026-10-11): `-ffast-math` removed from `CMakeLists.txt` entirely — see §10 item 5 for the concrete correctness finding that forced this, not just a tolerance preference |
 | 12 | Manifest holds the regime-engine thresholds (vs. crate constants) | **open**, recommended: manifest |
 | 13 | GUI env name (`mts-gui` proposed); whether lbrnet keeps the name `mts` | **open** |
 | 14 | MindfulTrader git history scrub (force-push) vs. rotation-only, for the leaked API key | **open**, operator's call |
 | 15 | A typed Rust safety gate (Atratus's `ladder_core::safety` pattern) | **deferred** — Sierra stays in the order path for now |
+| 16 | `MarketObservation`/`RiskStateUpdate`'s GUI-display consumer (§5.4 consumer 3) replaced by an additive `RegimeStatus` struct on the existing `Event` table | **ruled** (operator, 2026-10-11), design in §5.4 — **corrected 2026-10-11, see row 20**: the design's "zero display consumers, stays internal" list for `transition_risk`/`dof`/`expected_duration` was true for display but wrong as a blanket claim; not yet implemented (`student_t_hmm` hasn't landed); `MarketClimate` schema-enum migration flagged alongside but **not yet decided** |
+| 17 | `stop_manager.rs` design corrected: a static, entry-anchored, immutable stop/target bracket (`TripleBarrierEngine.h`/`TripleBarrierExitManager.h`'s real current behavior), not a Chandelier-style continuously-trailing stop | **confirmed stale and fixed, 2026-10-11** — `ChandelierStopManager` was deleted entirely during a documented cutover (`docs/ADR/triple_barrier_cutover_phase1_plan.md`), predating this whole initiative; the spec had repeated the stale "Chandelier trailing stop" framing across §8.2/§8.3/§8.5/§8.7 D3/D3a since the execution-layer scoping conversation. All corrected; `elderChandelierATR` (a surviving, unrelated risk-gate diagnostic) explicitly distinguished from the deleted order-management class |
+| 18 | Python is removed from the Student-t HMM lifecycle entirely — not just the live-inference round-trip (decision #3) but training, K-selection, calibration, and release-audit tooling too; the full `lbrnet` Python HMM stack is surveyed and scoped for Rust porting or retirement | **ruled** (operator, 2026-10-11): "Python will not [be] involved in the training of the Student-t HMM." Full stack inventory + port/retire scoping: §5.1a. Resolves §5.5's former item 5 (meta-tuning subprocess-vs-import question — moot, see §5.1a) |
+| 19 | Whether moving the Student-t HMM to Rust means `mts_schema.fbs`/generated code is no longer needed | **assessed, 2026-10-11 — no, overall; yes for a specific, confirmed subset.** The schema stays essential for ≥4 HMM-unrelated roles (main `Event` stream, trade execution, backtesting artifacts, `.alpha`/`TrainingEvent`); `SystemState`/`HmmRiskState`/`RiskStateUpdate`/`MarketObservation` (the wrapper table only) are confirmed removable. Full assessment: §5.1b |
+| 20 | The Rust regime engine adds to `TrainingEvent` the HMM data needed to train the Transformer, and to `Event` the HMM data needed for the Transformer to infer live | **confirmed consistent with §5.4's existing ruling; one correction made** (operator, 2026-10-11): grounded directly in `lbrnet`'s `FEATURE_SPECS`/`feature_buffer.py`, the Transformer has a *confirmed* real need for `transition_risk`/`expected_duration`/`dof` — decision #16's "zero display consumers, stays internal" list wrongly implied these stay internal for every consumer, not just the display one. Full correction, the widen-`RegimeStatus`-vs-separate-struct open question, a `regime_dof` fragility/simplification finding, and the plain-struct-FFI write mechanism (not Rust touching FlatBuffers directly): §5.4 |
+| 21 | The Rust side should use `rust/schema`'s own `regenerate_schema.sh`-generated types to construct `RegimeStatus`, not a hand-rolled parallel Rust struct | **corrected 2026-10-11** (operator: "code generated for Rust... by `regenerate_schema.sh`... to process that new HMM info in an optimal way") — row 20's "plain Rust struct, Rust never touches `rust/schema`" mechanism was wrong; confirmed via direct codegen read that `.fbs` structs compile to `#[repr(transparent)]` POD newtypes (`pub struct X(pub [u8; N])`) with a generated `::new(...)` constructor — already in exact wire-format bytes, FFI-safe, zero hand-duplication risk. Gives `rust/schema` its first real consumer. Surfaces an explicitly-flagged, not-yet-decided struct-vs-table tension for `RegimeStatus` itself (field list has already grown twice across decisions #16/#20). Full account: §5.4 |
+| 22 | New crate `rust/py` (PyO3) processes both the live ZMQ `Event` stream and the `.alpha`/`.lbr` training file for `lbrnet`, replacing Python's own FlatBuffers-parsing feature-extraction layer with fast Rust | **scoped, 2026-10-11** (operator direction, confirmed against the real pipeline) — `lbrnet/data/lbr_to_polars.py`'s own docstring already says "DEPRECATED... Future institutional pipelines should use C++ extensions or Arrow readers". **Correction, same day**: `fast_ingestor.py`/`flatbuffer_stream.py` were originally cited here as "confirmed dead code" from a search scoped only to `lbrnet/`'s own package directory — a repo-root-scoped re-check found `flatbuffer_stream.py` is genuinely live (wrapped by `backtest/alpha_event_stream.py`, feeding the heavily-used `backtest_runner.py`); only `fast_ingestor.py` (examples-file-only reference) remains a weak dead-code candidate. Transformer confirmed **TensorFlow/Keras**, not PyTorch (operator correction) — `rust/py` must emit plain `numpy` arrays. Full design, scope boundary (data-plumbing only, not the TF/Keras model), and open build/GIL questions: §5.4a |
+| 23 | The Transformer training-dataset *generation* pipeline (today's `lbr_to_polars.py` + `tristream_dataset.py` windowing) moves to a separate, offline, native Rust tool — not incremental live-DLL work — and Rust also owns *loading* the finished artifact back in on the Python side, narrowing decision #22's `rust/py` scope to a fast loader rather than a bulk-FlatBuffers-parser for training | **scoped, 2026-10-11** (operator direction, confirmed as a two-stage architecture) — `tristream_dataset.py`'s real output is windowed tensors `(indices, values, hints, position, labels)`, not a trivial format; its load path already defers windowing to load time via a compact pre-windowing cache + `numpy.lib.stride_tricks.sliding_window_view` reconstruction (confirmed by direct code read), which Stage 2 must replicate, not just read a file. Operator's own "institutional-grade or amateur" question answered: intent is institutional-grade (matches `lbr_to_polars.py`'s own self-declared direction); execution is institutional-grade only with the same golden-harness parity discipline used everywhere else in this initiative. Full two-stage design: §5.4a |
+| 24 | Standing hardware context: most existing C++/Python was written on a 15GB-RAM, no-GPU, 10-year-old workstation; a new ML-capable workstation has since lifted those constraints | **recorded, 2026-10-11** (operator) — memory-/CPU-conservative patterns found during porting must be investigated (genuine architectural requirement vs. narrow workaround for the old ceiling) rather than reflexively preserved or reflexively stripped; concrete already-found examples and the actionable principle: §1.5. Mirrored as a standing banner in `CLAUDE.md`/`GEMINI.md`/`copilot-instructions.md`/`README-AI.md` per the Doc Sync Contract |
 
 ---
 
@@ -99,13 +195,13 @@ VSCode/MindfulTrader/                      repo root = the monorepo (merge itsel
 ├── rust-toolchain.toml                    ← pinned; must be at the repo root
 ├── rust/                                  ← THE Cargo workspace
 │   ├── Cargo.toml  Cargo.lock  .cargo/config.toml
-│   ├── schema/              mts_schema             generated FlatBuffers Rust + contract constants (pure)
-│   ├── observation_vector/  mts_observation_vector  18 dims, FeatureScaler, Mahalanobis gate        (pure)
-│   ├── hmm/                 mts_hmm                 Student-t HMM: train, filter, regime engine     (pure)
-│   ├── transport/           mts_transport           every ZMQ socket                                (zmq)
-│   ├── ffi/                 mts_ffi                 ONE staticlib + cbindgen header → the DLL
-│   ├── py/                  mts_py                  ONE PyO3 extension "mindful_core" → lbrnet + GUI envs
-│   └── tools/                mts_tools              bins: hmm_tool, obs_tool (train/posteriors/replay/verify)
+│   ├── schema/              schema               generated FlatBuffers Rust + contract constants (pure)
+│   ├── observation_vector/  observation_vector   18 dims, FeatureScaler, Mahalanobis gate        (pure)
+│   ├── student_t_hmm/       student_t_hmm        Student-t HMM: train, filter, regime engine     (pure)
+│   ├── transport/           transport            every ZMQ socket                                (zmq)
+│   ├── ffi/                 ffi                  ONE staticlib + cbindgen header → the DLL
+│   ├── py/                  py                   ONE PyO3 extension "mindful_core" → lbrnet + GUI envs
+│   └── tools/                tools               bins: hmm_tool, obs_tool (train/posteriors/replay/verify)
 ├── cpp/          (today: MindfulTrader/) Sierra DLL; links rust/ffi
 ├── schema/       .fbs + regenerate_schema.sh (now also emits Rust)
 ├── lbrnet/       Transformer, labeler, training orchestration (Python); imports mindful_core
@@ -119,14 +215,14 @@ explicitly carve `rust/` out, not sweep it along.
 
 ### 3.2 Runtime data flow
 
-**Live, end state**: `ticks → Sierra → cpp adapter → mts_observation_vector (dims → scaler → gate) →
-mts_hmm (in-process step) → HmmStateIndicator + the event (carrying the HMM output) → mts_transport PUB
+**Live, end state**: `ticks → Sierra → cpp adapter → observation_vector (dims → scaler → gate) →
+student_t_hmm (in-process step) → HmmStateIndicator + the event (carrying the HMM output) → transport PUB
 → lbrnet Transformer → action back through transport → PredictionState (paired by §5.5's coherence
 rule)`; the GUI subscribes via the same Rust client. ZMQ port 5561 no longer exists; the observation
 vector, the model, and the posteriors each have exactly one implementation.
 
 **Offline, end state (goal, §5.4, not yet built)**: `raw ticks → EventDataCollectorStudy.cpp (in-process
-mts_observation_vector + mts_hmm) → .context.parquet (full raw vector, canonical) + .alpha/TrainingEvent
+observation_vector + student_t_hmm) → .context.parquet (full raw vector, canonical) + .alpha/TrainingEvent
 (labels + HMM posteriors + join key back to .context.parquet) → Transformer training`. The two-phase
 "collect, then separately run the HMM over historical data to fill in posteriors" workflow collapses
 into one pass for newly-collected data; the separate pass remains available, intentionally, for
@@ -147,7 +243,7 @@ C++ runtime headers' version exactly (`include/flatbuffers/base.h`) or C++ gener
 imports), and `MindfulTrader/rust/schema/src/generated/` (Rust) — all three paths already cross-repo,
 no merge required for this to work.
 
-**`mts_schema` crate specifics**: `#[path = "generated/mts_schema_generated.rs"]` with an `#[allow(...)]`
+**`schema` crate specifics**: `#[path = "generated/mts_schema_generated.rs"]` with an `#[allow(...)]`
 wrapper wider than the generic lint-suppressing pattern — this workspace additionally denies
 `unsafe_op_in_unsafe_fn` and `clippy::unwrap_used` (neither is in the `clippy::all` group), and flatc's
 generated code trips both; both must stay in the allow-list or `cargo build`/`clippy` hard-fail.
@@ -282,15 +378,297 @@ authoritative, still-current `ContextManager` architecture doc is the workspace-
 file) — it already covers this ownership split in more depth but doesn't name the
 `CheckAndTriggerHMM`/`AddToTrainingEventFB` call sites this paragraph adds.
 
+### 5.1a Full `lbrnet` Python HMM stack inventory (surveyed 2026-10-11, decision #18)
+
+Operator ruling (decision #18): **Python will not be involved in the training of the Student-t
+HMM** — this supersedes the narrower §5.5-item-5 question (whether a Rust trainer merely
+*invokes* `train_student_t_hmm.py`) with a much larger one: does *any* `lbrnet` Python file need a
+Rust equivalent, and if so, is this a chance to elevate the implementation, not just transliterate
+it? Four parallel research agents surveyed every `lbrnet` file that touches the Student-t HMM
+(core model, registry/classification, control-plane/calibration scaffolding, and the ~3,150 lines
+of architecture docs + ~20 regression tests that encode its hard-won correctness lessons), plus
+Atratus's own existing Rust Student-t HMM (`sensor_core/src/hmm.rs` + its spec +
+`knowledge/hmm_model_validation.md`) was read directly for inspiration — **Atratus is not
+MindfulTrader and there is no code/data link between the two; it is read-only prior art.** Findings
+below are the result; nothing has been implemented yet.
+
+**Two coexisting, inconsistent state taxonomies found** — any port must pick one, not assume
+consistency: the legacy `HMMStateEnum` (4 states; used by `regime_manager.py`,
+`regime_focal_loss.py`'s `regime_weights`, `hmm_context_features.py`; explicitly being retired in
+`lbrnet`'s own code) vs. the newer `MarketClimate` (5 states, adds `TALEBIAN_FRAGILE`/
+`SHANNON_CHAOS`; used by `regime_registry.py`/`regime_engine.py`). **Ruling: `MarketClimate`
+(5-state) is canonical for the Rust port; `HMMStateEnum`-only consumers are out of scope or need
+remapping** — this is also consistent with decision #16's already-ruled `RegimeStatus` schema
+design, which is `MarketClimate`-shaped.
+
+| File (lines) | Role | Port / retire / drop verdict |
+|---|---|---|
+| `models/student_t_hmm.py` (1693) | System-of-record CPU model: diagonal-covariance Student-t HMM, log-space Hamilton forward-backward, MAP-EM/ECM/ECME, k-means++ seeding, weighted Mahalanobis, DOF via ECME (`scipy.optimize.brentq`) | **Port** — the core math crate, highest-value and highest-risk; see 20-test correctness checklist below |
+| `models/student_t_hmm_gpu.py` (501) | PyTorch-batched restart *screening only* — explicitly "not system of record," has **no** dof/ν estimation at all (brentq doesn't vectorize), 20-33x slower than CPU/joblib per the runbook's own measurement | **Likely drop** — Rust's own CPU EM is expected to be fast enough (Atratus precedent + no Python interpreter overhead) to make GPU screening moot; recommend confirming with a real restart-count/wall-clock measurement once the Rust trainer exists, not assuming up front |
+| `models/regime_engine.py` (1827) | Live stateful inference: sequential Hamilton filter + `RegimeState` (climate classification overrides — Talebian-fragile/Pareto-momentum/velocity-EMA deadzone-hysteresis/entropy-chaos — variance-ratio drift, black-swan streak, Amari/FIM nearest-rival distance (telemetry-only, Monte-Carlo-verified, no citation), duration tracking, `cognitive_load`) | **Port** — this is the live engine behind `hmm_step`/`RegimeStatus` (§5.2/§5.4); duck-types the model object via attribute probing — the Rust port needs an explicit trait, not structural typing. `reset_belief()` does **not** reset entropy-drift-alerts or duration history — a real lifecycle subtlety to preserve or deliberately change. No locks despite mutable shared state (concurrent `infer()` would race) — a latent bug, not a feature, don't carry forward |
+| `models/regime_registry.py` | `MarketClimate` classification cascade (the newer 5-state taxonomy) | **Port** — canonical taxonomy owner, see ruling above |
+| `models/regime_manager.py` | Offline/batch labeling counterpart, pinned to the legacy 4-state `HMMStateEnum` | **Drop or remap** — superseded by `regime_registry.py`'s 5-state cascade per the canonical-taxonomy ruling; confirm zero remaining production callers before deleting |
+| `models/regime_gate_metrics.py` (202) | Pure numpy quality-gate statistics (no TF, no I/O), run-length encoding via boolean-vs-numeric diff (8x less transient memory, measured at 55M+ row scale) | **Port first** — the cleanest, most-reused, lowest-risk file in the whole stack; recommend as the literal first Rust module written once Stage A's golden harness exists |
+| `models/hmm_parametric_bootstrap.py` | Parametric bootstrap coupled to the Student-t emission formula; duplicates `regime_gate_metrics.py`'s `_mean_tenure_by_state` verbatim (a source-flagged, pre-existing cleanup opportunity) | **Port**, and fix the duplication in the same pass (single shared helper, not two copies) |
+| `models/regime_focal_loss.py` | TF/Keras focal-loss weighting keyed off `HMMStateEnum`, feeds Transformer *training*, not the HMM itself | **Out of scope** for this port — belongs to a future Rust-side Transformer-training initiative, if one is ever started; do not conflate with HMM porting |
+| `models/hmm_utils.py`, `hmm_features.py`, `hmm_context_features.py`, `hmm_training_cache.py` | Shared helpers; `hmm_context_features.py` is pinned to the legacy 4-state enum and reads HMM entropy/state for Transformer feature engineering | **Mixed** — `hmm_training_cache.py` likely ports alongside the trainer; `hmm_features.py`/`hmm_context_features.py` need a scoping call once the Transformer-training question above is answered — flagged, not decided |
+| `scripts/train_student_t_hmm.py` (5843) | The real trainer: BIC-based K-selection (filtered by quality gates, not pure argmin), multi-restart screening (seed stride 1009, winner = highest MAP-LL), chronological (never shuffled) holdout + forward-walk validation, joblib/loky parallelism, `joblib.dump()` pickle artifact (the de facto model interchange format), optional Anthropic-API AI-diagnosis (`--enable-ai-diagnosis`, network-dependent, non-deterministic), Matplotlib diagnostics | **Port the methodology, not the file** — CLI/orchestration structure doesn't translate 1:1; AI-diagnosis and Matplotlib plotting are explicitly out of scope for a core numerical port (not dropped from the *product*, just not a Rust-crate concern) |
+| `scripts/materialize_hmm_features.py` | Applies a frozen model to stamp posteriors onto `.alpha`/`.context.posteriors.npy`, consumed downstream by Transformer training and `build_directional_alpha.py`'s provenance-manifest check | **Must exist after the port in some form** — confirmed load-bearing by a real downstream consumer |
+| `scripts/regime_calibration.py` | Computes the live runtime `temporal_half_life_sec` decay parameter from the trained transition matrix, read by `live_agent.py` at startup | **Must exist after the port** — "the clearest must-exist-after-the-port case" per the surveying agent |
+| `scripts/calibrate_hmm_gate_thresholds.py` (931) | Richest statistical methodology in the stack: Geyer (1992) `tau_int`, Politis & White (2004) optimal block length, stationary block-bootstrap CIs with a minimum-effective-blocks validity guard (Efron & Tibshirani 1993), mean-residual-life diagnostic (Coles 2001), disjoint train/calibration enforcement. Uses Python's `arch` package (stationary bootstrap) | **Port the methodology; flag the `arch`-crate gap** — no obvious Rust crate equivalent found for stationary block-bootstrap; needs either a from-scratch implementation (Politis & White's own paper gives the algorithm) or a scoped literature search before committing to the port's timeline |
+| `scripts/audit_hmm_release.py` | Deterministic JSON-in/JSON-out GO/NO-GO gate reader, no discretionary interpretation | **Port as-is** — "the cleanest keep-it-as-is case"; only its producer (artifact format) needs to stay compatible with whatever Rust trainer replaces `train_student_t_hmm.py` |
+| `scripts/meta_hmm_control_plane.py`, `build_meta_hmm_run_plan.py`, `validate_meta_hmm_run_plan.py`, `contracts/meta_hmm_trainer_bridge_contract.py` (4 files) | A self-contained "trainer run plan" sub-cluster, meta-tuning/HPO scaffolding | **Confirmed orphaned, deleted 2026-10-11** (`git rm`, lbrnet commit pending) — exhaustive repo-root-wide search found zero external callers (only cross-references within this 4-file sub-cluster + its own now-also-deleted test). `lbrnet/contracts/__init__.py` updated to drop the dead import; both the package and the still-live sibling scripts (below) verified to still import cleanly after the cut |
+| `scripts/generate_meta_hmm_recommendation.py`, `validate_meta_hmm_recommendation.py`, `record_meta_hmm_recommendation_outcome.py`, `contracts/meta_hmm_recommendation_contract.py`, `contracts/meta_hmm_recommendation_ledger_contract.py` (5 files) | A separate "recommendation/ledger" sub-cluster — **corrected 2026-10-11, this was wrongly folded into the "confirmed orphaned" verdict above in the original research pass** | **Live — do not drop, needs its own port/keep decision.** Confirmed invoked by `lbrnet/scripts/run_optimization_pipeline.py` (`_python_module_cmd(...)` subprocess calls to all three scripts), which is itself imported by `lbrnet/orchestrator/risk_gate_orchestrator.py` — a real production orchestrator, not scaffolding. The original "zero mentions across all 3 canonical architecture docs" finding was accurate but was a claim about *documentation coverage*, not *liveness* — conflating the two nearly led to deleting live code. Scoping call (port to Rust vs. keep as Python, given it's risk-gate-adjacent not HMM-training-adjacent) is a new, separate open question, not resolved here |
+| 3 benchmark files (under `scripts/`) | Dev-only performance benchmarking harnesses | **Drop** — pure dev tooling, not product scope |
+
+**Reference documentation read in full** (not modified, source of the literature citations and the
+test inventory below): `knowledge/global/models/student_t_hmm_theory.md`,
+`docs/architecture/STUDENT_T_HMM_MASTER_SPEC.md`, `STUDENT_T_HMM_MASTER_PLAN.md`,
+`STUDENT_T_HMM_EVENT_TRANSFORMER_ARCHITECTURE.md`, `docs/hmm/STUDENT_T_HMM_RUNBOOK.md` (1336
+lines, the densest operational doc — holds the canonical tuning protocol, Smart Tuner V1 frozen
+contract, formula catalog, and the 16-item "Path to Elite" lessons-learned changelog referenced
+below).
+
+**Inconsistent defaults found in the source Python itself** — must be reconciled (one canonical
+value chosen and documented) *before* porting, not silently picked: `dof_learning_rate` (0.02 in
+the training script's CLI default vs. 0.15 in `student_t_hmm.py`'s own `__init__` default, the
+latter confirmed unused in production training) and `bullet_weight` (1.40 vs. 1.30) differ between
+`student_t_hmm.py`'s class defaults and `train_student_t_hmm.py`'s `HMMTrainingConfig` defaults.
+
+**The "L_MAP decline" bug chain (runbook's "Path to Elite" items 10-16)** is the single most
+important piece of prior art for anyone writing the Rust EM loop — a multi-day forensic
+investigation that found and fixed four distinct, independently-landed numerical bugs in the
+MAP-EM covariance/DOF update, each must become an explicit Rust regression test, not just
+"reproduce the final formula":
+1. Raw-LL-only convergence monitoring is theoretically wrong for MAP-EM (Green 1990 only
+   guarantees ascent of the *penalized* objective `L_MAP`, not raw LL) — checkpoint-restore must
+   be scored on `L_MAP`, never raw LL alone.
+2. A density-normalization bug: the Student-t emission didn't integrate to 1 under non-uniform
+   per-dimension weights because the gamma-function term used the weighted-sum `Σw_j`, not the
+   true dimension `D`.
+3. A τ/σ² feature-weight conversion bug in the covariance M-step caused a ~28.6% variance
+   underestimate on the weighted "bullet" dimensions — the single largest driver of the decline.
+4. An ECME DOF staleness bug: the DOF conditional-maximization step was fed E-step statistics
+   accumulated under the **previous** iteration's covariance, not the just-updated one, violating
+   Liu & Rubin (1995)'s ECME monotonicity requirement — independently cross-checked against a 2026
+   arXiv paper (libhmm, 2605.29208) whose CM-step ordering matches the fix.
+5. A separate, same-code-region mean-prior covariance cross-term bug (missing a Σ-dependence term
+   when `mean_prior_kappa > 0`) was found and fixed, though re-verification showed its real
+   magnitude on production data is negligible (~13-33 nats vs. a ~375,000-nat dominant term).
+6. A `min_covar` floor miscalibration (0.1 → 1e-12): the flat 0.1 floor bound continuously on
+   15-24 of 64 (state×dim) slots every iteration on real data; its root cause was that
+   `global_var` (the covariance-prior anchor itself) was *also* floored at the same flat 0.1,
+   corrupting the prior's target for naturally-small-variance dimensions (e.g. ~0.005-0.02).
+7. **Item 15 — an exhaustive further investigation found a real, non-diagnostic-artifact residual
+   decline whose root cause was NOT found**, despite 5 synthetic reproduction configs, a full
+   manual code audit, and literature review. Confirmed correctly mitigated by checkpoint-restore
+   (twice independently verified) but genuinely open. **The Rust port must carry this forward as a
+   documented open question, not silently "fix" it by construction and claim resolution it hasn't
+   earned.**
+8. A distinct covariance M-step denominator bug (living in the same code region, separately
+   audited): the covariance update must divide by the **unweighted** responsibility sum
+   (`Σγ_ik`), not the weighted one (`Σγ_ik·w_ik`) the mean's own M-step correctly uses.
+
+**The ~20-file `test_student_t_hmm_*`/`test_train_student_t_hmm_*` suite is the exact
+numerical-correctness contract a Rust port must reproduce bit-for-bit (or within documented
+float32/reassociation tolerances)** — grouped by domain, each name below is a literal regression
+test the Rust port needs an equivalent of:
+- **Scaling/parity**: a second Python-side z-score normalization stacked on top of the C++
+  `FeatureScaler`'s already-robust normalization was found and *removed* — the HMM fits directly
+  on raw already-C++-scaled values; `predict_proba()`/`score()` must each call `_posterior()`
+  exactly once, not twice; each BIC grid candidate must call `decode()` once, not `score()`+
+  `predict()` separately.
+- **Mean/covariance M-step** (the L_MAP bug chain above, each with its own test):
+  `test_student_t_hmm_mean_prior_covariance_crossterm.py`,
+  `test_student_t_hmm_min_covar_floor_calibration.py`,
+  `test_student_t_hmm_covariance_denominator.py`,
+  `test_student_t_hmm_weighted_covariance_mstep.py`,
+  `test_student_t_hmm_covar_prior_eta_scaling.py` (the prior's `eta` must N-scale at production
+  sample counts — at N=13.5M a fixed `eta=16` contributes <0.12%, effectively disabling the prior).
+- **Emission density/DOF**: `test_student_t_hmm_emission_normalization.py` (numerically integrates
+  the real density via scipy quadrature, must equal 1.0), `test_student_t_hmm_dof_ecme.py`
+  (recovers true ν from synthetic Student-t data; confirms decoupling from covariance scale, unlike
+  the old moment estimator which ceiling-sought), `test_student_t_hmm_ecme_dof_staleness.py`.
+- **Convergence/checkpoint**: `test_student_t_hmm_relative_convergence.py` (relative, not absolute,
+  tolerance at ~1.1e8 LL magnitudes; convergence must be **one-sided** `delta<tol`, never
+  sign-agnostic `abs(delta)<tol` — McLachlan & Krishnan), `test_student_t_hmm_checkpoint_restore.py`
+  (restore scored on L_MAP, not raw LL).
+- **Initialization**: `test_student_t_hmm_kmeans_plusplus_init.py`,
+  `test_train_student_t_hmm_representative_init.py` (streaming-fit's init sample must span the
+  full chronological range, not just the first ~512 rows — proven not fixable by covariance-prior
+  N-scaling alone, since occupancy collapse is an E-step responsibility-competition effect),
+  `test_student_t_hmm_seeded_init.py`.
+- **Forward-backward/streaming/chunking**: `test_student_t_hmm_streaming_batching.py`
+  (`_log_emission_and_delta()` must be row-independent of call size),
+  `test_student_t_hmm_predict_chunking.py` (chunked `predict()` guards a real production OOM —
+  unchunked `_posterior()` was ~1.7-2.2GB transient at N=13.5M; chunking must respect true sequence
+  boundaries, never merge across them), `test_student_t_hmm_estep_thread_parallelism.py` (parallel
+  E-step matches sequential within reassociation tolerance, bounded in-flight concurrency).
+- **Context-file loading**: `test_train_student_t_hmm_context_loading.py` (bounded vs. unbounded
+  MO/SS-context loader parity against MindfulTrader's own `LogContextUnlocked()` record format).
+- **GPU path** (if kept): `test_student_t_hmm_gpu_batched_screening.py` (per-restart
+  `_global_mean`/`_global_var` must come from that restart's own init sample, not restart 0 — a
+  found-and-fixed bug).
+
+**Institutional-grade elevation opportunities** (from Atratus's prior art + the literature already
+cited across these docs — none yet decided, all candidates for plan discussion):
+1. Atratus's `stable_posterior()` numerically-stable log-sum-exp pattern, explicitly stress-tested
+   against a 1e9-magnitude synthetic anomaly tick
+   (`test_predict_stable_under_extreme_anomaly`) — the Rust port should require an equivalent
+   extreme-value stress test as a non-negotiable, not an afterthought.
+2. Brent's method for the DOF root equation (Atratus's own from-scratch implementation, matching
+   `scipy.optimize.brentq`'s role in the Python ECME step) — direct inspiration for the Rust
+   equivalent; no crate search needed, the method is simple enough to hand-roll correctly.
+3. Robust `Sn`/`Qn` estimators (Rousseeuw & Croux 1993) are more mass-point-robust than MAD at
+   degenerate/low-cardinality scales — directly relevant given MindfulTrader's own repeated
+   MAD-related bugs this initiative (burstiness_index, amihud_illiquidity); worth evaluating for
+   any Rust-side robust-statistics helper the HMM calibration code needs, not yet decided.
+4. Feature saliency via an MML penalty (Law, Figueiredo & Jain 2004) — directly relevant to the
+   separate, already-underway Elite Feature Set Curation initiative's Phase 2
+   (`docs/superpowers/specs/2026-09-07-feature-saliency-em-fitter-spec.md`); flagged as a
+   cross-initiative synergy, not a decision for this spec.
+5. Reconsider the artifact serialization format (currently planned as a manifest + raw-floats
+   hybrid, §5.2) now that Python may never need to read the trained model directly — Atratus uses
+   plain `bincode`, materially simpler. Not yet decided; needs weighing against the still-real
+   downstream consumers confirmed above (`materialize_hmm_features.py`/`regime_calibration.py`
+   equivalents, if those stay partly Python, or their own Rust replacements if not).
+6. The practices the literature review in `knowledge/hmm_model_validation.md` recommends are
+   **already Python's actual practice**, not new: multiple seeded-EM-restarts-per-K (McLachlan &
+   Peel 2000; Celeux & Durand 2008), correct BIC parameter count (Rabiner 1989), time-based
+   held-out split not shuffled folds (López de Prado 2018 purge/embargo), and K=4
+   production-locked rather than purely BIC-argmin (consistent with Pohle et al. 2017's finding
+   that information criteria over-select K) — these should simply be **preserved**, not
+   "improved," by the port.
+7. `RegimeEngine`'s duck-typed model interface (Python structural typing) needs an explicit Rust
+   trait — this is a forced elevation, not optional, since Rust has no equivalent escape hatch.
+8. **Found 2026-10-11, not just inspiration but working reusable reference**:
+   `tools/observation_vector/FeatureSaliencyEM.h` (a C++ Gaussian-mixture + Feature-Saliency EM
+   fitter, Law/Figueiredo/Jain 2004's MML-penalty paper — already named above, §5.1a's elevation
+   item 4, as relevant to the separate Elite Feature Set Curation initiative) has its own code
+   comment stating its k-means++ seeding was **"ported from `student_t_hmm.py`'s own
+   `_kmeans_plusplus_seed_indices` algorithm (same method, not a different one)."** This is a
+   genuine, already-landed C++ port of one piece of the Python HMM's own init logic sitting in
+   this repo today — `model.rs`'s k-means++ initialization (the
+   `test_student_t_hmm_kmeans_plusplus_init.py` parity target, §5.1a) should be built from this
+   reference, not re-derived from the Python source cold.
+
+### 5.1b Schema impact of the Python retirement (assessed 2026-10-11, decision #19)
+
+Operator question: "one consequence of transitioning the Student-t HMM from Python to Rust on C++
+is that we may no longer need to rely on the `mts_schema.fbs` or any code generated from it...
+please assess this angle. You may want to look at lbrnet for clues on what we may no longer need
+in the schema for HMM training." Assessed directly against the real `mts_schema.fbs` table
+inventory and real `lbrnet` import sites (not inferred) — **verdict: no, overall, but yes for a
+specific, confirmed subset.**
+
+**Why the schema stays essential overall**: it serves at least four roles with nothing to do with
+where the HMM runs — the main live `Event` stream (port 5555, read by the GUI and any Python
+monitor), the trade execution protocol (`TradeRequest`/`Response`/`Close`), the backtesting
+artifact format (`.btst`: `RunManifest`/`TradeRecord`/`DecisionEvent`/`PredictionAck`), and the
+`.alpha`/`TrainingEvent` format (Transformer training, which stays Python-side — nobody has
+proposed porting the Transformer in this initiative). None of those go away because the HMM moved.
+
+**What genuinely becomes unnecessary — confirmed by direct schema read**:
+- **`SystemState`**: narrow by schema-comment design — `timestamp_us`/`sequence_id`/
+  `bars_since_last_update`, explicitly commented "must match `MarketObservation.sequence_id`." A
+  single-purpose companion record for the port-5561 IPC and the on-disk `.context` MO+SS pairing.
+  No other consumer found. Clean removal candidate.
+- **`HmmRiskState` + `RiskStateUpdate`**: the schema's own comment states it outright — *"Sent by
+  Python HMM to guide C++ risk management."* This is exactly what `hmm_step`'s plain-struct FFI
+  return value (§5.2) already replaces; `reinfer_action_id` is the same piggyback §5.2 already
+  shows is structurally eliminated by `HmmStateIndicator::IsDirty()`, not replaced by new
+  machinery.
+- **`MarketObservation`** — the *wrapper table* only, not the `ObservationData`/`AsymmetryContext`
+  structs it wraps (those stay, see below). Its only remaining uses are the dead live-IPC
+  protocol and the dead on-disk `.context` record format (superseded by `.context.parquet`,
+  decision #8).
+
+**New finding from the `lbrnet` survey, not previously identified**: `lbrnet/backtest/
+backtest_server.py` runs its **own** HMM ROUTER thread — "binds ROUTER on 5561, serves C++ DEALER
+requests" — confirmed via direct grep of its own code comments and `HmmRiskStateStart`/
+`RiskStateUpdateStart` FlatBuffer-builder imports. This is a **third** Python-side server of the
+same dead protocol, parallel to C++'s `HMMClient` (§5.2) and MTS's `_hmm_router_loop` (§5.4
+consumer 3's survey) — it was not previously on the deletion list. If `BackTesterStudy.cpp` also
+calls Rust `hmm_step` in-process during replay (the same architectural pattern already designed
+for live, §5.2), this file's HMM-specific section (its ROUTER thread, `predict_hmm` glue, and the
+`HmmRiskState`/`RiskStateUpdate` FlatBuffer-builder calls) becomes dead the same way. **Open, not
+yet decided**: whether `backtest_server.py` does anything else (e.g. the Transformer/`PredictionAck`
+side of backtest replay) that must survive in the same file — needs its own consumer-boundary
+check before deletion, same caveat pattern as §5.2's `HMMClient` sweep.
+
+**Also newly confirmed dead**: `lbrnet/scripts/materialize_context_parquet.py` — its own docstring
+states it "materializes a raw-observations parquet cache **alongside a `.context` file**." There is
+no `.context` file to materialize from once collection writes `.context.parquet` directly
+(decision #8). Clean, nameable deletion candidate, distinct from `materialize_hmm_features.py`
+(§5.1a, which stays — it stamps posteriors into `.alpha`, a different job).
+
+**What does NOT become unnecessary (the overclaim this assessment deliberately avoids)**:
+`ObservationData`/`AsymmetryContext` are schema structs already embedded directly in the main
+`Event` table (confirmed by direct schema read: `Event.observation: ObservationData`,
+`Event.asymmetry_context: AsymmetryContext`), published live by `src/messaging/EventSerializer.cpp`
+to the GUI regardless of where the HMM itself runs. They stay, full stop.
+
+**A real tension surfaced by this assessment, not resolved here**: `Event` also carries raw
+`hmm_state: int8`/`market_climate: int8` fields today — exactly the positional-identity problem
+decision #16's additive `RegimeStatus` struct is meant to replace. So this migration *adds* schema
+surface (the new `RegimeStatus`) even as it removes other surface (`SystemState`/`HmmRiskState`/
+`RiskStateUpdate`/`MarketObservation`) — net schema size is roughly a wash, not "the schema is no
+longer needed." Separately, decision #16's own side-finding (`MarketClimate` hand-duplicated across
+C++/Python, not schema-generated) argues for *more* schema reliance for that one enum, not less —
+a genuine counter-pull worth keeping in view, not papered over.
+
+**Broader consequence, confirmed but not uniquely caused by the HMM move**: `lbrnet/data/
+observation_vector_bulk_reader.py` is shared `.context`-reading infra with non-HMM consumers too
+(`lbrnet/scripts/tune_risk_gate.py`, `calibrate_event_sample_sizes.py`, several test files) —
+confirmed via direct grep of every `MarketObservation`/`SystemState` import site in `lbrnet`. Once
+`.context.parquet` is the sole collection-time format, all of these need a Parquet-reading path,
+not just the HMM-training-specific files (`materialize_hmm_features.py`, `regime_calibration.py`,
+both already flagged §5.1a as "must exist after port" but whose *own* `.context`-reading internals
+also need to switch to Parquet). This is a consequence of the already-ruled direct-Parquet decision
+(#8), reinforced by this move but not something the HMM migration alone creates or resolves.
+
 ### 5.2 Target architecture
 
 ```
-rust/hmm/        mts_hmm        pure crate: model, emission, filter, tail diagnostics, regime engine
+rust/student_t_hmm/        student_t_hmm        pure crate: model, emission, filter, tail diagnostics, regime engine
                                  (classification + model-risk state), EM trainer, artifact I/O
 rust/ffi/        (feature "hmm") hmm_init / hmm_step / hmm_reset, staticlib + cbindgen header
 rust/py/         (submodule)     PyO3 for lbrnet: train, filter, batch_causal_filter, load/save artifact
 rust/tools/      hmm_tool       CLI: train, posteriors, verify-golden, export
 ```
+
+**`student_t_hmm` internal module layout** (expanded 2026-10-11 per §5.1a's full-stack survey;
+each module names the `lbrnet` file(s) it ports, so the file-by-file verdict table in §5.1a stays
+the single source of truth for scope — this is only the resulting Rust shape):
+```
+student_t_hmm/src/
+  model.rs               -- emission density, Hamilton forward-backward, Viterbi decode, predict
+                             (student_t_hmm.py's inference side)
+  train.rs                -- EM/MAP-EM loop, ECME dof (Brent's method), multi-restart screening,
+                             BIC-based K-selection (student_t_hmm.py's fit()/fit_streaming() +
+                             train_student_t_hmm.py's orchestration methodology, not its CLI shape)
+  engine.rs                -- RegimeEngine equivalent: stateful live inference, climate overrides,
+                             model-risk tracking (regime_engine.py)
+  registry.rs               -- MarketClimate classification cascade (regime_registry.py, the
+                             canonical 5-state taxonomy per §5.1a's ruling)
+  gate_metrics.rs            -- quality-gate statistics, ported first (regime_gate_metrics.py)
+  bootstrap.rs                -- parametric bootstrap (hmm_parametric_bootstrap.py), sharing one
+                             helper with gate_metrics.rs instead of the Python duplication
+  calibration.rs                -- Geyer tau_int / stationary block-bootstrap / mean-residual-life
+                             methodology (calibrate_hmm_gate_thresholds.py) — the `arch`-crate gap
+                             (§5.1a) must be resolved here before this module is more than a stub
+  runtime_calibration.rs          -- temporal_half_life_sec from the transition matrix
+                             (regime_calibration.py)
+  audit.rs                         -- deterministic GO/NO-GO JSON gate reader (audit_hmm_release.py)
+  artifact.rs                       -- manifest + weights serialization, see below
+```
+Explicitly out of scope for this crate (§5.1a): the orphaned 4-file Meta-HMM "trainer run plan"
+sub-cluster (deleted 2026-10-11, not just excluded), the 3 benchmark files (drop),
+`regime_focal_loss.py` (Transformer-training concern, not HMM), `student_t_hmm_gpu.py` (likely
+drop, pending a real speed comparison against Rust's CPU EM). **Not** out of scope, corrected
+2026-10-11: the live Meta-HMM "recommendation/ledger" sub-cluster (§5.1a) — feeds
+`risk_gate_orchestrator.py`, needs its own port/keep decision, separate from this crate's scope
+question since it's risk-gate-adjacent, not HMM-training-adjacent.
 
 **Artifact (replaces `models/hmm_model.pkl`)**: a pickle cannot be read by Rust and is a poor deployment
 format. Proposal: extend the existing `ModelManifest.json` (dims, `HMM_KEEP_DIMS`, feature weights, dof
@@ -303,6 +681,114 @@ bitten twice by misaligned per-dim arrays (`FeatureScaler`).
 **Live (DLL)**: `hmm_step(obs18_f32, ctx) -> HmmStep` called synchronously from the existing
 HMM-trigger site, ~µs for K=4, D≈17. Allocation-free: all buffers sized once at `hmm_init` from the
 manifest, never per step. Every `extern "C"` function `catch_unwind`-guarded.
+
+**`HMMClient` is fully obsolete the moment this lands — not just port 5561, the whole 966-line
+class (`include/HMMClient.h`/`src/HMMClient.cpp`) — confirmed by operator question, 2026-10-11,
+"do you see that HMMClient may not be applicable," traced against the real current code.** Nearly
+all of its machinery exists solely to handle cross-process async IPC and evaporates once the call
+is synchronous and in-process:
+- The DEALER socket, worker thread, and inproc PAIR signal (`m_worker`/`m_inproc_signal`) — a
+  synchronous Rust call has no socket and runs on the calling thread.
+- Sequence-ID staleness rejection (`m_lastSentSequenceId`/`returnedSeq < lastSentSeq`) and
+  timestamp-drift validation (`kMaxStaleTimestampDriftUs`/`kMaxFutureTimestampLeadUs`, 250ms/50ms
+  windows) — both exist only because an async network response can arrive out of order or late; a
+  synchronous call's return value is *definitionally* the answer to *this* call, every time.
+- FlatBuffer `Envelope`/`RiskStateUpdate` deserialization and probability-vector
+  sanitization/renormalization (`HandleBinaryResponse`'s ~290 lines) — wire-format concerns that
+  don't exist when the "wire" is a plain Rust struct returned by value across an FFI boundary.
+- Host failover (`AttemptHostFailover`/`m_hostCandidates`) — nothing to fail over to; the model is
+  linked into the same DLL.
+
+**Concrete replacement, traced against the real call site
+(`ContextManager::EmitLiveContext`/`EmitTrainingContext`, `src/ContextManager.cpp`)**:
+`HMMClient::Instance().RequestUpdateAsync(currentObs, barsSinceLastUpdate, sequence_id, now_us)` is
+replaced in both functions by a direct, synchronous call into the `ffi` crate's `hmm_step` wrapper
+(same `#[cfg(feature = "student_t_hmm")]`-gated shape `observation_vector`'s wrappers already use),
+fed the exact same already-Mahalanobis-gated `currentObs`/`bars_since_last_update` C++ already
+computes — **no new trigger logic, no new gate**; `otg::ObservationTriggerGate`'s existing
+Mahalanobis significant-change decision (§6.1) is unchanged and remains the sole arbiter of *when*
+to call. `hmm_init`/opaque-handle lifecycle (the model's Hamilton-filter belief and model-risk state
+— variance ratio, black-swan streak, duration tracking — persist across calls, so this cannot be the
+stateless-function pattern used for every `observation_vector` dim; it is the init/step/reset
+opaque-handle pattern this section already names) follows the same lifecycle discipline as every
+other long-lived `rust/ffi` resource (§6.5): init on `sc.LastCallToFunction`-adjacent study load,
+step every trigger, explicit shutdown, never a static destructor.
+
+**`HmmStep`'s raw output is deliberately minimal — it is NOT where `risk_multiplier` is computed.**
+Traced against `HandleBinaryResponse`'s real current body: `risk_multiplier` is computed by
+`RiskManager::Instance().ComputeInstitutionalRiskMultiplier(state_id, probs, entropy,
+transition_risk, dof, unknown_posture)` *downstream of* the HMM's own output, not emitted by
+`RegimeEngine.infer` itself. `hmm_step`'s return value should therefore carry only the model's own
+raw outputs (state_id, `unknown_posture` validity flag, probability vector, dof, mahalanobis
+distance, tail_weight, expected_duration, entropy, transition_risk, confidence, climate) and leave
+`risk_multiplier` to whichever layer owns that business logic today (`RiskManager`, C++) — the same
+"pure core, thin edges" separation already proven for `observation_vector`, and a candidate for its
+own future Rust port (this session's `execution` crate survey already named `RiskManager` as
+in-scope for pillar 1, §8.3) rather than folded into the HMM's own contract.
+
+**The Python-side "atomic regime-triggered re-inference" piggyback (today's
+`regimeUpdate->reinfer_action_id()`, written in the same `RiskStateUpdate` message so a Transformer
+re-inference lands on the same worker-thread message as the HMM state, closing a coherence gap
+between stale-regime and fresh-regime Transformer actions) is not something this port needs to
+reproduce — it is structurally eliminated by two already-ruled/already-built pieces, not replaced
+by new machinery:**
+1. **"Transformer coupling, inverted, one-way"** (this section, above): once the Transformer reads
+   regime features off the event stream C++ publishes, instead of running its own `RegimeEngine`,
+   there is no second process whose knowledge of "did regime change" can lag — whatever regime
+   state C++ just computed synchronously *is* what the next published event carries, every time.
+2. **`HmmStateIndicator::IsDirty()` already exists and already means exactly "did regime change
+   since the last `SetState` call"** (`include/Indicator.h`'s `Indicator<T>::Update()`: sets the
+   dirty bit iff `newValue != m_value`; `HmmStateIndicator::ShouldTrigger() { return IsDirty(); }`
+   already present). The instant `stateInd->SetState(...)` returns from the new synchronous call,
+   `stateInd->IsDirty()` tells C++ authoritatively whether to request a fresh Transformer
+   inference — via the existing, separate, already-working `TradeExecutionServer`/`PredictionAck`
+   channel (`InferenceManager::Instance().MutablePrediction()`'s normal update path, unaffected by
+   this change) — with zero added latency and zero new field needed in `HmmStep`'s own contract.
+
+**Deletion**: `HMMClient.h`/`.cpp` (966 lines total) become dead code the moment the call sites
+above are repointed, and should be deleted in the same change — not kept "just in case," per this
+repo's standing dead-code-deletion default. **Open, not yet verified**: whether any consumer other
+than `HMMClient::HandleBinaryResponse` needs the `RiskStateUpdate` FlatBuffer message itself (e.g. a
+GUI subscriber reading live HMM state) — port 5561 the *socket* is already ruled deleted (§7's port
+table), but if something else reads this message shape for display purposes, that becomes a
+publish-only addition to the existing port 5555 event stream, not a reason to keep `HMMClient`.
+Needs a consumer sweep before the deletion step, not before the design above.
+
+**`HmmStep`'s state identity MUST be rule/label-based, not a raw positional `state_id` — ruled
+2026-10-10, found while investigating this initiative's own groundwork.** `HMMStateEnum` (both
+`lbrnet/lbrnet/core/rc_enums.py` and its C++ mirror `include/rc_enums.h`) is already mid-retirement
+on both sides of this cross-repo system: the Python docstring says outright *"HMMStateEnum itself
+is scheduled for full removal; do not rely on it for new code"* (cross-repo design doc:
+`lbrnet/docs/architecture/STUDENT_T_HMM_MASTER_SPEC.md`/`_PLAN.md`, §9/"Regime Manager migration"),
+because fixed positional IDs assume a retrained model's raw EM state ordering matches the
+convention — label-switching means that's only true if an alignment step runs and succeeds, and an
+empirical check on one real retrain found only 1 of 4 states actually self-consistent with it; 3
+more live position-indexing bugs of the same class were found elsewhere (`tune_risk_gate.py` etc.).
+The replacement already exists on both sides, built but not yet wired in: C++'s
+`include/RegimeManager.h`/`.cpp` (188 lines, shipped additively, **zero live callers**, confirmed by
+direct grep) exposes rule/label-based named methods (`IsMomentumAligned`, `RequiresPassiveExecution`,
+`GrantsMomentumBoost`, `GetPatternMultiplier`, ...) behind an opaque `RegimeSnapshot` Memento token
+that **never exposes the raw `HMMStateEnum` to callers**; Python's `lbrnet/lbrnet/models/
+regime_manager.py` (2026-09-18) is the independently-built counterpart (not a literal port of the
+C++ file — kept in sync via `docs/HMM_REGIME_MANAGER_COORDINATION.md`, a 1045-entry cross-repo
+handoff log). **Consequence for this port**: if `student_t_hmm`/`hmm_step()` simply reproduces today's
+wire schema's raw `primary_state: int8` as its output shape, it re-bakes the exact bug class
+already being retired into the new architecture. `HmmStep`'s design must emit identity in a form
+`RegimeManager`-style consumption can stay rule/label-based on — either the state-alignment-to-
+canonical-convention step moves into `student_t_hmm` itself (so a raw id is safe again, alignment
+cost tracked per-model the way `ModelManifest.json`'s `state_map[*].alignment_cost` already does
+today), or `HmmStep` carries enough label/profile information directly so callers never need to
+re-derive identity from a positional index. Exact shape: open, needs its own design pass before
+`student_t_hmm`'s `RegimeSnapshot`-equivalent is finalized — not decided in this edit.
+
+**Companion C++-side groundwork, now in scope (ruled 2026-10-10)**: the 8-file call-site migration
+(`PositionManager`/`RiskManager`/`Scoring`/`TripleScreen3`/`Indicator`/`InferenceManager`/`Trade`/
+`TripleBarrierExitManager`) from direct `HMMStateEnum` reads onto the already-built `RegimeManager`
+facade — flagged "not-yet-approved" in `lbrnet`'s own plan doc, **now approved and in progress**
+(plan §4a tracks status). This is independently valuable (retires a real, already-demonstrated bug
+class) and directly de-risks `student_t_hmm`'s design: doing it first proves out the label-based
+consumption pattern against the *existing* HMM before the Rust port has to get it right from a
+cold start.
 
 **Transformer coupling, inverted, one-way**: C++ publishes the HMM output with each event on the
 existing event stream (additive schema fields, non-breaking); the Python Transformer reads regime
@@ -319,12 +805,52 @@ before any Python HMM code is deleted. **Training** cannot be bit-exact (EM is n
 statistical — same `.context`, same init, held-out log-likelihood/BIC, state profiles, and posterior
 agreement within tolerance. (Stage-by-stage execution of this strategy: plan §4.)
 
-### 5.4 Extension (2026-10-09, operator goal — not yet decided in full, work to begin after plan §4's Stage B-C)
+**The ~20-file `test_student_t_hmm_*` suite (full list: §5.1a) is the enumerated regression
+checklist for this parity gate, not a vague "match the math" aspiration** — each test name maps to
+a specific, previously-real numerical bug (density normalization, τ/σ² covariance conversion, the
+covariance-update denominator, ECME DOF staleness, the mean-prior cross-term, the min_covar/
+global_var anchor relationship, one-sided relative convergence, L_MAP-not-raw-LL checkpoint
+restore, k-means++/representative-sampling initialization, chunked-streaming memory/sequence-
+boundary correctness). The Rust port is not considered parity-complete until it has an equivalent
+test for every item on that list, and the one genuinely open item (L_MAP decline, item 15) is
+carried forward as a documented open question rather than silently closed.
+
+### 5.4 Extension — RULED (operator, 2026-10-10; direction set 2026-10-09, work begins after plan §4's Stage B-C)
+
+**Ruling, stated in the operator's own words (2026-10-10)**: *"We will train, and use for prediction,
+the Student-t HMM on the [Rust/native] side. Whatever HMM info needed to train the transformer will
+be added to the `.alpha` file. Whatever HMM info needed by Transformer to make inferences will be
+sent with the FlatBuffers Event via ZMQ."* This settles both halves of the goal below as decided,
+not just directionally correct — the offline `.alpha` flow and the live Event flow (§5.2's
+"Transformer coupling, inverted, one-way") are both confirmed, not merely proposed.
 
 **The goal, stated plainly**: `EventDataCollectorStudy.cpp` writes `.context.parquet` directly during
 collection (replacing today's two-step "C++ writes `.context` as a FlatBuffers stream → a separate,
 later Python pass materializes it to Parquet" — this repo already writes Parquet directly from native
 code elsewhere, `tools/scid_processing/scid_to_ticks_parquet.cpp`, so there is real precedent).
+**Stronger, more directly-applicable precedent found 2026-10-11** (operator: "does the `tools`
+folder have anything we can use for this?"): `tools/market_data_replay/MarketDataReplay.cpp`
+already implements exactly this pattern, not just an analogous one — its own header comment states
+"writes a flat Parquet file ... direct from C++ — no `.context` intermediate," using chunked Arrow
+column builders (`ChunkBuffers`, `NewBufferedRowGroup()`+`WriteRecordBatch()` at 2M-row chunks to
+bound memory) — the template to copy, not merely a precedent to cite. Two gaps to close, not
+reasons the precedent doesn't apply: (a) it's an offline tool reading a static `mes_ticks.parquet`,
+not hooked into live Sierra Chart collection, and (b) it has no `RiskGateContext` columns (no live
+risk-gate state available offline). `tools/context_pipeline/context_to_parquet.cpp` supplies the
+exact target column schema to hit instead (18D `ObservationData` + 15 `RiskGateContext` floats +
+`regime_duration`/`is_valid`/`snapshot_timestamp_us`/`context_available` + `sequence_id`/
+`timestamp_us`/`bars_since_last_update`) — this is the shape `lbrnet`'s training pipeline already
+expects, so matching it means nothing downstream notices the collection-time change. The concrete
+interception point, traced directly: `src/EventDataCollectorStudy.cpp`'s
+`LBRFileManager::Instance().LogSynchronizedEvent(*eventT, *eventT->observation,
+*eventT->asymmetry_context, now_us, stitched_regime_tenure, &rgc)` call is the single site that
+currently writes the binary `.context`/`.alpha` MO+SS records live — this is where a direct Parquet
+writer replaces it. **Caveat, unchanged by this finding**: all of the above (`MarketDataReplay.cpp`,
+`context_to_parquet.cpp`, `scid_to_ticks_parquet.cpp`) are C++ tools built against the mamba `mts`
+env's Arrow/Parquet libs, not Rust — this doesn't change the separately-confirmed finding (plan §4)
+that `rust/Cargo.toml` has zero `parquet`/`arrow` dependency today; it gives a working C++ reference
+implementation of the exact pattern to port into `rust/student_t_hmm`'s data-ingestion path, not a
+drop-in Rust dependency.
 `.alpha`/`TrainingEvent` keeps exactly "whatever the Transformer needs from the HMM" (the already-
 existing posterior fields) plus a join key (`sequence_id`), and drops its own embedded
 `observation: MTS.Schema.ObservationData` copy, joining back to `.context.parquet` instead when the
@@ -350,20 +876,416 @@ each needs its own answer, this goal does not resolve all three uniformly:
    de-duplicate against `.context.parquet` via a join key instead of an embedded copy.
 3. **Live GUI display** (`MTS/zmq_client.py` genuinely decodes `MarketObservation` live today —
    `GetRootAs`, aligned with `SystemState` by `sequence_id`, feeding
-   `lbrnet.feature_spine.MarketObservationData` — confirmed via direct code read). **Not resolved by
-   this goal.** If `MarketObservation` disappears from the live wire protocol entirely, the GUI loses
-   whatever it currently shows from that data. Two ways this resolves, not yet decided: either something
-   still publishes the vector live for display purposes even though the HMM no longer needs it
-   transported, or the GUI's display gets redesigned to show something else (e.g., posteriors only) —
-   the second is a product decision about what the GUI shows, needing an explicit operator call before
-   `MarketObservation` can be removed from the live schema.
+   `lbrnet.feature_spine.MarketObservationData` — confirmed via direct code read). **Not resolved
+   by the 2026-10-10 ruling above** (that ruling addresses what the Transformer needs — training
+   via `.alpha`, live inference via the Event — not what the GUI displays) **— resolved 2026-10-11
+   instead, by a separate, later ruling, see below.**
 
-**Status: operator goal, confirmed directionally correct, not yet decided in full.** Explicitly depends
-on §5.2's in-process Rust HMM landing first — writing `.alpha` records "fully populated the first time"
+**Status: RULED (operator, 2026-10-10) for consumers 1 and 2.** Still explicitly depends on §5.2's
+in-process Rust HMM landing first — writing `.alpha` records "fully populated the first time"
 requires the HMM to already be callable in-process from `EventDataCollectorStudy.cpp`, which doesn't
-exist yet. The GUI question (consumer 3) should be resolved before any schema change removes
-`MarketObservation` from the live wire protocol, independent of this goal's `.alpha`/`.context.parquet`
-changes, which don't depend on that resolution either way.
+exist yet; the ruling settles *what* happens once it does, not the sequencing.
+
+**Consumer 3 (GUI display), RESOLVED 2026-10-11** (operator: "analyze what `../MTS/*.py` needs for
+display purposes and propose a message sent by the regime manager in Rust"; "we can change the
+schema... to conform to our new direction"). Full consumer survey of `MTS/regime_view.py`,
+`MTS/live_agent_view.py`, `MTS/zmq_client.py`, `MTS/websocket_broadcaster.py` — a bigger finding
+than the open question implied:
+
+**MTS is not merely an HMM consumer — it is the live HMM inference *server*.**
+`zmq_client.py`'s `_hmm_router_loop()` binds the ZMQ ROUTER on port 5561 that `HMMClient` (the C++
+DEALER) talks to, receives the `MarketObservation`+`SystemState` request pair, calls
+`self.live_agent.predict_hmm(...)` (the real `lbrnet.LiveAgent`, imported directly into the Dash
+process), and replies with the `RiskStateUpdate` envelope (`_build_risk_state_envelope`). This means
+§5.2's "`HMMClient` fully obsolete" finding has a mirror-image consequence on the MTS side: the
+entire Python HMM-serving path in `zmq_client.py` (`_hmm_router_loop`, `handle_hmm_flatbuffer_message`,
+`_predict_hmm_from_feature`, `_build_risk_state_envelope`, and `feature_spine`'s MO+SS
+pairing-by-sequence_id, which exists solely to reconstruct the HMM's input feature vector from two
+independently-arriving async messages) becomes dead code too, not just a display-field question.
+
+**Real display consumers, field-by-field** (confirmed via direct grep, zero consumers found for
+several fields previously assumed relevant):
+
+| Field | Consumer | Needed? |
+|---|---|---|
+| `climate_name` | `regime_view.py`, `live_agent_view.py` header/panel | Yes |
+| `entropy` | same | Yes |
+| `velocity` (entropy rate-of-change) | `live_agent_view.py` dead-zone check | Yes |
+| `entropy_drift_alerts` | `live_agent_view.py` drift-warning banner | Yes |
+| `observation_vector` (lz/nhnl/bias sub-fields) | `regime_view.py` | Yes — see below |
+| `timestamp_us` | `regime_view.py` freshness label | Yes (reuse `Event`'s own) |
+| `burnin`/`burnin_remaining` | `regime_view.py` mode tile | Yes, but needs a different source (below) |
+| `source` | `regime_view.py` (cosmetic) | No longer meaningful, see below |
+| `state_id`/`primary_state` | none (carried in cache, never rendered) | **No** |
+| `transition_risk`, `dof`, `mahalanobis_distance`, `tail_weight`, `expected_duration`, `probability_vector` | none anywhere in MTS | **No** |
+
+**Three things that currently work but would silently break or stop making sense, found by this
+trace — not just a field list, real redesign content:**
+1. **`regime_view.py`'s `observation_vector` display is sourced *exclusively* through the
+   now-obsolete `MarketObservation` HMM-request delivery** (`_predict_hmm_from_feature` attaches
+   `prediction['observation_vector']` from the array it received over the HMM-router path). The
+   main `Event` table **already has** an `observation: ObservationData` field (`mts_schema.fbs`,
+   "Added for Elite v2.5") published every tick on the existing port-5555 stream — but confirmed via
+   grep that MTS **never reads it** (only the HMM-router-specific `MarketObservation.Observation()`
+   is ever decoded, `zmq_client.py:663`). Once `HMMClient`'s dedicated `MarketObservation` delivery
+   is deleted, this display goes blank unless MTS starts reading the field that's already on the
+   wire today.
+2. **`burnin`/`burnin_remaining` measures the wrong restart event.** Today it's
+   `self.hmm_burnin_required: int = 40`, a counter reset whenever the **MTS/Dash Python process**
+   restarts — guarding against trusting a freshly-reloaded Python `LiveAgent.regime_engine` before
+   it's seen 40 observations. Once HMM state lives in the long-running C++/Sierra process (which
+   restarts far less often than the GUI), this specific "Python process just restarted" event no
+   longer corresponds to anything meaningful at the new source of truth. If a burn-in/warmup
+   display is still wanted, it must be computed and published by the Rust HMM/C++ side (tracking
+   *its own* post-reset observation count), not re-invented locally in MTS.
+3. **`source`'s dynamic meaning disappears.** Today it distinguishes several *possible* Python code
+   paths that could have produced a `regime_stats` update (explicit HMM message vs. a direct
+   diagnostic fallback vs. a `regime_engine.get_stats()` fallback). Once there is exactly one path
+   (Rust HMM → C++ publish → MTS subscribe), this field has nothing left to distinguish.
+4. The **"flush pending re-inference after the HMM reply is on the wire"** ordering hack
+   (`self.live_agent.flush_pending_reinference()`, tied to `_hmm_router_loop`'s send timing) is
+   superseded by §5.2's finding: `HmmStateIndicator::IsDirty()` + the existing, separate
+   `TradeExecutionServer`/`PredictionAck` channel already closes this coherence gap with zero added
+   machinery.
+
+**Proposed design: additive `RegimeStatus` struct on the existing `Event` table, not a new port**,
+consistent with the already-ruled "Transformer coupling, inverted, one-way" mechanism (§5.2) —
+operator confirmed schema changes are in scope ("we can change the schema... to conform to our new
+direction"):
+
+```fbs
+struct RegimeStatus {
+  climate: int8;                      // MarketClimate enum -- rule/label-derived (the Rust regime
+                                       // engine's own classification), NEVER the raw HMM state_id
+  entropy: float;                     // normalized Shannon entropy, [0,1]
+  entropy_velocity: float;            // renamed from today's 'velocity' -- self-documenting
+  entropy_drift_alert_count: uint32;
+  burnin_active: bool;                // the Rust HMM's OWN post-reset warmup, not MTS's
+                                       // process-restart counter (finding 2 above)
+  burnin_bars_remaining: uint16;
+}
+
+table Event {
+  ...
+  observation: ObservationData;       // already exists -- MTS needs to start reading this, not a
+                                       // schema change
+  regime_status: RegimeStatus;        // NEW, additive, non-breaking
+}
+```
+
+Deliberately **excluded from `RegimeStatus`** (zero *display* consumers, confirmed): `state_id`,
+`mahalanobis_distance`, `tail_weight`, `reinfer_action_id`, `probability_vector`. These genuinely
+stay C++/Rust-internal — no consumer found anywhere, display or otherwise. `sequence_id`/
+`timestamp_us` reuse `Event`'s own top-level fields rather than duplicating.
+
+**Correction, 2026-10-11 (operator: "the regime manager in Rust can add to `TrainingEvent` the
+Student-t HMM data needed to train the Transformer, and add to `Event` the data needed for the
+Transformer to make inferences")**: the paragraph above originally also listed `transition_risk`,
+`dof`, and `expected_duration` as "zero display consumers, stays internal" — that was true for the
+*display* question (§5.4 consumer 3) but is **wrong as a blanket statement**, found by checking a
+consumer this design hadn't checked yet: the Transformer's own live feature pipeline. Grounded
+directly in `lbrnet/lbrnet/generated/MTS/Schema/schema_contract.py`'s `FEATURE_SPECS` tuple and
+`lbrnet/lbrnet/features/feature_buffer.py`'s runtime behavior (not inferred):
+
+```python
+FeatureSpec("hmm_state", "metadata", "root", "HmmState", "HMMStateEnum")       # read off Event today
+FeatureSpec("market_climate", "metadata", "root", "MarketClimate", "MarketClimate")  # read off Event today
+FeatureSpec("regime_entropy", "continuous", "regime", "entropy", None)
+FeatureSpec("regime_dof", "continuous", "hmm_state_derived", "", None)
+FeatureSpec("regime_transition_risk", "continuous", "regime", "transition_risk", None)
+FeatureSpec("regime_expected_duration", "continuous", "regime", "expected_duration", None)
+```
+
+`feature_buffer.py`'s own code comment for `source == 'regime'` states the field value is
+"**caller-supplied via `push_event()`, not read from the FlatBuffer at all**" — i.e., `entropy`/
+`transition_risk`/`expected_duration` are *not* wire fields today, they're passed in directly from
+Python's own live `regime_engine.infer()` call. This is the exact code-level proof of §5.2's
+"Transformer runs its own `RegimeEngine`" finding, not a new problem — but it means the Transformer
+has a **confirmed, real need** for `transition_risk`/`expected_duration`/`dof` that this design must
+now carry on the wire, since the Rust regime engine replacing `regime_engine.infer()` (§5.1a) is not
+itself reachable from Python anymore.
+
+**Open design decision, not resolved here**: do these three fields widen `RegimeStatus` itself
+(one shared struct for both the GUI and the Transformer — the GUI simply ignores the fields it
+doesn't display), or does the Transformer get its own, separate struct on `Event`/`TrainingEvent`?
+Leaning toward widening `RegimeStatus` (avoids maintaining two near-identical structs and two
+separate `.fbs`/codegen surfaces for what is, in both cases, "the Rust regime engine's current
+output"), but this is a real choice, not decided unilaterally here.
+
+**A fragility this correction surfaces, worth fixing rather than carrying forward**: `regime_dof`'s
+current mechanism (`source: "hmm_state_derived"`) is a *separate* per-state lookup array
+(`load_hmm_model(config.HMM_MODEL_PATH)`, then `model.dof_` indexed by the raw `hmm_state` the
+Transformer separately read off the event) — two independently-loaded things that must agree on
+state ordering, the exact bug class (`FeatureScaler` misalignment, `HMMStateEnum` label-switching)
+this spec has already flagged twice elsewhere. The Rust regime engine already knows its own current
+state's dof internally (§5.1a: `student_t_hmm.py`'s own `dof_` array, ECME-estimated) — it should
+emit `dof` **directly as a per-event field**, the same way `transition_risk`/`expected_duration`
+would be, eliminating the Transformer's separate model-artifact load entirely for this one feature.
+
+**Raw `hmm_state` is confirmed read directly by the Transformer feature pipeline today** (both the
+`hmm_state` `FeatureSpec` above and `lbrnet/lbrnet/features/hmm_context_features.py`'s
+`state_id = event.hmm_state`, used for `ignition_flag` detection) — this is not a new concern, but
+it is new *evidence* that the still-open "`HmmStep`'s state identity must be rule/label-based, not
+raw positional `state_id`" question (§5.2) has a confirmed Transformer-side consumer at stake, not
+only the already-named C++ call sites — raising, not lowering, the priority of resolving it before
+`RegimeStatus`/the Transformer's wire contract is finalized.
+
+**Mechanism — corrected 2026-10-11 (operator: "we need code generated for Rust... by
+`regenerate_schema.sh`... to process that new HMM info in an optimal way")**: the paragraph
+originally here said Rust should return a hand-rolled plain struct and "never touches `rust/schema`'s
+generated types." That was wrong — checked directly against `rust/schema/src/generated/
+mts_schema_generated.rs`'s real codegen output for existing `.fbs` structs (`ObservationData`,
+`AsymmetryContext`, `IndicatorState`): each compiles to
+```rust
+#[repr(transparent)]
+#[derive(Clone, Copy, PartialEq)]
+pub struct ObservationData(pub [u8; 72]);
+```
+with a generated `::new(field1, field2, ...)` constructor and named getters. This is POD,
+`#[repr(transparent)]` over a fixed byte array — **already in exact wire-format bytes**, zero
+serialization step, and FFI-safe to pass by value. The Rust regime engine should construct
+`RegimeStatus` (once added to the `.fbs`) using this real generated type's own constructor
+(`schema::generated::RegimeStatus::new(...)`), not a hand-rolled parallel Rust struct that merely
+"matches" the schema by convention — this is the single-source-of-truth guarantee the project has
+been bitten by its absence twice already (`FeatureScaler`'s misaligned arrays, `HMMStateEnum`'s
+label-switching), now extended to the Rust side specifically. This gives `rust/schema` its **first
+real consumer** — confirmed zero real consumers as of this session's earlier check (`ffi`/
+`observation_vector`/`execution` all have zero usages); this changes once `RegimeStatus` lands.
+The division of labor is otherwise unchanged from the original design: `Event`/`TrainingEvent` are
+`table`s (confirmed by direct schema read, not structs), which need the full FlatBuffers builder —
+the **existing** C++ call sites keep owning that (`src/EventDataCollectorStudy.cpp`'s `eventT`/
+`TrainingEventT` construction, `src/messaging/EventSerializer.cpp`'s live `Event` construction,
+§5.1b). Only the *nested* `RegimeStatus` struct value is built from the Rust-generated type and
+passed across FFI as a raw value; C++ does `event_builder.add_regime_status(&value)` with it. (The
+engine referenced here is `engine.rs`, §5.1a/§5.2's module layout — not to be confused with the
+existing, separate C++ `RegimeManager.h`/`.cpp` facade, §5.2's "companion C++-side groundwork,"
+which consumes the HMM's *already rule-based* output downstream, not the raw engine itself.)
+
+**A real tension this surfaces, flagged not resolved — struct vs. table for `RegimeStatus`**:
+FlatBuffers `struct`s are fixed-layout and not extensible (no adding/reordering/removing a field
+without a breaking change); `table`s support additive optional fields with defaults but need the
+full builder (no simple zero-copy value-passing — embedding one table inside another built in a
+different language/builder context requires FlatBuffers' heavier "nested flatbuffer" indirection,
+not a direct struct-style embed). This matters concretely, not just in theory: `RegimeStatus`'s own
+field list has already grown twice across two consecutive design turns in this very document
+(decision #16's display-only fields → decision #20's Transformer-needed additions) — live evidence
+the output shape is still being discovered, which argues for a `table`. Recommendation, not a
+unilateral decision: **keep it a `struct`** (matches every other composite `Event` field —
+`ObservationData`/`AsymmetryContext`/`IndicatorState` — and keeps the simple FFI mechanism above),
+but explicitly defer finalizing its field list until Stage G4 (plan §4, live engine assembly) when
+a *complete* consumer sweep (GUI display, Transformer training, Transformer live inference) can be
+done in one pass instead of incrementally discovering fields turn by turn, as has happened so far.
+If a future consumer sweep still finds the field list churning after that point, revisit `table`
+then rather than accepting indefinite struct churn.
+
+**`TrainingEvent` may legitimately carry a richer field set than `Event`, not necessarily the exact
+same fields — not decided here, flagged for the implementation step**: training/offline analysis
+tolerates diagnostic fields the live, low-latency wire format doesn't need to carry every tick —
+e.g. `mahalanobis_distance`/`tail_weight`/`variance_ratio`/`black_swan_alert`/`duration_bars`/
+`duration_ratio`/`fim_distance_min` (today's `HmmRiskState`'s full model-risk diagnostic set,
+§5.1b) could be worth keeping in `.alpha` for ablation studies even though no confirmed live
+Transformer-inference consumer needs them per the `FEATURE_SPECS` grep above. This mirrors how
+`.alpha` already carries far more context than live `Event` for other fields (labels, trade
+context) — not a reason to bloat `Event`, but a real reason `TrainingEvent`'s field list shouldn't
+be assumed identical to `RegimeStatus`'s just because both come from the same Rust engine call.
+
+**Implementation-time hygiene note, not a design blocker**: `lbrnet`'s `FEATURE_SPECS` already has
+its own SHA256-hashed versioning (`FEATURE_CONTRACT_ID`, `schema_contract.py`) specifically to
+detect train/live feature-contract drift — switching `regime_entropy`/`regime_transition_risk`/
+`regime_expected_duration`/`regime_dof` from `source: "regime"`/`"hmm_state_derived"` (caller-
+supplied / side-loaded) to a wire-field source (read off `Event`) changes this hash and must be
+tracked through `lbrnet`'s own contract-versioning mechanism when implemented — not a reason to
+delay the design, just a real downstream step not to forget.
+
+**Related finding, same trace, not yet acted on**: `MarketClimate` is a hand-maintained
+`enum class : int8_t` in `include/Indicator.h` (C++) and separately hand-maintained in Python
+(`lbrnet.models.regime_registry.MarketClimate`, relocated 2026-09-22 from `lbrnet.core.rc_enums`,
+which keeps a backward-compat re-export shim) — **not** a FlatBuffers schema enum, unlike almost
+everything else this wire-format work touches. Values currently agree (`GAUSSIAN_STABLE = 0` on both
+sides, spot-checked) but this is exactly the hand-duplicated-across-languages pattern this project has
+already been bitten by twice (`FeatureScaler`'s misaligned arrays, `HMMStateEnum`'s label-switching
+bug). Worth migrating to a schema-generated enum in the same change that adds `RegimeStatus.climate`
+to the wire, rather than baking a third hand-maintained copy into a brand-new field — **not yet
+decided, flagged for the implementation step, not blocking this design**.
+
+**Open, not yet verified** (unchanged from the prior note): whether anything besides
+`HandleBinaryResponse`/MTS's HMM router needs the `RiskStateUpdate` message shape for some other
+purpose — now answered for the GUI-display case (no, `RegimeStatus` replaces it), but a broader
+sweep of `lbrnet` consumers of `RiskStateUpdate` has not been done.
+
+**Sequencing decision, 2026-10-11**: the actual `.fbs` edit (adding `RegimeStatus`, wiring
+`Event.regime_status`) is deliberately **not** done in this change — there is nothing yet to
+populate it (`student_t_hmm` hasn't landed, Stage A/P9 still blocks it, §4) and editing the schema
+ahead of the real Rust HMM's finalized output shape risks a second schema churn once that lands.
+This section is the complete, ready-to-implement design; the implementation step (the `.fbs` edit,
+`regenerate_schema.sh` across MindfulTrader/`lbrnet`/MTS, the `MarketClimate` schema-enum migration
+decision, and the actual MTS-side deletions) happens alongside `student_t_hmm`'s own landing, not
+before it.
+
+### 5.4a Transformer training-data pipeline: a two-stage Rust architecture (scoped 2026-10-11, decisions #22-#23)
+
+Operator direction, across three turns: (1) have Rust process both the live ZMQ `Event` stream and
+the `.alpha`/`.lbr` training file for `lbrnet` (decision #22); (2) move the pipeline that
+*generates* the Transformer's training dataset from Python to a **separate, offline, native Rust
+tool** — not something run incrementally inside the live DLL, since windowing inherently needs
+look-ahead across a full session (decision #23); (3) have Rust also own *loading* that finished
+dataset back in on the Python side, not just generating it. The result is a clean two-stage
+architecture, not one crate trying to do both jobs:
+
+- **Stage 1 — offline, native, no Python at all**: a new Rust tool (shape: `tools/`-style
+  standalone binary, same precedent as `tools/market_data_replay/`) reads already-collected
+  `.alpha`/`.lbr` data and ports `lbrnet/data/tristream_dataset.py`'s real windowing/labeling logic
+  — not just a format conversion — writing a finished, compact training-cache artifact.
+- **Stage 2 — `rust/py` (PyO3), narrower than originally scoped**: loaded from Python at both live-
+  inference time and training time. Its training-side job is no longer "parse raw FlatBuffers and
+  window them" (that moved to Stage 1) — it's "load Stage 1's finished artifact fast and hand it to
+  `tf.data`," plus its already-scoped live per-event extraction job, unchanged.
+
+**Scope note**: broader than §5's HMM focus — this is the Transformer's entire training-data
+pipeline, not an HMM-specific concern; placed here (not a new top-level section) because it grows
+directly out of §5.4's Transformer-consumption thread and a new top-level section would force a
+disruptive renumbering of §6-§12 and every cross-reference to them across this spec and its
+companion plan.
+
+**Framework correction, same turn**: the Transformer is **TensorFlow/Keras**, not PyTorch — operator
+correction, confirmed by direct import grep of the real files (`lbrnet/models/transformer.py`,
+`lbrnet/scripts/train_event_transformer.py`, `tune_event_transformer.py`, `objective.py`,
+`layers.py`, `lbrnet/inference/live_agent.py` — zero `torch` imports anywhere in this set). This
+matters for both stages: output must be plain `numpy` arrays (via the `pyo3`/`numpy` crate
+ecosystem's `PyArray` bridge, Stage 2) or a plain Parquet artifact (Stage 1) — not anything
+PyTorch-flavored. `tf.convert_to_tensor` from a numpy array is exactly as cheap as
+`torch.from_numpy`, so this doesn't change the fundamental design, it just rules out a
+PyTorch-specific output type.
+
+**A genuine, self-identified find while tracing the real pipeline — corrected 2026-10-11 after a
+narrower-than-intended original search**: `lbrnet/data/fast_ingestor.py` and `lbrnet/data/
+flatbuffer_stream.py` (the "10-50× speedup," "zero-copy," PyTorch-`IterableDataset` files cited as
+evidence Python was straining against FlatBuffers overhead) were originally called "confirmed dead
+code, zero real callers" — that grep was scoped only to `lbrnet/` (the Python package directory)
+and missed the repo's own sibling top-level directories (`backtest/`, `examples/`, `tests/`). A
+repo-root-scoped re-check found the two files have **different, genuinely distinct liveness**:
+- **`flatbuffer_stream.py` is live, not dead** — wrapped by `backtest/alpha_event_stream.py`
+  ("Wraps `FlatBufferEventStream`..."), which feeds `backtest/offline_backtest_agent.py`, which is
+  imported by `backtest/backtest_runner.py` — itself referenced by 25+ files across `backtest/`/
+  `tests/`/`lbrnet/scripts/`, a core, heavily-used piece of the real offline-backtest-replay
+  infrastructure. **Not a deletion candidate.**
+- **`fast_ingestor.py` is still a reasonable, if weaker, deletion candidate** — its only reference
+  anywhere in the repo is `examples/fast_ingestor_examples.py`, a demo file, not production code.
+  Flagged as a dead-code-deletion candidate per this repo's standing default (verify-then-delete),
+  but not "zero references" as originally stated.
+
+This is a real lesson for this initiative's own research discipline, not just a correction: a
+"confirmed dead code" claim needs a repo-root-scoped search, not a search scoped to the most
+obviously-relevant subdirectory — the same standing rule ("search the full repo for usages before
+removing code") applies to *claims about* dead code, not only to actual deletions.
+
+**The real pipeline, traced directly**:
+- **Training**: `.alpha`/`.lbr` (FlatBuffers, size-prefixed `TrainingEvent` records) →
+  `lbrnet/data/lbr_to_polars.py`'s `load_lbr_to_dataframe()` (FlatBuffers → Polars DataFrame, via
+  Python loops and per-field dict unpacking) → (a materialization/caching step elsewhere) →
+  `lbrnet/data/tristream_dataset.py`'s windowing/labeling + `load_tristream_from_parquet()`
+  (Polars/Parquet → TF tensors) → `lbrnet/scripts/train_event_transformer.py` (TF/Keras training
+  loop). **Stage 1 above replaces everything up to and including the windowing step.**
+- **Live inference**: ZMQ `Event` → `lbrnet/features/feature_buffer.py`'s `push_event()` (the
+  `FEATURE_SPECS`-driven extraction already examined in §5.4, including the broken
+  `regime`/`hmm_state_derived` side-channel) → `lbrnet/inference/live_agent.py` (TF/Keras
+  `predict()`, ZMQ reply to C++). **Unchanged — still `rust/py`'s live-extraction job.**
+
+**`lbr_to_polars.py` already self-identifies as exactly what Stage 1 should replace** — its own
+docstring, verbatim: *"DEPRECATED: This module is considered legacy/amateur code. It relies on slow
+Python loops and dictionary unpacking. Future institutional pipelines should use C++ extensions or
+Arrow readers."* This is the codebase itself flagging the fix the operator is now proposing — Rust
+is a strict improvement on "C++ extensions" (memory safety, and it's the direction this entire
+initiative is already moving). Confirmed genuinely live, not dead: real callers include
+`lbrnet/scripts/collect_data.py`, `scripts/preflight_check.py`.
+
+**Institutional-grade or amateur — the operator's own question, answered**: the *intent* is
+unambiguously institutional-grade — it's exactly what `lbr_to_polars.py`'s own docstring already
+calls for. Whether the *execution* lands institutional-grade is a discipline question, not a
+language question: it requires (a) a golden-harness parity test against `tristream_dataset.py`'s
+**current real output** — the exact `(indices, values, hints, position, labels)` tensors — before
+any Python is deleted, the same "port → parity test → shadow → cutover" discipline used everywhere
+else in this initiative; (b) preserving the windowing/labeling *semantics* exactly, including the
+`WINDOW_BUILDER_VERSION` cache-versioning convention (any semantic change must be a separate,
+explicitly-decided change, not an accidental side effect of the rewrite); (c) keeping the enum
+lookup-table / `FeatureRegistry` logic as a single source of truth, not a second hand-maintained
+copy. Done that way: institutional-grade. Rushed without the parity step: exactly the amateur
+shortcut the existing docstring already warns against.
+
+**A real wrinkle found while confirming "loading," 2026-10-11**: `tristream_dataset.py`'s load path
+(`load_tristream_from_parquet`) does **not** read fully-windowed tensors off disk — its own code
+comment explains why: *"v5: compact per-event cache format (indices/values/hints persisted
+pre-windowing + `_window_sel`, reconstructed via `sliding_window_view` at load) — v4 caches store
+`X_indices`/`X_values`/`X_hints` directly, ~seq_len× larger on disk."* The cache deliberately stores
+data pre-windowing (one row per event) plus a `_window_sel` selector array, and reconstructs the
+actual `(N, seq_len, 19)` sliding-window tensors **at load time** via
+`numpy.lib.stride_tricks.sliding_window_view(...)[sel]` — a zero-copy view trick, repeated for
+every stream (indices/values/hints, timestamps, and — confirming yet again the Transformer's real
+dependency on HMM-derived fields, same thread as decision #20 — `hmm_state_int` and
+`regime_prob_drift`/`flush`/`coil`/`sweep`). **Consequence**: Stage 2's "load" job is not a trivial
+Parquet read — it must replicate this compact-format/sliding-window reconstruction trick, which
+Rust does natively and cheaply (its own slice/stride views). **Nuance, not a reason to abandon
+this**: Polars itself is Rust under the hood, so plain Python Parquet-reading isn't the "slow
+FlatBuffers dict-unpacking" problem `lbr_to_polars.py` complains about — the real value of doing
+this specific load step in `rust/py` is correctly and fast replicating the compact-format
+reconstruction, and keeping Stage 1 (writer) and Stage 2 (reader) as one Rust-owned,
+single-source-of-truth pair so a `WINDOW_BUILDER_VERSION`-style format change can't silently drift
+between the tool that writes the cache and the code that reads it.
+
+**Proposed scope, split across both stages**, both built on `rust/schema`'s generated FlatBuffers
+readers where FlatBuffers parsing is still involved (the same single-source-of-truth principle
+established in decision #21, not a hand-rolled parallel parser):
+1. **Stage 1 (new offline tool)**: read `.alpha`/`.lbr`, port `tristream_dataset.py`'s windowing/
+   labeling/enum-LUT logic, write the finished compact-cache artifact — replacing `lbr_to_polars.py`
+   and the generation half of `tristream_dataset.py` entirely (and the orphaned `fast_ingestor.py`,
+   not `flatbuffer_stream.py` — that one is live via `backtest/alpha_event_stream.py`, correction
+   above).
+2. **Stage 2a (`rust/py`, training side)**: load Stage 1's compact-cache artifact, reconstruct the
+   windowed tensors (the `sliding_window_view`/`_window_sel` trick above), hand `numpy` arrays to
+   `tf.data` — replacing the loading half of `tristream_dataset.py`.
+3. **Stage 2b (`rust/py`, live side, unchanged from the original scoping)**: parse one incoming
+   `Event` FlatBuffer and return a `numpy` feature vector, replacing the FlatBuffers-parsing portion
+   of `feature_buffer.py`'s `push_event()` — the windowing/sequence-buffer logic around it can stay
+   Python, only the raw bytes → numpy extraction moves to Rust.
+
+**This directly and permanently fixes the `regime`/`hmm_state_derived` side-channel found in §5.4**:
+once `RegimeStatus`/`regime_transition_risk`/`regime_expected_duration`/`regime_dof` are real wire
+fields (decision #20/#21), both Stage 1 (writing them into the training cache) and Stage 2b (live)
+read them directly off the `Event`/`TrainingEvent` FlatBuffer using the same generated readers —
+eliminating `feature_buffer.py`'s `push_event(event, regime_state=...)` side argument and the
+separate `load_hmm_model(...).dof_` lookup array entirely, not just working around them.
+
+**`FEATURE_SPECS`/`FEATURE_CONTRACT_ID` (`schema_contract.py`, §5.4) stays the canonical feature
+contract** — both stages' extraction code should be driven by (or kept in lockstep parity with)
+this same spec list, not a second hand-maintained copy of "which fields, in which order" —
+continuing the single-source-of-truth discipline this spec has applied everywhere else.
+
+**Explicitly out of scope**: the Transformer *model* itself (TF/Keras) is not proposed to move to
+Rust — no Rust ML framework maturity argument is being made here, and this isn't what was asked.
+This is a data-plumbing replacement only: FlatBuffers bytes → a finished training artifact →
+numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loop and live
+`predict()` call unchanged.
+
+**Open, not resolved here**:
+- **Stage 1's exact artifact format**: the compact pre-windowing cache format `tristream_dataset.py`
+  already uses (Parquet-based, per the wrinkle above) is the natural target to replicate rather
+  than inventing a new one — not yet decided whether to replicate it byte-for-byte or take the
+  opportunity to redesign it now that it's Rust-native.
+- **Build/packaging path is genuinely new**, not covered by anything else in this spec:
+  `build_rust.sh` builds the Windows-cross-compiled DLL target; `rust/py` needs a *different*
+  target (a Linux `cdylib`/`.so` importable by the `mts` mamba env's Python, built via
+  `maturin`/`pyo3-build-config` conventions, not `clang-cl`/CMake) — needs its own build script
+  and its own entry in whatever CI eventually exists (plan §6.4, "not yet built"). Stage 1's tool
+  needs its own `tools/`-style bare build invocation, separate again.
+- **GIL handling**: PyO3's GIL-release patterns (`py.allow_threads(...)`) should be used during
+  Stage 2's parsing/reconstruction work specifically because the whole point is throughput — not
+  yet designed.
+- Whether Stage 1's windowing/reconstruction logic and Stage 2's live-extraction logic share one
+  crate or split further (e.g. a pure-Rust extraction/windowing library crate that both the Stage 1
+  binary and the `rust/py` PyO3 wrapper depend on, mirroring `student_t_hmm`'s own core-vs-`ffi`
+  split) — leaning toward the split (consistent with this initiative's established "pure core, thin
+  edges" pattern everywhere else, and Stage 1/Stage 2a already clearly share the same
+  windowing/reconstruction code), not decided.
 
 ### 5.5 Open questions
 
@@ -374,15 +1296,77 @@ changes, which don't depend on that resolution either way.
 3. Entropy normalization function and the unconditional-state set — not read in full yet; the plan's
    Stage A golden will pin them.
 4. `HMM_MODEL_INPUT_DIM` value and `HMM_BURN_IN` — read from code in the plan's Stage A.
-5. Whether `meta_hmm_control_plane.py`/`smart_tuner.py`/HPO call `train_student_t_hmm.py` as a
-   subprocess or import the model — decides how thin the Python wrapper can be.
+5. ~~Whether `meta_hmm_control_plane.py`/`smart_tuner.py`/HPO call `train_student_t_hmm.py` as a
+   subprocess or import the model~~ — **RESOLVED 2026-10-11 (§5.1a)**: moot for this specific
+   question — `meta_hmm_control_plane.py` itself is confirmed orphaned (deleted, along with its
+   3 sibling files, 2026-10-11). **Correction, same day, found while executing cleanup**: this was
+   originally stated as "the whole 11-file Meta-HMM scaffolding is orphaned" — that overclaimed;
+   5 of the ~9 files (the recommendation/ledger sub-cluster) are confirmed live, feeding
+   `risk_gate_orchestrator.py` via `run_optimization_pipeline.py`. Full corrected breakdown: §5.1a.
 6. `train_student_t_hmm.py`'s `--expected-schema-version` default is **230** while the current schema is
-   **240** (noted, not investigated) — the existing training gate may already be stale.
+   **240** (noted, not investigated) — the existing training gate may already be stale. Partially
+   informed by §5.1a: direct-Parquet-mode training already *bypasses* this `.context`-header check
+   today, so a Rust trainer ingesting Parquet directly may not need to carry the check forward at
+   all — still needs an explicit decision, not yet made.
 7. The four-name probability sidecar (`p_coiled`, `p_gaussian_stable`, `p_gaussian_fragile`, `p_pareto`)
    bakes in K=4; keep for compatibility initially, generalize later.
-8. CPU vs. GPU training time at 22M rows.
+8. CPU vs. GPU training time at 22M rows — now sharpened by §5.1a into a concrete decision: whether
+   `student_t_hmm_gpu.py`'s PyTorch-batched restart-screening path gets a Rust equivalent at all.
+   The runbook's own measurement (GPU screening is 20-33x *slower* than CPU/joblib) plus Rust's
+   expected non-interpreted-language speedup makes dropping it the likely answer, but this should
+   be confirmed with a real measurement once the Rust CPU trainer exists, not assumed.
 9. Whether the climate/threshold constants hard-coded in `regime_engine.py` move into the manifest
    (recommended) or stay as crate constants.
+10. **New (§5.1a)**: `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) differ
+    between `student_t_hmm.py`'s own class defaults and `train_student_t_hmm.py`'s
+    `HMMTrainingConfig` defaults — one canonical value must be chosen and documented before
+    porting; which file's default was actually exercised in production training needs confirming.
+11. **New (§5.1a)**: `calibrate_hmm_gate_thresholds.py`'s stationary block-bootstrap methodology
+    (Politis & White 2004) relies on Python's `arch` package with no obvious Rust crate
+    equivalent found — needs either a from-scratch implementation or a further crate search before
+    `calibration.rs` (§5.2) can be more than a stub.
+12. **New (§5.1a)**: `hmm_features.py`/`hmm_context_features.py` — scoping call pending the
+    separate question of whether a Rust-side Transformer-training initiative is ever started;
+    `hmm_context_features.py` is also pinned to the legacy 4-state `HMMStateEnum`, which the
+    canonical-taxonomy ruling (§5.1a) says is being retired.
+13. **New (§5.1a)**: confirm `regime_manager.py` (Python, the legacy-4-state offline/batch labeling
+    counterpart, distinct from C++'s `RegimeManager.h`/`.cpp`) has zero remaining production
+    callers before deleting it in favor of `regime_registry.py`'s 5-state cascade.
+14. **New (§5.2)**: artifact serialization format — reconsider `bincode` (simpler, Atratus's choice)
+    vs. the currently-proposed manifest + raw-floats hybrid, now that Python may never need to
+    read the trained model directly; weigh against whichever downstream consumers
+    (`materialize_hmm_features.py`/`regime_calibration.py` or their Rust replacements) still need
+    to read it.
+15. **New (§5.4, decision #20)**: does `RegimeStatus` widen to carry `transition_risk`/
+    `expected_duration`/`dof` (serving both the GUI and the Transformer from one struct), or does
+    the Transformer get its own separate struct on `Event`/`TrainingEvent`? Leaning toward
+    widening, not decided.
+16. **New (§5.4, decision #20)**: whether `TrainingEvent`'s regime-field set should be a strict
+    superset of `Event`'s (carrying `HmmRiskState`'s full diagnostic set — `mahalanobis_distance`/
+    `tail_weight`/`variance_ratio`/`black_swan_alert`/`duration_bars`/`duration_ratio`/
+    `fim_distance_min` — for offline ablation studies) or identical to it — not decided.
+17. **New (§5.4, decision #21)**: `RegimeStatus` as a FlatBuffers `struct` (fixed-layout, simple
+    zero-copy Rust FFI via the generated `#[repr(transparent)]` newtype, matches every other
+    composite `Event` field) vs. a `table` (additive/extensible, matching the observed field-list
+    churn across decisions #16/#20, at the cost of the full builder + "nested flatbuffer"
+    indirection instead of a direct struct embed). Leaning `struct`, deliberately deferred to Stage
+    G4's full consumer sweep rather than decided now — not decided.
+18. **New (§5.4a, decisions #22-#23)**: build/packaging path — `maturin`/`pyo3-build-config`
+    conventions for `rust/py`'s Linux `cdylib` importable by the `mts` mamba env's Python, distinct
+    from `build_rust.sh`'s Windows-cross-compile target; plus a separate bare-build invocation for
+    Stage 1's standalone dataset-generation tool (`tools/`-style). Neither has its own build script
+    or CI entry yet.
+19. **New (§5.4a, decision #22)**: GIL-release strategy (`py.allow_threads(...)`) for `rust/py`'s
+    parsing/extraction hot path — not yet designed.
+20. **New (§5.4a, decisions #22-#23)**: whether Stage 1's windowing/reconstruction logic and
+    Stage 2's live-extraction logic share one crate or split into a pure-Rust extraction/windowing
+    library both the Stage 1 binary and the `rust/py` PyO3 wrapper depend on (mirroring
+    `student_t_hmm`'s own core-vs-`ffi` split) — leaning toward the split, sharpened by decision
+    #23's finding that Stage 1 and Stage 2a already clearly share the same windowing/reconstruction
+    code, not decided.
+21. **New (§5.4a, decision #23)**: Stage 1's exact artifact format — replicate
+    `tristream_dataset.py`'s existing compact pre-windowing cache format byte-for-byte, or redesign
+    it now that it's Rust-native — not decided.
 
 ---
 
@@ -432,8 +1416,30 @@ section is the architectural trace only, and does not change as individual dims 
 
 **Goal**: one Rust crate owns every ZMQ socket for all three languages — libzmq compiled into the Rust
 staticlib (no more vcpkg `libzmq-mt`/libsodium link in the DLL); Python reaches it through PyO3 with the
-GIL released. Payloads stay FlatBuffers; ports and socket patterns stay as they are, so each port flips
-independently against an unchanged peer.
+GIL released. Payloads stay FlatBuffers; **business semantics (message content, trading behavior, port
+numbers for the six ports below) stay unchanged — wire *mechanics* do not** (ruled, operator,
+2026-10-10, below).
+
+**RULED (operator, 2026-10-10): Rust best-practice freedom for transport mechanics, not a license to
+drift business semantics.** Porting ZMQ/FlatBuffers from C++/Python to Rust is free to use idiomatic
+Rust patterns for socket management, FlatBuffer handling, and data layout (DOD) — it is not required
+to replicate C++/Python's exact mechanics line-for-line. Concretely in scope for a better Rust design:
+zero-copy FlatBuffer reads instead of `TransportStream::Emit`'s copy-into-queue-then-worker-thread
+pattern; a proper per-message-type discriminator (today's port 5555 has **none** — `EventSerializer`
+publishes bare `Event`-rooted buffers directly while `PositionUpdate`/`Diagnostic` frames are
+separately `Envelope`-wrapped onto the *same* unframed socket, and `lbrnet`'s real consumer
+(`event_consumer.py`) calls `GetRootAsEvent()` unconditionally with no type check — this is a real
+defect found 2026-10-10 investigating the sibling execution-migration spec's D1, not a pattern worth
+preserving); the request/reply `submit`/`poll` non-blocking shape already identified above as
+necessary is exactly this kind of allowed mechanics change, not an exception to the rule. **What stays
+frozen regardless**: port numbers and peer-visible message *content/semantics* for the six verified-
+live ports (so each port still flips independently against an unchanged peer, per the migration order
+below); no trading-behavior or threshold change as a side effect of a transport-layer port (that
+discipline is separately owned by each business-logic component's own spec, e.g. §8 below and the
+sibling execution-migration spec's §6 D4). Be inspired by what's good in the existing design and keep
+it — `GateEvent`/`IntentEvent`/`RecoveryEvent`'s `ReasonCode`/`IntentState`/`GateDirective` vocabulary
+(§8, `ExecutionGate.h`) is already genuinely institutional and should carry forward as-is, not be
+reinvented for its own sake.
 
 **Verified socket inventory (2026-10-07):**
 
@@ -452,7 +1458,7 @@ handshake) are synchronous on the Sierra thread. Across a C-ABI this must become
 Rust, so the DLL never blocks inside Sierra's update call.
 
 **Intended migration order, with a gate per port** (flip one port; the peer is unchanged; revert = flip
-back): (1) `mts_transport`/`mts_ffi` skeleton — gate: DLL builds, imports unchanged, Sierra loads it;
+back): (1) `transport`/`ffi` skeleton — gate: DLL builds, imports unchanged, Sierra loads it;
 (2) 5555 PUB — gate: stale-heartbeat detection fires at the same threshold; (4) Python side (PyO3
 client replaces `transport.py`/`zmq_client.py` internals) — gate: existing Python tests green; (5)
 5560/5562/5558, one at a time, `submit`/`poll` shape — gate per port: handshake + round-trip against
@@ -460,39 +1466,456 @@ the unchanged peer, full `.btst`-matching replay for 5558; (6) 5561 — not migr
 remove the vcpkg libzmq/libsodium link, delete the old socket code (not behind a flag — not in
 production).
 
-**Non-goals**: no schema change, no protocol redesign, no change to port numbers or message ordering.
+**Non-goals** (business semantics, not transport mechanics — see the 2026-10-10 ruling above): no
+schema *semantic* change, no port-number change, no trading-behavior change as a side effect
+— **for this component's own original scope** (the six verified-live ports above). §8 (execution
+layer) deliberately adds two brand-new `transport` ports (an acknowledged execution-intent
+channel and a position/fill feed) plus a new schema message, and per §8.7 D1 proposes pulling
+forward only `transport`'s skeleton + those two new ports ahead of this component's
+"deliberately last" W9 sequencing — the two new ports have no existing live peer to regress,
+unlike the six below. §8 is authoritative for its own scope; this section's non-goals are
+unchanged for the original six-port migration.
 
 ---
 
-## 8. Component spec: execution-layer computations
+## 8. Component spec: execution layer (broker connectivity + computations)
+
+**Folded in here 2026-10-10** from a standalone spec (`docs/superpowers/specs/2026-10-10-ibkr-rust-
+execution-migration-spec.md`, opened and deleted the same day — operator directive: this initiative
+gets one spec/plan pair, not a new sibling document per sub-topic, same rule this document's own
+header already states). Everything below is that document's content, restructured to fit here; no
+substance lost, nothing re-decided.
+
+**Not to be confused with** `docs/superpowers/specs/2026-09-18-predator-sniper-execution-architecture.md`
+— that document's "Predator"/"Sniper" are stages of the **signal-decision pipeline** (HMM regime
+survey → Transformer direction → meta-labeler sizing → stop/target geometry), which stays in
+C++/Sierra Chart under this component's scope (§8.2). This component's "execution layer" is the
+layer *downstream* of that pipeline: taking a decided trade (direction, size, stop, target) and
+actually getting it filled and managed at the broker.
 
 **Scope confirmed 2026-10-09 (operator)**: this initiative is "all Rust," not "HMM plus
-observation_vector math." `RiskManager`/`PositionManager`/`ExecutionGate`'s own low-level computations
-are explicit, equal-footing candidates for the same methodical port.
+observation_vector math." `RiskManager`/`PositionManager`/`ExecutionGate`'s own low-level
+computations are explicit, equal-footing candidates for the same methodical port (decision #6, §2).
+**Scope deepened 2026-10-10 (operator)**: not just the low-level computations ported in place —
+broker connectivity (`ibapi`, direct IBKR) moves out of Sierra Chart's `SCTradingInterface` routing
+entirely, into a standalone Rust process, §8.2–§8.4 below.
 
-**Candidates surveyed** (all pure, zero Sierra Chart coupling, confirmed by direct code read):
-- `Scoring.h`, `LocalRiskContext.h` (the real live risk struct, §4.3), `TailRiskEngine.h` — same shape
-  as the `observation_vector` candidates already ported; stateless-function pattern applies directly.
-- `TradeDecisionEngine.h` (560 lines) — already its own shadow-mode-only layer by design (PAER §9 Phase
-  1: "Computes shadow metrics on every trade opportunity WITHOUT changing execution behavior... No
-  execution logic reads these values"). Arguably the safest starting point in this whole component,
-  since it already cannot affect real decisions.
-- `KellyCalculator.h` — stateful (a trade-history circular buffer), a different porting shape: needs
-  the init/step/reset opaque-handle pattern already planned for `mts_hmm`, not the stateless-function
-  pattern used so far.
+### 8.1 Why a standalone process, and where the broker design comes from
 
-**No special caution tier for this code**: corrected on exactly this point earlier in this initiative
-after initially (wrongly) reaching for "real capital is at stake" framing — there is no live capital,
-this system is not in production, so the discipline is identical to every other port in this document:
-parity-test, shadow-wire, live-confirm, cutover.
+Opened from a direct comparison to `Atratus`'s Predator/Sniper options-execution design
+(`../Atratus/docs/superpowers/specs/2026-10-07-predator-sniper-spec.md`, `../Atratus/CLAUDE.md`
+§"Architecture"). **Atratus is a separate project — never a dependency**, same rule as this spec's
+own §1.1. Where its design is a genuinely reusable pattern, it is copied here with attribution and
+owned independently, not imported.
 
-**Status**: scope confirmed, not yet sequenced relative to `mts_hmm`/`mts_observation_vector`'s own
-remaining dims (tracked in the plan's §1.3 workstream table). Which crate(s) these land in (a new
-`rust/risk` sibling vs. folded into `mts_hmm`) also not yet decided.
+What transfers:
+- **Every broker order is sent by one Rust `ibapi` path, never by C++, never by Python** — Atratus's
+  own rule, substituting "the new Rust execution crate" for "Sierra Chart's `SCTradingInterface`".
+- **Blocking by default; `tokio` only where racing matters.** Atratus's vendored `ibapi` is used via
+  `ibapi::client::blocking::Client` everywhere except the order-watcher, which gets its own `tokio`
+  runtime on its own thread with its own TWS client id, racing order status / quote updates /
+  condition checks / a time limit in one `tokio::select!` (Atratus spec §9 D3(c)). This pattern —
+  not a wholesale async rewrite — is the one being adopted.
+- **IBKR's own algos do the order-working — exclusively (ruled, operator, 2026-10-10, §8.7 D3).**
+  No Rust-native price-stepping fallback. If IBKR rejects an algo for the instrument/order type,
+  that is resolved by choosing a different IBKR algo, never by hand-rolling our own stepping logic
+  — this diverges from Atratus's own D3(c), which keeps a stepping fallback for exactly this case.
+  The order-watcher's job is narrower than Atratus's: it does not work the order itself, it decides
+  **when to update or cancel** the IBKR-algo-managed order as conditions change (stop/target moved,
+  gating conditions no longer hold, time limit reached) — the algo always does the actual price
+  discovery/working.
+- **One gated order path.** Every order — not just some — passes through a single function
+  (Atratus: `ladder_api::gated_order`) that applies the safety gate (kill switch, caps, approval)
+  between "decided to buy/sell X" and "an order is actually placed". Correctness of this path
+  outranks the decision logic that feeds it.
+- **State isolation and an explicit arm for live.** Atratus's `state/<env>/LIVE_ORDERS_ARMED` file
+  (written only by a typed-confirmation script) and a global `state/KILL_SWITCH` are cheap, proven
+  safety mechanics worth copying outright (§8.7 D5).
+
+What does **not** transfer: Atratus trades MES options with a human-clicked "Hunt" entry; this
+system trades MES futures (per `docs/ADR/sierra_chart_data_feed_setup.md`) with an **automated**
+entry decided by the HMM/Transformer/meta-labeler pipeline, no per-trade human click. The entry
+timing/sizing/stop-target decision stays exactly as the existing signal-decision pipeline computes
+it — only the *execution mechanics downstream of that decision* are being replatformed.
+
+**Rust best-practice freedom is scoped to transport/implementation mechanics, not business logic**
+— same 2026-10-10 ruling as §7's own, which this component's wire needs (§8.5) ride on directly.
+Trading-behavior parity (stop/trap thresholds, gate decisions, numeric outcomes) is a separate,
+already-settled discipline — §8.7 D4 does not get loosened by that ruling.
+
+### 8.2 Scope — confirmed with the operator, 2026-10-10
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Does this retire Sierra Chart/ACSIL entirely? | **No.** Sierra Chart/ACSIL keeps owning market data ingestion and signal generation — Triple Screens, `IndicatorManager`, `ContextManager`, HMM/Transformer inference, the existing ZMQ event stream (port 5555). Only order placement/management moves. |
+| 2 | How much of the execution layer moves? | **All of it** — the full order lifecycle and state machine: position state, fills, bracket/stop management (static entry-anchored stop/target bracket, OCO — **operator's original framing said "Chandelier trailing stop"; corrected 2026-10-11, see §8.3's `stop_manager.rs` entry — `ChandelierStopManager` was already deleted from the codebase by the time this scoping conversation happened**), trap-detection-driven exits, emergency flatten. C++ is reduced to emitting trade decisions (direction, size, stop, target) and live price/context updates; Rust owns everything from there to the broker and back. |
+
+This is decision #6's (§2) concrete target architecture for the *broker-facing* half of the
+execution layer specifically, going further than a same-process C-ABI port: a **standalone
+process**, because `ibapi`'s TWS connection, the order-watcher's `tokio` runtime, and the broker
+state machine have no reason to live inside the Sierra Chart DLL's process or thread model, and
+doing so would recreate Sierra's own `SCTradingInterface` coupling problem one layer down.
+
+### 8.3 What moves, named against today's actual code
+
+| Today (C++, in `MindfulTrader.dll`) | Responsibility | Moves to Rust? |
+|---|---|---|
+| `PositionManager.cpp`/`.h` | Order submission (`sc.BuyOrder`/`SellOrder`, `s_SCNewOrder`), fill tracking, position state, `EmergencyFlattenPosition`, `TripleBarrierClose` | **Yes, in full** |
+| `RiskManager.cpp`/`.h` | Daily loss limits, Kelly sizing, `IsTradeAllowed`, `EmergencyHalt`, `CancelAllWorkingOrders`, `FlattenPositionIfOpened`, order-ack/working-order TTL monitoring | **Yes, in full** |
+| `include/execution/ExecutionGate.h`/`.cpp` | Pure gate decision (`Allow`/`Deny`/`Ignore` + `ReasonCode`) fusing connectivity, model-freshness, and HMM-regime inputs | **Yes** — becomes the Rust crate's own gate, fed the same inputs over the wire (§8.5) |
+| `TripleBarrierEngine.h`/`TripleBarrierExitManager.h` | Static, entry-anchored stop/target bracket (`ComputeBarriers`, immutable once placed — **not** "Chandelier-style trailing stop recompute," corrected 2026-10-11), `FAILED_*` reactive TRAP floor, τ\* Bayesian anticipatory-exit gate | **Yes** — explicitly in scope per the operator's §8.2 answer (originally framed as "Chandelier trailing stop... trap-detection-driven exits," now-stale terminology; the actual scope — bracket placement + trap exits — is unaffected by the correction) |
+| `TradeExecutionServer.cpp` (port 5558 REP) | Backtest-mode trade RPC, `TRADE_COMMAND` | **Superseded or repurposed — open, §8.7 D7** |
+| Triple Screens, `IndicatorManager`, `ContextManager`, `InferenceManager`/HMM client, Transformer | Signal generation: regime, direction, size, stop/target geometry | **No — stays in C++**, per §8.2 |
+| `EventSerializer`/`TransportStream` (ZMQ PUB 5555) | Publishes indicator/signal/position state | **No — stays in C++**, becomes Rust's *input* feed (§8.5) |
+
+**Candidates surveyed for the pure-computation slice** (all pure, zero Sierra Chart coupling,
+confirmed by direct code read): `Scoring.h`, `LocalRiskContext.h` (the real live risk struct,
+§4.3), `TailRiskEngine.h` — same shape as the `observation_vector` candidates already ported,
+stateless-function pattern applies directly. `TradeDecisionEngine.h` (560 lines) — already its own
+shadow-mode-only layer by design (PAER §9 Phase 1: "Computes shadow metrics on every trade
+opportunity WITHOUT changing execution behavior... No execution logic reads these values");
+arguably the safest starting point in this whole component, since it already cannot affect real
+decisions. `KellyCalculator.h` — stateful (a trade-history circular buffer), needs the
+init/step/reset opaque-handle pattern already planned for `student_t_hmm`, not the stateless-function
+pattern used so far.
+
+**No special caution tier for this code**: corrected on exactly this point earlier in this
+initiative after initially (wrongly) reaching for "real capital is at stake" framing — there is no
+live capital, this system is not in production, so the discipline is identical to every other port
+in this document: parity-test, shadow-wire, live-confirm, cutover.
+
+### 8.4 Target architecture
+
+A new, standalone Rust binary/service (working name `execution_service`, final name TBD) with its
+own process lifecycle, independent of Sierra Chart's. Proposed module layout, modeled on Atratus's
+`rust/src/{ibkr_broker,es_options,ib_session,ladder_api,exit_manager}.rs` split (same idea, this
+system's own instrument and risk model):
+
+```
+rust/execution/
+├── ibkr_session.rs      -- one persistent ibapi connection (blocking client default); vendored,
+│                           patched ibapi per Atratus's precedent (TWS_READ_TIMEOUT 1s -> 20s fix
+│                           is a real, generically-needed fix, not Atratus-specific — re-verify
+│                           against this account's own TWS/Gateway behavior before assuming it,
+│                           don't just copy the patch unverified; crates.io's current ibapi 5.0.0
+│                           may already differ from Atratus's vendored 4.2.0 — check before vendoring)
+├── mes_futures.rs        -- MES futures contract resolution, front-month roll, tick size (never
+│                           hard-coded 0.25 — Atratus's own D3 fallback-stepping lesson)
+├── order_gate.rs         -- the single gated order path (kill switch, daily-loss halt, caps,
+│                           ReasonCode-based fail-closed decisions) — Rust port of
+│                           ExecutionGate.h's Outcome/ReasonCode enum + ladder_core::safety's
+│                           kill-switch/arm-file pattern (§8.7 D5)
+├── position_state.rs     -- position/fills/P&L state machine (replaces PositionManager's role)
+├── stop_manager.rs       -- static, entry-anchored bracket placement (port of
+│                           TripleBarrierEngine.h's `ComputeBarriers`, §8.7 D3a) — the bracket is
+│                           computed ONCE at entry and is immutable thereafter; NOT a continuously
+│                           re-trailed stop. **Corrected 2026-10-11**: earlier drafts of this spec
+│                           called this "Chandelier-style trailing stop recompute" — stale.
+│                           `ChandelierStopManager` (the actual trailing-stop order-management
+│                           class) was deleted entirely during a documented cutover
+│                           (`docs/ADR/triple_barrier_cutover_phase1_plan.md`), confirmed by direct
+│                           grep (zero files named `*chandelier*` remain; `TripleBarrierExitManager.h`'s
+│                           own comment states the deletion explicitly). Do not confuse this with
+│                           `elderChandelierATR` (`ContextManager.cpp`/`LocalRiskContext.h`), a
+│                           *surviving but unrelated* concept — a risk-gate diagnostic (distance from
+│                           current price to a theoretical Chuck LeBeau Chandelier level, feeding
+│                           `RiskManager`/`Scoring`/`TradeDecisionEngine`'s tail-proximity gates),
+│                           computed independently of any actual stop order and never placed on the
+│                           wire to a broker.
+├── trap_exit.rs          -- native reactive TRAP floor (StructureTest FAILED_* parity with the
+│                           labeler) + τ* anticipatory-exit gate (Elkan 2001) — ported behavior,
+│                           not redesigned (§8.7 D4)
+├── order_watcher.rs      -- the ONLY async module: dedicated tokio runtime + thread + its own
+│                           TWS client id, tokio::select! over order status / quote / stop-recalc
+│                           trigger / time limit. Never works the order itself — an IBKR algo
+│                           always does (ruled 2026-10-10, no Rust-native stepping fallback); this
+│                           module only decides update-in-place (modifyOrder: price/qty-only
+│                           changes, same algo/direction) vs. cancel-and-reissue (structural
+│                           changes: direction flip, algo-type change, thesis invalidated) —
+│                           proposed default, §8.7 D3, **corrected 2026-10-11, see D3a**
+├── signal_feed.rs        -- consumes rust/transport's port-5555 subscription (continuous
+│                           price/context ticks only, §8.5) — an `transport` client, not its
+│                           own zmq socket; decodes with rust/schema's generated FlatBuffer bindings
+├── intent_client.rs      -- consumes a NEW rust/transport port (§8.5/§8.7 D1) carrying discrete
+│                           execution-intent messages (direction/size/stop/target) from C++, which
+│                           requires a new FlatBuffer schema message (TradeRequest's price/qty/
+│                           stop/target are explicitly unset today) — new `transport` inventory
+├── position_feed.rs      -- publishes through a NEW rust/transport port (§8.5): position/fill/P&L
+│                           state for MTS/GUI, replacing PositionUpdate's old C++-side publisher —
+│                           again, new `transport` inventory, not this crate's own PUB socket
+├── broker_adapter.rs     -- trait BrokerAdapter { fn submit(...), fn modify(...), fn cancel(...),
+│                           ... } with two impls: IbkrAdapter (real ibapi, modify = IBKR
+│                           modifyOrder on the live algo order) and ReplayFillAdapter (backtest,
+│                           §8.6) — position_state/stop_manager/trap_exit run identically against
+│                           either
+└── main.rs
+```
+
+Reuses, not rebuilds: `rust/schema` (generated FlatBuffer bindings) **and `rust/transport`
+(`transport`, §7) for every socket** — `rust/execution` has no direct `zmq`/`tokio-zmq`
+dependency of its own; it depends on `transport` exactly as `ffi`/`py` do (§7's "one
+Rust crate owns every ZMQ socket for all three languages" — the standalone execution process is a
+fourth consumer of the same crate, just linked natively instead of through the C-ABI or PyO3).
+`rust/execution` (crate `execution`, matching the unprefixed-crate-name convention of every other
+crate in §3's table — the `mts_` prefix was dropped repo-wide 2026-10-11, §1.2) is a new
+`rust/Cargo.toml` workspace member.
+
+### 8.5 The C++ ↔ Rust wire contract
+
+**RULED (operator, 2026-10-10): split channel, not a single reused port.** Investigation of the
+actual wire mechanics (`TransportStream.cpp`, `EventSerializer.cpp`) found port 5555 is a plain ZMQ
+`PUB` socket, `SNDHWM = 1000`, no replay, no delivery guarantee — exactly why the system already
+keeps discrete trade actions on separate acknowledged REQ/REP sockets (5556/5558) instead of 5555.
+A trade decision (enter/exit + concrete stop/target) must not silently vanish the way a dropped
+indicator tick can; it gets its own channel.
+
+- **Continuous feed (reused): ZMQ SUB on the existing port 5555 PUB stream**, consumed through
+  `transport` (§7), not a bespoke socket. `stop_manager.rs`/`trap_exit.rs` need ongoing market
+  data every tick, not just at decision time — **corrected 2026-10-11**: not to "recompute
+  trailing stops" (stale premise, see §8.3's `stop_manager.rs` correction — the bracket is
+  immutable once placed), but to evaluate the immutable bracket's first-hit-wins resolution
+  against live price/bar index (stop/target/time/regime-invalidation, `TripleBarrierExitManager::
+  Evaluate()`'s own job) and the reactive TRAP floor, respectively. This is a second, independent
+  consumer of the live tick stream Sierra Chart already produces (`Event.observation`,
+  `.indicators`, `RiskGateContext.elder_chandelier_atr` — a risk-gate diagnostic metric, distinct
+  from the deleted `ChandelierStopManager`, see §8.3). Lossy-by-design is acceptable here; Rust
+  evaluates its own bracket/trap state from the raw numbers rather than depending on any single
+  update arriving.
+- **Discrete channel (NEW `transport` port — number TBD, §8.7 D1): acknowledged, for
+  execution-intent messages only** (direction, size, stop, target from the signal-decision
+  pipeline). Mirrors the existing 5556/5558 REQ/REP pattern — C++ becomes the client (REQ) now
+  that Rust, not C++, acts on the decision. **Requires a new FlatBuffer schema message**, not just
+  a new Rust consumer of an existing one: `TradeRequest`'s own doc comment says entry
+  price/quantity/stop/target are "determined by C++ side only" and deliberately never serialized
+  today (`PositionManager` computes and acts on them in-process). Once execution is a separate
+  process those concrete numbers must cross the wire — a real schema change, going through
+  `schema/regenerate_schema.sh` and touching C++, Python/`lbrnet`, and Rust codegen together.
+- **A real wire-format defect, fixed in the Rust port, not preserved** (per §7's 2026-10-10
+  mechanics-freedom ruling): `TransportStream::Emit()` has no topic frame, and `EventSerializer`
+  publishes bare `Event`-rooted buffers directly (not `Envelope`-wrapped, despite `Envelope` being
+  the schema's declared `root_type`) while `PositionUpdate`/`Diagnostic` frames are separately
+  `Envelope`-wrapped onto the *same* socket. `lbrnet`'s real consumer (`lbrnet/event_consumer.py`)
+  calls `GetRootAsEvent()` unconditionally with no type check — a real, pre-existing ambiguity, not
+  a tidy single-topic design worth replicating. `transport`'s Rust port should give port 5555 a
+  proper per-message-type discriminator (e.g. a one-byte type tag ahead of the FlatBuffer payload,
+  or consistent `Envelope`-wrapping for every message including `Event`) — verify the real current
+  wire behavior with a live capture first, then design `signal_feed.rs`'s parser against the
+  corrected framing, not the ambiguous one.
+
+No feedback channel from Rust back into the C++ observation vector is anticipated — the
+observation vector is market-microstructure, not account/position state (confirm this holds before
+building; if `ContextManager` turns out to need live position awareness for regime gating, that's
+a new, explicit wire message, not an implicit assumption).
+
+**Position/fill updates for GUI display need a third, Rust-owned channel.** `PositionUpdate`'s own
+doc comment says "Sent by C++ PositionManager" — that class won't exist once this ships. Rust is a
+separate process; it cannot call into C++'s in-process `TransportStream` singleton, so it needs its
+own `transport`-mediated PUB (new port) for position/fills/P&L. **Recommend** `MTS`/eventual
+`GUI/` subscribes to that new stream, keeping the GUI exactly as passive as it is today
+(display-only, no new PyO3 dependency) — §8.7 D6 is the open question on whether GUI needs
+anything beyond display.
+
+### 8.6 Backtesting — the hard part, and why
+
+`BackTesterStudy.cpp` runs the *same* `PositionManager`/`RiskManager` C++ classes in-process during
+Sierra Chart replay as in live trading — `sc.BuyOrder`/`SellOrder` resolve to Sierra's own internal
+historical-replay fill simulation, not a real broker. `ibapi` has no equivalent: it only knows how
+to talk to a real TWS/Gateway (live or IBKR paper), which cannot replay arbitrary historical dates
+at controlled speed. If the execution layer moves wholesale to Rust, naively this is a:
+
+- **(A) Pluggable `BrokerAdapter` trait — recommended.** `position_state`/`stop_manager`/`trap_exit`
+  run against a `ReplayFillAdapter` during backtest (synthetic fills driven by the same ZMQ price
+  stream already feeding `signal_feed.rs`) and an `IbkrAdapter` live — one Rust implementation of
+  the business logic either way. This is the only option consistent with the repo's own
+  Backtesting Governance Contract ("Treat backtesting as a mode over live architecture; do not
+  create parallel business logic paths outside explicit backtesting surfaces") and with the whole
+  point of this initiative (train/offline/live stop being separate implementations).
+- **(B) Freeze the old C++ path for backtest, Rust for live only.** Explicitly **not recommended** —
+  this is precisely the skew this initiative (§1.2) exists to eliminate, just relocated to the
+  execution layer instead of the observation vector.
+- **(C) IBKR paper-trading playback.** Infeasible — no historical-date replay at controlled speed
+  on a live paper account.
+
+If (A), `.btst` artifact production (`DecisionEvent`/`PredictionAck`/`TradeRecord`) needs a new
+owner — either the Rust service writes `.btst` records itself (new FlatBuffer-writing code in
+Rust, reusing `rust/schema`), or `BackTesterStudy.cpp` keeps writing them by observing the
+`ReplayFillAdapter`'s own output over a local channel. **Open, §8.7 D7.**
+
+### 8.7 Decision register — open items (operator sign-off needed before implementation)
+
+- **D1 — Wire contract. RULED (operator, 2026-10-10): split channel** (§8.5), **and all of it
+  rides on `transport`, not bespoke zmq usage in `rust/execution`** (ruled, operator,
+  2026-10-10 — "we are migrating 'everything' ZMQ related to Rust") — port 5555 PUB reused as-is
+  for continuous price/context ticks (lossy acceptable, matches today's SNDHWM=1000 drop
+  behavior); a **new** acknowledged channel for discrete execution-intent messages
+  (direction/size/stop/target), mirroring the existing 5556/5558 REQ/REP pattern; a **new**
+  position/fill PUB port (Rust is a separate process, can't reach into C++'s in-process
+  `TransportStream`) — both new ports are `transport` inventory, not sockets owned by
+  `rust/execution` itself. Still open, needed before implementation:
+  - the new channel's exact port number(s) and transport (REQ/REP vs. ROUTER/DEALER — the
+    order-watcher's `tokio::select!` may want non-blocking, favoring ROUTER/DEALER, and §7 already
+    proposes a non-blocking `submit`/`poll` shape for its existing request/reply ports — the new
+    channel should likely use that same shape, not a third pattern);
+  - the new schema message's exact shape (extend `TradeRequest` vs. a dedicated new table —
+    extending risks breaking `TradeRequest`'s other consumers' assumption that those fields are
+    always unset; a new table is likely cleaner);
+  - confirming the real (not documented) root-type discrimination behavior on 5555 via a live
+    capture before writing `signal_feed.rs`;
+  - **the sequencing conflict this creates against §7's own migration order**: workstream W9
+    (`transport`, port by port, plan §1.3) is explicitly "deliberately last," gated on W7 (HMM
+    event-schema cutover, which deletes port 5561 first) — but this component needs at least a
+    slice of `transport` (the skeleton + the two brand-new ports) much sooner, as soon as the
+    MES-futures algo what-if spike (§8.8) clears. **Resolution**: the two new ports carry no
+    existing peer to break (unlike 5555/5556/5558/5561, where the "flip one port, peer unchanged,
+    revert = flip back" discipline exists precisely because a live peer could regress) — pull
+    forward only `transport`'s skeleton + these two new ports (plan's W9 row/crate table
+    already reflect this split).
+- **D2 — Backtesting fill simulation.** Recommended: `BrokerAdapter` trait, (A) in §8.6.
+- **D3 — IBKR algo selection for MES futures. Order-working mechanism RULED (operator,
+  2026-10-10): rely on IBKR algos exclusively — no Rust-native stepping fallback.** The
+  order-watcher's only two actions on a live algo order are **update** (IBKR `modifyOrder` in
+  place — for price/quantity-only changes that don't change direction or algo type) and **cancel**
+  (for structural changes — direction flip, algo-type change, thesis invalidated by the trap floor,
+  time limit expired), never a hand-rolled price-stepping loop. **Corrected 2026-10-11 (see D3a)**:
+  the original "e.g. a trailing-stop recompute moving the stop a tick" example for **update** was
+  wrong — under the current `TripleBarrierExitManager` design the stop/target bracket is computed
+  once at entry and is immutable thereafter (no trailing recompute exists to update). The
+  **update** case, if it applies at all, is on the still-unfilled *parent* entry algo order (e.g. a
+  price/quantity nudge before the algo has filled) — not on the bracket's stop/target legs, which
+  once placed only ever get **cancelled** (regime-invalidation kill-switch, vertical/time-barrier
+  expiry) — confirm or correct this narrower split before implementing `order_watcher.rs`.
+  **De-risked 2026-10-10 (teammate research, Gemini)**: IBKR's own documentation (Order Types/Algos
+  product-support matrix, the Web
+  API's `get-algos-by-instrument` endpoint, Traders' Academy, and the `ibapi`/`order.algoStrategy`
+  reference) states native IB Algos support `secType = "FUT"` generally and CME futures
+  (`ES`/`MES`) specifically, with **Adaptive**, **TWAP**, **VWAP**, and **Balance Impact and Risk**
+  named as concrete candidates — this was an unverified assumption before, now a
+  documentation-confirmed expectation, substantially lowering the risk this blocks the design.
+  **Still required before fully committing, now a confirmation step rather than an open unknown**:
+  an empirical read-only what-if check against this specific account/contract-month (Atratus's own
+  precedent: `scripts/put_order_whatif.py`, generalized to an MES-futures equivalent, trying
+  Adaptive first, TWAP/VWAP/Balance Impact and Risk as alternates) — documentation can be stale or
+  account-permission-gated, so this isn't skipped, but it is no longer the hard blocking spike it
+  was originally framed as; a negative result would now be a genuine surprise worth escalating,
+  not an expected possible outcome.
+- **D3a — Bracket order construction mechanics, verified against the real `ibapi` 5.0.0 crate
+  (already vendored in this environment), 2026-10-11** (operator-supplied research, checked
+  against actual crate source rather than trusted as documentation claims; **premise corrected
+  2026-10-11, same day** — the original version of this entry assumed `stop_manager.rs` needs a
+  Chandelier-style continuously-trailing stop, which is stale — see the target-architecture
+  correction above. Rewritten to match the real current design: a static, entry-anchored,
+  immutable bracket, `TripleBarrierEngine.h`/`TripleBarrierExitManager.h`'s actual behavior).
+  - **An IB Algo is an entry/execution algorithm, not an order container** — it is the *parent*
+    leg; bracket legs (take-profit, stop-loss) are ordinary child orders attached via `parent_id`,
+    sent as one atomic tree (`parent.transmit = false`, intermediate children `transmit = false`,
+    final child `transmit = true`). Verified field-for-field against `ibapi::orders::Order`
+    (`parent_id: i32`, `transmit: bool`, `aux_price: Option<f64>`, `algo_strategy: String`,
+    `algo_params: Vec<TagValue>`) — implementable with today's dependency, not a hypothetical
+    shape.
+  - **The crate's own convenience `.bracket()` builder (`BracketOrderBuilder::build()`) is a good
+    fit for the actual current design, not a limitation to work around.** It builds exactly a
+    fixed-price `LMT` take-profit child + fixed-price `STP` stop-loss child, both derived once at
+    construction time — matching `TripleBarrierExitManager::OpenBracket`'s own "compute + latch the
+    immutable bracket at entry" contract field-for-field (`tbe::ComputeBarriers()`'s `stop`/
+    `target` outputs map directly onto `.stop_loss(price)`/`.take_profit(price)`). No manual
+    trailing-stop construction (`TrailBy`, `trailing_percent`, `trail_stop_price`) is needed —
+    those fields exist in the crate for other use cases, not this one.
+  - **What "update" and "cancel" actually mean for this bracket, now precise rather than assumed**:
+    once placed, the stop/target legs are never modified (matching D3's corrected update/cancel
+    split above) — `TripleBarrierExitManager::Evaluate()`'s own public API has no mutation method
+    at all (`OpenBracket`/`Evaluate`/`Current`/`Close` only), confirmed by direct read. The only
+    action ever taken on a live bracket is **cancel** (regime-invalidation kill-switch, vertical/
+    time-barrier expiry, both resolved by `Evaluate()`'s first-hit-wins logic) — never update. Any
+    "update" action in `order_watcher.rs`'s repertoire applies solely to the still-unfilled parent
+    entry algo order, a separate concern from the bracket legs this section is about.
+  - **`trap_exit.rs` is the reactive TRAP floor** (D3's "cancel" case: "thesis invalidated by the
+    trap floor") — a discrete emergency cancel-and-flatten, unaffected by any of the above; it was
+    never a trailing-stop concern to begin with, correction or no correction.
+  - **Not currently relevant, parked for later**: IBKR's native ScaleTrader/Accumulate-Distribute
+    algos (scale-in/scale-out with per-clip profit-taking) — this system is single-entry today, no
+    scale-trading design exists to connect this to; worth remembering only if that ever changes.
+- **D4 — Port fidelity for stop/trap logic — this is business-logic behavior, not transport
+  mechanics, so the 2026-10-10 "Rust best-practice freedom" ruling (§7, §8.1) does not loosen it.**
+  Recommended: literal behavior-preserving port first (`TripleBarrierEngine.h`/
+  `TripleBarrierExitManager.h` → `stop_manager.rs`/`trap_exit.rs`), same discipline as this
+  document's own non-goals ("no change to... any threshold, as a *side effect* of porting"). A
+  redesign, if wanted, is a separate, explicitly-flagged decision — same bar as any other
+  trading-behavior change. Contrast with `signal_feed.rs`/`intent_client.rs`/`position_feed.rs`'s
+  wire mechanics (§8.5), which **are** free to be redesigned for idiomatic Rust/DOD/FlatBuffers
+  practice.
+- **D5 — Live arm / kill-switch mechanics.** Recommended: adopt Atratus's `state/<env>/
+  LIVE_ORDERS_ARMED` (typed-confirmation script only) + global `state/KILL_SWITCH` pattern outright
+  — proven, cheap, no reason to redesign.
+- **D6 — GUI's relationship to the new service.** Recommended: GUI stays passive — it subscribes
+  to a new Rust-published ZMQ position/fill stream (§8.5), no PyO3 dependency added to `MTS` by
+  this component. Atratus's PyO3-`IbSession`-for-GUI pattern is **not** recommended here unless/
+  until the GUI itself needs direct control actions beyond display.
+- **D7 — `TradeExecutionServer` (port 5558) fate.** Open: retire outright (if the Rust service
+  takes over `.btst` writing per §8.6(A)), or keep it as the interface `BackTesterStudy.cpp` uses
+  to drive the Rust engine during replay. Depends on D2's resolution.
+- **D8 — Documentation-contract fallout**, to execute once this component lands, not before: the
+  Trap Detection Ownership section in all four mirror docs currently says "C++ must implement and
+  run a native trap-risk detector" — this needs generalizing to "the native execution layer (C++
+  today; Rust once this component lands)" without weakening the actual principle (Python-optional,
+  model-independent reactive floor). Do this edit when `trap_exit.rs` actually ships, not
+  speculatively now.
+- **D9 — Process/deployment model.** Open: one long-running Rust process per trading session,
+  started/stopped alongside Sierra Chart (manually, or via a supervisor)? Where does it run
+  relative to the WSL2+Windows split already in play for this account (`docs/PUGET_SETUP_
+  COORDINATION.md`)? Needs its own small design pass once D1–D3 are settled.
+
+### 8.8 Next concrete step
+
+Not a go-ahead to start writing `order_gate.rs`/`position_state.rs` yet — D2 (backtesting) still
+changes how much of §8.4's module list needs a `ReplayFillAdapter`-aware design from day one, and
+D9 (deployment topology) isn't settled. D3 (does IBKR even accept algos on MES futures) is
+**de-risked as of 2026-10-10** (teammate documentation research — Adaptive/TWAP/VWAP/Balance
+Impact and Risk all named as supporting CME futures) but not yet empirically confirmed against
+this account. The recommended first concrete step, mirroring this plan's own W0s spike (§2 — "does
+the kill criterion even pass"): a small throwaway spike that (a) opens a real `ibapi` connection to
+this account's TWS/Gateway from a bare Rust binary and (b) runs the MES-futures algo what-if check
+(D3) as a confirmation rather than a true unknown — resolving the last real doubt before any of the
+module skeleton is written.
 
 ---
 
-## 9. Risks
+## 9. Component spec: indicator computation (scope only, 2026-10-10 — design not yet started)
+
+**Ruled (operator, 2026-10-10)**: the actual compute logic behind every indicator — MACD, RSI,
+Kangaroo Tail, Turtle Soup, NR7, stochastic, and the rest of the ~38 leaf classes in
+`IndicatorStore`/`BaseIndicator`/`Indicator<T>` — moves to Rust. This is the same "full write-side
+rewrite" `docs/superpowers/plans/2026-08-05-indicator-manager-dod-soa.md` identified, scoped out as
+a deferred "Phase III," and declared the C++ write-side compute engine "permanent" in the absence of
+(that plan predates, 2026-08-05) — see §1.2's standing principle on pre-Rust-adoption decisions.
+That plan's own completed work (the packed-array read-side, the dual-write mechanics, Task 15's
+narrower dead-class deletion) is unaffected and remains accurate history; only the write side's
+"permanent" framing is superseded.
+
+**What's confirmed so far**: the hard rule from §1.2 — Rust indicator-computation code never
+references `sc.*`/ACSIL; C++'s Triple Screen/study functions read raw ACSIL data and call into Rust
+with plain values, same shape as `observation_vector`'s existing "pure core, thin edges" pattern,
+just scoped to the full indicator set instead of the 18 observation dims.
+
+**Not yet decided — needs its own design pass before any port starts**:
+- Crate name and workspace placement (a new `rust/indicators` sibling, or folded into
+  `observation_vector` given the overlapping "pure function over plain inputs" shape — the two
+  are conceptually adjacent but today serve different consumers, worth keeping distinct unless a
+  real reason to merge surfaces).
+- Sequencing relative to `student_t_hmm`/`execution` — not yet placed in the plan's workstream table
+  (plan §1.3) or given a `W`-number.
+- How this interacts with `IndicatorManager`'s packed-array (`IndicatorLayout.h`/
+  `IndicatorPackedState.h`) read-side machinery the 2026-08-05 plan already shipped — does C++ keep
+  writing into the packed arrays from Rust-returned values (packed arrays survive as the hot-path
+  read cache, only the compute step moves), or does the packed-array design itself get revisited
+  now that the write side is Rust, not C++? Open.
+- Per-indicator porting order and parity-test strategy — likely the same proven pattern as every
+  other port in this document (port → unit test → cross-language parity test → shadow-wire →
+  live-confirm → cutover), but not yet confirmed for this specific, much larger surface (~38
+  classes vs. observation_vector's 18 dims).
+
+---
+
+## 10. Risks
 
 1. **The central Rust-in-Sierra assumption was unproven until W0s** — now resolved (plan §2).
 2. **Moving targets**: the observation-vector dims and the HMM (K, features, the unmet fat-tail
@@ -502,9 +1925,31 @@ remaining dims (tracked in the plan's §1.3 workstream table). Which crate(s) th
    existing yet) — Rust ports will match the C++ reference, not necessarily live Sierra, until that
    exists.
 4. **Two libzmq copies in one DLL** (expected during the transport transition, untested) — the plan's
-   §6.5 has the interim plan; resolve before `mts_transport`'s W9.
-5. **Numeric policy** (possible `-ffast-math` in the DLL build vs. none in tools/Rust) — unsettled, §2
-   item 11.
+   §6.5 has the interim plan; resolve before `transport`'s W9.
+5. **`-ffast-math` silently broke this codebase's NaN-sentinel carry-forward convention — found,
+   confirmed, and fixed, 2026-10-11.** `CMakeLists.txt` enabled `-ffast-math` unconditionally for the
+   whole DLL (`-O3 -march=native -ffast-math -mavx2`, both presets) since before this initiative
+   started. Empirically verified with the exact clang-22 toolchain and exact repo flags: under
+   `-ffast-math`'s `-ffinite-math-only` component, the compiler assumes no value is ever NaN/Inf and
+   folds `std::isnan()` to `false` unconditionally (Clang itself emits `-Wnan-infinity-disabled: use
+   of NaN is undefined behavior due to the currently enabled floating-point options` at the exact call
+   sites below) — confirmed via a minimal repro matching this codebase's real runtime-NaN-sentinel
+   pattern (isnan reports `1` without the flag, `0` with it, same compiler, same optimization level).
+   This directly breaks the "return NaN for a degenerate window, caller carries the last valid value
+   forward" convention used throughout `RobustMoments.h` (`MoorsKurtosis`/`BowleySkewness`'s own
+   internal carry-forward checks), `StudyHelperFunctions.cpp`'s Hurst/fractal-dim carry-forward, and
+   every Rust-FFI shadow-wire comparison this initiative has built (`bothNan = std::isnan(hurst) &&
+   std::isnan(rustHurst)`, etc.) — all predating this session's Rust work, a real latent correctness
+   risk independent of the migration, surfaced only by this initiative's own numeric-policy question.
+   **Fixed**: `-ffast-math` removed from `CMakeLists.txt` entirely (operator decision, 2026-10-11 —
+   kept `-O3 -march=native -mavx2`). Re-verified with the post-fix flag set: `isnan()` correctly
+   reports `1` again, no compiler warning. Both CMake presets (`MTS_WITH_RUST=OFF`/`=ON`) rebuilt
+   clean from scratch. **Not yet done**: a hot-path performance re-benchmark against the
+   now-slightly-more-conservative flag set (no existing before/after numbers to compare against —
+   this initiative has not yet established a hot-path latency budget at all, §11's own listed gap);
+   live Sierra Chart re-confirmation that the degenerate-window carry-forward branches now actually
+   trigger (the `std::isnan()` fix is build-verified, not yet runtime-observed against real flat/thin
+   data). Full decision: §2 item 11.
 6. **A long program touching the same files repeatedly** (`ContextManager`, `HMMClient`,
    `SystemOrchestrator`, the schema, the event stream) — mitigation: every stage reversible until its
    own deletion step, shadow modes throughout, one change at a time.
@@ -514,10 +1959,22 @@ remaining dims (tracked in the plan's §1.3 workstream table). Which crate(s) th
 8. **Sierra-process crash risk from Rust**: a panic or allocation on the hot path is a Sierra crash, not
    a log line — `catch_unwind` everywhere, preallocated buffers, an allocation-tripwire test around every
    `*_step` function.
+9. **`student_t_hmm`'s full prerequisite stack is unstarted, confirmed 2026-10-11** (operator: "have
+   we brought all the data needed for Student-t HMM training into Rust?"). Not just "the model code
+   hasn't been written" — checked directly: zero `parquet`/`arrow`/`ndarray`/numpy-compatible
+   dependency anywhere in `rust/Cargo.toml`'s workspace, so no Rust code today can read any existing
+   training-data format (`.context.parquet`, `.alpha`, `.context.posteriors.npy`). The
+   `.context.parquet` files that exist on disk were produced by an existing Python offline conversion
+   step, not the already-RULED "write `.context.parquet` directly at collection time" design (§5.4),
+   which also isn't implemented (`EventDataCollectorStudy.cpp`/`LBRFileManager.cpp` have zero
+   `.parquet` references). No model-artifact format (replacing `models/hmm_model.pkl`) exists; no
+   `rust/tools`/`hmm_tool` CLI exists as a workspace member. Golden harness (P9), data-format access,
+   artifact format, training CLI, and the model itself are all unstarted — plan §4 has the full
+   record.
 
 ---
 
-## 10. Not yet analyzed (real gaps in this picture, not silently skipped)
+## 11. Not yet analyzed (real gaps in this picture, not silently skipped)
 
 - **Labeler ↔ native `StructureTest` parity** (`lbrnet/labeling/triple_barrier_scanner.py` vs. the C++
   detector, a mandated co-evolution per the trap-detection rules) — a shared Rust core could remove
@@ -528,8 +1985,8 @@ remaining dims (tracked in the plan's §1.3 workstream table). Which crate(s) th
   (`/mnt/c/Trading/config/`) that carry migrated thresholds and won't travel to a new machine without a
   manual sync.
 - **CI today**: whether any exists for the four repos currently (Atratus's is Python-only).
-- **Hot-path budget**: no per-tick latency measurement exists yet; needed before `mts_observation_vector`/
-  `mts_hmm`'s in-process shadow-mode stage.
+- **Hot-path budget**: no per-tick latency measurement exists yet; needed before `observation_vector`/
+  `student_t_hmm`'s in-process shadow-mode stage.
 - **PyO3 build/packaging**: Atratus installs its extension by hand (editable `maturin`); this needs a
   scripted build (the plan's §6.3).
 - **Extending the naming/coherence audit (§4.2) beyond the schema surface** to `lbrnet`'s/`MTS`'s own
@@ -537,9 +1994,9 @@ remaining dims (tracked in the plan's §1.3 workstream table). Which crate(s) th
 
 ---
 
-## 11. Documentation sync, when pieces of this land
+## 12. Documentation sync, when pieces of this land
 
-- "Rust is a build prerequisite for `cpp/`" → the four mirror docs, once `mts_ffi` is load-bearing for
+- "Rust is a build prerequisite for `cpp/`" → the four mirror docs, once `ffi` is load-bearing for
   a real build (not yet — currently opt-in via `MTS_WITH_RUST`).
 - The artifact convention change (`models/hmm_model.pkl` → manifest + weights) → the four mirror docs,
   once §5 ships.

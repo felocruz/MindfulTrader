@@ -13,6 +13,19 @@
 > moment `READY_FOR_PRODUCTION` reads `YES`. Full statement: `PRODUCTION_TRIAGE.md` (search
 > "STANDING RULE, set 2026-08-26").
 
+> **HARDWARE CONTEXT (set 2026-10-11) — read before preserving a memory-/CPU-conservative code
+> pattern by reflex.** Nearly all of this system's existing C++/Python (HMM, Transformer, data
+> pipelines) was developed on a 10-year-old Dell Precision workstation — 15GB RAM, a slow CPU, no
+> GPU — which explains several real patterns found in the code (chunked `predict()` added after a
+> real OOM kill, bounded E-step thread pools, 2M-row chunking conventions across `tools/`, CPU-only
+> `joblib` parallelism throughout HMM training). A new ML-capable workstation (Puget Systems) has
+> since lifted those constraints. When refactoring/porting this code (Rust or otherwise):
+> investigate whether a given conservative pattern is a genuine architectural requirement (bounded
+> peak memory for determinism, correct sequence-boundary handling — keep these) or a narrow
+> workaround tuned to the old 15GB ceiling (reconsider/relax these) — don't reflexively preserve or
+> reflexively strip either category. Concrete examples + full account: `docs/superpowers/specs/
+> 2026-10-09-mindfultrader-rust-migration-spec.md` §1.5.
+
 ## AI Context Pointer
 - Primary project context: `./.github/copilot-instructions.md`
 - Workspace integration map: `../docs/README-AI-WORKSPACE.md`
@@ -30,6 +43,15 @@
 - **Phase 0 batch (vol_convexity removal 19D→18D, bipower-variation reformulation,
   mean_rev_z/liq_fragility fixes) committed 2026-09-02 (`d2ab57c`)** after sitting uncommitted
   across multiple prior sessions; see `CLAUDE.md`'s own pointer for the full account.
+- **NEWEST MAJOR INITIATIVE — "all Rust" migration, spec+plan updated 2026-10-10**:
+  `docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` + its companion plan are
+  the single authoritative pair (HMM, observation vector, ZMQ transport, and now §8 — the
+  execution layer: replatforming off Sierra Chart's `SCTradingInterface`→IBKR routing onto a
+  standalone Rust service, `ibapi` + `tokio` + IBKR's own algos, inspired by `../Atratus`'s
+  Predator/Sniper design, folded in 2026-10-10 from a short-lived standalone doc per this pair's
+  own one-doc rule — do not create a new sibling doc for this initiative again). See `CLAUDE.md`'s
+  own pointer for the full account — do not confuse §8 with the next bullet's similarly-named but
+  unrelated doc.
 - **NEXT MAJOR INITIATIVE (operator directive, 2026-09-03) — founding question ANSWERED
   2026-09-04**: `LocalRiskContext`/`RiskGateContext` was verified blind to the HMM's own signal for
   7 of its 8 hard gates (only the Amihud illiquidity veto reads live HMM state) — see `CLAUDE.md`'s
@@ -70,7 +92,7 @@
   file) is BLOCKED — no current-schema (v240) comparison file exists yet. See `CLAUDE.md`'s own
   pointer for the full account.
 
-**Last Updated**: 2026-09-08
+**Last Updated**: 2026-10-10
 
 ## Purpose
 MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messaging) implementing the **Elder-Raschke Confluence System** (Elder's Triple Screen hierarchy + Raschke Screen 3 patterns + HMM/entropy regime layer).
@@ -176,7 +198,7 @@ Size-prefixed FlatBuffer records: `RunManifest` → `DecisionEvent`(s) → `Pred
 - Keep ZMQ interactions non-blocking on UI-sensitive paths.
 - Preserve microsecond timing conventions where latency is tracked.
 - **`IndicatorManager`** currently uses a hand-written heterogeneous `IndicatorStore` (~44 differently-typed named members) plus a separate `std::array<BaseIndicator*, MAX_INDICATORS>` pointer-index array for O(1) `IndicatorKey`-enum lookup (`GetIndicator<T>(key)`, never string hashes or map lookups) — this is being migrated to true packed-array (SoA) storage with compile-time devirtualized access; see `docs/superpowers/specs/2026-08-04-indicator-manager-dod-soa-design.md`.
-- **Permanent hybrid architecture (indicator-manager-dod-soa plan, Task 15):** the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) are the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 exports). `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and its leaf classes remain permanently as (a) the write-side compute engine Triple Screen calls into every tick, and (b) the read path for keys marked `StorageBlock::NotPacked`. This is not a partially-finished migration — it is the intended end-state per the design spec's "true DOD while maintaining OOD goodness" framing. A full write-side rewrite (extracting all remaining indicators' compute logic to free functions, as Task 6 did for `Macd`) remains possible as a future initiative but is out of scope. Task 15 deleted the only 4 fully-dead orphan classes with zero live callers (`Ema`, `AdxIndicator`, and the dead `IndicatorManager::GetIndicator<T>()` instantiations for `HmmStateIndicator`/`MarketClimateIndicator` — those two classes remain live, owned by `InferenceManager`, not `IndicatorManager`). All other leaf classes have live callers and stay.
+- **Hybrid architecture, write side now superseded by Rust adoption (indicator-manager-dod-soa plan, Task 15; superseded 2026-10-10):** the packed arrays (`IndicatorLayout.h`/`IndicatorPackedState.h`) remain the canonical, devirtualized path for every hot-path read (`CheckTrigger`, `PopulateIndicatorState`, `GetTrainingEventT`, `EventSerializer`, `BackTesterStudy`'s Float32 exports) — this part is accurate and unchanged. `IndicatorStore`/`BaseIndicator`/`Indicator<T>` and its leaf classes are the write-side compute engine Triple Screen calls into every tick today, and the read path for keys marked `StorageBlock::NotPacked` — but the 2026-08-05 plan's claim that this write side stays **permanently** in C++, with the full write-side rewrite declared "out of scope," predates this codebase's Rust adoption (opened 2026-10-07) and no longer holds: per the rust-migration spec §1.2/§9 (2026-10-10), indicator computation is now an explicit third Rust pillar alongside execution/risk and the HMM — the rewrite is happening, just in Rust, not as a C++ free-function extraction. Task 15 deleted the only 4 fully-dead orphan classes with zero live callers (`Ema`, `AdxIndicator`, and the dead `IndicatorManager::GetIndicator<T>()` instantiations for `HmmStateIndicator`/`MarketClimateIndicator` — those two classes remain live, owned by `InferenceManager`, not `IndicatorManager`); that part of Task 15 stands. All other leaf classes have live callers and stay, for now — their fate is the new Rust-port design question, not this older plan's.
 
 ## Trap Detection Ownership (Native-First)
 1. **TRAP = structural invalidation of the entry thesis** — a sprung-trap reversal (probe-and-fail) that fires ahead of the money-stop. It is neither the price stop nor a trend/regime shift.
