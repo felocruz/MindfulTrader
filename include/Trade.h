@@ -42,11 +42,7 @@ public:
     // price-inferred. Empty => infer from exit price vs stop/target.
     void SetExitReasonTag(const std::string& tag) { m_exitReasonTag = tag; }
 
-    // GAP 27: Entry-time regime snapshot for mid-trade target tightening
-    void SetEntryRegime(HMMStateEnum hmmState, MarketClimate climate);
     void SetOriginalTargets(float t1, float t2, float t3);
-    HMMStateEnum GetEntryHMMState() const { return m_entryHMMState; }
-    MarketClimate GetEntryClimate() const { return m_entryClimate; }
     float GetOriginalTarget1() const { return m_originalTarget1; }
     float GetOriginalTarget2() const { return m_originalTarget2; }
     float GetOriginalTarget3() const { return m_originalTarget3; }
@@ -138,9 +134,7 @@ private:
     double m_highest_price{ 0.0 };         // Track for MFE calculation
     double m_lowest_price{ 0.0 };          // Track for MAE calculation
 
-    // GAP 27: Entry-time regime snapshot + original target prices for mid-trade tightening
-    HMMStateEnum m_entryHMMState{ HMM_NO_PRIOR };
-    MarketClimate m_entryClimate{ MarketClimate::GAUSSIAN_STABLE };
+    // GAP 27: original target prices for mid-trade tightening
     float m_originalTarget1{ 0.0f };
     float m_originalTarget2{ 0.0f };
     float m_originalTarget3{ 0.0f };

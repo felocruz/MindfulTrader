@@ -11,6 +11,7 @@
 #include "sierrachart.h"
 #include "Trade.h"
 #include "Indicator.h"
+#include "RegimeManager.h"
 #include "TradeExecutionServer.h"
 #include "execution/ExecutionGate.h"
 
@@ -320,6 +321,18 @@ private:
     // Previous regime/climate state (Gap 5 & 8: detect mid-trade transitions)
     HMMStateEnum m_previousHMMState{HMM_NO_PRIOR};
     MarketClimate m_previousClimate{MarketClimate::GAUSSIAN_STABLE};
+
+    // RegimeManager migration (2026-10-10): an additive opaque-token twin of
+    // m_currentHMMState/m_previousHMMState, kept only for
+    // RegimeManager::IsHostileRegimeChange(snapshot, isLong) — RegimeSnapshot's
+    // constructor is private (friend RegimeManager only), so it can't be built
+    // from an already-stored raw HMMStateEnum; it must be captured via
+    // RegimeManager::Instance().GetCurrentSnapshot() at the same shift point
+    // SyncRegimeState() already uses for the enum pair. The raw enum members
+    // above are NOT being removed — they still back the change-detection
+    // comparison and diagnostic logging as before.
+    RegimeSnapshot m_currentRegimeSnapshot{};
+    RegimeSnapshot m_previousRegimeSnapshot{};
 
     // Phase 3.2.1: Reusable FlatBufferBuilder for high-frequency PositionUpdate serialization.
     mutable flatbuffers::FlatBufferBuilder m_positionUpdateBuilder{256};

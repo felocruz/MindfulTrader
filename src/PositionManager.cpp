@@ -1,4 +1,5 @@
 #include "MindfulTrader_Precompiled.h"
+#include "RegimeManager.h"
 #include "Scoring.h"
 #include "TripleBarrierExitManager.h"
 #include "TradeExecutionServer.h"
@@ -375,9 +376,7 @@ void PositionManager::HandleFills(SCStudyInterfaceRef sc) {
             const bool tbLong = (pos.PositionQuantity > 0);
 
             const auto* tbHmm = InferenceManager::Instance().HmmState();
-            const tbe::Regime tbRegime = tbHmm
-                ? TripleBarrierExitManager::ToRegime(tbHmm->Value())
-                : tbe::Regime::GAUSSIAN_STABLE;
+            const tbe::Regime tbRegime = RegimeManager::Instance().GetTripleBarrierExitParams();
             const double tbDofScale = tbHmm ? tbHmm->DofStopScale() : 1.5;
 
             float tbSwingHigh = 0.0f, tbSwingLow = 0.0f;
@@ -1466,9 +1465,7 @@ tbe::BarrierInputs BuildBarrierInputs(SCStudyInterfaceRef sc,
     const tbe::Tier tier = tbe::kPatternTable[static_cast<std::size_t>(pat)].tier;
 
     const auto* hmm = InferenceManager::Instance().HmmState();
-    const tbe::Regime regime = hmm
-        ? TripleBarrierExitManager::ToRegime(hmm->Value())
-        : tbe::Regime::GAUSSIAN_STABLE;
+    const tbe::Regime regime = RegimeManager::Instance().GetTripleBarrierExitParams();
     const double dofScale = hmm ? hmm->DofStopScale() : 1.5;
 
     float swingHigh = 0.0f, swingLow = 0.0f;
@@ -2128,16 +2125,14 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // === GAP 3: REGIME-CONDITIONAL EXECUTION STYLE (Taleb + Pareto) ===
     // Microstructure quality varies dramatically by HMM regime.  Use regime as a
     // second axis alongside confidence/entropy to select execution style.
-    const auto* hmmExecInd = InferenceManager::Instance().HmmState();
-    const HMMStateEnum execRegime = hmmExecInd ? hmmExecInd->Value() : HMM_NO_PRIOR;
 
     // GAUSSIAN_FRAGILE: institutional flow is toxic — force passive regardless of confidence.
     // Fading institutional sweep with aggressive execution is how retail loses.
-    const bool regimeForcePassive = (execRegime == HMMStateEnum::GAUSSIAN_FRAGILE);
+    const bool regimeForcePassive = RegimeManager::Instance().RequiresPassiveExecution();
 
     // PARETO_MOMENTUM: momentum is your ally — allow aggressive crossing at lower
     // confidence threshold (0.85 vs 0.90) and wider spread (2 ticks vs 1).
-    const bool momentumBoost = (execRegime == HMMStateEnum::PARETO_MOMENTUM);
+    const bool momentumBoost = RegimeManager::Instance().GrantsMomentumBoost();
 
     // === GAP 11: FRACTAL DIMENSION → EXECUTION ROUGHNESS DETECTOR (Mandelbrot) ===
     // fractalDim near 1.0 = smooth/trending (directed price action).
@@ -3158,7 +3153,7 @@ void PositionManager::UpdateTradeGradeProtection(SCStudyInterfaceRef sc) {
     // === C3: REGIME-CONDITIONAL ELDER GRADE THRESHOLDS (Taleb+Elder) ===
     // Momentum regimes raise thresholds (patient holding, let winners run).
     // Fragile/chaos regimes lower them (exit faster, asymmetric cost of holding).
-    const auto gt = InferenceManager::GetRegimeGradeThresholds(m_currentHMMState, m_currentClimate);
+    const auto gt = RegimeManager::Instance().GetRegimeGradeThresholds();
 
     // === A-GRADE: Telemetry Only (no in-trade action) ===
     // Rationale: Grade A scale-out conflicts with bracket targets (T1/T2/T3) and

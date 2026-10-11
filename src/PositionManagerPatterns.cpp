@@ -4,6 +4,7 @@
 #include <cmath>
 #include "HMMClient.h"
 #include "IndicatorManager.h"
+#include "RegimeManager.h"
 #include "RiskManager.h"
 #include "Scoring.h"
 #include "RiskManager.h"
@@ -61,6 +62,8 @@ void PositionManager::SyncRegimeState() {
     if (auto* hmmInd = InferenceManager::Instance().HmmState()) {
         m_previousHMMState = m_currentHMMState;
         m_currentHMMState  = hmmInd->Value();
+        m_previousRegimeSnapshot = m_currentRegimeSnapshot;
+        m_currentRegimeSnapshot  = RegimeManager::Instance().GetCurrentSnapshot();
     }
     if (auto* climateInd = InferenceManager::Instance().MarketClimate()) {
         m_previousClimate = m_currentClimate;
@@ -91,7 +94,7 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
     //   Long position + regime → GAUSSIAN_FRAGILE (short-side institutional flow) → flatten
     //   Short position + regime → PARETO_MOMENTUM (momentum breakout upward) → flatten
     if (m_currentHMMState != m_previousHMMState && m_previousHMMState != HMM_NO_PRIOR) {
-        if (InferenceManager::IsHostileRegimeChange(m_previousHMMState, m_currentHMMState, isLong)) {
+        if (RegimeManager::Instance().IsHostileRegimeChange(m_previousRegimeSnapshot, isLong)) {
             SCString logMsg;
             logMsg.Format("HOSTILE REGIME EXIT: %s position vs regime %d (prev=%d -> new=%d)",
                 isLong ? "LONG" : "SHORT", static_cast<int>(m_currentHMMState),
@@ -119,7 +122,7 @@ void PositionManager::EvaluateRegimeDefense(SCStudyInterfaceRef sc) {
     if (pattern == PatternType::Unknown) return;
 
     // Calculate Multipliers
-    double hmmMult = Scoring::Instance().GetHMMMultiplier(pattern, m_currentHMMState);
+    double hmmMult = RegimeManager::Instance().GetPatternMultiplier(pattern);
     double climateMult = Scoring::Instance().GetClimateMultiplier(pattern, m_currentClimate);
 
     // ELITE v3.2: Deep Context from ContextManager's unified LocalRiskContext

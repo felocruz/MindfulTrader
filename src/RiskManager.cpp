@@ -1,4 +1,5 @@
 #include "MindfulTrader_Precompiled.h"
+#include "RegimeManager.h"
 #include "Scoring.h"
 #include "TradeExecutionServer.h"
 #include "SystemOrchestrator.h"
@@ -1754,7 +1755,7 @@ Result<int> RiskManager::CalculateSafePositionSize(SCStudyInterfaceRef sc, doubl
     }
     bool hillOpportunityActive = false;
     if (paretoTailAlpha > 0.0f && paretoTailAlpha < 1.5f && top2m > 0.30f) {
-        if (hmmInd && hmmInd->Value() == HMMStateEnum::PARETO_MOMENTUM) {
+        if (RegimeManager::Instance().GrantsMomentumBoost()) {
             // Fat-tail opportunity: directional flush with strong conviction.
             // Boost sizing 1.5-2.0× via linear ramp on top2_margin [0.30, 0.50].
             double opportunityBoost = 1.5 + 0.5 * std::clamp((static_cast<double>(top2m) - 0.30) / 0.20, 0.0, 1.0);

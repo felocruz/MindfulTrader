@@ -3,7 +3,9 @@
 #include "OrderFlowAsymmetryEngine.h"
 #include "PredatorContext.h"
 #include "PredatorFusion.h"
+#include "RegimeManager.h"
 #include "TurtleSoupFusion.h"
+#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
 
 /*==========================================================================*/
 // TripleScreen3-specific constants
@@ -658,6 +660,30 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             static_cast<float>(sc.BidVolume[sc.Index]),
             lastValidMicroAsymmetry);
         lastValidMicroAsymmetry = Subgraph_MicroAsymmetry[sc.Index];
+
+#ifdef MTS_WITH_RUST
+        // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-
+        // plan.md §5.1): first ComputeMicroAsymmetry call site shadow-wired, 2026-10-11 -- proves
+        // the Rust port matches here, without using its result for anything.
+        {
+            const float rustMicroAsymmetry = mts::observation_vector_micro_asymmetry(
+                static_cast<float>(sc.AskVolume[sc.Index]),
+                static_cast<float>(sc.BidVolume[sc.Index]),
+                lastValidMicroAsymmetry);
+            const bool matches = std::fabs(Subgraph_MicroAsymmetry[sc.Index] - rustMicroAsymmetry) < 1e-5f;
+            static bool loggedMatchOnce = false;
+            if (!matches) {
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST MISMATCH: ComputeMicroAsymmetry cpp=" +
+                    std::to_string(Subgraph_MicroAsymmetry[sc.Index]) + " rust=" + std::to_string(rustMicroAsymmetry));
+            } else if (!loggedMatchOnce) {
+                loggedMatchOnce = true;
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST: ComputeMicroAsymmetry shadow-mode OK (cpp==rust=" +
+                    std::to_string(Subgraph_MicroAsymmetry[sc.Index]) + ")");
+            }
+        }
+#endif
     }
 
     const auto atrProximity = indMgr.GetIndicator<ATRProximityIndicator>(IndicatorKey::ATR_PROXIMITY);
@@ -1313,11 +1339,11 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
             bool screenAligned = false;
             if (hmmIndicator) {
                 if ((soupEnum == TurtleSoupEnum::BULLISH_STRONG || soupEnum == TurtleSoupEnum::BULLISH_EXTREME) &&
-                    (currentHmmState == HMMStateEnum::GAUSSIAN_STABLE || currentHmmState == HMMStateEnum::PARETO_MOMENTUM)) {
+                    RegimeManager::Instance().IsMomentumAligned(true)) {
                     screenAligned = true;
                 }
                 else if ((soupEnum == TurtleSoupEnum::BEARISH_STRONG || soupEnum == TurtleSoupEnum::BEARISH_EXTREME) &&
-                         (currentHmmState == HMMStateEnum::GAUSSIAN_FRAGILE || currentHmmState == HMMStateEnum::COILED_SPRING)) {
+                         RegimeManager::Instance().IsMeanReversionAligned(false)) {
                     screenAligned = true;
                 }
             }
@@ -1476,12 +1502,12 @@ SCSFExport scsf_Screen3_KeltnerChannel(SCStudyInterfaceRef sc)
                     impulseAligned = (impulseState == ImpulseEnum::GREEN || impulseState == ImpulseEnum::RED);
                 }
 
-                        // Context: HMM state alignment (reuses cached hmmIndicator)
+                        // Context: HMM burn-in check (reuses cached hmmIndicator) — this was
+                        // historically a tautological "all 4 states OR" (RegimeManager.h's own
+                        // comment on IsBurnInComplete() names this exact site); the real check it
+                        // stood in for is "has a live HMM state arrived yet".
                 if (hmmIndicator) {
-                    screenAligned = (currentHmmState == HMMStateEnum::GAUSSIAN_STABLE ||
-                                    currentHmmState == HMMStateEnum::PARETO_MOMENTUM ||
-                                    currentHmmState == HMMStateEnum::COILED_SPRING ||
-                                    currentHmmState == HMMStateEnum::GAUSSIAN_FRAGILE);
+                    screenAligned = RegimeManager::Instance().IsBurnInComplete();
                 }
 
                 nr7Indicator->SetContext(channelSqueeze, impulseAligned, screenAligned);
