@@ -615,10 +615,13 @@ immediately below — same content, no substance change):
   (`FeatureSaliencyEM.h`/`FeatureSaliencyEval.cpp`) share one language instead of a Python/C++
   cross-language bridge. Not scoped, not started — a reason to revisit the decision to pick it up,
   tracked here so Stage G's own landing doesn't silently miss the connection.
-- **F6 — defaults reconciliation**: `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40
-  vs. 1.30) disagree between `student_t_hmm.py`'s class defaults and `train_student_t_hmm.py`'s
-  training-config defaults — must be reconciled to one documented canonical value before Stage G
-  work starts, not silently picked during implementation.
+- **F6 — defaults reconciliation — RESOLVED 2026-10-11 (decision #26, spec §5.1a)**:
+  `dof_learning_rate` (0.02 vs. 0.15) confirmed **dead code** (`_update_dof_ecme()` never reads it;
+  no legacy path exists) — dropped from the Rust port entirely, no field to carry. `bullet_weight`
+  (1.40 vs. 1.30) confirmed real and consumed, but never a fixed constant — `train_student_t_hmm.py`
+  BIC-grid-searches it per run, so `model.rs`'s existing per-instance `feature_weights` field (not
+  a crate constant, mirroring the `dof_min`/`dof_max` fix) already handles it correctly; only G5's
+  own grid-search default range remains open, deferred to G5 itself.
 
 This is design/inventory only — nothing above has been implemented; Stage A/P9 still blocks Stage
 B-C, which in turn precedes Stage G in the stage ordering at the top of this section.
@@ -629,13 +632,23 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
 
 - **G0 — blocking decisions (no code; resolve before the dependent sub-stage below, not during it)**:
   (a) the still-open `HmmStep` state-identity shape (§5.2 — rule/label-based vs. raw positional
-  `state_id`) gates G4's external API, not G2's internal math; (b) F6's defaults reconciliation
-  gates G5 (nothing to test a trainer against without a canonical default); (c) the artifact
+  `state_id`) gates G4's external API, not G2's internal math; (b) **RESOLVED 2026-10-11
+  (decision #26, spec §5.1a)** — F6's defaults reconciliation: `dof_learning_rate` dropped entirely
+  (confirmed dead code); `bullet_weight` needs no reconciliation (`model.rs`'s existing
+  per-instance `feature_weights` field already correct) — only G5's own BIC-grid default range
+  remains, not a G0 blocker anymore; (c) the artifact
   serialization format call (F5/§5.5 item 14, `bincode` vs. manifest+raw-floats) gates G3's
-  `artifact.rs` beyond a stub; (d) the climate/threshold-constants placement call (spec §5.5 item
-  9, manifest vs. crate constants) gates G4's constant-loading design; (e) the `arch`-crate
-  research spike (§5.5 item 11) gates G6's `calibration.rs` beyond a stub — this one can run latest
-  of the five, since calibration is a late-stage concern either way.
+  `artifact.rs` beyond a stub; (d) **RESOLVED 2026-10-11 (decision #25, spec §5.1c)** — the
+  climate/threshold-constants placement call: false dichotomy, both (manifest-backed + mandatory
+  train → audit (GO/NO-GO) → auto-calibrate chain for the 4 Tier-1 constants + `TAIL_RISK_THRESHOLD`,
+  porting the already-shipped `calibration_artifacts_provenance.json` atomic-write-together pattern
+  from `lbrnet`'s Transformer pipeline rather than a silent-fallback `path.exists()` check; plain
+  struct-field defaults, no manifest slot, for the 6 Tier-3 constants). This sharpens G3/G4/G6's
+  scope: `artifact.rs` must also write the provenance sidecar atomically with the calibration
+  artifact, and G4's constant-loading design hard-refuses stale/missing-provenance artifacts
+  rather than falling back silently; (e) the `arch`-crate research spike (§5.5 item 11) gates G6's
+  `calibration.rs` beyond a stub — this one can run latest of the five, since calibration is a
+  late-stage concern either way.
 - **G1 — standalone, no-model-dependency ports (correction, 2026-10-11: these do NOT wait for
   Stage A/P9 — they're exactly the "golden-independent slice" already noted above; can start now,
   parallelizable with each other and with G0)**: `audit.rs` (zero dependencies, trivial,
@@ -683,6 +696,34 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
     list). Its never-materialize-the-ξ-tensor memory pattern and mean-weighted/covariance-
     unweighted M-step denominator split (independently matching our own L_MAP item 8 fix) are
     worth reusing. Workspace: 108/108 tests pass, clippy clean.
+  - **Training slice (`train.rs`) SHIPPED, 2026-10-11**: EM/M-step and the ECME degrees-of-freedom
+    update land, ported from `fit_streaming()`'s M-step (the single most bug-prone region per F3's
+    8-bug "L_MAP decline" history) — sequence-level log-space forward-backward (`forward_backward`,
+    matching `_forward_backward_numba`'s own max-subtraction scaled recursion exactly), the
+    weighted M-step (startprob/transmat/means/covars, including the full mean-shrinkage-prior
+    cross-term and the deliberately-UNweighted covariance denominator — re-confirmed fresh against
+    Atratus's own `trainer.rs` M-step on the operator's direct request this session, which
+    independently uses the identical `combined_weight_sum`-for-mean/`resp_sum`-for-covariance
+    split despite being a wholly separate implementation, but does NOT replicate the ECME-
+    staleness-correction second pass below — confirms that's a MindfulTrader-specific refinement,
+    not something to inherit "for free"), and the two-pass ECME DOF update (`recompute_post_mstep_
+    dof_stats` recomputes Mahalanobis deltas under the just-updated mean/covariance while reusing
+    the first pass's unchanged `gamma`, exactly matching `_update_dof_ecme`'s own staleness-fix
+    comment). `digamma` and a real bracketed Brent's-method root finder (`brent_root_find`,
+    Brent 1973) are hand-rolled — not Atratus's weaker fixed-10-iteration unbracketed Newton's-
+    method fallback, confirmed deliberately not copied (same "no crate dependency for one special
+    function" convention as `model.rs`'s own `ln_gamma`). Decision #26's two findings are both
+    directly exercised here: `dof_learning_rate` needed no field at all (confirmed dead code);
+    `bullet_weight` needed no fix (already correctly absorbed into `model.rs`'s per-instance
+    `feature_weights`, exercised by this slice's own golden test). **Golden-parity validated
+    against two real invocations of the actual Python `StudentTHMM.fit_streaming()`** (mts conda
+    env, 2026-10-11, not independently-rederived "looks plausible" test data) — a tiny
+    deterministic 8-row/D=2/K=2 fixture, once with every MAP prior disabled and once with every
+    prior active (`mean_prior_kappa`/`covar_prior_eta`/`trans_prior_alpha`/`sticky_diag_alpha`/
+    `bullet_weight` all non-zero, deliberately exercising the cross-term-heavy covariance-prior
+    formula the bug chain centers on) — both match Python's own printed output to the full `f64`
+    precision captured. 13 new tests (digamma/Brent unit tests, one-sided convergence-check
+    tests, 2 golden-parity tests). Workspace: 141/141 tests pass, clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
   formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
   `registry.rs` (`MarketClimate` classification cascade, consumes `model.rs`'s posterior/state
@@ -713,10 +754,13 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   (pending G1/F2's "likely drop" confirmation once a real speed measurement exists) `student_t_hmm_gpu.py`'s
   Rust-side non-equivalent.
 
-**Net effect of this sequencing**: the actual critical path is G0(a,b,d) → G2 → {G3, G5} → G4 → G6
+**Net effect of this sequencing**: the actual critical path is G0(a,c,e) → G2 → {G3, G5} → G4 → G6
 → G7, with G1 (and G0(c)'s stub-level unblocking) running earliest and in parallel, and G0(e)/G6's
 `calibration.rs` deliberately pushed latest since it's the one piece with a real open
-library-availability gap that could slip without blocking anything else.
+library-availability gap that could slip without blocking anything else. **Update, 2026-10-11**:
+G0(b) and G0(d) are now both resolved (decisions #25-#26) — G0(a) (gates G4 only) and G0(c)/(e)
+(stub-level unblocking only) are the remaining true G0 blockers; G2's training slice (EM/M-step)
+can proceed without waiting on anything further from G0.
 
 ### 4a. `RegimeManager` 8-file call-site migration (spec §5.2's companion groundwork, approved 2026-10-10)
 

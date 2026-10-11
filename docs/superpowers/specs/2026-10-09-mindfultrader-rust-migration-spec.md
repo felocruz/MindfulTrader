@@ -183,6 +183,8 @@ of hardware.
 | 22 | New crate `rust/py` (PyO3) processes both the live ZMQ `Event` stream and the `.alpha`/`.lbr` training file for `lbrnet`, replacing Python's own FlatBuffers-parsing feature-extraction layer with fast Rust | **scoped, 2026-10-11** (operator direction, confirmed against the real pipeline) — `lbrnet/data/lbr_to_polars.py`'s own docstring already says "DEPRECATED... Future institutional pipelines should use C++ extensions or Arrow readers". **Correction, same day**: `fast_ingestor.py`/`flatbuffer_stream.py` were originally cited here as "confirmed dead code" from a search scoped only to `lbrnet/`'s own package directory — a repo-root-scoped re-check found `flatbuffer_stream.py` is genuinely live (wrapped by `backtest/alpha_event_stream.py`, feeding the heavily-used `backtest_runner.py`); only `fast_ingestor.py` (examples-file-only reference) remains a weak dead-code candidate. Transformer confirmed **TensorFlow/Keras**, not PyTorch (operator correction) — `rust/py` must emit plain `numpy` arrays. Full design, scope boundary (data-plumbing only, not the TF/Keras model), and open build/GIL questions: §5.4a |
 | 23 | The Transformer training-dataset *generation* pipeline (today's `lbr_to_polars.py` + `tristream_dataset.py` windowing) moves to a separate, offline, native Rust tool — not incremental live-DLL work — and Rust also owns *loading* the finished artifact back in on the Python side, narrowing decision #22's `rust/py` scope to a fast loader rather than a bulk-FlatBuffers-parser for training | **scoped, 2026-10-11** (operator direction, confirmed as a two-stage architecture) — `tristream_dataset.py`'s real output is windowed tensors `(indices, values, hints, position, labels)`, not a trivial format; its load path already defers windowing to load time via a compact pre-windowing cache + `numpy.lib.stride_tricks.sliding_window_view` reconstruction (confirmed by direct code read), which Stage 2 must replicate, not just read a file. Operator's own "institutional-grade or amateur" question answered: intent is institutional-grade (matches `lbr_to_polars.py`'s own self-declared direction); execution is institutional-grade only with the same golden-harness parity discipline used everywhere else in this initiative. Full two-stage design: §5.4a |
 | 24 | Standing hardware context: most existing C++/Python was written on a 15GB-RAM, no-GPU, 10-year-old workstation; a new ML-capable workstation has since lifted those constraints | **recorded, 2026-10-11** (operator) — memory-/CPU-conservative patterns found during porting must be investigated (genuine architectural requirement vs. narrow workaround for the old ceiling) rather than reflexively preserved or reflexively stripped; concrete already-found examples and the actionable principle: §1.5. Mirrored as a standing banner in `CLAUDE.md`/`GEMINI.md`/`copilot-instructions.md`/`README-AI.md` per the Doc Sync Contract |
+| 25 | `regime_engine.py`'s 11 climate/threshold constants (G0(d)) — placement (manifest vs. crate constant) and whether calibration needs the trained HMM | **resolved 2026-10-11** (operator: "if calibration needs the trained model, we must have a mandatory calibration step after training"; "why not train → calibrate automatically?") — confirmed via direct code read that both `tune_risk_gate.py` and `calibrate_hmm_gate_thresholds.py` require an already-trained model as a mandatory input (hard failure without it); confirmed auto-chaining is well-supported (same data corpus, no new data-collection step, training already reserves and embeds a calibration-holdout window in the model's own metadata). Resolution: **train → audit (GO/NO-GO, reusing `audit.rs`) → if GO: auto-calibrate against that model's own reserved holdout, writing the calibration artifact + a provenance sidecar atomically together (porting the already-shipped `trainer.py`/`live_agent.py` `calibration_artifacts_provenance.json` pattern, found via `lbrnet/evals/cases/` real incident scenarios, not invented fresh)**; Rust loader hard-refuses stale/missing-provenance calibration artifacts rather than silently falling back to a hardcoded default, closing a confirmed live gap in current Python. Three-tier breakdown of the 11 constants, the `context_calibration.json` sibling-artifact finding, and the memory-conservative-pattern re-check (confirmed already done correctly on the new hardware, nothing stale) — all in §5.1c |
+| 26 | `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) defaults disagreement between `student_t_hmm.py` and `train_student_t_hmm.py` (F6/G0(b)) | **resolved 2026-10-11** — two different outcomes, not one canonical-value pick: `dof_learning_rate` is confirmed **dead code** (`_update_dof_ecme()`'s own docstring states it is never read; full-file grep confirms `self.dof_learning_rate` is write-once, read-never; no legacy update path exists) — dropped from the Rust port entirely, no field needed. `bullet_weight` is confirmed **real and consumed**, but was never a fixed constant to begin with — `train_student_t_hmm.py` BIC-grid-searches it per training run, so the value embedded in any given trained model is that run's own winning candidate. `model.rs`'s existing `feature_weights: [f64; D]` design (a per-instance field, not a crate constant — already correct, mirroring the `dof_min`/`dof_max` fix) needs no change; the only remaining open item is G5 (`train.rs`)'s own BIC-search default range, deferred to when G5 is built. Full detail: §5.1a |
 
 ---
 
@@ -429,11 +431,35 @@ lines, the densest operational doc — holds the canonical tuning protocol, Smar
 contract, formula catalog, and the 16-item "Path to Elite" lessons-learned changelog referenced
 below).
 
-**Inconsistent defaults found in the source Python itself** — must be reconciled (one canonical
-value chosen and documented) *before* porting, not silently picked: `dof_learning_rate` (0.02 in
-the training script's CLI default vs. 0.15 in `student_t_hmm.py`'s own `__init__` default, the
-latter confirmed unused in production training) and `bullet_weight` (1.40 vs. 1.30) differ between
-`student_t_hmm.py`'s class defaults and `train_student_t_hmm.py`'s `HMMTrainingConfig` defaults.
+**Inconsistent defaults found in the source Python itself — RESOLVED 2026-10-11 (decision #26,
+G0(b))**, two different outcomes per constant, neither is "pick 0.02 or 0.15 / 1.40 or 1.30":
+
+- **`dof_learning_rate` (0.02 training-script CLI default vs. 0.15 `student_t_hmm.py` class
+  default): confirmed dead code, not a disagreement to reconcile at all.**
+  `_update_dof_ecme()`'s own docstring states it directly — "Applied directly (no learning-rate
+  blend, unlike the old heuristic) ... `dof_learning_rate` is retained only as a stored/serialized
+  config value for other scripts' tuning grids (`smart_tuner.py` etc.), not consumed here" — and a
+  full-file grep confirms `self.dof_learning_rate` is assigned once at `__init__` and never read
+  again anywhere in `student_t_hmm.py`; no legacy/alternate DOF-update method exists to fall back
+  to. `smart_tuner.py` does still sweep it as a nominal search dimension (`--dof-learning-rate`),
+  but since the value is never consumed downstream, that sweep is functionally inert — every
+  candidate in that dimension produces an identical fit. **Resolution: drop `dof_learning_rate`
+  from the Rust port entirely — no field, no constant, nothing to reconcile; the Rust trainer's
+  DOF update (Brent's method, F5's elevation item) needs no learning-rate parameter at all.**
+- **`bullet_weight` (1.40 training-config default vs. 1.30 `student_t_hmm.py` class default):
+  confirmed real and consumed** (`weights[idx] = self.bullet_weight` sets specific "bullet dim"
+  indices of the per-dimension feature-weight array used directly in the Mahalanobis-weighted
+  emission density) **but not a single fixed constant to begin with** —
+  `train_student_t_hmm.py` runs its own BIC-based grid search over multiple candidate
+  `bullet_weight` values per training run (`bullet_weight_grid`), so whichever value ends up
+  embedded in any specific trained model is that run's own winning candidate, not a universal
+  constant. `model.rs`'s existing design already handles this correctly without any fix needed:
+  `feature_weights: [D; f64]` is already a per-instance field loaded/constructed per trained model
+  (mirroring the `dof_min`/`dof_max` per-instance-field fix made earlier this session), not a
+  hardcoded crate constant — so inference and `artifact.rs`'s load path have nothing to reconcile.
+  **The only remaining open decision narrows to G5 (`train.rs`)'s own BIC grid-search default
+  starting point/range for `bullet_weight`** — a much smaller, later call than "pick one canonical
+  constant," deferred to when G5 is actually built.
 
 **The "L_MAP decline" bug chain (runbook's "Path to Elite" items 10-16)** is the single most
 important piece of prior art for anyone writing the Rust EM loop — a multi-day forensic
@@ -626,6 +652,135 @@ not just the HMM-training-specific files (`materialize_hmm_features.py`, `regime
 both already flagged §5.1a as "must exist after port" but whose *own* `.context`-reading internals
 also need to switch to Parquet). This is a consequence of the already-ruled direct-Parquet decision
 (#8), reinforced by this move but not something the HMM migration alone creates or resolves.
+
+### 5.1c Climate/threshold-constant calibration: three tiers, model-dependency, and mandatory
+auto-calibration (resolved 2026-10-11, decision #25, G0(d))
+
+Operator question: "where do `gate_metrics.rs`'s constants get set/computed?" led to tracing all 11
+threshold-like constants in `regime_engine.py`. They split into three evidence-grounded tiers, not
+one undifferentiated pile:
+
+- **Tier 1 — already empirically calibrated and loaded at runtime (4 constants)**:
+  `ENTROPY_CHAOS_THRESHOLD`/`TRANSITION_RISK_THRESHOLD`/`MAHALANOBIS_THRESHOLD`/
+  `DURATION_RATIO_THRESHOLD`. `lbrnet/scripts/tune_risk_gate.py` calibrates these via walk-forward
+  grid search (3 of the 4 are actually swept — `transition_risk` is deliberately excluded from
+  `SWEEP_GRID`), writes `models/RiskGateThresholds.json`, and
+  `lbrnet/core/cpp_config.py::load_risk_gate_thresholds()` loads it at runtime, falling back to the
+  hardcoded `regime_engine.py` constants only if the artifact is absent. `MAHALANOBIS_THRESHOLD`'s
+  specific *fallback* value (5.63) has a model-independent origin (a Monte Carlo simulation of the
+  weighted-chi-square distribution, dependent only on dimension count/weight scheme — a schema
+  fact), but its *calibrated* value still comes from the same model-dependent grid search as the
+  other 3.
+- **Tier 2 — hardcoded now, documented intent to become calibrated (1 constant)**:
+  `TAIL_RISK_THRESHOLD` — a one-time empirical estimate with an explicit code comment pointing at
+  `calibrate_hmm_gate_thresholds.py`'s block-bootstrap pipeline, confirmed via grep to NOT yet be
+  wired to any runtime-loaded artifact.
+- **Tier 3 — pure hardcoded heuristics, no calibration script anywhere (6 constants)**:
+  `VELOCITY_EPSILON`/`VELOCITY_EPSILON_EXIT`/`VELOCITY_SMOOTHING_ALPHA`, `ENTROPY_DRIFT_WINDOW`,
+  `TAIL_RISK_STREAK_COUNT`, the 4 `COGNITIVE_LOAD_*` constants, the 3 `VARIANCE_RATIO_*` constants.
+  Confirmed their only consumer (`live_agent.py`) just imports and reads them directly — no
+  override path exists.
+
+**Does calibration need the trained HMM? Confirmed yes, for everything genuinely calibrated** —
+both `tune_risk_gate.py` (`--model`, loaded via `RegimeEngine(model_path=...).load_model()`, hard
+`RuntimeError` if it fails to load) and `calibrate_hmm_gate_thresholds.py` (`--model`,
+`required=True`) take an already-trained model as a mandatory input and run a grid
+search/bootstrap over real held-out data classified *through that specific model's* regime
+assignments. Tier 3 constants need no trained model at all — nothing to wire.
+
+**Operator's proposal: auto-chain train → calibrate, since calibration only needs data already on
+disk.** Confirmed well-supported, not a stretch: `tune_risk_gate.py`'s default `--input` is
+`data/training/training_data_events_augmented.alpha`, the *same* corpus `train_student_t_hmm.py`
+trains from — no new expensive data-collection step needed. Stronger still:
+`train_student_t_hmm.py` already has a `--reserve-calibration-holdout-rows` flag (an "OF-06: no
+data leakage" requirement for sign-off runs) whose exact holdout window timestamps get written
+directly into the trained model's own `source_info` metadata — the model artifact already carries
+the instructions for what data its own calibration pass should run against. No documented
+rationale was found anywhere for keeping these two steps manual/decoupled.
+
+**One real reason not to blindly auto-run calibration on every training invocation**: this session
+already found unconverged "discovery"/"smoke" 18D training candidates with `dof_` pinned at the
+floor — garbage models produced during routine experimentation. Auto-calibrating every one would
+waste compute and could leave a plausible-looking calibration artifact for a model that should
+never ship. Resolution: gate the auto-calibration trigger on `audit.rs`'s GO/NO-GO verdict (already
+ported this session, §5.1a) — **train → audit (GO/NO-GO) → if GO: auto-calibrate against this
+exact model's own reserved holdout → model is eligible for live inference; if NO-GO: stop, no
+calibration ever runs.**
+
+**Independent confirmation this exact failure class has already happened in `lbrnet`, found via
+its `evals/cases/` AutoResearch eval scenarios (not model-performance tooling, but real documented
+incidents)**:
+- `hmm_stale_empirical_gate_thresholds.json`: a real sign-off run failed its gate
+  (`overall_pass=false`) because `HMMEmpiricalGateThresholds.json` was calibrated via a Viterbi
+  decode of an **old, superseded** model over **~24% of the current row count**, predating an
+  institutional data expansion — proof staleness causes false *negatives* (rejecting a genuinely
+  fit model), not just false positives. It also names a third stale-artifact-prone file not
+  previously found: `models/context_calibration.json`'s `TOXICITY_THRESHOLD_MAX` (feeds
+  `backtest_runner.py`'s Phase 2 kill-switch) — traced to `calibrate_context_thresholds.py` and
+  confirmed **not** model-dependent at all (a pure `amihud_illiquidity` percentile over a
+  `.context` time window, no HMM load) — it needs a *different* trigger (recalibrate when the data
+  corpus materially grows, not when a new model trains) and already has its own
+  `context_calibration_provenance.json` sidecar (window/record-count/stats) — a reasonable existing
+  precedent, not something broken, but a distinct mechanism from the model-dependent tiers above.
+- `phase1_stale_calibration_artifacts.json`: a different pipeline (the Transformer, not the HMM)
+  already hit the general class of this bug for real — a v5 training run was OOM-killed before
+  `trainer.py::_post_fit()` ran, leaving stale v3/v4-era `logit_adjustment.npy`/`temperature.npy`
+  that would have silently corrupted v5's calibration. The shipped fix is simpler than a
+  content-hash scheme: `_post_fit()` writes a `calibration_artifacts_provenance.json` sidecar
+  (model path + UTC timestamp) **atomically alongside** the calibration artifacts, and
+  `live_agent.py::_calibration_artifact_provenance_ok()` refuses to load calibration files if that
+  sidecar is absent or its recorded `model_path` doesn't match — correctness comes from
+  write-together atomicity, not independent hash verification.
+
+**Resolution for the Rust port — replaces the former "manifest vs. crate constants" framing
+entirely**, which was a false dichotomy:
+1. All 11 constants become fields on the climate-classification config struct with sensible
+   hardcoded defaults (the same `DEFAULT_*`-naming fix already applied to `dof_min`/`dof_max`) —
+   never bare module constants read directly by the math.
+2. The 4 Tier-1 constants (+ `TAIL_RISK_THRESHOLD` proactively, ahead of Python's own
+   still-unwired intent) get a genuine manifest-override slot, populated by the mandatory
+   train → audit → auto-calibrate chain above — not an optional nice-to-have.
+3. The calibration artifact and a provenance sidecar (model identity + timestamp) are written
+   atomically together, **porting the `trainer.py`/`live_agent.py` pattern**, not inventing a new
+   one. The Rust loader hard-refuses to use a calibration artifact whose provenance is absent or
+   mismatched for these model-dependent thresholds — it does not silently fall back to the
+   hardcoded default, which is exactly the live gap found in current Python
+   (`cpp_config.py::load_risk_gate_thresholds()` only checks `path.exists()`, with a soft log
+   warning, no identity check at all; `models/RiskGateThresholds.json` does not currently exist on
+   disk in this repo, meaning live Python is *currently* running 100% on Tier-1 fallback defaults
+   with nothing enforcing calibration ever ran).
+4. `context_calibration.json`'s `TOXICITY_THRESHOLD_MAX` is flagged as a related but *separate*
+   artifact family — data-window-dependent, not model-dependent — needing its own recalibration
+   trigger, not folded into the train/audit/calibrate chain.
+5. Tier-3 constants stay plain hardcoded struct-field defaults — no manifest slot, no provenance
+   gate needed, since nothing calibrates them today.
+6. `MAHALANOBIS_THRESHOLD`'s own fallback-value fragility is flagged explicitly: it's a one-time
+   Monte Carlo result tied to the *current* 16-dim/5-bullet-dim/1.30-weight configuration — if the
+   observation vector's dimension count or bullet-dim weighting changes (the still-open Phase 2
+   Feature-Saliency EM question, 5 of 18 dims flagged zero-saliency), this fallback itself goes
+   stale and needs re-deriving, not just re-reading from a file.
+
+**Memory-conservative pattern check (operator's second ask, same turn)**: confirmed the training
+side already did the "investigate before preserving/stripping" work decision #24 calls for, not
+something still owed. `train_student_t_hmm.py`'s `stream_chunk_rows` (and the dead-physics-cast
+chunk size) were explicitly re-benchmarked on the new Ryzen 9950X/Puget hardware (dated
+2026-09-15, in-comment benchmark tool + logged-output citations) — the old Xeon-era default
+(250,000) was found *too large even on the new hardware*; smaller chunks (62,500) are measurably
+faster, not merely safer, so chunking stayed and was tightened further, not relaxed.
+`tune_risk_gate.py`/`calibrate_hmm_gate_thresholds.py`'s own memory-conscious patterns (mmap-based
+zero-copy streaming parse, FFT-based O(n log n) autocovariance) are universally sound engineering
+with no old-hardware-specific comments found — nothing stale to revisit there either. The one real
+OOM incident found (the Transformer `phase1_stale_calibration_artifacts.json` case) predates the
+hardware upgrade, but its lesson is pipeline-atomicity correctness, not memory-conservative-code
+complexity to strip — any crash/interrupt/bug could trigger the same failure regardless of RAM, so
+it must be built into the new auto-chained HMM pipeline either way (point 3 above).
+
+**Open, not yet decided**: `tune_risk_gate.py` also runs its own internal walk-forward meta-tuning
+(`--train-months`/`--val-months`/`--holdout-months` folds) beyond the single calibration-holdout
+slice, for robustness against overfitting the threshold search to one time window. If the reserved
+calibration holdout is short, there may not be enough time depth inside it to run those folds —
+whether the Rust auto-calibration step needs that same walk-forward layer, or whether a single
+holdout evaluation suffices for Phase 1, is not yet decided.
 
 ### 5.2 Target architecture
 
@@ -1315,12 +1470,23 @@ numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loo
    The runbook's own measurement (GPU screening is 20-33x *slower* than CPU/joblib) plus Rust's
    expected non-interpreted-language speedup makes dropping it the likely answer, but this should
    be confirmed with a real measurement once the Rust CPU trainer exists, not assumed.
-9. Whether the climate/threshold constants hard-coded in `regime_engine.py` move into the manifest
-   (recommended) or stay as crate constants.
-10. **New (§5.1a)**: `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) differ
-    between `student_t_hmm.py`'s own class defaults and `train_student_t_hmm.py`'s
-    `HMMTrainingConfig` defaults — one canonical value must be chosen and documented before
-    porting; which file's default was actually exercised in production training needs confirming.
+9. ~~Whether the climate/threshold constants hard-coded in `regime_engine.py` move into the manifest
+   (recommended) or stay as crate constants~~ — **RESOLVED 2026-10-11 (decision #25, §5.1c)**: false
+   dichotomy — both, split by tier (manifest-backed + mandatory auto-calibration for the 4 Tier-1 +
+   `TAIL_RISK_THRESHOLD`; plain struct-field defaults, no manifest slot, for the 6 Tier-3
+   constants). New open sub-question from this resolution: whether the Rust auto-calibration step
+   needs `tune_risk_gate.py`'s own internal walk-forward meta-tuning folds (`--train-months`/
+   `--val-months`/`--holdout-months`) beyond the single calibration-holdout slice, or whether a
+   single holdout evaluation suffices for Phase 1 — not yet decided (§5.1c).
+10. ~~`dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) differ between
+    `student_t_hmm.py`'s own class defaults and `train_student_t_hmm.py`'s `HMMTrainingConfig`
+    defaults — one canonical value must be chosen and documented before porting; which file's
+    default was actually exercised in production training needs confirming~~ — **RESOLVED
+    2026-10-11 (decision #26, §5.1a)**: not a canonical-value pick for either — `dof_learning_rate`
+    is confirmed dead code (never read by `_update_dof_ecme()`), dropped entirely from the Rust
+    port; `bullet_weight` is real but per-training-run BIC-grid-searched, not fixed, and
+    `model.rs`'s existing per-instance `feature_weights` field already handles this correctly with
+    no change needed — only open item is G5's own grid-search default range, deferred to G5.
 11. **New (§5.1a)**: `calibrate_hmm_gate_thresholds.py`'s stationary block-bootstrap methodology
     (Politis & White 2004) relies on Python's `arch` package with no obvious Rust crate
     equivalent found — needs either a from-scratch implementation or a further crate search before
