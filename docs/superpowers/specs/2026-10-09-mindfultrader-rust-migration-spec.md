@@ -1367,6 +1367,17 @@ numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loo
 21. **New (§5.4a, decision #23)**: Stage 1's exact artifact format — replicate
     `tristream_dataset.py`'s existing compact pre-windowing cache format byte-for-byte, or redesign
     it now that it's Rust-native — not decided.
+22. **New (§5.1a, found during cleanup 2026-10-11)**: the Meta-HMM "recommendation/ledger"
+    sub-cluster (`generate_meta_hmm_recommendation.py`, `validate_meta_hmm_recommendation.py`,
+    `record_meta_hmm_recommendation_outcome.py`, `contracts/meta_hmm_recommendation_contract.py`,
+    `contracts/meta_hmm_recommendation_ledger_contract.py`) is confirmed live — feeds
+    `risk_gate_orchestrator.py` via `run_optimization_pipeline.py` — but its port-vs-keep-as-Python
+    call was never made; it's risk-gate-adjacent, not HMM-training-adjacent, so it may belong to a
+    different initiative entirely (the risk-gating/execution-architecture thread) rather than
+    `student_t_hmm`'s own scope — not decided.
+23. **Carried forward, still open**: whether anything beyond MTS and `backtest_server.py` needs the
+    `RiskStateUpdate` message shape — flagged in §5.4's own text as "a broader sweep... has not
+    been done," never promoted to this list or resolved.
 
 ---
 

@@ -463,6 +463,24 @@ a factorized posterior by construction) or an L1/LASSO penalty on feature varian
 M-step (keeps a single per-observation `u_i`, no binary indicator at all). Neither is scoped or
 started — this is a future-initiative decision, not an implementation task done here.
 
+**Forward-looking note, added 2026-10-11 (cross-referenced from the rust-migration initiative)**:
+this ruling's "not attempted as an exact joint EM" verdict is a **mathematical** one (genuine
+analytical intractability, independently confirmed by two literature searches) and stays true
+regardless of what language anything is written in — moving the Student-t HMM to Rust does not
+make the intractable E-step tractable. What *does* change, once `student_t_hmm`'s Rust EM core
+lands (`docs/superpowers/specs/2026-10-09-mindfultrader-rust-migration-spec.md` §5.2, plan Stage
+G): the **engineering cost of prototyping either of this ruling's two real alternatives**
+(Variational Bayes; an L1/LASSO penalty on feature variances/means in the M-step) drops
+substantially. Today, a prototype of either alternative would need the real Student-t HMM math
+(`student_t_hmm.py`, Python) wired directly against the feature-saliency tooling
+(`FeatureSaliencyEM.h`/`FeatureSaliencyEval.cpp`, native C++ in `tools/`) — a cross-language bridge
+for exactly the kind of fast, iterative numerical experimentation this doesn't suit. Once both live
+in Rust, they can share one language (and, per the already-found k-means++ lineage between
+`FeatureSaliencyEM.h` and `student_t_hmm.py`, potentially share code directly) — removing the
+engineering friction that has kept this a "future-initiative decision, not an implementation task"
+since 2026-09-14. Still not scoped or started; this is a reason to revisit the *decision to pick it
+up*, not a claim that it's now solved.
+
 **Phase 2a re-run against fresh Puget data: `mes_candidates.parquet` regenerated, `feature_saliency_
 eval` not yet re-run.** The 2026-09-11 result above is against the *old* machine's
 `mes_candidates.parquet` (274.9M ticks' worth, generated before the Puget migration). A fresh

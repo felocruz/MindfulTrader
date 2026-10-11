@@ -606,6 +606,15 @@ immediately below — same content, no substance change):
   reconsideration (`bincode` vs. the manifest+raw-floats hybrid) now that Python may never read the
   trained model directly; an explicit Rust trait replacing `RegimeEngine`'s Python duck-typed model
   interface.
+- **F5a — Elite Feature Set Curation's Phase 2b worth revisiting once `model.rs` lands, 2026-10-11**:
+  Phase 2b (an exact joint Feature-Saliency/Student-t EM) was ruled out 2026-09-14 as
+  **mathematically** intractable (`docs/superpowers/specs/2026-08-31-elite-feature-set-curation-
+  initiative.md`'s own forward-looking note) — that doesn't change in Rust. What does change: the
+  two real alternatives that ruling identified (Variational Bayes; an L1/LASSO-penalized M-step)
+  become far cheaper to prototype once the real Student-t HMM math and the feature-saliency tooling
+  (`FeatureSaliencyEM.h`/`FeatureSaliencyEval.cpp`) share one language instead of a Python/C++
+  cross-language bridge. Not scoped, not started — a reason to revisit the decision to pick it up,
+  tracked here so Stage G's own landing doesn't silently miss the connection.
 - **F6 — defaults reconciliation**: `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40
   vs. 1.30) disagree between `student_t_hmm.py`'s class defaults and `train_student_t_hmm.py`'s
   training-config defaults — must be reconciled to one documented canonical value before Stage G
@@ -627,7 +636,8 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   9, manifest vs. crate constants) gates G4's constant-loading design; (e) the `arch`-crate
   research spike (§5.5 item 11) gates G6's `calibration.rs` beyond a stub — this one can run latest
   of the five, since calibration is a late-stage concern either way.
-- **G1 — standalone, no-model-dependency ports (start immediately once Stage A/P9 is unblocked;
+- **G1 — standalone, no-model-dependency ports (correction, 2026-10-11: these do NOT wait for
+  Stage A/P9 — they're exactly the "golden-independent slice" already noted above; can start now,
   parallelizable with each other and with G0)**: `audit.rs` (zero dependencies, trivial,
   deterministic JSON-in/JSON-out); `gate_metrics.rs` (operates on labeled state-sequence arrays —
   testable against synthetic/hand-built sequences, doesn't need a real trained model). Lowest risk,
@@ -643,6 +653,25 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   from `tools/observation_vector/FeatureSaliencyEM.h`'s existing C++ port of
   `student_t_hmm.py`'s own `_kmeans_plusplus_seed_indices`** (found 2026-10-11, spec §5.1a
   elevation item 8) rather than re-deriving it from the Python source cold.
+  - **Inference-only slice SHIPPED, 2026-10-11**: `rust/student_t_hmm` crate scaffolded;
+    `model.rs` ports `log_emission_prob`/`compute_tail_weight`/`stable_posterior`/`forward_step`/
+    `predict`/`decode` against MindfulTrader's real weighted formula (checked side-by-side against
+    Atratus's simpler unweighted `hmm.rs` — not copied: the Jacobian-correction term, "true `D`
+    not `sum(w_j)`" density-normalization fix, and `log1p` precision are all MindfulTrader-only).
+    `D`/`K` are const generics (zero-dependency fixed-size arrays, not `ndarray` — a dim-count
+    change is a one-line constant edit plus the same rebuild every other change already requires,
+    per the operator's own "is recompiling that expensive?" challenge, 2026-10-11). `ln_gamma`
+    hand-rolled (Lanczos approximation) rather than adding a crate dependency for one function.
+    8/8 new tests pass, incl. the exact `student_t_hmm.py`-documented D=2/w=[1.4,1.0]
+    density-integrates-to-1 regression and an extreme-anomaly stability stress test (rewritten
+    natively, not copied, from Atratus's own). Training (EM/M-step/DOF estimation) not started —
+    Atratus's own `rust/src/trainer.rs` (a real 610-line Baum-Welch implementation I had not
+    previously checked) reviewed for this next: its DOF root-finder is a weaker, un-bracketed
+    Newton's-method fallback than both MindfulTrader's `scipy.optimize.brentq` and Atratus's own
+    stated spec — do not copy it; hand-roll real Brent's method instead (already on the elevation
+    list). Its never-materialize-the-ξ-tensor memory pattern and mean-weighted/covariance-
+    unweighted M-step denominator split (independently matching our own L_MAP item 8 fix) are
+    worth reusing. Workspace: 108/108 tests pass, clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
   formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
   `registry.rs` (`MarketClimate` classification cascade, consumes `model.rs`'s posterior/state
