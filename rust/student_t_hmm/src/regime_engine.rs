@@ -51,7 +51,7 @@
 //!   in Python) -- `duration_bars`/`duration_ratio` (what `RegimeState` actually exposes) are kept.
 
 use crate::model::StudentTHmm;
-use crate::registry::{median, MarketClimate, RegimeProfile};
+use crate::registry::{MarketClimate, RegimeProfile};
 
 // ---------------------------------------------------------------------------------------------
 // Constants -- ported 1:1 from `regime_engine.py` module-level constants.
@@ -336,7 +336,9 @@ pub struct RegimeEngine<const D: usize, const K: usize> {
     velocity_ema: f64,
     velocity_deadzone_active: bool,
 
-    variance_ratio_buffer: Vec<[f64; D]>,
+    variance_ratio_buffer: [[f64; D]; VARIANCE_RATIO_WINDOW],
+    variance_ratio_cursor: usize,
+    variance_ratio_filled: usize,
     variance_drift_count: u32,
 
     tail_risk_streak: u32,
@@ -400,12 +402,33 @@ fn compute_fim_table<const D: usize, const K: usize>(model: &StudentTHmm<D, K>) 
         .collect()
 }
 
+/// Allocation-free median of a fixed-size array: sorts `values` in place with `sort_unstable_by`
+/// (pattern-defeating quicksort, no scratch-buffer allocation, unlike the stable `sort_by` the
+/// shared `registry::median` helper uses for its own once-per-training-run offline-tooling
+/// callers) -- required here since `compute_variance_ratio` runs inside `RegimeEngine::step()`,
+/// this crate's one genuine hot path (plan §6.5: "no allocation in any `*_step` function").
+fn median_inplace<const D: usize>(values: &mut [f64; D]) -> f64 {
+    values.sort_unstable_by(f64::total_cmp);
+    if D == 0 {
+        return 0.0;
+    }
+    if D % 2 == 1 {
+        values[D / 2]
+    } else {
+        0.5 * (values[D / 2 - 1] + values[D / 2])
+    }
+}
+
 /// Derman variance ratio: median per-dimension ratio of realized (rolling-window) variance to the
 /// winning state's learned covariance. ~1.0 means the live market matches the model; sustained
 /// values above `VARIANCE_RATIO_DRIFT_THRESHOLD` signal stale covariance. Ported from
-/// `_compute_variance_ratio`.
-fn compute_variance_ratio<const D: usize>(buffer: &[[f64; D]], model_var: &[f64; D]) -> f64 {
-    let w = buffer.len() as f64;
+/// `_compute_variance_ratio`. Allocation-free: `buffer` is always exactly `VARIANCE_RATIO_WINDOW`
+/// fixed-size rows (the caller only invokes this once the ring buffer is full).
+fn compute_variance_ratio<const D: usize>(
+    buffer: &[[f64; D]; VARIANCE_RATIO_WINDOW],
+    model_var: &[f64; D],
+) -> f64 {
+    let w = VARIANCE_RATIO_WINDOW as f64;
     let mut mean = [0.0; D];
     for obs in buffer {
         for d in 0..D {
@@ -422,14 +445,14 @@ fn compute_variance_ratio<const D: usize>(buffer: &[[f64; D]], model_var: &[f64;
             ratios[d] += diff * diff;
         }
     }
-    let mut ratio_vec = Vec::with_capacity(D);
     for d in 0..D {
         let realized_var = ratios[d] / w;
         let safe_model_var = model_var[d].max(1e-12);
-        ratio_vec.push(realized_var / safe_model_var);
+        ratios[d] = realized_var / safe_model_var;
     }
-    median(&ratio_vec)
+    median_inplace(&mut ratios)
 }
+
 
 impl<const D: usize, const K: usize> RegimeEngine<D, K> {
     pub fn new(model: StudentTHmm<D, K>, registry: Vec<RegimeProfile>) -> Self {
@@ -443,7 +466,9 @@ impl<const D: usize, const K: usize> RegimeEngine<D, K> {
             has_stepped: false,
             velocity_ema: 0.0,
             velocity_deadzone_active: false,
-            variance_ratio_buffer: Vec::with_capacity(VARIANCE_RATIO_WINDOW),
+            variance_ratio_buffer: [[0.0; D]; VARIANCE_RATIO_WINDOW],
+            variance_ratio_cursor: 0,
+            variance_ratio_filled: 0,
             variance_drift_count: 0,
             tail_risk_streak: 0,
             current_regime_id: -1,
@@ -453,6 +478,24 @@ impl<const D: usize, const K: usize> RegimeEngine<D, K> {
 
     pub fn is_burn_in_complete(&self) -> bool {
         self.has_stepped
+    }
+
+    /// Resets the Hamilton forward filter to the stationary prior -- call on session boundaries
+    /// (e.g. a new trading day) to prevent stale belief from the previous session bleeding across
+    /// the gap. Ported from `reset_belief()`'s exact scope: the loaded model/registry/`fim_table`
+    /// are untouched (expensive to reload, and static/model-derived, not session state); every
+    /// other piece of mutable runtime state resets to its just-constructed value.
+    pub fn reset(&mut self) {
+        self.belief = self.model.startprob;
+        self.has_stepped = false;
+        self.velocity_ema = 0.0;
+        self.velocity_deadzone_active = false;
+        self.variance_ratio_cursor = 0;
+        self.variance_ratio_filled = 0;
+        self.variance_drift_count = 0;
+        self.tail_risk_streak = 0;
+        self.current_regime_id = -1;
+        self.current_regime_duration = 0;
     }
 
     /// Manifest-backed classifier + P2.4/P2.4b/velocity-deadzone/entropy-chaos override cascade.
@@ -565,11 +608,10 @@ impl<const D: usize, const K: usize> RegimeEngine<D, K> {
         let mahalanobis_distance = self.model.weighted_delta(state_id, obs);
         let tail_weight = self.model.compute_tail_weight(state_id, obs);
 
-        self.variance_ratio_buffer.push(*obs);
-        if self.variance_ratio_buffer.len() > VARIANCE_RATIO_WINDOW {
-            self.variance_ratio_buffer.remove(0);
-        }
-        let variance_ratio = if self.variance_ratio_buffer.len() < VARIANCE_RATIO_WINDOW {
+        self.variance_ratio_buffer[self.variance_ratio_cursor] = *obs;
+        self.variance_ratio_cursor = (self.variance_ratio_cursor + 1) % VARIANCE_RATIO_WINDOW;
+        self.variance_ratio_filled = (self.variance_ratio_filled + 1).min(VARIANCE_RATIO_WINDOW);
+        let variance_ratio = if self.variance_ratio_filled < VARIANCE_RATIO_WINDOW {
             1.0
         } else {
             compute_variance_ratio(&self.variance_ratio_buffer, &self.model.covars[state_id])
@@ -676,8 +718,13 @@ mod tests {
     /// `classify_regime` directly without a real trained model, same hand-constructed-fixture
     /// pattern used throughout this crate.
     fn make_engine() -> RegimeEngine<2, 4> {
+        // Distinct per-state means -- breaks emission-density ties so `step()`'s `argmax` reliably
+        // selects a real, registry-covered state for a given observation (an earlier all-identical
+        // fixture caused every observation to tie across all 4 states, and `max_by`'s "last
+        // element wins a tie" semantics then always picked the one state NOT in a 2-entry
+        // registry, silently skipping the velocity-EMA code path in every step()-based test).
         let model = StudentTHmm::<2, 4>::new_unweighted(
-            [[0.0; 2]; 4],
+            [[0.0, 0.0], [5.0, 5.0], [-5.0, -5.0], [10.0, -10.0]],
             [[1.0; 2]; 4],
             [[0.25; 4]; 4],
             [0.25; 4],
@@ -703,6 +750,24 @@ mod tests {
                 pareto_thrust: 0.8,
                 sample_share: 0.2,
                 mean_tenure_bars: 5.0,
+            },
+            RegimeProfile {
+                raw_id: 2,
+                market_climate: MarketClimate::CoiledSpring,
+                shannon_entropy: 0.1,
+                taleb_fragility: 0.1,
+                pareto_thrust: 0.1,
+                sample_share: 0.3,
+                mean_tenure_bars: 8.0,
+            },
+            RegimeProfile {
+                raw_id: 3,
+                market_climate: MarketClimate::TalebianFragile,
+                shannon_entropy: 0.6,
+                taleb_fragility: 0.9,
+                pareto_thrust: 0.1,
+                sample_share: 0.2,
+                mean_tenure_bars: 4.0,
             },
         ];
         RegimeEngine::new(model, registry)
@@ -905,10 +970,14 @@ mod tests {
     #[test]
     fn variance_ratio_matches_model_covariance_is_one() {
         // Buffer with zero variance in dim 0, matching model_var exactly in dim 1 -> ratio 1.0
-        // isn't exactly representative (median of [0, 1] = 0.5), so build a 2-row-identical
-        // buffer that produces a clean, hand-checkable median instead.
-        let buffer: Vec<[f64; 2]> = vec![[1.0, 1.0], [3.0, 1.0], [1.0, 1.0], [3.0, 1.0]];
-        // dim0: values {1,3,1,3}, mean=2, var = ((1)^2*4)/4 = 1.0 -- matches model_var[0]=1.0 -> ratio 1.0
+        // isn't exactly representative (median of [0, 1] = 0.5), so build an alternating
+        // 50-row buffer (matching VARIANCE_RATIO_WINDOW) that produces a clean, hand-checkable
+        // median instead.
+        let mut buffer = [[0.0; 2]; VARIANCE_RATIO_WINDOW];
+        for (i, row) in buffer.iter_mut().enumerate() {
+            *row = if i % 2 == 0 { [1.0, 1.0] } else { [3.0, 1.0] };
+        }
+        // dim0: values alternate {1,3}, mean=2, var=1.0 -- matches model_var[0]=1.0 -> ratio 1.0
         // dim1: constant 1.0, var=0.0 -- model_var[1]=1.0 -> ratio 0.0
         let model_var = [1.0, 1.0];
         let vr = compute_variance_ratio(&buffer, &model_var);
@@ -939,5 +1008,59 @@ mod tests {
         let ctx = StepContext::default();
         eng.step(&[0.0, 0.0], &ctx);
         assert!(eng.is_burn_in_complete());
+    }
+
+    #[test]
+    fn variance_ratio_ring_buffer_wraps_without_growing_and_stays_1_until_full() {
+        let mut eng = make_engine();
+        let ctx = StepContext { tail_index: 4.0, liq_fragility: 0.0, burstiness_index: 0.001 };
+        // Fewer than VARIANCE_RATIO_WINDOW steps: variance_ratio must stay the neutral 1.0
+        // default (Python's own "not enough samples yet" behavior), never computed early.
+        for i in 0..VARIANCE_RATIO_WINDOW - 1 {
+            let obs = [i as f64, 0.0];
+            let s = eng.step(&obs, &ctx);
+            check(&format!("step{i}_neutral"), s.variance_ratio, 1.0, 1e-12);
+        }
+        // The window-filling step and beyond: ring buffer wraps (cursor resets to 0), never
+        // grows past VARIANCE_RATIO_WINDOW rows -- exercised by running well past one full cycle.
+        for i in 0..VARIANCE_RATIO_WINDOW * 2 {
+            let obs = [(i % 7) as f64, 0.0];
+            let s = eng.step(&obs, &ctx);
+            assert!(s.variance_ratio.is_finite(), "step {i}: variance_ratio must stay finite");
+        }
+        assert_eq!(eng.variance_ratio_filled, VARIANCE_RATIO_WINDOW, "filled count caps at the window size, never grows past it");
+    }
+
+    #[test]
+    fn reset_restores_belief_and_model_risk_state_but_keeps_registry() {
+        let mut eng = make_engine();
+        let ctx = StepContext { tail_index: 1.0, liq_fragility: 5.0, burstiness_index: 3.0 };
+        for i in 0..10 {
+            eng.step(&[i as f64, 0.0], &ctx);
+        }
+        assert!(eng.is_burn_in_complete());
+        assert!(eng.velocity_ema.abs() > 1e-9, "precondition: velocity EMA must have moved before reset");
+        assert_eq!(eng.registry.len(), 4, "precondition: registry populated before reset");
+
+        eng.reset();
+
+        assert!(!eng.is_burn_in_complete(), "reset must re-arm burn-in");
+        // Exact equality is correct here, not a numerically-derived comparison needing
+        // tolerance: `reset()` directly re-assigns `self.belief = self.model.startprob`, a plain
+        // copy, not a computed value.
+        #[allow(clippy::float_cmp)]
+        let belief_restored = eng.belief == eng.model.startprob;
+        assert!(belief_restored, "reset must restore the stationary prior");
+        check("velocity_ema_reset", eng.velocity_ema, 0.0, 1e-12);
+        assert!(!eng.velocity_deadzone_active);
+        assert_eq!(eng.variance_ratio_filled, 0);
+        assert_eq!(eng.variance_ratio_cursor, 0);
+        assert_eq!(eng.variance_drift_count, 0);
+        assert_eq!(eng.tail_risk_streak, 0);
+        assert_eq!(eng.current_regime_id, -1);
+        assert_eq!(eng.current_regime_duration, 0);
+        // The loaded model/registry/fim_table are untouched by reset (expensive to reload, and
+        // model-derived rather than session state) -- same scope as Python's `reset_belief()`.
+        assert_eq!(eng.registry.len(), 4, "registry must survive reset");
     }
 }

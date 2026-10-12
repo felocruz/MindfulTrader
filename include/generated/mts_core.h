@@ -11,6 +11,65 @@
 
 namespace mts {
 
+enum class Status {
+  Ok = 0,
+  BadArg = 1,
+  NotInitialized = 2,
+  Panicked = 3,
+  Error = 4,
+};
+
+/// C-ABI mirror of `student_t_hmm::registry::MarketClimate` -- duplicated here, not re-exported,
+/// because cbindgen's `parse_deps = false` (`cbindgen.toml`) only scans this crate; a type from a
+/// path dependency is invisible to the generated header regardless of visibility. The `From`
+/// impl below uses an EXHAUSTIVE match, not a bare `as u8` cast, so this copy cannot silently drift
+/// out of sync with the authoritative enum -- a new variant there fails to compile here instead of
+/// producing a wrong id (the exact misaligned-enum/array hazard this repo has already been bitten
+/// by twice).
+enum class MarketClimate : uint8_t {
+  GaussianStable = 0,
+  TalebianFragile = 1,
+  ShannonChaos = 2,
+  ParetoMomentum = 3,
+  CoiledSpring = 4,
+};
+
+/// Opaque handle to a live `RegimeEngine` -- a zero-sized marker type, standard C-ABI idiom for
+/// "callers only ever see a pointer to this, never its layout." The real allocation behind it is
+/// `Box<ProdEngine>`; `hmm_init` creates it, `hmm_shutdown` is the only thing that frees it.
+struct HmmHandle {
+  uint8_t _private[0];
+};
+
+/// C-ABI mirror of `student_t_hmm::regime_engine::RegimeState<PRODUCTION_K>`. Plain data, no
+/// methods -- the rule API (`is_momentum_aligned`, `get_hmm_multiplier`, ...) is not exposed here;
+/// that is Stage G7's C++-side cutover work (re-keying `RegimeManager.cpp` onto `MarketClimate`),
+/// not this wiring task's scope.
+struct RegimeState {
+  uint8_t state_id;
+  MarketClimate profile_label;
+  float profile_shannon_entropy;
+  float profile_taleb_fragility;
+  float profile_pareto_thrust;
+  MarketClimate climate;
+  bool unknown_posture;
+  float probability_vector[4];
+  float entropy;
+  float confidence;
+  float transition_risk;
+  float dof;
+  float mahalanobis_distance;
+  float tail_weight;
+  float expected_duration;
+  float variance_ratio;
+  bool model_drift_alert;
+  float fim_distance_min;
+  int32_t fim_nearest_state;
+  bool black_swan_alert;
+  uint32_t duration_bars;
+  float duration_ratio;
+};
+
 extern "C" {
 
 /// The study checks this against its own compiled-in expectation and refuses to run on a mismatch,
@@ -151,6 +210,49 @@ float observation_vector_recurrence_rate(const float *closed_bars,
                                          uintptr_t len,
                                          float live_price,
                                          float epsilon);
+
+/// Loads a trained model + registry manifest (`student_t_hmm::artifact::load`'s JSON format) and
+/// returns a live, stateful opaque handle. Call once per `sc.LastCallToFunction`-adjacent study
+/// load (spec §6.5) -- never per tick, never per step.
+///
+/// # Safety
+/// `path` must be a valid, NUL-terminated, UTF-8 C string. `out_handle` must be non-null and valid
+/// for writes of one `*mut HmmHandle`.
+Status hmm_init(const char *path, HmmHandle **out_handle);
+
+/// Advances the Hamilton-filter belief by one Mahalanobis-triggered observation (the existing
+/// `otg::ObservationTriggerGate` decision, unchanged -- see spec §5.2) and writes the resulting
+/// `RegimeState` to `out_state`. One call per trigger, never per tick; allocation-free.
+///
+/// # Safety
+/// `handle` must be a valid, non-null handle from `hmm_init`, not yet passed to `hmm_shutdown`.
+/// `obs` must be valid for reads of exactly `obs_len` contiguous `f64` elements. `out_state` must
+/// be non-null and valid for writes of one `RegimeState`.
+Status hmm_step(HmmHandle *handle,
+                const double *obs,
+                uintptr_t obs_len,
+                double tail_index,
+                double liq_fragility,
+                double burstiness_index,
+                RegimeState *out_state);
+
+/// Resets the Hamilton-filter belief to the stationary prior and clears runtime model-risk state
+/// (velocity EMA/deadzone, variance-ratio buffer, tail-risk/duration tracking) -- for a session
+/// boundary (e.g. a new trading day), so stale belief from the previous session doesn't bleed
+/// across the gap. The loaded model/registry survive (`RegimeEngine::reset`'s own doc comment);
+/// does not reload from disk.
+///
+/// # Safety
+/// `handle` must be a valid, non-null handle from `hmm_init`, not yet passed to `hmm_shutdown`.
+Status hmm_reset(HmmHandle *handle);
+
+/// Frees a handle created by `hmm_init`. Call explicitly on `sc.LastCallToFunction` (spec §6.5) --
+/// never in a static destructor or `DLL_PROCESS_DETACH`. After this call, `handle` is dangling and
+/// must never be used again (not re-passed to `hmm_step`/`hmm_reset`/`hmm_shutdown`).
+///
+/// # Safety
+/// `handle` must be a valid, non-null handle from `hmm_init`, not already passed to this function.
+Status hmm_shutdown(HmmHandle *handle);
 
 }  // extern "C"
 

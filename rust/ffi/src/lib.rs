@@ -40,6 +40,10 @@ pub mod observation_vector; // observation_vector_sevcik_fractal_dimension / _bo
                             // for C++ callers (`mts::observation_vector_*`), making a second,
                             // redundant mts_ prefix on the symbol name itself pointless.
 
+#[cfg(feature = "student_t_hmm")]
+pub mod student_t_hmm; // hmm_init / hmm_step / hmm_reset / hmm_shutdown -- opaque-handle
+                        // lifecycle (spec §5.2/§6.5), the first stateful resource in this crate.
+
 #[cfg(test)]
 mod tests {
     use super::*;

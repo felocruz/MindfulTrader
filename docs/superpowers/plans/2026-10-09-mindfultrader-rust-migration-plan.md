@@ -429,10 +429,10 @@ redeployed, test artifacts deleted.
 
 | Crate | Status | Notes |
 |---|---|---|
-| `ffi` | Skeleton shipped, 2026-10-08 | One staticlib, features `hmm`/`observation_vector`/`transport` turn subsystems on |
+| `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
 | `observation_vector` | 12 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
-| `student_t_hmm` | Not started | Spec §5 |
+| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine all shipped); `calibration.rs` (G0(e)) and full K-selection not started | Spec §5; plan §4 Stages G0-G4 done, G5 (K=4 fixed, deprioritized), G6/G7 not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
 | `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.) still blocked on W0e (algo what-if spike, needs reachable TWS/Gateway) |
@@ -834,11 +834,22 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   an array index — no generated dimension-index contract needed on the Rust side at all, since
   `rust/observation_vector` already computes each as its own named function. Amari FIM distance
   confirmed a static per-state constant, precomputed once at construction, not per step. 17 new
-  tests, workspace 176/176 pass, clippy clean (incl. Windows cross-compile). **Not yet done**:
-  wiring behind `ffi`'s `hmm_step`/`hmm_init` (needs G0(e)'s `calibration.rs` first, for the full
-  artifact-load path) and the C++-side consequence (plan Stage G7: retire `HMMStateEnum`/
-  `RegimeSnapshot`, collapse `HmmStateIndicator`/`MarketClimateIndicator` into one, re-key
-  `RegimeManager.cpp` onto `MarketClimate`).
+  tests, workspace 176/176 pass, clippy clean (incl. Windows cross-compile). **FFI wiring SHIPPED,
+  2026-10-12** (spec decision #31, `rust/ffi/src/student_t_hmm.rs`): `hmm_init`/`hmm_step`/
+  `hmm_reset`/`hmm_shutdown` opaque-handle lifecycle — did NOT need G0(e)/`calibration.rs` first
+  after all (only a *production-calibrated* artifact needs that, not the plumbing, which
+  shadow-wires against any valid `artifact::load`-readable model). Found and fixed two real bugs
+  along the way: `RegimeEngine::step()` was allocating once its variance-ratio window filled
+  (fixed: ring buffer + allocation-free `median_inplace`, plus a new `RegimeEngine::reset()`); and
+  cbindgen does not evaluate ANY named Rust `const` — local or cross-crate — into a C++ array
+  size, so `RegimeState::probability_vector`'s field needed a literal `[f32; 4]` plus a compile-time
+  assertion tying it to `PRODUCTION_K`, not the named constant itself. 6 new FFI tests, `llvm-nm-22`
+  confirms all 4 symbols export from the Windows cross-compiled staticlib, generated
+  `include/generated/mts_core.h` diff is pure-additive. **Not yet done**: the C++-side consequence
+  (plan Stage G7: retire `HMMStateEnum`/`RegimeSnapshot`, collapse `HmmStateIndicator`/
+  `MarketClimateIndicator` into one, re-key `RegimeManager.cpp` onto `MarketClimate`) — deliberately
+  not started this session, since the rule-API methods (`is_momentum_aligned`, `get_hmm_multiplier`,
+  ...) aren't exposed through the FFI layer yet (out of this wiring task's scope).
 - **G5 — training orchestration (`train.rs`)**: EM/MAP-EM loop, ECME dof (Brent's method),
   multi-restart screening, BIC-based K-selection. Depends on `model.rs` (shares core math),
   `artifact.rs` (to save), and G0(b)'s defaults reconciliation (now resolved). **EM/MAP-EM loop +

@@ -92,7 +92,7 @@ fn clip01(value: f64) -> f64 {
     value.clamp(0.0, 1.0)
 }
 
-pub(crate) fn median(sorted_copy_source: &[f64]) -> f64 {
+fn median(sorted_copy_source: &[f64]) -> f64 {
     if sorted_copy_source.is_empty() {
         return 0.0;
     }

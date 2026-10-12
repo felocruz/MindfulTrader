@@ -186,6 +186,7 @@ version = "0.1.0"
 dependencies = [
  "cbindgen",
  "observation_vector",
+ "student_t_hmm",
 ]
 
 [[package]]

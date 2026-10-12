@@ -12,12 +12,13 @@ crate-type = ["staticlib", "rlib"]    # rlib so its tests run natively on Linux
 
 [features]
 default = []
-# student_t_hmm = ["dep:student_t_hmm"]  # added when rust/student_t_hmm lands (plan Phase 2)
+student_t_hmm = ["dep:student_t_hmm"]
 observation_vector = ["dep:observation_vector"]
 # transport = ["dep:transport"]          # added when rust/transport lands
 
 [dependencies]
 observation_vector = { path = "../observation_vector", optional = true }
+student_t_hmm = { path = "../student_t_hmm", optional = true }
 
 [build-dependencies]
 cbindgen.workspace = true
