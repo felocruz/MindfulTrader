@@ -55,9 +55,12 @@ observation vector, ZMQ transport, and the execution layer), ported incrementall
 (updated 2026-10-12): `observation_vector` 10 of ~18 dims ported; `student_t_hmm` substantially
 built (`model.rs` inference, `train.rs` EM/MAP-EM + ECME dof + orchestration, `init.rs` k-means++,
 `registry.rs` classification, `artifact.rs` save/load, `audit.rs`/`gate_metrics.rs`, and the live
-`regime_engine.rs` producer — `RegimeState`/`RegimeEngine`, decision #30 — all shipped, 176/176
-workspace tests pass) but **not yet wired behind `ffi`/the DLL** (blocked on `calibration.rs`);
-`transport`/`py` not started.
+`regime_engine.rs` producer — `RegimeState`/`RegimeEngine`, decision #30 — all shipped) and **now
+wired behind `ffi` (`hmm_init`/`hmm_step`/`hmm_reset`/`hmm_shutdown`, decision #31)** — the C++-side
+consequence (retire `HMMStateEnum`/`RegimeSnapshot`, collapse `HmmStateIndicator`/
+`MarketClimateIndicator`, re-key `RegimeManager.cpp`, plan Stage G7) and `calibration.rs` (G0(e),
+needed before a production-calibrated artifact, not the plumbing) are what's left; `transport`/`py`
+not started.
 **§8 (folded in 2026-10-10, previously a short-lived standalone doc, now merged back per this
 pair's own "one spec, one plan, no sibling docs per sub-topic" rule)**: the execution layer
 replatforms off Sierra Chart's `SCTradingInterface`→IBKR routing onto a standalone Rust service
