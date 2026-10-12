@@ -844,7 +844,13 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   `HMMClient.h`/`.cpp`, the already-deleted 4-file Meta-HMM "trainer run plan" sub-cluster (done
   2026-10-11, confirm nothing else references it by this point), the 3 benchmark files, and
   (pending G1/F2's "likely drop" confirmation once a real speed measurement exists) `student_t_hmm_gpu.py`'s
-  Rust-side non-equivalent.
+  Rust-side non-equivalent. **New task, 2026-10-11 (decision #29, spec §5.1d item 5)**: delete
+  `MarketClimateIndicator`'s native kurtosis/entropy/Hurst cascade (`src/Indicator.cpp`'s
+  `UpdateContext()` body) and `TripleScreen3.cpp`'s per-tick call into it — confirmed a live write-
+  race bug (its every-tick write overwrites `HMMClient::HandleBinaryResponse`'s wire-received,
+  trained-model classification before any consumer reads it), not a design worth preserving.
+  `engine.rs` becomes the sole writer of climate state once this lands; do not carry the race
+  forward by leaving the native write path in place "just in case."
 
 **Net effect of this sequencing**: the actual critical path is G0(a,c,e) → G2 → {G3, G5} → G4 → G6
 → G7, with G1 (and G0(c)'s stub-level unblocking) running earliest and in parallel, and G0(e)/G6's

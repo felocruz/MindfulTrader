@@ -187,6 +187,7 @@ of hardware.
 | 26 | `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) defaults disagreement between `student_t_hmm.py` and `train_student_t_hmm.py` (F6/G0(b)) | **resolved 2026-10-11** — two different outcomes, not one canonical-value pick: `dof_learning_rate` is confirmed **dead code** (`_update_dof_ecme()`'s own docstring states it is never read; full-file grep confirms `self.dof_learning_rate` is write-once, read-never; no legacy update path exists) — dropped from the Rust port entirely, no field needed. `bullet_weight` is confirmed **real and consumed**, but was never a fixed constant to begin with — `train_student_t_hmm.py` BIC-grid-searches it per training run, so the value embedded in any given trained model is that run's own winning candidate. `model.rs`'s existing `feature_weights: [f64; D]` design (a per-instance field, not a crate constant — already correct, mirroring the `dof_min`/`dof_max` fix) needs no change; the only remaining open item is G5 (`train.rs`)'s own BIC-search default range, deferred to when G5 is built. Full detail: §5.1a |
 | 27 | Operator recollection: "I believe we were in the middle of implementing the C++ HMM State Manager when we pivoted to Rust" | **confirmed true, 2026-10-11** — traced to `lbrnet/docs/architecture/STUDENT_T_HMM_MASTER_PLAN.md`'s own living backlog ("Regime Manager migration — remaining stages not started": C++ facade + `regime_engine.py` cleanup + State Manager API surface complete; cross-repo C++ follow-on explicitly flagged "needs a separate `MindfulTrader`-side session" — this one) plus uncommitted `lbrnet` evidence (`regime_manager.py`, confirmed superseded by a later, more complete `RegimeState`-method design in uncommitted `regime_engine.py`/`regime_registry.py` diffs) and a confirmed-live C++ bug this later Python work fixed for itself but never carried over (`HmmStateIndicator`/`RegimeManager.cpp`/`MarketClimateIndicator` all still depend on the exact positional-`state_id`/`HMMStateEnum` assumption Python's own Hungarian-alignment removal (2026-09-21) invalidated). Full account, additional still-unfixed Python-side bugs of the same class (including a `TrainingEvent` wire-schema K=4-hardcoding bug), and concrete `registry.rs`/`engine.rs` recommendations: §5.1d |
 | 28 | Artifact serialization format (G0(c), open question #14) — `bincode` vs. manifest + raw-floats hybrid | **resolved 2026-10-11** — `bincode` rejected: confirmed real, non-retiring Python consumers (`train_event_transformer.py`/`tune_event_transformer.py`, Transformer training stays Python/TensorFlow per decision #22, directly `joblib.load()`s the HMM artifact for the Kazemi et al. 2019 `sigma_eff` feature) still need raw read access — not a stale justification. **Simplified further than originally proposed**: one plain JSON manifest, no separate binary weights file — `PRODUCTION_D=18`/`PRODUCTION_K=4`'s ~190-float total parameter count doesn't earn a custom binary format's complexity. `model_sha256` computed over the core model params alone (never the `registry.rs` classification layered on top), anchoring decision #25's calibration-provenance design. `artifact.rs` shipped: save/load round-trips exactly, hash is deterministic and classification-independent, dimension mismatches fail loudly rather than silently truncating/padding. 4 new tests, 159/159 workspace tests pass, clippy clean. |
+| 29 | Whether `MarketClimateIndicator`'s native kurtosis/entropy/Hurst "physics veto" hybrid logic survives into `engine.rs` as an explicit safety layer, or is retired (§5.1d item 3) | **resolved 2026-10-11 (operator: "honest, institutional assessment... does some of its functionality belong in the HMM State Manager?")** — **retire.** Traced all three inputs to their real source: `hurst` is confirmed 100% redundant (`ContextManager.cpp:647` copies `ObservationData.hurst_exponent()` verbatim — the exact dimension the HMM already trains on jointly with 17 others); `kurtosis`/`entropy` are genuinely different measurements from the HMM vector's own, but with no evidence the divergence was ever a deliberate ensemble design, reading instead as organic drift between separate initiatives. **Bigger finding surfaced while checking usage, 2026-10-11: a confirmed LIVE BUG, not just a design question** — `HMMClient::HandleBinaryResponse`'s `climateInd->SetClimate(climate_id)` (the real, wire-received, trained classification, written asynchronously/infrequently) and `TripleScreen3.cpp`'s native `UpdateContext()` (written every tick) both write the SAME `MarketClimateIndicator` instance; the per-tick native write wins almost every race, meaning the live system's actual climate-conditioned decisions today are driven almost entirely by the cruder heuristic, not the trained model. Fixing this (deleting the native write path, `engine.rs` as sole writer) is part of the Rust cutover (plan Stage G7), not optional cleanup. Full account: §5.1d item 3/5. |
 
 ---
 
@@ -875,13 +876,41 @@ moment, not a separate future migration.
    `RegimeState`-method design (`state_from_posteriors`, `write_regime_features`,
    `get_hmm_multiplier`, etc.) as the reference instead. Port the DESIGN, not the code — Python
    itself won't run any of this once decision #18 lands.
-3. **Explicitly undecided, flagged not silently resolved**: does `MarketClimateIndicator`'s
+3. ~~Explicitly undecided, flagged not silently resolved: does `MarketClimateIndicator`'s
    independently-evolved native kurtosis/entropy/Hurst "physics veto" hybrid logic become an
    explicit additional safety layer inside `engine.rs` (properly reconciled, no more positional-
    cast coupling), or is it retired as redundant with what the HMM's own classification already
-   encodes? Needs an explicit operator call, not an engineering default either way.
+   encodes? Needs an explicit operator call, not an engineering default either way.~~ —
+   **RESOLVED 2026-10-11 (decision #29)**: retire. Traced each of `MarketClimateIndicator`'s three
+   inputs to their real source, not assumed: `hurst` (`ContextManager.cpp:647`,
+   `m_localRiskContext.hurstExponent = obs[OBS_HURST_EXPONENT]`) is confirmed **100% redundant**
+   — literally `ObservationData.hurst_exponent()`, the exact dimension the HMM already trains on
+   and jointly weighs against 17 others; a fixed single-axis threshold cannot improve on a
+   multivariate Student-t posterior that already sees that same value. `kurtosis`/`entropy` are
+   genuinely different measurements (`ContextManager.cpp`'s Moors 1988 octile kurtosis + a 10-bin
+   Shannon entropy in bits, vs. the HMM vector's Kotz & Nadarajah 2004-lineage
+   `fast_taleb_kurtosis` + Lempel-Ziv complexity) — not literally duplicated data, but no evidence
+   this divergence was ever a deliberate ensemble/robustness design; it reads as organic drift
+   between separate initiatives (the older `TailRiskEngine`/`InformationEngine` physics work vs.
+   the newer activity-clock observation-vector work), not intentional diversity worth preserving
+   as-is.
 4. Whatever `TrainingEvent` wire-schema work lands for decision #20/#21/open-question-#16 should
    also close out the `regimeProbDrift/Flush/Coil/Sweep` K=4-hardcoding bug in the same pass.
+5. **New finding while resolving item 3, 2026-10-11 — not a design question, a confirmed live
+   bug**: `MarketClimateIndicator` has TWO independent writers racing for the same state.
+   `HMMClient::HandleBinaryResponse`'s `climateInd->SetClimate(climate_id)` (`src/HMMClient.cpp`
+   line ~782) writes the wire-received, REAL, trained `regime_registry.py` classification —
+   asynchronously, only when a new HMM response arrives (Mahalanobis-gated, not every tick).
+   `TripleScreen3.cpp`'s `climateIndicator->UpdateContext(riskCtx, currentHmmState)` writes the
+   NATIVE physics-hybrid heuristic — synchronously, **every tick**. Because the native write fires
+   far more often, it wins almost every time: the trained model's own classification is
+   overwritten within microseconds of arriving, before `RegimeManager::CurrentClimate()` (feeding
+   pattern multipliers, momentum/mean-reversion alignment, grade thresholds) can act on it in
+   practice. **This means the live C++ system's actual climate-conditioned decisions today are
+   driven almost entirely by the cruder heuristic, not by the trained model, regardless of which
+   one is nominally "supposed to" be authoritative.** Fixing this (removing the native write path,
+   making the HMM State Manager — `engine.rs` — the sole writer) is part of the Rust cutover
+   (plan Stage G7), not an optional cleanup.
 
 ### 5.2 Target architecture
 
@@ -1661,11 +1690,16 @@ numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loo
 23. **Carried forward, still open**: whether anything beyond MTS and `backtest_server.py` needs the
     `RiskStateUpdate` message shape — flagged in §5.4's own text as "a broader sweep... has not
     been done," never promoted to this list or resolved.
-24. **New (§5.1d, decision #27)**: whether `MarketClimateIndicator`'s independently-evolved native
-    kurtosis/entropy/Hurst "physics veto" hybrid classifier becomes an explicit additional safety
-    layer inside `engine.rs` (reconciled, no more positional `HMMStateEnum`-cast coupling), or is
-    retired as redundant with what the HMM's own `profile_label`-based classification already
-    encodes — needs an explicit operator call, not an engineering default either way.
+24. ~~whether `MarketClimateIndicator`'s independently-evolved native kurtosis/entropy/Hurst
+    "physics veto" hybrid classifier becomes an explicit additional safety layer inside `engine.rs`
+    (reconciled, no more positional `HMMStateEnum`-cast coupling), or is retired as redundant with
+    what the HMM's own `profile_label`-based classification already encodes — needs an explicit
+    operator call, not an engineering default either way~~ — **RESOLVED 2026-10-11 (decision #29)**:
+    retire — confirmed redundant/unprincipled signal composition AND a confirmed live write-race
+    bug (the native per-tick write overwrites the trained model's own classification before
+    downstream consumers can act on it). New follow-up this resolution creates, not yet scoped:
+    deleting `TripleScreen3.cpp`'s native write call and `MarketClimateIndicator::UpdateContext()`'s
+    own cascade is a Stage G7 cutover task, not yet on the G7 bullet's own file list.
 25. **New (§5.1d, decision #27)**: three more `lbrnet`-side consumers (`tune_risk_gate.py`,
     `build_directional_alpha.py::_attach_regime_to_event()`, and
     `materialize_hmm_features.py::serialize_enriched_training_event()`) still do positional-
