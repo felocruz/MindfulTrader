@@ -36,7 +36,7 @@ use crate::gate_metrics::{compute_pareto_thrust_shares, dof_fragility_score, mea
 /// `MarketClimate` (relocated there 2026-09-22 from the now-deprecated `rc_enums.py`, confirmed
 /// spec §5.1c). IDs match the Python original exactly (`GAUSSIAN_STABLE=0` through
 /// `COILED_SPRING=4`) -- this ordering is a real wire/manifest contract, not incidental.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[repr(u8)]
 pub enum MarketClimate {
     GaussianStable = 0,
@@ -77,7 +77,7 @@ impl MarketClimate {
 /// classification, left to `artifact.rs`'s manifest-writing concern; `alignment_cost` is
 /// confirmed dead in the Python original (always 0.0, kept only for older-manifest schema
 /// compatibility) and not ported at all.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct RegimeProfile {
     pub raw_id: usize,
     pub market_climate: MarketClimate,

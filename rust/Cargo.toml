@@ -28,6 +28,12 @@ flatbuffers = "25.12"
 # allocation concern, model.rs's own header) -- no such concern applies to batch tooling.
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+# For `student_t_hmm`'s artifact.rs (model-manifest content-hash fingerprinting, decision #25's
+# calibration-provenance design) -- a well-vetted crypto-hash crate, not hand-rolled, the same
+# "batch tooling, not hot-path" reasoning as serde/serde_json above, plus a correctness argument
+# hand-rolling special functions (`ln_gamma`/`digamma`/`SplitMix64`) doesn't share: hash-function
+# bugs are far harder to self-verify than a numerical special function's known closed-form values.
+sha2 = "0.10"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

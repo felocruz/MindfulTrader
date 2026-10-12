@@ -636,9 +636,13 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   (decision #26, spec §5.1a)** — F6's defaults reconciliation: `dof_learning_rate` dropped entirely
   (confirmed dead code); `bullet_weight` needs no reconciliation (`model.rs`'s existing
   per-instance `feature_weights` field already correct) — only G5's own BIC-grid default range
-  remains, not a G0 blocker anymore; (c) the artifact
-  serialization format call (F5/§5.5 item 14, `bincode` vs. manifest+raw-floats) gates G3's
-  `artifact.rs` beyond a stub; (d) **RESOLVED 2026-10-11 (decision #25, spec §5.1c)** — the
+  remains, not a G0 blocker anymore; (c) **RESOLVED 2026-10-11 (decision #28, spec open question
+  #14)** — the artifact serialization format call: `bincode` rejected (confirmed real,
+  non-retiring Python consumers still need raw read access — `train_event_transformer.py`/
+  `tune_event_transformer.py`'s `sigma_eff` feature), simplified further than originally proposed
+  to one plain JSON manifest (no separate binary weights file — the ~190-float total parameter
+  count at `PRODUCTION_D`/`PRODUCTION_K` doesn't earn that complexity); (d) **RESOLVED 2026-10-11
+  (decision #25, spec §5.1c)** — the
   climate/threshold-constants placement call: false dichotomy, both (manifest-backed + mandatory
   train → audit (GO/NO-GO) → auto-calibrate chain for the 4 Tier-1 constants + `TAIL_RISK_THRESHOLD`,
   porting the already-shipped `calibration_artifacts_provenance.json` atomic-write-together pattern
@@ -800,8 +804,16 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   climate assignment and every continuous score (`shannon_entropy`/`taleb_fragility`/
   `pareto_thrust`/`sample_share`/`mean_tenure_bars`) for all 6 states. 4 new tests. Workspace:
   155/155 tests pass, clippy clean.
-  `artifact.rs` full implementation (load/save against `model.rs`'s actual parameter shapes, not
-  just the G0(c) stub).
+  `artifact.rs` full implementation — **SHIPPED, 2026-10-11**: save/load a `StudentTHmm<D,K>` +
+  its `registry.rs` classification as one plain JSON manifest (per decision #28's resolved format
+  — no separate binary weights file), with a `model_sha256` content hash computed over the core
+  model params alone (never the classification layered on top), anchoring decision #25's
+  calibration-provenance design for whenever `calibration.rs` lands. Added `sha2` as a new
+  dependency (workspace-level, matching the `serde`-for-offline-tooling precedent — a well-vetted
+  crypto-hash crate, not hand-rolled, unlike this crate's own special-function hand-rolls). Loads
+  reject a `D`/`K` mismatch against the manifest loudly rather than silently truncating/padding.
+  4 new tests (round-trip exactness, hash determinism/classification-independence, dimension-
+  mismatch rejection, missing-file handling). Workspace: 159/159 tests pass, clippy clean.
 - **G4 — live engine assembly (`engine.rs`)**: wraps `model.rs` + `registry.rs` for stateful live
   inference, climate overrides, model-risk tracking (variance-ratio drift, black-swan streak,
   Amari/FIM distance, duration tracking). This is where G0(a)'s state-identity ruling and G0(d)'s
@@ -840,7 +852,10 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
 library-availability gap that could slip without blocking anything else. **Update, 2026-10-11**:
 G0(b) and G0(d) are now both resolved (decisions #25-#26) — G0(a) (gates G4 only) and G0(c)/(e)
 (stub-level unblocking only) are the remaining true G0 blockers; G2's training slice (EM/M-step)
-can proceed without waiting on anything further from G0.
+can proceed without waiting on anything further from G0. **Further update, same day**: G0(c) is
+now ALSO resolved (decision #28) — `artifact.rs` shipped in full, not just a stub; the only true
+remaining G0 blocker gating anything beyond a stub is G0(a) (`engine.rs`'s external API, G4) and
+G0(e) (the `arch`-crate spike, `calibration.rs`, G6).
 
 ### 4a. `RegimeManager` 8-file call-site migration (spec §5.2's companion groundwork, approved 2026-10-10)
 

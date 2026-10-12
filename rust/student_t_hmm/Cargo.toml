@@ -22,10 +22,17 @@ rust-version.workspace = true
 publish.workspace = true
 
 [dependencies]
-# audit.rs only (offline GO/NO-GO gate-report tooling) -- model.rs's hot-path math stays
-# zero-dependency, see this crate's own header comment above.
+# audit.rs/artifact.rs only (offline GO/NO-GO gate-report tooling, manifest serialization) --
+# model.rs's hot-path math stays zero-dependency, see this crate's own header comment above.
 serde = { workspace = true }
 serde_json = { workspace = true }
+# artifact.rs only: content-hash fingerprinting for the manifest's own `model_sha256` field and
+# the decision #25 calibration-provenance design. A cryptographic hash is exactly the kind of
+# well-vetted-library case where hand-rolling (unlike `model.rs`'s `ln_gamma`/`train.rs`'s
+# `digamma`/`init.rs`'s `SplitMix64`, each a small, self-verifiable special function) would
+# introduce avoidable risk rather than reduce it -- justified the same way `serde` already is:
+# once-per-training-run offline tooling, not hot-path code.
+sha2 = { workspace = true }
 
 [lints]
 workspace = true
