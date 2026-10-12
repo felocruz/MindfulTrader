@@ -51,8 +51,13 @@ purposes across the other three repos.
 the single authoritative pair for this entire effort — one Rust core (behind a C-ABI) eventually
 owns every computation with separate train/offline/live implementations today (HMM, the
 observation vector, ZMQ transport, and the execution layer), ported incrementally
-(port → parity-test → shadow-wire → live-confirm → cutover), never a big-bang rewrite. Status:
-`observation_vector` 10 of ~18 dims ported; `student_t_hmm`/`transport`/`py` not started.
+(port → parity-test → shadow-wire → live-confirm → cutover), never a big-bang rewrite. Status
+(updated 2026-10-12): `observation_vector` 10 of ~18 dims ported; `student_t_hmm` substantially
+built (`model.rs` inference, `train.rs` EM/MAP-EM + ECME dof + orchestration, `init.rs` k-means++,
+`registry.rs` classification, `artifact.rs` save/load, `audit.rs`/`gate_metrics.rs`, and the live
+`regime_engine.rs` producer — `RegimeState`/`RegimeEngine`, decision #30 — all shipped, 176/176
+workspace tests pass) but **not yet wired behind `ffi`/the DLL** (blocked on `calibration.rs`);
+`transport`/`py` not started.
 **§8 (folded in 2026-10-10, previously a short-lived standalone doc, now merged back per this
 pair's own "one spec, one plan, no sibling docs per sub-topic" rule)**: the execution layer
 replatforms off Sierra Chart's `SCTradingInterface`→IBKR routing onto a standalone Rust service
