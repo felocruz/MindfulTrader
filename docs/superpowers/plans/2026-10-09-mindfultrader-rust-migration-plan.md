@@ -22,7 +22,7 @@ for every payload (schema changes route through `schema/regenerate_schema.sh` on
 plan for a sub-topic of this initiative — add a section here (or to the spec, if it's architecture/
 design content) instead.**
 
-**Last updated**: 2026-10-11.
+**Last updated**: 2026-10-12.
 
 ---
 
@@ -814,12 +814,31 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   reject a `D`/`K` mismatch against the manifest loudly rather than silently truncating/padding.
   4 new tests (round-trip exactness, hash determinism/classification-independence, dimension-
   mismatch rejection, missing-file handling). Workspace: 159/159 tests pass, clippy clean.
-- **G4 — live engine assembly (`engine.rs`)**: wraps `model.rs` + `registry.rs` for stateful live
+- **G4 — live engine assembly (`regime_engine.rs`)**: wraps `model.rs` + `registry.rs` for stateful live
   inference, climate overrides, model-risk tracking (variance-ratio drift, black-swan streak,
   Amari/FIM distance, duration tracking). This is where G0(a)'s state-identity ruling and G0(d)'s
   constants-placement ruling must be finalized in the external API, not deferred further — they
-  were deferable during G2/G3's internal math but not here, since `engine.rs` is what `hmm_step`
+  were deferable during G2/G3's internal math but not here, since `regime_engine.rs` is what `hmm_step`
   (spec §5.2) actually calls.
+  **SHIPPED, 2026-10-12** (spec decision #30): `RegimeState` (renamed from `HmmStep`) + `RegimeEngine`,
+  ported from `regime_engine.py`'s `RegimeState`/`RegimeEngine` + `scoring.py`'s 4 multiplier tables,
+  golden-parity-validated against real Python execution (entropy/confidence formulas, the full
+  P2.4/P2.4b/velocity-deadzone/entropy-chaos override cascade). Design: "producer, not oracle" —
+  `RegimeEngine` owns exactly one mutable-authority method (`step()`); every rule method
+  (`is_momentum_aligned`, `get_hmm_multiplier`, `is_hostile_change_from`, ...) lives on the
+  immutable `RegimeState` value itself, safe across the planned multi-thread execution topology
+  (spec §8) without a lock around the engine for a query. No `RegimeSnapshot`-equivalent wrapper
+  type (C++'s `RegimeSnapshot` is retired, not reproduced — its only reason to exist was the
+  Python/async-ZMQ process boundary). The P2.4/P2.4b override cascade's 3 named observation-vector
+  inputs (`tail_index`/`liq_fragility`/`burstiness_index`) arrive via a `StepContext` struct, never
+  an array index — no generated dimension-index contract needed on the Rust side at all, since
+  `rust/observation_vector` already computes each as its own named function. Amari FIM distance
+  confirmed a static per-state constant, precomputed once at construction, not per step. 17 new
+  tests, workspace 176/176 pass, clippy clean (incl. Windows cross-compile). **Not yet done**:
+  wiring behind `ffi`'s `hmm_step`/`hmm_init` (needs G0(e)'s `calibration.rs` first, for the full
+  artifact-load path) and the C++-side consequence (plan Stage G7: retire `HMMStateEnum`/
+  `RegimeSnapshot`, collapse `HmmStateIndicator`/`MarketClimateIndicator` into one, re-key
+  `RegimeManager.cpp` onto `MarketClimate`).
 - **G5 — training orchestration (`train.rs`)**: EM/MAP-EM loop, ECME dof (Brent's method),
   multi-restart screening, BIC-based K-selection. Depends on `model.rs` (shares core math),
   `artifact.rs` (to save), and G0(b)'s defaults reconciliation (now resolved). **EM/MAP-EM loop +
@@ -840,7 +859,7 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   parallel with G5 once that spike lands, doesn't have to wait for G5 to finish first).
 - **G7 — integration/cutover**: wire `materialize_hmm_features.py`'s and `regime_calibration.py`'s
   replacement logic into whatever Rust pipeline stamps posteriors and computes live decay params;
-  hook `engine.rs`/`model.rs` behind `ffi`'s `hmm_step` (already designed, spec §5.2); delete
+  hook `regime_engine.rs`/`model.rs` behind `ffi`'s `hmm_step` (already designed, spec §5.2); delete
   `HMMClient.h`/`.cpp`, the already-deleted 4-file Meta-HMM "trainer run plan" sub-cluster (done
   2026-10-11, confirm nothing else references it by this point), the 3 benchmark files, and
   (pending G1/F2's "likely drop" confirmation once a real speed measurement exists) `student_t_hmm_gpu.py`'s
@@ -849,7 +868,7 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   `UpdateContext()` body) and `TripleScreen3.cpp`'s per-tick call into it — confirmed a live write-
   race bug (its every-tick write overwrites `HMMClient::HandleBinaryResponse`'s wire-received,
   trained-model classification before any consumer reads it), not a design worth preserving.
-  `engine.rs` becomes the sole writer of climate state once this lands; do not carry the race
+  `regime_engine.rs` becomes the sole writer of climate state once this lands; do not carry the race
   forward by leaving the native write path in place "just in case."
 
 **Net effect of this sequencing**: the actual critical path is G0(a,c,e) → G2 → {G3, G5} → G4 → G6
@@ -860,7 +879,7 @@ G0(b) and G0(d) are now both resolved (decisions #25-#26) — G0(a) (gates G4 on
 (stub-level unblocking only) are the remaining true G0 blockers; G2's training slice (EM/M-step)
 can proceed without waiting on anything further from G0. **Further update, same day**: G0(c) is
 now ALSO resolved (decision #28) — `artifact.rs` shipped in full, not just a stub; the only true
-remaining G0 blocker gating anything beyond a stub is G0(a) (`engine.rs`'s external API, G4) and
+remaining G0 blocker gating anything beyond a stub is G0(a) (`regime_engine.rs`'s external API, G4) and
 G0(e) (the `arch`-crate spike, `calibration.rs`, G6).
 
 ### 4a. `RegimeManager` 8-file call-site migration (spec §5.2's companion groundwork, approved 2026-10-10)
