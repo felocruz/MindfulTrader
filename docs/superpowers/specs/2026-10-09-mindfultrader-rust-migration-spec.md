@@ -185,6 +185,7 @@ of hardware.
 | 24 | Standing hardware context: most existing C++/Python was written on a 15GB-RAM, no-GPU, 10-year-old workstation; a new ML-capable workstation has since lifted those constraints | **recorded, 2026-10-11** (operator) — memory-/CPU-conservative patterns found during porting must be investigated (genuine architectural requirement vs. narrow workaround for the old ceiling) rather than reflexively preserved or reflexively stripped; concrete already-found examples and the actionable principle: §1.5. Mirrored as a standing banner in `CLAUDE.md`/`GEMINI.md`/`copilot-instructions.md`/`README-AI.md` per the Doc Sync Contract |
 | 25 | `regime_engine.py`'s 11 climate/threshold constants (G0(d)) — placement (manifest vs. crate constant) and whether calibration needs the trained HMM | **resolved 2026-10-11** (operator: "if calibration needs the trained model, we must have a mandatory calibration step after training"; "why not train → calibrate automatically?") — confirmed via direct code read that both `tune_risk_gate.py` and `calibrate_hmm_gate_thresholds.py` require an already-trained model as a mandatory input (hard failure without it); confirmed auto-chaining is well-supported (same data corpus, no new data-collection step, training already reserves and embeds a calibration-holdout window in the model's own metadata). Resolution: **train → audit (GO/NO-GO, reusing `audit.rs`) → if GO: auto-calibrate against that model's own reserved holdout, writing the calibration artifact + a provenance sidecar atomically together (porting the already-shipped `trainer.py`/`live_agent.py` `calibration_artifacts_provenance.json` pattern, found via `lbrnet/evals/cases/` real incident scenarios, not invented fresh)**; Rust loader hard-refuses stale/missing-provenance calibration artifacts rather than silently falling back to a hardcoded default, closing a confirmed live gap in current Python. Three-tier breakdown of the 11 constants, the `context_calibration.json` sibling-artifact finding, and the memory-conservative-pattern re-check (confirmed already done correctly on the new hardware, nothing stale) — all in §5.1c |
 | 26 | `dof_learning_rate` (0.02 vs. 0.15) and `bullet_weight` (1.40 vs. 1.30) defaults disagreement between `student_t_hmm.py` and `train_student_t_hmm.py` (F6/G0(b)) | **resolved 2026-10-11** — two different outcomes, not one canonical-value pick: `dof_learning_rate` is confirmed **dead code** (`_update_dof_ecme()`'s own docstring states it is never read; full-file grep confirms `self.dof_learning_rate` is write-once, read-never; no legacy update path exists) — dropped from the Rust port entirely, no field needed. `bullet_weight` is confirmed **real and consumed**, but was never a fixed constant to begin with — `train_student_t_hmm.py` BIC-grid-searches it per training run, so the value embedded in any given trained model is that run's own winning candidate. `model.rs`'s existing `feature_weights: [f64; D]` design (a per-instance field, not a crate constant — already correct, mirroring the `dof_min`/`dof_max` fix) needs no change; the only remaining open item is G5 (`train.rs`)'s own BIC-search default range, deferred to when G5 is built. Full detail: §5.1a |
+| 27 | Operator recollection: "I believe we were in the middle of implementing the C++ HMM State Manager when we pivoted to Rust" | **confirmed true, 2026-10-11** — traced to `lbrnet/docs/architecture/STUDENT_T_HMM_MASTER_PLAN.md`'s own living backlog ("Regime Manager migration — remaining stages not started": C++ facade + `regime_engine.py` cleanup + State Manager API surface complete; cross-repo C++ follow-on explicitly flagged "needs a separate `MindfulTrader`-side session" — this one) plus uncommitted `lbrnet` evidence (`regime_manager.py`, confirmed superseded by a later, more complete `RegimeState`-method design in uncommitted `regime_engine.py`/`regime_registry.py` diffs) and a confirmed-live C++ bug this later Python work fixed for itself but never carried over (`HmmStateIndicator`/`RegimeManager.cpp`/`MarketClimateIndicator` all still depend on the exact positional-`state_id`/`HMMStateEnum` assumption Python's own Hungarian-alignment removal (2026-09-21) invalidated). Full account, additional still-unfixed Python-side bugs of the same class (including a `TrainingEvent` wire-schema K=4-hardcoding bug), and concrete `registry.rs`/`engine.rs` recommendations: §5.1d |
 
 ---
 
@@ -781,6 +782,105 @@ slice, for robustness against overfitting the threshold search to one time windo
 calibration holdout is short, there may not be enough time depth inside it to run those folds —
 whether the Rust auto-calibration step needs that same walk-forward layer, or whether a single
 holdout evaluation suffices for Phase 1, is not yet decided.
+
+### 5.1d Regime Manager migration: an already-designed, partially-completed cross-repo initiative
+the Rust unification must finish (discovered 2026-10-11, decision #27)
+
+Operator recollection: "I believe we were in the middle of implementing the C++ HMM State Manager
+when we pivoted to Rust." **Confirmed true, not just plausible** — traced to a specific,
+authoritative source, not inferred from fragments.
+
+**Canonical source**: `lbrnet/docs/architecture/STUDENT_T_HMM_MASTER_PLAN.md`'s own living-backlog
+has a section titled **"Regime Manager migration — remaining stages not started"**, stating
+outright: the C++ `RegimeManager` facade, `regime_engine.py` cleanup, Python Transformer-
+coevolution accessors, and State Manager API surface are **complete**; **not started**: (a)
+`scoring.py`/`regime_manager.py` algorithmic redesign ("HIGH STAKES: quant research, not a
+mechanical refactor — do not treat as a routine pickup"), (b) **"Cross-repo C++ follow-on (needs a
+separate `MindfulTrader`-side session)"** — precisely this conversation, (c) final removal of
+superseded code paths. One item on that list — "an 8-file C++ call-site migration onto the
+`RegimeManager` facade" — **was actually completed**, by this very Rust-migration session
+(2026-10-10, confirmed via `git log`) — the `lbrnet` backlog doc simply hasn't been told; worth
+syncing back if `lbrnet` is ever revisited, not actioned from here (standing "leave `lbrnet`'s own
+pile as-is" instruction).
+
+**Reassurance on the operator's stated worry, checked directly, not assumed**: the uncommitted
+Python work this section describes is physically present and intact in the `lbrnet` working tree
+on THIS machine right now (`git status`/`git diff` read directly) — nothing was lost on a prior
+workstation.
+
+**The uncommitted evidence**: `lbrnet/models/regime_manager.py` + `tests/test_regime_manager.py`
+(untracked, mtime 2026-09-18) — "the Python-side analogue of MindfulTrader's `RegimeManager`,"
+explicitly documented as "two independent implementations of the same regime-decision contract,
+not one importing the other." **Superseded by later uncommitted work**: `regime_engine.py`
+(844-line uncommitted diff against the last commit) and `regime_registry.py` (289-line uncommitted
+diff), both mtime 2026-09-22 — four days later.
+
+**The real architectural fix this later work makes, and the bug it fixes**: `RegimeState` gains a
+full "State Manager API" — `get_hmm_multiplier`/`get_climate_multiplier`/
+`get_climate_conviction_boost`/`get_climate_risk_multiplier`/`get_half_life_scale`/
+`write_regime_features`/`state_from_posteriors` — every method resolving via `profile_label`/
+`climate` (the per-retrain-stable, intrinsic-signal-derived archetype `build_regime_registry()`
+computes fresh each retrain), **never** raw `state_id`. Its own docstring names the thing it
+replaces directly: *"Batch/offline consumers should call this instead of independently
+re-implementing state_id -> profile -> label resolution (**the pattern `regime_manager.py`
+currently duplicates**)."* Root cause fixed: `HMMStateEnum.from_id(state_id)` assumed a Hungarian-
+alignment reorder step guaranteeing `raw_id` stability across retrains — that step was **removed
+2026-09-21** (confirmed empirically broken: only 1 of 4 states still matched the assumed
+convention on the real production model). `regime_registry.py`'s companion diff deletes the whole
+alignment machinery (`compute_hmmstate_affinity`/`compute_state_summary_for_alignment`/
+`align_hmm_states_to_canonical_enum`, ~165 lines — confirmed via its own now-deleted regression
+test fixture, `tests/test_regime_registry_hmmstate_affinity.py`), adds a clean `_ClimateEnum` base
+class (`from_id`/`handle_missing`/`offset()`), and fixes a documented "classification with a
+reject option" (Chow 1970) gap in `build_regime_registry()`'s `GAUSSIAN_STABLE` fallback (it used
+to be an unconditional default; now requires positive quiet-signal evidence, falling back to
+`SHANNON_CHAOS` — max-entropy, most risk-averse — when genuinely ambiguous).
+
+**This fix was never carried to C++ — confirmed directly this session, not assumed.**
+`HmmStateIndicator::SetState()` (`include/Indicator.h`) still does a raw
+`static_cast<HMMStateEnum>(stateId)`; `RegimeManager.cpp` still branches directly on
+`HMMStateEnum::PARETO_MOMENTUM`/`GAUSSIAN_STABLE`/`COILED_SPRING`/`GAUSSIAN_FRAGILE`;
+`MarketClimateIndicator::UpdateContext()` (`src/Indicator.cpp`) takes `HMMStateEnum hmmState`
+directly and folds it into its own independently-evolved native kurtosis/entropy/Hurst "physics
+veto" hybrid cascade — a genuinely separate classifier from Python's `regime_registry.py`/
+`regime_engine.py`, not a passthrough of it. This is exactly the still-open "Cross-repo C++
+follow-on" item.
+
+**Additional still-unfixed bugs of the same class, confirmed via the master plan, not yet fixed
+even on the Python side**: `tune_risk_gate.py`, `build_directional_alpha.py`'s
+`_attach_regime_to_event()`, and `materialize_hmm_features.py::serialize_enriched_training_event()`
+all still do positional-`HMMStateEnum`/hardcoded-4-slot reads. The last is the most serious: it
+bakes K=4 directly into the **`TrainingEvent` wire schema itself** as four fixed named fields
+(`regimeProbDrift`/`regimeProbFlush`/`regimeProbCoil`/`regimeProbSweep`), unlike the live
+`HmmRiskState.probability_vector: [float]` wire field, which is already a correctly-sized dynamic
+vector. The master plan states plainly this "requires a schema migration... that also touches the
+C++/MindfulTrader side."
+
+**Cross-check against this session's own decisions #20/#21** (`RegimeStatus` widening to carry
+`transition_risk`/`expected_duration`/`dof` via `rust/schema`'s generated FlatBuffers struct
+types): related, but **not the same fix** — #20/#21 is about the live `Event`/`TrainingEvent`
+`RegimeStatus` struct gaining fields, not about replacing the fixed-4-slot `regimeProbDrift/
+Flush/Coil/Sweep` positional array with a dynamic vector. Flagged explicitly rather than silently
+merged: when open question #16 (`TrainingEvent`'s regime-field superset question) is finally
+decided, this K=4-hardcoding bug should be fixed in the SAME pass — the Rust `TrainingEvent`
+generation work will already be touching this exact surface, making this the cheapest possible
+moment, not a separate future migration.
+
+**Recommendation for Stage G3/G4 (`registry.rs`/`engine.rs`)**:
+1. `engine.rs`'s live classification/lookup design adopts `profile_label`/`market_climate_id`-based
+   resolution as canonical, never raw `state_id`/the legacy 4-state `HMMStateEnum` — this directly
+   completes the "Cross-repo C++ follow-on" `lbrnet`'s own backlog has been waiting on.
+2. Do **not** port `regime_manager.py` (confirmed superseded) or C++'s current `RegimeManager.cpp`/
+   `MarketClimateIndicator` internals as reference designs — use the later, more complete
+   `RegimeState`-method design (`state_from_posteriors`, `write_regime_features`,
+   `get_hmm_multiplier`, etc.) as the reference instead. Port the DESIGN, not the code — Python
+   itself won't run any of this once decision #18 lands.
+3. **Explicitly undecided, flagged not silently resolved**: does `MarketClimateIndicator`'s
+   independently-evolved native kurtosis/entropy/Hurst "physics veto" hybrid logic become an
+   explicit additional safety layer inside `engine.rs` (properly reconciled, no more positional-
+   cast coupling), or is it retired as redundant with what the HMM's own classification already
+   encodes? Needs an explicit operator call, not an engineering default either way.
+4. Whatever `TrainingEvent` wire-schema work lands for decision #20/#21/open-question-#16 should
+   also close out the `regimeProbDrift/Flush/Coil/Sweep` K=4-hardcoding bug in the same pass.
 
 ### 5.2 Target architecture
 
@@ -1510,7 +1610,12 @@ numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loo
 16. **New (§5.4, decision #20)**: whether `TrainingEvent`'s regime-field set should be a strict
     superset of `Event`'s (carrying `HmmRiskState`'s full diagnostic set — `mahalanobis_distance`/
     `tail_weight`/`variance_ratio`/`black_swan_alert`/`duration_bars`/`duration_ratio`/
-    `fim_distance_min` — for offline ablation studies) or identical to it — not decided.
+    `fim_distance_min` — for offline ablation studies) or identical to it — not decided. **Cross-
+    referenced 2026-10-11 (§5.1d, decision #27)**: whichever design wins must also close out the
+    `materialize_hmm_features.py`/`TrainingEvent` wire schema's confirmed-live
+    `regimeProbDrift/Flush/Coil/Sweep` K=4-hardcoding bug in the same pass, not as a separate later
+    migration — the Rust `TrainingEvent` generation work will already be touching this exact
+    surface.
 17. **New (§5.4, decision #21)**: `RegimeStatus` as a FlatBuffers `struct` (fixed-layout, simple
     zero-copy Rust FFI via the generated `#[repr(transparent)]` newtype, matches every other
     composite `Event` field) vs. a `table` (additive/extensible, matching the observed field-list
@@ -1544,6 +1649,18 @@ numpy/TF tensors, faster and memory-safe, feeding the same TF/Keras training loo
 23. **Carried forward, still open**: whether anything beyond MTS and `backtest_server.py` needs the
     `RiskStateUpdate` message shape — flagged in §5.4's own text as "a broader sweep... has not
     been done," never promoted to this list or resolved.
+24. **New (§5.1d, decision #27)**: whether `MarketClimateIndicator`'s independently-evolved native
+    kurtosis/entropy/Hurst "physics veto" hybrid classifier becomes an explicit additional safety
+    layer inside `engine.rs` (reconciled, no more positional `HMMStateEnum`-cast coupling), or is
+    retired as redundant with what the HMM's own `profile_label`-based classification already
+    encodes — needs an explicit operator call, not an engineering default either way.
+25. **New (§5.1d, decision #27)**: three more `lbrnet`-side consumers (`tune_risk_gate.py`,
+    `build_directional_alpha.py::_attach_regime_to_event()`, and
+    `materialize_hmm_features.py::serialize_enriched_training_event()`) still do positional-
+    `HMMStateEnum`/hardcoded-4-slot reads that Python's own `regime_engine.py` rewrite already
+    flags as unfixed — out of scope to fix in `lbrnet` directly from this session (standing
+    "leave `lbrnet`'s own pile as-is" instruction), but the Rust `TrainingEvent`/wire-schema work
+    (open question #16) should not reintroduce the same hardcoded-K-slots pattern when it lands.
 
 ---
 

@@ -769,10 +769,27 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
     clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
   formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
-  `registry.rs` (`MarketClimate` classification cascade, consumes `model.rs`'s posterior/state
-  output — can be developed against synthetic posterior vectors in parallel with late G2, doesn't
-  need to wait for G2 to fully finish); `artifact.rs` full implementation (load/save against
-  `model.rs`'s actual parameter shapes, not just the G0(c) stub).
+  `registry.rs` **(corrected scope, 2026-10-11, operator: confirmed understanding of `MarketClimate`'s
+  real ownership before implementing)** — ports `lbrnet/models/regime_registry.py`'s real
+  `build_regime_registry()` classification cascade (tenure/Taleb-DOF-fragility/Pareto-thrust/
+  vol-range priority-ordered rules with an explicit Chow-1970 "reject option" fallback), NOT
+  `rc_enums.py`'s `MarketClimate` (confirmed a deprecated PEP-562 lazy re-export shim since
+  2026-09-22 — real owner is `regime_registry.py`, which the enum's own docstring calls "the HMM
+  State Manager"), and NOT the retired `HMMStateEnum`/Hungarian-alignment positional scheme
+  (removed 2026-09-21, `RegimeProfile.alignment_cost`'s own comment). Architecturally this is a
+  **one-time, post-training manifest-generation step** (classifies each of the K states once,
+  producing a lookup table), not a live per-tick classifier — confirmed against
+  `RegimeManager.cpp`, which only ever reads an already-computed climate value, never re-derives
+  it — so this belongs conceptually next to `artifact.rs`'s manifest-generation territory, and is
+  largely already prepared: built almost entirely from functions this session already ported in
+  `gate_metrics.rs` (`mean_tenure_by_state`/`compute_pareto_thrust_shares`/`dof_fragility_score`/
+  `taleb_gate_pass`/`TALEB_KURTOSIS_UNDEFINED_DOF`). **See the new §5.1d for a second, more
+  serious finding surfaced while confirming this** — a genuinely diverged, currently-live second
+  classifier native to this repo's own C++ that this port must reconcile with, not silently
+  ignore — consumes `model.rs`'s posterior/state output; can be developed against synthetic
+  posterior vectors in parallel with late G2, doesn't need to wait for G2 to fully finish);
+  `artifact.rs` full implementation (load/save against `model.rs`'s actual parameter shapes, not
+  just the G0(c) stub).
 - **G4 — live engine assembly (`engine.rs`)**: wraps `model.rs` + `registry.rs` for stateful live
   inference, climate overrides, model-risk tracking (variance-ratio drift, black-swan streak,
   Amari/FIM distance, duration tracking). This is where G0(a)'s state-identity ruling and G0(d)'s
