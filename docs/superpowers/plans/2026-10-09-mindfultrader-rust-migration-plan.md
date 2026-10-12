@@ -787,7 +787,19 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   serious finding surfaced while confirming this** — a genuinely diverged, currently-live second
   classifier native to this repo's own C++ that this port must reconcile with, not silently
   ignore — consumes `model.rs`'s posterior/state output; can be developed against synthetic
-  posterior vectors in parallel with late G2, doesn't need to wait for G2 to fully finish);
+  posterior vectors in parallel with late G2, doesn't need to wait for G2 to fully finish).
+  **SHIPPED, 2026-10-11**: `classify_states()` ports `build_regime_registry()`'s cascade verbatim
+  (all 6 branches: 5 climates + the Chow-1970 reject-option fallback), built almost entirely from
+  `gate_metrics.rs`'s already-ported functions as expected. Deliberately excludes Python's
+  `centroid`/`alignment_cost` `RegimeProfile` fields (display-only/confirmed-dead respectively,
+  left to `artifact.rs`) and `RegimeRegistry`'s `gang_validation`/`metadata` sign-off payload (a
+  separate training-sign-off concern). **Golden-parity validated against a real
+  `build_regime_registry()` invocation** (mts conda env, 2026-10-11) using a hand-constructed fake
+  model object (real function, synthetic model data) deliberately engineered so all 6 of a 6-state
+  fixture land in 6 DIFFERENT cascade branches, not just the easy/common path — exact match on
+  climate assignment and every continuous score (`shannon_entropy`/`taleb_fragility`/
+  `pareto_thrust`/`sample_share`/`mean_tenure_bars`) for all 6 states. 4 new tests. Workspace:
+  155/155 tests pass, clippy clean.
   `artifact.rs` full implementation (load/save against `model.rs`'s actual parameter shapes, not
   just the G0(c) stub).
 - **G4 — live engine assembly (`engine.rs`)**: wraps `model.rs` + `registry.rs` for stateful live
