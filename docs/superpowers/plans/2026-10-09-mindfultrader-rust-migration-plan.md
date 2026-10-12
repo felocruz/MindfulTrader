@@ -432,7 +432,7 @@ redeployed, test artifacts deleted.
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
 | `observation_vector` | 12 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
-| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine all shipped); `calibration.rs` (G0(e)) and full K-selection not started | Spec §5; plan §4 Stages G0-G4 done, G5 (K=4 fixed, deprioritized), G6/G7 not started |
+| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration all shipped); `calibration.rs` (G0(e)) and full K-selection not started | Spec §5; plan §4 Stages G0-G4 done, G5 (K=4 fixed, deprioritized), G6 half-done (`runtime_calibration.rs` shipped, `calibration.rs` blocked on G0(e)), G7 not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
 | `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.) still blocked on W0e (algo what-if spike, needs reachable TWS/Gateway) |
@@ -868,6 +868,19 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   transition matrix — small, depends only on G5's output); `calibration.rs` (gate-threshold
   calibration methodology — depends on G0(e)'s `arch`-crate spike resolving; can proceed in
   parallel with G5 once that spike lands, doesn't have to wait for G5 to finish first).
+  **`runtime_calibration.rs` SHIPPED, 2026-10-12** (`rust/student_t_hmm/src/runtime_calibration.rs`):
+  `expected_state_durations_steps`/`calibrate_temporal_half_life`, ported from
+  `lbrnet/analytics/regime_calibration.py`'s pure math only — deliberately NOT ported:
+  `estimate_context_step_seconds`/`load_hmm_transition_matrix` (real `.context`-file I/O, `step_seconds`
+  is a parameter here instead) and `write_agent_state_bin`/`read_agent_state_half_life` (FlatBuffer
+  `Diagnostic` artifact persistence, belongs with `artifact.rs`'s territory if ever needed). Golden-
+  parity validated against a real Python invocation (mts conda env). **Real finding along the way**:
+  `max(0.1, x)` (both Rust's `f64::max` and Python's built-in `max()`) silently launders a NaN `x`
+  to `0.1` rather than propagating it — meaning the `is_finite()`-based fallback-to-default branch
+  is reachable only via `+Infinity`, never NaN, in BOTH languages; confirmed identical in real
+  Python before writing the Rust test, not assumed — a faithful-port quirk documented in the test
+  itself, not treated as a bug to "fix". 6 new tests, workspace 189/189 pass, clippy clean (incl.
+  Windows cross-compile). `calibration.rs` remains blocked on G0(e).
 - **G7 — integration/cutover**: wire `materialize_hmm_features.py`'s and `regime_calibration.py`'s
   replacement logic into whatever Rust pipeline stamps posteriors and computes live decay params;
   hook `regime_engine.rs`/`model.rs` behind `ffi`'s `hmm_step` (already designed, spec §5.2); delete

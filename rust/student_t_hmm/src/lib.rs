@@ -11,4 +11,5 @@ pub mod init;
 pub mod model;
 pub mod regime_engine;
 pub mod registry;
+pub mod runtime_calibration;
 pub mod train;
