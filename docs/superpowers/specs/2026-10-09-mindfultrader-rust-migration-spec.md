@@ -2232,6 +2232,34 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     fast, repeatable; (2) IBKR paper trading forward in real time -- real algos, rejects, partial
     fills, disconnects, pacing, bracket-child handling, none of which replay can show; (3) live at
     minimum size.
+  - **Built, 2026-10-13 (slice 2, pure Rust, no sockets)**: `rust/execution/src/broker.rs` (the
+    broker-neutral `OrderRequest` and the object-safe `BrokerAdapter` trait: `place`/`cancel`/
+    `flatten`/`poll_events`, with adapters reporting their own submissions as `position_state`
+    events), `sierra_sim.rs` (this D2 table as one tested pure function returning the exact Sierra
+    orders plus per-leg overlay instructions; Sierra's limit-fill semantics must be passed
+    explicitly -- no default -- until the spike below measures them) and `ibkr_orders.rs` (the live
+    counterpart, restricted to combinations W0e saw IBKR accept). Both translators share one
+    rounding rule: limits snap against us, stop triggers snap to trigger later -- the opposite
+    direction from a limit on the same side, a bug the tests caught during development.
+  - **Relay message contract (PROPOSED 2026-10-13, not implemented -- needs `transport` and a
+    shared-schema change, D1)**. The C++ relay study is dumb: Rust sends it `sierra_sim::translate`'s
+    output verbatim, and it reports back what Sierra did.
+    - *Rust -> relay*: `PlaceSierraPlan { request_id, decision_id, parent, target?, stop? }` (each
+      leg: `SCT_ORDERTYPE_*` id, side, quantity, price); `Cancel { internal_order_id }`;
+      `Flatten {}`.
+    - *Relay -> Rust*: `OrderAck { request_id, parent/target/stop InternalOrderIDs }`,
+      `OrderRejected { request_id, code, message }`, `OrderCancelled { internal_order_id }`,
+      `Fill { internal_order_id, fill_id, signed_qty, price, at }`, `PositionSnapshot { quantity,
+      average_price, open_pnl, closed_pnl, at }` (from `sc.GetTradePosition`) -- each maps 1:1 onto
+      a `position_state::Event` -- plus the replay timestamp of every step (the Rust clock, A2).
+    - *Lockstep*: the relay is the requesting side; each replay step that carries anything (a
+      price update, a fill, an order-state change) is one request carrying that step's events, and
+      the relay does not return from its study call until Rust replies with that step's commands.
+      **Open design point**: in replay the continuous price feed must be lockstepped too -- port
+      5555's lossy PUB cannot be the bracket/trap evaluator's price source during a backtest, or a
+      fast replay outruns Rust; folding the step's price into this request is the likely answer.
+    - *Request cost*: one round trip per replay step bounds backtest speed; batching steps that
+      carry no decision-relevant change is the obvious optimisation, to be measured, not assumed.
   - **Still open under D2**: Sierra's limit-fill (touch vs. trade-through) and stop-fill-price
     semantics in `REPLAY_MODE_ACCURATE_TRADING_SYSTEM_BACK_TEST` (first spike: one automated replay
     across the three charts, one stub decision from Rust, one relayed order, fill checked against
