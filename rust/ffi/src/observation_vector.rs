@@ -97,6 +97,13 @@ pub unsafe extern "C" fn observation_vector_compute_bipower_variation(returns: *
     })
 }
 
+/// Port of `LogScaleRatio.h`. Takes the two already-computed bipower-variation values directly
+/// (no pointer/length pair -- both arguments are plain scalars), unlike most wrappers here.
+#[unsafe(no_mangle)]
+pub extern "C" fn observation_vector_log_scale_ratio(short_bv: f64, long_bv: f64) -> f32 {
+    guard_f32(|| observation_vector::log_scale_ratio(short_bv, long_bv))
+}
+
 /// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
 /// recent last.
 ///

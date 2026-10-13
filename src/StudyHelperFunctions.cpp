@@ -11,6 +11,7 @@
 #include "SevcikFractalDimension.h"
 #include "DfaHurstExponent.h"
 #include "BipowerVariation.h"
+#include "LogScaleRatio.h"
 #include "MeanReversionCalculator.h"
 #include "LiquidityFragilityEngine.h"
 #ifdef MTS_WITH_RUST
@@ -2595,10 +2596,33 @@ float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
 
     const double short_bv = windowBipowerVariation(short_n);
     const double long_bv = windowBipowerVariation(long_n);
-    constexpr double kVarEps = 1e-12;
+    const float logScaleRatio = LogScaleRatio(short_bv, long_bv);
 
-    const double log_ratio = std::log((short_bv + kVarEps) / (long_bv + kVarEps));
-    return std::clamp(static_cast<float>(log_ratio), -6.0f, 6.0f);
+#ifdef MTS_WITH_RUST
+    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+    // §5.2): proves the Rust port (observation_vector::log_scale_ratio) stays correct on live data,
+    // without using its result for anything -- `logScaleRatio` (computed above) remains the only
+    // value this function returns. The underlying `short_bv`/`long_bv` bipower-variation inputs
+    // are independently shadow-checked already (ShadowCheckBipowerVariation, inside
+    // windowBipowerVariation above); this check is specifically for the ratio+clamp step itself.
+    {
+        const float rustLogScaleRatio = mts::observation_vector_log_scale_ratio(short_bv, long_bv);
+        const bool matches = std::fabs(logScaleRatio - rustLogScaleRatio) < 1e-4f;
+        static bool loggedMatchOnce = false;
+        if (!matches) {
+            Logger::getInstance().log(
+                "MTS_WITH_RUST MISMATCH: LogScaleRatio cpp=" + std::to_string(logScaleRatio) +
+                " rust=" + std::to_string(rustLogScaleRatio));
+        } else if (!loggedMatchOnce) {
+            loggedMatchOnce = true;
+            Logger::getInstance().log(
+                "MTS_WITH_RUST: LogScaleRatio shadow-mode OK (cpp==rust=" +
+                std::to_string(logScaleRatio) + ")");
+        }
+    }
+#endif
+
+    return logScaleRatio;
 }
 
 float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {

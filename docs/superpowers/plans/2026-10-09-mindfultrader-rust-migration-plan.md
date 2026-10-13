@@ -126,6 +126,27 @@ design content) instead.**
   `mean_rev_z`, and its `FeatureScaler` calibration carries an unresolved "MOOT, DROPPED" vs.
   "wired 2026-09-17, EXPLICIT operator authorization" contradiction worth resolving before porting
   it).
+- **16th `rust/observation_vector` dim ported and shadow-wired, 2026-10-12**: `log_scale_ratio`
+  (`StudyHelperFunctions.cpp`'s `CalculateLogScaleRatio`). Unlike every prior dim, this one's hard
+  math (bipower variation) was ALREADY ported and shadow-wired (`compute_bipower_variation`,
+  shipped 2026-10-08) — what remained was the thin outer ratio+clamp step
+  (`log((short_bv+eps)/(long_bv+eps))`, clamped to `[-6,6]`) that composes two already-computed BV
+  values into the final dim value. Extracted into a new `include/LogScaleRatio.h` taking the two
+  BV values directly (not raw log-return windows) specifically to avoid recomputing BV a second
+  time — the caller already computes both via the existing, independently-shadow-checked
+  `ComputeBipowerVariation`. Ported to Rust (`log_scale_ratio`, itself composing the
+  already-existing `compute_bipower_variation` port rather than duplicating it), FFI-wrapped
+  (`observation_vector_log_scale_ratio`, the first FFI wrapper in this codebase taking two plain
+  scalar `f64` arguments rather than a pointer/length pair), cross-language-parity-tested (3 new
+  assertions: positive/negative/clamped-extreme ratios, exact to 1e-6), and shadow-wired at the
+  real call site (`CalculateLogScaleRatio`'s own return value, alongside its pre-existing BV-level
+  shadow checks — two independent shadow comparisons now cover this one dim end-to-end). 5 new
+  Rust unit tests (63/63 total), 5 new native C++ checks (`tests/cpp/test_log_scale_ratio.cpp`).
+  Both DLL configurations build clean: `MTS_WITH_RUST=OFF` (1,780,224 bytes, unchanged from the
+  `lempel_ziv` port's own OFF baseline — this refactor's unconditional C++ change was net-neutral
+  in code size, 3 inline lines replaced by 1 header call) and `=ON` (2,036,224 bytes, links and
+  grows). **2 of 18 dims now genuinely remain unported**: `tail_index` and `fast_mean_rev_z` (the
+  latter's own unresolved contradiction, noted above, is worth resolving before porting it).
 - **`rust/schema` crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -461,7 +482,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
-| `observation_vector` | 15 of 18 dims ported (corrected count, 2026-10-12 — the prior "12" figure was stale); remaining: `log_scale_ratio`, `tail_index`, `fast_mean_rev_z` | spec §6 / §5 below |
+| `observation_vector` | 16 of 18 dims ported; remaining: `tail_index`, `fast_mean_rev_z` | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |

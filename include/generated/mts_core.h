@@ -106,6 +106,10 @@ float observation_vector_moors_kurtosis(const float *returns, uintptr_t len);
 /// `returns` must be either null or valid for reads of `len` contiguous `f64` elements.
 double observation_vector_compute_bipower_variation(const double *returns, uintptr_t len);
 
+/// Port of `LogScaleRatio.h`. Takes the two already-computed bipower-variation values directly
+/// (no pointer/length pair -- both arguments are plain scalars), unlike most wrappers here.
+float observation_vector_log_scale_ratio(double short_bv, double long_bv);
+
 /// Port of DfaHurstExponent.h. `log_returns` points to `len` log-return values, oldest first, most
 /// recent last.
 ///

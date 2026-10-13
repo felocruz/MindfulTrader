@@ -18,6 +18,7 @@
 #include "EventVelocityEngine.h"
 #include "LempelZivComplexity.h"
 #include "LiquidityFragilityEngine.h"
+#include "LogScaleRatio.h"
 #include "MeanReversionCalculator.h"
 #include "OrderFlowAsymmetryEngine.h"
 #include "RQAEpsilonSelector.h"
@@ -122,6 +123,26 @@ int main() {
     check("ComputeBipowerVariation n<2: both return 0.0 (not NaN)",
           ComputeBipowerVariation(nullptr, 0) == 0.0 &&
           mts::observation_vector_compute_bipower_variation(nullptr, 0) == 0.0);
+
+    // --- LogScaleRatio: C++ production function vs. Rust FFI wrapper, same (short_bv, long_bv) ---
+    {
+        const float cppResult = LogScaleRatio(0.20, 0.05);
+        const float rustResult = mts::observation_vector_log_scale_ratio(0.20, 0.05);
+        check("LogScaleRatio short_bv>long_bv: Rust matches C++ exactly",
+              std::fabs(cppResult - rustResult) < 1e-6f);
+    }
+    {
+        const float cppResult = LogScaleRatio(0.0, 0.0);
+        const float rustResult = mts::observation_vector_log_scale_ratio(0.0, 0.0);
+        check("LogScaleRatio both-zero: Rust matches C++ exactly (both 0.0)",
+              cppResult == 0.0f && rustResult == 0.0f);
+    }
+    {
+        const float cppResult = LogScaleRatio(1e6, 1e-9);
+        const float rustResult = mts::observation_vector_log_scale_ratio(1e6, 1e-9);
+        check("LogScaleRatio extreme ratio: Rust matches C++ exactly (both clamp to +6.0)",
+              cppResult == 6.0f && rustResult == 6.0f);
+    }
 
     // Null/empty-input contract: Rust wrapper must not crash, must return NaN.
     {

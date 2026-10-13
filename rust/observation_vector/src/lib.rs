@@ -119,6 +119,17 @@ pub fn compute_bipower_variation(returns: &[f64]) -> f64 {
     HALF_PI * bv_sum
 }
 
+/// Port of `LogScaleRatio.h`: log(short_BV / long_BV), a short-vs-long-horizon scale ratio
+/// (HAR-RV/Corsi 2009-style multi-horizon volatility clustering). Deliberately takes the two
+/// ALREADY-COMPUTED bipower-variation values (from `compute_bipower_variation`), not raw
+/// log-return windows -- matches `LogScaleRatio.h`'s own division of labor, avoiding a duplicate
+/// BV computation the caller already did. Clamped to `[-6.0, 6.0]`.
+pub fn log_scale_ratio(short_bv: f64, long_bv: f64) -> f32 {
+    const VAR_EPS: f64 = 1e-12;
+    let log_ratio = ((short_bv + VAR_EPS) / (long_bv + VAR_EPS)).ln();
+    (log_ratio as f32).clamp(-6.0, 6.0)
+}
+
 /// Largest window this estimator supports (matches DfaHurstExponent.h's own capacity constant --
 /// fixed-capacity stack buffers, no heap allocation, same hot-path discipline as the C++ original).
 pub const DFA_MAX_WINDOW: usize = 512;
@@ -1417,5 +1428,33 @@ mod tests {
         oversized.push(999.0); // beyond the cap, must be ignored
         oversized.push(-999.0);
         assert_eq!(lempel_ziv_complexity(&exact), lempel_ziv_complexity(&oversized));
+    }
+
+    #[test]
+    fn log_scale_ratio_equal_bvs_is_exactly_zero() {
+        assert_eq!(log_scale_ratio(0.05, 0.05), 0.0);
+    }
+
+    #[test]
+    fn log_scale_ratio_short_greater_is_positive_matches_closed_form() {
+        let r = log_scale_ratio(0.20, 0.05);
+        let expected = ((0.20_f64 + 1e-12) / (0.05 + 1e-12)).ln() as f32;
+        assert!((r - expected).abs() < 1e-6, "r={r} expected={expected}");
+    }
+
+    #[test]
+    fn log_scale_ratio_short_less_is_negative() {
+        assert!(log_scale_ratio(0.01, 0.10) < 0.0);
+    }
+
+    #[test]
+    fn log_scale_ratio_both_zero_is_exactly_zero() {
+        assert_eq!(log_scale_ratio(0.0, 0.0), 0.0);
+    }
+
+    #[test]
+    fn log_scale_ratio_extreme_values_clamp_to_bounds() {
+        assert_eq!(log_scale_ratio(1e6, 1e-9), 6.0);
+        assert_eq!(log_scale_ratio(1e-9, 1e6), -6.0);
     }
 }
