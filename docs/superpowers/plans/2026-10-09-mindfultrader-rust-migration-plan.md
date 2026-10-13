@@ -369,8 +369,23 @@ design content) instead.**
    evolving `BackTesterStudy.cpp` (trade-through limit entries, IBKR-algo-to-Sierra-order mapping,
    lockstep plus injectable clock, three-tier validation ladder). Corrected same day: the broker
    (TWS live, Sierra sim in replay) is the source of truth for position and P&L; `position_state.rs`
-   mirrors it, annotates, and reconciles -- it is not a ledger. Next under D2: a spike confirming
-   Sierra's replay fill semantics. D9 (deployment) remains open.
+   mirrors it, annotates, and reconciles -- it is not a ledger. Since then (2026-10-13): broker
+   seam with amend, order watcher (thesis-driven, decision #40), disconnect alert. **Open execution
+   items** (each recorded in spec §8.7):
+   - **(operator decision) Intent-deadline derivation** (spec D3): how an entry's deadline is set
+     from the signal's horizon -- e.g. the end of the TS3 bar the signal formed on, or a fraction
+     of the triple-barrier time barrier. Blocks live IBKR entries: thesis-driven entries without a
+     deadline are refused (`NoIntentDeadline`).
+   - **(build) Disconnect alert to the operator** (spec D3 "Disconnect policy"): `position_feed.rs`
+     publishes `DisconnectedWithWorkingOrders` with the working orders and a service heartbeat;
+     the MTS GUI (separate repo, cross-repo handoff) raises an unmissable alarm on it AND when the
+     Rust service's heartbeat stops while its last snapshot had working orders. Depends on the
+     `transport` skeleton + position/fill port (W9 pulled forward, D1).
+   - **(operator runs Sierra) Fill-semantics spike** (spec D2 "Still open under D2"): measure
+     whether Sierra's replay simulator fills resting limits on touch or only on trade-through, and
+     how stop fills are priced; `sierra_sim::LimitFillSemantics` deliberately has no default until
+     then.
+   D9 (deployment) also remains open.
 3. `rust/transport` — deliberately last for its original six-port scope (removing ZMQ port 5561 via
    the HMM port removes the hardest socket `transport` would otherwise have to handle) — **except
    its skeleton + two brand-new ports** (the execution-intent channel, the position/fill feed),
