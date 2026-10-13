@@ -6,5 +6,6 @@
 //! carry their own dependencies (ibapi, tokio, transport) -- never pulled into this core.
 
 pub mod order_gate;
+pub mod position_state;
 pub mod stop_manager;
 pub mod trap_exit;

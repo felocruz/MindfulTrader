@@ -367,7 +367,9 @@ design content) instead.**
    modules are no longer blocked on W0e. **D2 (backtesting) RULED 2026-10-13** (spec §8.7 D2): a
    `BrokerAdapter` trait whose primary replay adapter is a pessimistic Sierra-sim "broker" built by
    evolving `BackTesterStudy.cpp` (trade-through limit entries, IBKR-algo-to-Sierra-order mapping,
-   lockstep plus injectable clock, three-tier validation ladder). Next under D2: a spike confirming
+   lockstep plus injectable clock, three-tier validation ladder). Corrected same day: the broker
+   (TWS live, Sierra sim in replay) is the source of truth for position and P&L; `position_state.rs`
+   mirrors it, annotates, and reconciles -- it is not a ledger. Next under D2: a spike confirming
    Sierra's replay fill semantics. D9 (deployment) remains open.
 3. `rust/transport` — deliberately last for its original six-port scope (removing ZMQ port 5561 via
    the HMM port removes the hardest socket `transport` would otherwise have to handle) — **except
@@ -533,7 +535,7 @@ redeployed, test artifacts deleted.
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
-| `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.): W0e cleared 2026-10-13 (spec §8.7 D3); remaining design gates are D2 (backtesting) and D9 (deployment) |
+| `execution` | 4 of ~5 pure sub-modules (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11; `position_state.rs` slice 1 2026-10-13 -- a new broker-mirror design per D2, not a port: mirrors the broker's position, annotates round trips with `decision_id`/fills/MAE-MFE and broker-*reported* P&L/commission, reconciles fill-implied vs. broker-reported position with a grace window and a broker-wins `PositionDiverged` alert, dedupes execution ids, flags fills for unknown orders, reports Live/Stale/Disconnected; clock-free; 15 tests, 2 mutation checks) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.): W0e cleared 2026-10-13 (spec §8.7 D3); remaining design gates are D2 (backtesting) and D9 (deployment) |
 
 **Principles governing every crate** (established 2026-10-08, proven in practice across all five
 `observation_vector` ports so far): pure logic crates have zero Sierra/zmq/pyo3 dependency; the FFI

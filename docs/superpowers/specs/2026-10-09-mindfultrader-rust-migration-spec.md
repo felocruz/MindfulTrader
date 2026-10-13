@@ -1971,7 +1971,8 @@ rust/execution/
 │                           ReasonCode-based fail-closed decisions) — Rust port of
 │                           ExecutionGate.h's Outcome/ReasonCode enum + ladder_core::safety's
 │                           kill-switch/arm-file pattern (§8.7 D5)
-├── position_state.rs     -- position/fills/P&L state machine (replaces PositionManager's role)
+├── position_state.rs     -- broker-mirror position state + annotations + reconciliation (the broker,
+│                           never this module, is the source of truth -- §8.7 D2 "Results")
 ├── stop_manager.rs       -- static, entry-anchored bracket placement (port of
 │                           TripleBarrierEngine.h's `ComputeBarriers`, §8.7 D3a) — the bracket is
 │                           computed ONCE at entry and is immutable thereafter; NOT a continuously
@@ -2172,7 +2173,7 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     - *Entries: limit, filled only on trade-through.* On MES's 0.25 grid, a buy limit at P is traded
       through exactly when a trade prints at <= P - 1 tick -- which is exactly when a touch-filled buy
       limit at P - 1 tick fills. So if Sierra's simulator fills limits on touch, the relay places
-      the limit one tick better and the Rust ledger books the fill at P (mirror for sells). **First
+      the limit one tick better and the pessimistic report overlay (below) books the fill at P (mirror for sells). **First
       verify which semantics Sierra uses**; if it is already trade-through, no offset (otherwise the
       pessimism is double-counted).
     - *One-event activation delay*: under lockstep the relay places each order on the replay event
@@ -2181,7 +2182,7 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
       comment) is optimistic, the opposite of this tier's purpose. (Today's C++ entry path uses it;
       that is the pre-migration live behaviour, not the backtest model.)
     - *Stops*: Sierra fills a triggered stop at the triggering trade; real stops slip, worst in gaps,
-      so the Rust ledger applies a 1-tick adverse haircut to every stop and market fill.
+      so the pessimistic report overlay applies a 1-tick adverse haircut to every stop and market fill.
     - *Costs*: the real $0.61/side commission measured in W0e (D3), plus CME exchange/regulatory
       fees (exact figure to confirm).
     - *Calibration check, once*: replay a few days with the A1 rules vs. plain touch-filled limits
@@ -2193,10 +2194,10 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     |---|---|---|
     | Adaptive Patient | `LIMIT` at the passive touch (buy at bid), trade-through | Patient rests; may miss the fill -- intended |
     | Adaptive Normal | `LIMIT` at the passive touch, trade-through | MES's 1-tick spread has no on-grid midpoint, so Normal's price improvement is not modelled -- pessimistic |
-    | Adaptive Urgent | `MARKET`, ledger +1 tick adverse | Urgent is meant to fill, so the trade-through rule does not apply; it pays the spread plus slippage |
+    | Adaptive Urgent | `MARKET`, overlay +1 tick adverse | Urgent is meant to fill, so the trade-through rule does not apply; it pays the spread plus slippage |
     | Bracket target leg (IBKR `LMT` child) | attached `LIMIT` (OCO), trade-through | Same one-tick emulation |
-    | Bracket stop leg (IBKR `STP` child) | attached `STOP_WITH_LAST_TRIGGERING` (OCO), ledger +1 tick adverse | Last-trade triggering avoids bid/ask-trigger differences from IBKR's default |
-    | Emergency flatten / trap-floor exit | `MARKET`, ledger +1 tick adverse | |
+    | Bracket stop leg (IBKR `STP` child) | attached `STOP_WITH_LAST_TRIGGERING` (OCO), overlay +1 tick adverse | Last-trade triggering avoids bid/ask-trigger differences from IBKR's default |
+    | Emergency flatten / trap-floor exit | `MARKET`, overlay +1 tick adverse | |
     | TWAP / VWAP / PctVol / DarkIce | not modelled | Slicing/size-hiding algos have nothing to slice at 1 to a few MES contracts. If live size ever warrants them, the relay emulates them as N child limits spaced over the window (deferred) |
 
   - **A2 -- lockstep and clock**: replay must never run ahead of the Rust service. The study blocks
@@ -2204,9 +2205,24 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     `BacktestLiveAgent` pattern is the precedent -- and the Rust service's clock is the replay's
     event timestamp, never wall time (every timer in `order_watcher.rs`/time-barrier logic goes
     through an injectable clock from its first line).
-  - **Results**: the Rust `position_state` ledger is the single source of P&L and trade records
-    (`.btst` ownership, D7); Sierra's own `GetTradeStatisticsForSymbolV2` is a cross-check that
-    must reconcile with the ledger after removing the documented A1 adjustments. Parameter sweeps
+  - **Results -- the broker is the source of truth (CORRECTED 2026-10-13, operator; this bullet
+    originally made a Rust ledger the source of P&L, which would have been a second, drift-prone
+    copy of numbers the broker already maintains)**: position, average price, realized/unrealized
+    P&L, commissions and fills are always *read* from the broker of record -- TWS via `ibapi` live,
+    Sierra's simulator (`sc.GetTradePosition`, fill data, `GetTradeStatisticsForSymbolV2`) in
+    replay -- never recomputed in Rust. `position_state.rs` is a **broker mirror plus annotations**:
+    it holds the broker's last-reported state, adds what no broker knows (the `decision_id` and
+    pattern a trade came from, for `.btst` join keys; MAE/MFE; orders sent but not yet
+    acknowledged), and **reconciles** the position implied by the broker's own fill stream against
+    the broker's position reports -- the broker always wins, and a divergence that outlasts a short
+    grace window raises an alert (the signature of an orphaned bracket leg or a double entry,
+    exactly the flaws this backtest tier exists to catch). When the broker is unreachable the
+    mirror reports "last known as of T, stale" rather than silently serving old values. The A1
+    adjustments are a **backtest-only report overlay** computed from Sierra's own fill list
+    ("broker P&L" vs. "pessimistic P&L"), never a parallel position tracker; live, TWS's numbers
+    stand unadjusted. The existing C++ shows why: `RiskManager.cpp` reads broker truth
+    (`GetTradePosition`/`OpenProfitLoss`) while `Trade.cpp` keeps its own P&L in points with no
+    multiplier or commissions -- two P&L figures in one system today. Parameter sweeps
     change the Rust service's config per run; `SetChartStudyInput` only for signal-side (ACSIL)
     parameters.
   - **Migration parity mode**: while C++ `PositionManager` still exists, the same replay runs the
