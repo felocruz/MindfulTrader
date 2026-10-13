@@ -95,6 +95,37 @@ design content) instead.**
   and grow (2,042,368 bytes). **Lesson: after porting a dim, grep for every real call site of the
   underlying C++ function, not just the first one found — a function can have more than one live
   caller.**
+- **15th `rust/observation_vector` dim ported and shadow-wired, 2026-10-12**: `lempel_ziv`
+  (`InformationEngine::GetLempelZivComplexity()`, LZ76 complexity, Kaspar & Schuster 1987) — a
+  recount while picking this dim found the crate-status table's "12 of ~18" figure already stale
+  (`micro_asymmetry`/`recurrence_rate` were ported in an undocumented-here earlier session; direct
+  enumeration of every `pub fn` in `rust/observation_vector/src/lib.rs` against the real 18-name
+  `ObservationData` constructor found 14 dims already covered before this one, not 12 — corrected
+  in the crate-status table below). Unlike every prior dim, the math lived inside a stateful class
+  method (ring-buffer snapshot + binarization + LZ76 count, all in one function body), not an
+  already-standalone header — first extracted the pure compute (median-threshold binarization →
+  LZ76 partition-count → `n/log2(n)` normalization) into a new `include/LempelZivComplexity.h`,
+  leaving `InformationEngine`'s own circular-buffer bookkeeping (`GetLzWindowSnapshot()`, newly
+  exposed) untouched; a native regression test (`tests/cpp/test_lempel_ziv_complexity.cpp`) proves
+  the refactored class method produces byte-identical output to its pre-refactor body, not just
+  "looks equivalent." Ported to Rust (`lempel_ziv_complexity`), FFI-wrapped,
+  cross-language-parity-tested (full window + below-warmup + null-input cases, exact match to
+  1e-12), and shadow-wired at its one real call site (`ContextManager.cpp`, "the unconditional
+  sole authority" per its own comment — confirmed no second caller exists, unlike
+  `fast_hurst_exponent`'s lesson above). 4 new Rust unit tests (58/58 total), 3 new cross-language
+  parity assertions, 14 new native C++ checks. Both DLL configurations build clean:
+  `MTS_WITH_RUST=OFF` (1,780,224 bytes — not byte-identical to the pre-refactor baseline, expected
+  and correct here since, unlike every additive-only dim before it, this port's C++-side change is
+  an unconditional production refactor, not code gated behind `#ifdef MTS_WITH_RUST`; behavioral
+  identity is what the regression test proves, not DLL bytes) and `=ON` (2,031,104 bytes, links
+  and grows). Live Sierra Chart confirmation deferred (pattern already proven live twice). **3 of
+  18 dims now genuinely remain unported**: `log_scale_ratio` (`StudyHelperFunctions.cpp`'s
+  `CalculateLogScaleRatio`), `tail_index` (Hill-estimator EVT math, not yet traced to one owning
+  header), and `fast_mean_rev_z` (a genuinely distinct activity-clock function,
+  `ActivityClockMeanRevZ` — not a second call site of the already-ported calendar-clock
+  `mean_rev_z`, and its `FeatureScaler` calibration carries an unresolved "MOOT, DROPPED" vs.
+  "wired 2026-09-17, EXPLICIT operator authorization" contradiction worth resolving before porting
+  it).
 - **`rust/schema` crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -430,7 +461,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
-| `observation_vector` | 12 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
+| `observation_vector` | 15 of 18 dims ported (corrected count, 2026-10-12 — the prior "12" figure was stale); remaining: `log_scale_ratio`, `tail_index`, `fast_mean_rev_z` | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |

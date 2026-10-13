@@ -400,6 +400,30 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
         if (ieSamples >= 50) {
             double rawLZ = m_infoEngine.GetLempelZivComplexity();
             obs[OBS_LEMPEL_ZIV] = static_cast<float>(rawLZ);
+
+#ifdef MTS_WITH_RUST
+            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+            // §5.2): proves the Rust port (rust/observation_vector::lempel_ziv_complexity, ported
+            // from the newly-extracted LempelZivComplexity.h) stays correct on live data, without
+            // using its result for anything -- `rawLZ` (computed above) remains the only value used.
+            {
+                std::array<double, MindfulTrader::kLempelZivMaxWindow> lzWindow{};
+                const size_t lzCount = m_infoEngine.GetLzWindowSnapshot(lzWindow);
+                const double rustLZ = mts::observation_vector_lempel_ziv_complexity(lzWindow.data(), lzCount);
+                const bool matches = std::fabs(rawLZ - rustLZ) < 1e-9;
+                static bool loggedMatchOnce = false;
+                if (!matches) {
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST MISMATCH: LempelZivComplexity cpp=" + std::to_string(rawLZ) +
+                        " rust=" + std::to_string(rustLZ));
+                } else if (!loggedMatchOnce) {
+                    loggedMatchOnce = true;
+                    Logger::getInstance().log(
+                        "MTS_WITH_RUST: LempelZivComplexity shadow-mode OK (cpp==rust=" +
+                        std::to_string(rawLZ) + ")");
+                }
+            }
+#endif
         } else {
             obs[OBS_LEMPEL_ZIV] = 0.0f;  // Warmup: IE not yet primed
         }

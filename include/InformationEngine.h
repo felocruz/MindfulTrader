@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 
+#include "LempelZivComplexity.h"
+
 namespace MindfulTrader {
 
     /**
@@ -27,6 +29,8 @@ namespace MindfulTrader {
         static constexpr size_t WINDOW_SIZE_P = 50;   // Current Regime (Short-term)
         static constexpr size_t WINDOW_SIZE_Q = 500;  // Baseline Context (Long-term)
         static constexpr size_t WINDOW_SIZE_LZ = 64;  // Lempel-Ziv Bit-String Window
+        static_assert(WINDOW_SIZE_LZ == kLempelZivMaxWindow,
+                      "WINDOW_SIZE_LZ must match LempelZivComplexity.h's kLempelZivMaxWindow");
 
         InformationEngine()
             : m_headIndexP(0), m_headIndexQ(0), m_headIndexLZ(0), m_countP(0), m_countQ(0)
@@ -166,121 +170,38 @@ namespace MindfulTrader {
         }
 
         /**
+         * @brief Snapshots the LZ ring buffer into chronological order (oldest first) -- the
+         * same reconstruction `GetLempelZivComplexity()` itself uses, exposed separately so
+         * callers (the `MTS_WITH_RUST` shadow-wire comparison in `ContextManager.cpp`) can feed
+         * the Rust port (`LempelZivComplexity.h`'s extracted pure function) the exact same input
+         * without duplicating this class's own circular-buffer bookkeeping.
+         * @return Number of valid elements written to `out` (may be < WINDOW_SIZE_LZ pre-warmup).
+         */
+        size_t GetLzWindowSnapshot(std::array<double, WINDOW_SIZE_LZ>& out) const {
+            const size_t count = (m_countQ < WINDOW_SIZE_LZ) ? m_countQ : WINDOW_SIZE_LZ;
+            for (size_t i = 0; i < count; ++i) {
+                const size_t idx = (m_countQ < WINDOW_SIZE_LZ) ? i : (m_headIndexLZ + i) % WINDOW_SIZE_LZ;
+                out[i] = m_bufferLZ[idx];
+            }
+            return count;
+        }
+
+        /**
          * @brief Calculates Lempel-Ziv Complexity (LZ76)
          * Measures the "Compressibility" or "Algorithmic Pattern Depth" of the sequence.
          * High LZ = Incompressible (Random). Low LZ = Patterned/Compressible.
-         * 
-         * Logic:
-         * 1. Binarize returns (1 if > median, 0 otherwise) over last 64 bars.
-         * 2. Compute LZ complexity count C(n).
-         * 3. Normalize by n / log2(n) for asymptotical randomness measure.
-         * 
+         *
+         * Math extracted to LempelZivComplexity.h (2026-10-12) so it can be natively unit-tested
+         * and ported to Rust independent of this class's own stateful ring-buffer bookkeeping --
+         * same extraction precedent as MeanReversionCalculator.h/LiquidityFragilityEngine.h. This
+         * method is now a thin snapshot-then-delegate wrapper; the math itself is unchanged.
+         *
          * @return Normalized LZ Complexity [0.0 - ~1.0+]
          */
         double GetLempelZivComplexity() const {
-             // 1. Snapshot and Binarize
-             // WINDOW_SIZE_LZ (64) is a compile-time-bounded max -- fixed
-             // stack arrays, zero heap allocation, replacing what used to be
-             // two std::vectors allocated fresh on every call (this ran every
-             // tick once warmed up, docs/superpowers/specs/2026-08-07-
-             // contextmanager-ring-buffer-dod-design.md §3.5, Round 3).
-             std::array<int, WINDOW_SIZE_LZ> S{};
-
-             // Extract linear sequence from circular buffer
-             size_t count = (m_countQ < WINDOW_SIZE_LZ) ? m_countQ : WINDOW_SIZE_LZ;
-             if (count < 10) {
-                 return 0.5; // Neutral complexity if insufficient data
-             }
-
-             // Calculate local median for adaptive thresholding
-             std::array<double, WINDOW_SIZE_LZ> sortedBuf{};
-             for(size_t i=0; i<count; ++i) {
-                 // Reconstruct chronological order if circular
-                 // Logic: m_bufferLZ is a circular buffer.
-                 // If full (count == WINDOW_SIZE_LZ), newest is (m_headIndexLZ - 1 + Size) % Size.
-                 // Oldest is m_headIndexLZ.
-                 // So "ith oldest" is (m_headIndexLZ + i) % Size.
-                 // If NOT full, oldest is 0.
-                 size_t idx = (m_countQ < WINDOW_SIZE_LZ) ? i : (m_headIndexLZ + i) % WINDOW_SIZE_LZ;
-                 sortedBuf[i] = m_bufferLZ[idx];
-             }
-             std::sort(sortedBuf.begin(), sortedBuf.begin() + count);
-             double median = sortedBuf[count/2];
-
-             // Construct bit string S
-             for(size_t i=0; i<count; ++i) {
-                 size_t idx = (m_countQ < WINDOW_SIZE_LZ) ? i : (m_headIndexLZ + i) % WINDOW_SIZE_LZ;
-                 S[i] = (m_bufferLZ[idx] >= median ? 1 : 0);
-             }
-
-             // 2. Lempel-Ziv 76 Algorithm
-             // Kaspar/Schuster (1987) implementation
-             int complexity = 1;
-             int n = static_cast<int>(count);
-
-             int i = 0; // Index of the start of the new component
-             int k = 1; // Length of the current candidate component
-
-             // Proper loop for LZ76
-             // We partition S into components S[0...i-1], S[i...i+k-1], etc.
-             // At each step, we look for S[i...i+k-1] in S[0...i+k-2].
-             // Note the search space EXTENDS into the prefix of the current component.
-             
-             // Simpler (O(N^2)) implementation:
-             // Iterate through the string.
-             // For current position i (starting at 1), check if S[i] extends previous prefix.
-             // This is technically LZ78 or a variant.
-             
-             // Let's stick to the cleanest O(N^2) LZ Complexity def:
-             // c=1, l=1, i=0, k=1
-             // While i+k <= n
-             //   Check if S[i : i+k] appears in S[0 : i+k-1]
-             //   If yes (it's a copy), k++
-             //   If no (it's new), complexity++, i=i+k, k=1
-             
-             i = 1; // Start checking from second char (first char is always new component of length 1)
-             // Actually, i is the start of the *current* component being built.
-             // Initial state: Component 1 is S[0]. So next component starts at i=1.
-             
-             k = 1; 
-             while (i + k <= n) {
-                 bool found = false;
-                 // Check if S[i ... i+k-1] exists in S[0 ... i+k-2]
-                 // This means checking strictly BEFORE the END of the current candidate
-                 
-                 // Limit for starting position of match 'j':
-                 // The match of length k must end at index < i+k-1
-                 // So j + k - 1 < i + k - 1  => j < i
-                 
-                 for (int j = 0; j < i; ++j) {
-                     bool match = true;
-                     for (int x = 0; x < k; ++x) {
-                         if (S[j + x] != S[i + x]) {
-                             match = false;
-                             break;
-                         }
-                     }
-                     if (match) {
-                         found = true;
-                         break;
-                     }
-                 }
-
-                 if (found) {
-                     k++; // Extend the current component
-                 } else {
-                     complexity++; // New component found!
-                     i += k; // Move start pointer
-                     k = 1;  // Reset length
-                 }
-             }
-
-             // 3. Normalize: b(n) = n / log2(n)
-             if (n <= 1) return 0.0;
-             double b_n = static_cast<double>(n) / std::log2(static_cast<double>(n));
-             double result = static_cast<double>(complexity) / b_n;
-
-             return result;
+            std::array<double, WINDOW_SIZE_LZ> window{};
+            const size_t count = GetLzWindowSnapshot(window);
+            return LempelZivComplexity(window.data(), count);
         }
 
         /**

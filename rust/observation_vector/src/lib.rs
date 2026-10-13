@@ -653,6 +653,76 @@ pub fn recurrence_rate(closed_bars: &[f32], live_price: f32, epsilon: f32) -> f3
     (recur_count as f32 / total_count).clamp(0.0, 1.0)
 }
 
+/// Largest window this estimator supports -- matches `InformationEngine::WINDOW_SIZE_LZ`/
+/// `LempelZivComplexity.h`'s own `kLempelZivMaxWindow` exactly (a real wire/behavior contract,
+/// not incidental; the C++ side ties them together via a `static_assert`).
+pub const LEMPEL_ZIV_MAX_WINDOW: usize = 64;
+
+/// Lempel-Ziv 76 complexity (Kaspar & Schuster 1987) over an adaptive-median-binarized window,
+/// normalized by b(n) = n / log2(n). Port of `LempelZivComplexity.h` (itself extracted from
+/// `InformationEngine::GetLempelZivComplexity()`, 2026-10-12). `window` must already be in
+/// chronological order (oldest first, most recent last) -- the real call site
+/// (`InformationEngine::GetLzWindowSnapshot`) does the circular-buffer-to-linear reconstruction
+/// before calling this.
+///
+/// Returns `0.5` (neutral) for `window.len() < 10` -- insufficient data to binarize/estimate
+/// meaningfully, matching the C++ original's own sentinel (not NaN: this is a genuinely defined
+/// "don't know yet" answer, not a degenerate-input failure).
+pub fn lempel_ziv_complexity(window: &[f64]) -> f64 {
+    let count = window.len().min(LEMPEL_ZIV_MAX_WINDOW);
+    if count < 10 {
+        return 0.5;
+    }
+    let window = &window[..count];
+
+    // 1. Adaptive median threshold.
+    let mut sorted: Vec<f64> = window.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let median = sorted[count / 2];
+
+    // 2. Construct bit string S via median thresholding.
+    let s: Vec<u8> = window.iter().map(|&v| u8::from(v >= median)).collect();
+
+    // 3. LZ76 complexity count: partition S into components S[0..i-1], S[i..i+k-1], ...; at each
+    // step, check whether S[i..i+k-1] already appears somewhere in S[0..i+k-2] (the search space
+    // extends into the current candidate's own prefix) -- if so it's a copy (extend k),
+    // otherwise it's a genuinely new component (increment complexity, advance i, reset k).
+    let mut complexity: i32 = 1;
+    let n = count as i32;
+    let mut i: i32 = 1; // Component 1 is S[0]; the next candidate component starts at i=1.
+    let mut k: i32 = 1;
+    while i + k <= n {
+        let mut found = false;
+        for j in 0..i {
+            let mut matched = true;
+            for x in 0..k {
+                if s[(j + x) as usize] != s[(i + x) as usize] {
+                    matched = false;
+                    break;
+                }
+            }
+            if matched {
+                found = true;
+                break;
+            }
+        }
+        if found {
+            k += 1;
+        } else {
+            complexity += 1;
+            i += k;
+            k = 1;
+        }
+    }
+
+    // 4. Normalize: b(n) = n / log2(n).
+    if n <= 1 {
+        return 0.0;
+    }
+    let b_n = f64::from(n) / f64::from(n).log2();
+    f64::from(complexity) / b_n
+}
+
 #[cfg(test)]
 // Several tests assert exact sentinel/boundary return values (e.g. early-return 0.0 for
 // below-minimum-samples, clamped -1.0/1.0 extremes) that the implementation guarantees bit-exactly,
@@ -1308,5 +1378,44 @@ mod tests {
         let expected = measured_full_matrix_rr(&returns, epsilon);
         assert!((expected - actual as f64).abs() < 1e-6);
         assert!(actual.is_finite() && (0.0..=1.0).contains(&actual));
+    }
+
+    #[test]
+    fn lempel_ziv_complexity_below_ten_is_neutral() {
+        for n in 0..10 {
+            let window = vec![0.0f64; n];
+            assert_eq!(lempel_ziv_complexity(&window), 0.5, "n={n}");
+        }
+    }
+
+    #[test]
+    fn lempel_ziv_complexity_constant_sequence_matches_closed_form() {
+        let window = vec![5.0f64; 64];
+        let n = 64.0_f64;
+        let b_n = n / n.log2();
+        let actual = lempel_ziv_complexity(&window);
+        assert!((actual - 1.0 / b_n).abs() < 1e-12, "actual={actual}");
+    }
+
+    #[test]
+    fn lempel_ziv_complexity_alternating_sequence_is_finite_and_positive() {
+        let window: Vec<f64> = (0..64).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let actual = lempel_ziv_complexity(&window);
+        assert!(actual.is_finite() && actual > 0.0, "actual={actual}");
+    }
+
+    #[test]
+    fn lempel_ziv_complexity_longer_than_max_window_is_clamped_not_overrun() {
+        // Mirrors recurrence_rate_oversized_window_is_clamped_not_overrun's own precedent: an
+        // over-long input must not panic/overrun, and must read only the first
+        // LEMPEL_ZIV_MAX_WINDOW elements (matching the C++ original's fixed-capacity buffer).
+        let mut exact = vec![0.0f64; LEMPEL_ZIV_MAX_WINDOW];
+        for (i, v) in exact.iter_mut().enumerate() {
+            *v = (i as f64 * 0.37).sin();
+        }
+        let mut oversized = exact.clone();
+        oversized.push(999.0); // beyond the cap, must be ignored
+        oversized.push(-999.0);
+        assert_eq!(lempel_ziv_complexity(&exact), lempel_ziv_complexity(&oversized));
     }
 }

@@ -211,6 +211,15 @@ float observation_vector_recurrence_rate(const float *closed_bars,
                                          float live_price,
                                          float epsilon);
 
+/// Port of `LempelZivComplexity.h` (extracted from `InformationEngine::GetLempelZivComplexity()`).
+/// `window` points to `len` chronologically-ordered elements (oldest first); a null/empty
+/// `window` maps to the pure function's own `< 10` neutral-0.5 case, not a NaN sentinel -- this
+/// dim has no "degenerate input" failure mode distinct from "not enough data yet".
+///
+/// # Safety
+/// `window` must be either null or valid for reads of `len` contiguous `f64` elements.
+double observation_vector_lempel_ziv_complexity(const double *window, uintptr_t len);
+
 /// Loads a trained model + registry manifest (`student_t_hmm::artifact::load`'s JSON format) and
 /// returns a live, stateful opaque handle. Call once per `sc.LastCallToFunction`-adjacent study
 /// load (spec §6.5) -- never per tick, never per step.

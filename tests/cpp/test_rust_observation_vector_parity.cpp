@@ -16,6 +16,7 @@
 #include "CarryForwardCalculators.h"
 #include "DfaHurstExponent.h"
 #include "EventVelocityEngine.h"
+#include "LempelZivComplexity.h"
 #include "LiquidityFragilityEngine.h"
 #include "MeanReversionCalculator.h"
 #include "OrderFlowAsymmetryEngine.h"
@@ -355,6 +356,36 @@ int main() {
         const float rustRate = mts::observation_vector_recurrence_rate(big.data(), big.size(), 1.0f, 0.5f);
         check("RecurrenceRateEngine oversized window: Rust matches C++ exactly (both fully recurrent)",
               std::fabs(cppRate - 1.0f) < 1e-6f && std::fabs(rustRate - 1.0f) < 1e-6f);
+    }
+
+    // --- LempelZivComplexity: C++ production function vs. Rust FFI wrapper, same input ---
+    {
+        std::array<double, MindfulTrader::kLempelZivMaxWindow> window{};
+        uint32_t s = 9191u;
+        for (std::size_t i = 0; i < window.size(); ++i) {
+            s = s * 1664525u + 1013904223u;
+            const double u = static_cast<double>(s >> 8) / 16777216.0;
+            window[i] = 2.0 * u - 1.0;
+        }
+        const double cppResult = MindfulTrader::LempelZivComplexity(window.data(), window.size());
+        const double rustResult = mts::observation_vector_lempel_ziv_complexity(window.data(), window.size());
+        check("LempelZivComplexity full window: Rust matches C++ exactly",
+              std::fabs(cppResult - rustResult) < 1e-12);
+    }
+    {
+        // Below-warmup (count < 10): both return the neutral 0.5 sentinel.
+        std::array<double, MindfulTrader::kLempelZivMaxWindow> window{};
+        const double cppResult = MindfulTrader::LempelZivComplexity(window.data(), 7);
+        const double rustResult = mts::observation_vector_lempel_ziv_complexity(window.data(), 7);
+        check("LempelZivComplexity below-warmup: Rust matches C++ exactly (both 0.5)",
+              cppResult == 0.5 && rustResult == 0.5);
+    }
+    {
+        // Null/empty input: the Rust wrapper's own documented convention maps this to the pure
+        // function's own < 10 neutral case, matching the C++ side's own count=0 behavior exactly.
+        const double rustResult = mts::observation_vector_lempel_ziv_complexity(nullptr, 0);
+        check("LempelZivComplexity Rust wrapper: null input matches C++ count=0 neutral case",
+              rustResult == 0.5);
     }
 
     std::printf(g_failures == 0 ? "ALL PASS\n" : "%d FAILURE(S)\n", g_failures);
