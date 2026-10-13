@@ -1043,3 +1043,21 @@ per-commit) to `2d7847d`'s dead-trigger narrowing fix for `RASCHKE_STRATEGY_SETU
 `RASCHKE_TACTICAL_TRIGGER`/`VOLUME_SIGNAL`/`DAILY_BIAS` (previously over-permissive "any change"
 in the offline engine specifically) outweighing `47f0bb4`'s Locks D/E cold-start relaxation and
 today's new regime-bucket bits, both of which push the other direction.
+
+## Entry 31 — MindfulTrader-session — 2026-10-13
+
+**`fast_mean_rev_z` (`ObservationData` dim 17) RETIRED — live `.context` files now carry a constant
+`0.0f` for it again, matching the offline replay files.** Since 2026-09-18, live
+`src/ContextManager.cpp` was still computing real values while `MarketDataReplayEngine.h` emitted
+`0.0f` (the 09-18 OUT verdict reported earlier in this log only changed the offline tool). Both paths
+now emit `0.0f`; the computation is deleted from both. The schema stays 18D.
+
+Why: the 2026-09-18 HMM state-occupancy collapse already rejected it; a corrected forward-return
+sweep (5 horizons, declustered, Bonferroni — `docs/superpowers/specs/2026-08-31-elite-feature-set-
+curation-initiative.md` row 19) found no significant edge either.
+
+**lbrnet action**: none required if `HMM_KEEP_DIMS` already excludes dim 17 (it should, per 09-18).
+Any live-collected `.context` data from 2026-09-17..2026-10-13 has real varying values in that
+column; data from before 09-17 and after this commit has `0.0f`. Not a regression — do not
+re-report a constant dim 17 as a bug.
+

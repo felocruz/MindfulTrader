@@ -65,9 +65,9 @@ inline constexpr std::array<std::size_t, 17> kCandidateDims = {
     // pathology, a genuinely-varying but non-predictive dim fragmenting a
     // spurious state), vs. healthy occupancy across all 4 states at 17D.
     // Reconfirms the 2026-08-31/2026-09-04 DROP decision this dim already
-    // carried. Live src/ContextManager.cpp keeps computing/emitting it
-    // (out of this tool's scope, and other consumers may still want it) --
-    // this only removes it from the HMM-training candidate view.
+    // carried. RETIRED outright 2026-10-13 after a 5-horizon declustered
+    // hit-rate sweep also came back null: neither this engine nor live
+    // src/ContextManager.cpp computes it any more (constant 0.0f in both).
 };
 
 inline constexpr std::size_t kCandidateDimCount = kCandidateDims.size();

@@ -168,16 +168,16 @@ decisions**: `burstiness_index` (robust CV, MAD/median × a newly-derived 1.4404
 Poisson-neutrality constant, NOT the standard 1.4826 — **superseded 2026-09-02, see below**),
 `vol_convexity` (REMOVED from the schema, 19D→18D — decided
 2026-08-25, executed today), `mean_rev_z` (median/MAD price z-score + median-centered lag-1
-autocorrelation, Kim & White 2004 — do not confuse with the still-undecided `fast_mean_rev_z`/
-activity-clock move above, which remains unwired). A real bug was found and fixed as a side effect
+autocorrelation, Kim & White 2004 — do not confuse with the `fast_mean_rev_z`/activity-clock twin
+above, RETIRED 2026-10-13, see below). A real bug was found and fixed as a side effect
 of the schema shrink: `FeatureScaler.h`'s `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing
 one element, misaligning `liq_fragility`'s calibrated bound by one index. All native tests pass,
 `./build_dll.sh --no-clean` builds clean; **committed 2026-09-02 (`d2ab57c`)** after sitting
 uncommitted across multiple prior sessions — verified clean before committing. Still open:
 `amihud_illiquidity`/`relative_range`/`liq_fragility` (need a literature decision, not a mechanical
-fix, since `hurst_exponent` was resolved 2026-09-02). `fast_mean_rev_z`'s wire-or-drop call remains
-open, but its unwired `ActivityClockMeanReversion.h` implementation was reformulated to median/MAD
-2026-09-02 (`b0ab21a`) ahead of that decision. Separate
+fix, since `hurst_exponent` was resolved 2026-09-02). `fast_mean_rev_z` is RETIRED (2026-10-13):
+rejected by the 2026-09-18 HMM state-occupancy test and a corrected 5-horizon declustered
+forward-return sweep; never computed, constant 0.0f in the 18D schema (initiative doc row 19). Separate
 finding: re-measuring a dim's importance against the *existing* `models/hmm_model.pkl` is circular
 (its state labels were learned from the pre-Phase-0, still-contaminated vector) — recorded as an
 open methodological question, not yet resolved.

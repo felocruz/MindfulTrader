@@ -194,8 +194,8 @@ NaN guard, production-named `SetImbalanceThreshold()`, 16/16 native tests pass).
   (REMOVED from the schema entirely, 19D→18D — already decided 2026-08-25 as the weakest
   discriminator measuring the wrong thing structurally, executed today, not reformulated), `mean_rev_z`
   (median/MAD price z-score + median-centered lag-1 autocorrelation, Kim & White 2004) — do not confuse
-  this fix (the existing time-bar/live `mean_rev_z` formula) with the separate, still-undecided
-  `fast_mean_rev_z`/activity-clock move referenced two bullets above, which remains unwired. A real bug
+  this fix (the existing time-bar/live `mean_rev_z` formula) with the separate `fast_mean_rev_z`/
+  activity-clock twin referenced two bullets above (RETIRED 2026-10-13, see below). A real bug
   was found and fixed as a side effect of the schema shrink: `FeatureScaler.h`'s
   `LOGZ_WINSOR_SIGMA_OVERRIDE` array was silently missing one element, misaligning `liq_fragility`'s
   calibrated bound by one index — caught by the native test suite, not inspection, the same failure
@@ -204,9 +204,10 @@ NaN guard, production-named `SetImbalanceThreshold()`, 16/16 native tests pass).
   sitting uncommitted across multiple prior sessions — verified clean before committing, not just
   trusting the prior claim. Still open: `amihud_illiquidity`/`relative_range`/`liq_fragility` (2
   ambiguous Gaussian-moment-adjacent cases needing a literature decision, not a mechanical fix, since
-  `hurst_exponent` was resolved 2026-09-02, see below) and `fast_mean_rev_z`'s wire-or-drop call
-  (its unwired `ActivityClockMeanReversion.h` implementation was reformulated to median/MAD
-  2026-09-02, `b0ab21a`, ahead of that decision, so it no longer needs a formula fix first). **Separate finding, same
+  `hurst_exponent` was resolved 2026-09-02, see below). `fast_mean_rev_z` is **RETIRED (2026-10-13)**:
+  rejected by the 2026-09-18 HMM state-occupancy test and by a corrected 5-horizon declustered
+  forward-return sweep; never computed live or offline, constant 0.0f in the 18D schema (initiative
+  doc row 19). **Separate finding, same
   day**: any attempt to re-measure a dim's importance against the *existing* `models/hmm_model.pkl`
   (e.g. did making `amihud_illiquidity`/`liq_fragility` live-reactive on 2026-08-29 help) is circular —
   that model's state labels were learned from the pre-Phase-0, still-contaminated vector. Recorded as

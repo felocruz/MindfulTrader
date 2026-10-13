@@ -35,7 +35,6 @@ struct LocalRiskContext {
     float fastHurstExponent = 0.5f;    // DFA Hurst over activity-clock (imbalance-bar) returns
     float fractalDim = 1.5f;           // roughness 1.0-2.0
     float meanRevZ = 0.0f;             // distance from mean in sigma
-    float fastMeanRevZ = 0.0f;         // mean-reversion elasticity over activity-clock imbalance-bar returns
 
     // Raschke (Event Dynamics)
     // Goh & Barabasi (2008) bounded burstiness parameter, range [-1,+1]:

@@ -3,7 +3,8 @@
 // math yet). See docs/superpowers/plans/2026-09-08-market-data-replay-implementation.md.
 //
 // Build & run natively:
-//   g++ -std=c++17 -Iinclude -Iinclude/generated tools/market_data_replay/test_market_data_replay_engine.cpp -o /tmp/mdr_test && /tmp/mdr_test
+//   g++ -std=c++17 -Iinclude -Iinclude/generated -I/usr/include/eigen3 \
+//     tools/market_data_replay/test_market_data_replay_engine.cpp src/StructureEngine.cpp -o /tmp/mdr_test && /tmp/mdr_test
 
 #include "MarketDataReplayEngine.h"
 
@@ -500,10 +501,10 @@ int main() {
               engine.GetBarsSinceLastUpdate() != tenureBefore);
         check("task6b_mean_rev_z_reacts_mid_bar", obsAfter.mean_rev_z() != meanRevZBefore);
 
-        // Task 7: fast_mean_rev_z is a decided-DROP dim (spec §2) -- never
-        // wired in the existing codebase (ActivityClockMeanReversion.h is
-        // real and pure but genuinely unused in the live path), so this
-        // engine must never assign it a real value either. A guard, not a
+        // Task 7: fast_mean_rev_z is RETIRED (2026-10-13) -- neither this
+        // engine nor live ContextManager.cpp computes it (ActivityClockMean-
+        // Reversion.h survives only for tools/observation_vector's
+        // mean_rev_z_variant_comparison), so it must stay 0.0f. A guard, not a
         // feature: reuses this block's own fully-warmed-up engine (every
         // other dim has been exercised above) as the strongest test of
         // "nothing accidentally wires this field".

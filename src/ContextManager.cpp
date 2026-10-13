@@ -10,7 +10,6 @@
 #include "RecurrenceRateEngine.h"
 #include "RQAEpsilonSelector.h"
 #include "DfaHurstExponent.h"
-#include "ActivityClockMeanReversion.h"
 #ifdef MTS_WITH_RUST
 #include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
 #endif
@@ -612,21 +611,14 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             m_localRiskContext.fastHurstExponent = std::isfinite(fastHurstRaw) ? fastHurstRaw : s_lastValidFastHurst;
             if (std::isfinite(fastHurstRaw)) { s_lastValidFastHurst = m_localRiskContext.fastHurstExponent; }
 
-            // Dim 17 (fast_mean_rev_z): wired 2026-09-17, EXPLICIT operator authorization.
-            // The 2026-09-04 "do not wire" decision (docs/superpowers/specs/2026-09-06-
-            // observation-vector-gang-statistical-reformulation-initiative.md) stands and is NOT
-            // being re-litigated here -- that was a well-powered hit-rate test on raw predictive
-            // power, a different question. What was never run is the HMM-based cross-state
-            // discrimination test (this project's preferred dim-selection methodology, blocked
-            // historically by model-staleness circularity). This wiring exists solely to make
-            // that measurement possible; it is not a claim the dim is useful. See
-            // docs/superpowers/specs/2026-09-17-live-trading-log-observability-and-data-quality-
-            // spec.md §4 for the full authorization trail.
-            static float s_lastValidFastMeanRevZ = 0.0f;
-            const float fastMeanRevZRaw = ActivityClockMeanRevZ(returnsArray.data(), 100);
-            m_localRiskContext.fastMeanRevZ = std::isfinite(fastMeanRevZRaw) ? fastMeanRevZRaw : s_lastValidFastMeanRevZ;
-            if (std::isfinite(fastMeanRevZRaw)) { s_lastValidFastMeanRevZ = m_localRiskContext.fastMeanRevZ; }
-            obs[OBS_FAST_MEAN_REV_Z] = m_localRiskContext.fastMeanRevZ;
+            // Dim 17 (fast_mean_rev_z) is RETIRED (2026-10-13): never computed, left at
+            // obs's zero-initialized 0.0f sentinel -- same value the offline replay engine
+            // emits (kObsFastMeanRevZ is OUT in CandidateObservationDims.h). Rejected on
+            // both tests: forward-return hit rate (5-horizon declustered sweep, no cell
+            // significant, docs/superpowers/specs/2026-08-31-elite-feature-set-curation-
+            // initiative.md row 19) and HMM state-occupancy collapse (2026-09-09-market-
+            // data-replay-dim-selection-spec.md §0e). The schema stays 18D (operator
+            // directive 2026-09-16), so the field remains, permanently constant.
 
             // Dim 13 (recurrence_rate): replaced 2026-08-28, source moved from
             // TS2's time-bar CalculateRecurrenceRate() to this same buffer
@@ -690,8 +682,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             obs[OBS_SKEWNESS] = 0.0f;  // Warmup: neutral (symmetric)
             obs[OBS_RECURRENCE_RATE] = 0.0f;  // Warmup: neutral (matches contract's [0,1] floor)
             m_localRiskContext.fastHurstExponent = 0.5f;  // Warmup: neutral (random-walk default)
-            m_localRiskContext.fastMeanRevZ = 0.0f;  // Warmup: neutral (no deviation)
-            obs[OBS_FAST_MEAN_REV_Z] = 0.0f;
         }
         obs[OBS_FAST_TALEB_KURTOSIS] = m_localRiskContext.fastTalebKurtosis;
         obs[OBS_FAST_HURST_EXPONENT] = m_localRiskContext.fastHurstExponent;
@@ -1004,6 +994,8 @@ bool ContextManager::UpdateCollectionObservationTelemetry(
         int stale_count = 0;
 
         for (size_t i = 0; i < OBSERVATION_VECTOR_SIZE; ++i) {
+            // Retired dim 17 is constant by design -- never a staleness finding.
+            if (i == OBS_FAST_MEAN_REV_Z) continue;
             if (m_staleRunLength[i] >= OBS_STALENESS_ALERT_RUN) {
                 if (!stale_dims.empty()) {
                     stale_dims += ", ";
@@ -1400,6 +1392,9 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
             // avoid masking the real target (dims 1/2) behind permanent
             // false alarms.
             if (i == 5 || i == 13 || i == 14) continue;
+            // Retired dim 17 (fast_mean_rev_z) is a constant 0.0f by design, so its
+            // dominanceRatio is permanently 1.0 -- not the collapse this alert targets.
+            if (i == OBS_FAST_MEAN_REV_Z) continue;
             if (m_featureScaler.dominanceRatio[i] > 0.30f) {
                 Logger::getInstance().log(
                     "FeatureScaler dominance ALERT dim=" + std::to_string(i) +

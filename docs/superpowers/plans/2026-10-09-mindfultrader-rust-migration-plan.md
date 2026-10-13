@@ -179,6 +179,14 @@ design content) instead.**
   and grows). **1 of 18 observation-vector dims now genuinely remains unported**: `fast_mean_rev_z`
   (its own unresolved "MOOT, DROPPED" vs. "wired, EXPLICIT operator authorization" contradiction,
   noted above, is worth resolving before porting it).
+- **`fast_mean_rev_z` RETIRED, not ported, 2026-10-13 — the observation-vector port is complete
+  (17 of 17 live dims)**: the "contradiction" above was a sequence, not a conflict — dropped
+  2026-09-04 on a hit-rate test, wired 2026-09-17 solely to enable an HMM test, rejected by that HMM
+  test 2026-09-18 (state-occupancy collapse), but its live wiring was never removed. A corrected
+  5-horizon declustered forward-return sweep (elite-feature-set-curation initiative row 19) also came
+  back null, so the live and offline computation were deleted outright; dim 17 stays in the 18D
+  schema as a constant 0.0f. Nothing to port. `MTS_WITH_RUST=OFF` DLL 1,778,688 bytes (-2,048),
+  `=ON` 2,051,584.
 - **`rust/schema` crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -514,7 +522,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
-| `observation_vector` | 17 of 18 dims ported; remaining: `fast_mean_rev_z` (unresolved MOOT/DROPPED-vs-wired contradiction, see dated bullet log) | spec §6 / §5 below |
+| `observation_vector` | **Complete**: 17 of 17 live dims ported; the 18th schema dim, `fast_mean_rev_z`, was RETIRED 2026-10-13 (constant 0.0f, nothing to port — see dated bullet log) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |

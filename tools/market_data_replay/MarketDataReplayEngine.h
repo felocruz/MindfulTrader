@@ -20,7 +20,6 @@
 #include "CarryForwardCalculators.h"
 #include "DailyBiasEngine.h"
 #include "DfaHurstExponent.h"
-#include "ActivityClockMeanReversion.h"
 #include "EasternTimeOffset.h"
 #include "EventVelocityEngine.h"
 #include "FeatureScaler.h"
@@ -104,10 +103,8 @@ public:
         // exponent shares hurst_exponent's own 0.5f (random-walk) neutral.
         m_obs.mutate_fast_taleb_kurtosis(1.23f);
         m_obs.mutate_fast_hurst_exponent(0.5f);
-        // fast_mean_rev_z: wired 2026-09-17 (explicit operator authorization, see
-        // ContextManager.cpp's own comment at the live call site for the full trail) --
-        // true cold-start neutral value is 0.0f (no deviation), matches FlatBuffers' zero-init.
-        m_obs.mutate_fast_mean_rev_z(0.0f);
+        // fast_mean_rev_z: RETIRED 2026-10-13, never computed -- stays at FlatBuffers'
+        // zero-init 0.0f, matching live ContextManager.cpp.
     }
 
     // Returns true iff this tick's observation is a significant change and
@@ -815,10 +812,9 @@ private:
     // Operator directive, 2026-09-16: forces every currently-OUT dim (any dim
     // not in mdr::kCandidateDims) to a hard 0.0f sentinel, unconditionally,
     // every tick -- called first thing in OnTick() so it applies even before
-    // any per-timeframe warmup completes. fast_mean_rev_z (dim 17) is IN
-    // kCandidateDims (never OUT) and is now genuinely computed (2026-09-17,
-    // explicit operator authorization) in the shared imbalance-bar-return
-    // block below, same as its 4 siblings -- no entry needed here either way.
+    // any per-timeframe warmup completes. fast_mean_rev_z (dim 17) needs no
+    // entry: it is RETIRED (2026-10-13) and nothing in this engine or the live
+    // path ever writes it, so it never leaves its 0.0f zero-init.
     void ApplyOutDimZeroing() {
         using namespace MTS::Schema::Contract;
         if (!mdr::IsCandidateDim(kObsLogScaleRatio)) m_obs.mutate_log_scale_ratio(0.0f);
@@ -2471,11 +2467,9 @@ private:
         using MTS::Schema::Contract::kObsSkewnessIdx;
         using MTS::Schema::Contract::kObsFastHurstExponent;
         using MTS::Schema::Contract::kObsRecurrenceRate;
-        using MTS::Schema::Contract::kObsFastMeanRevZ;
         if (!mdr::IsCandidateDim(kObsFastTalebKurtosis) && !mdr::IsCandidateDim(kObsSkewnessIdx) &&
-            !mdr::IsCandidateDim(kObsFastHurstExponent) && !mdr::IsCandidateDim(kObsRecurrenceRate) &&
-            !mdr::IsCandidateDim(kObsFastMeanRevZ)) {
-            return;  // all 5 OUT -- skip the imbalance-bar-return fetch entirely
+            !mdr::IsCandidateDim(kObsFastHurstExponent) && !mdr::IsCandidateDim(kObsRecurrenceRate)) {
+            return;  // all 4 OUT -- skip the imbalance-bar-return fetch entirely
         }
 
         std::array<float, 100> returnsArray{};
@@ -2499,14 +2493,6 @@ private:
                 const float fastHurstRaw = DfaHurstExponent(returnsArray.data(), 100, 8);
                 m_lastValidFastHurst = std::isfinite(fastHurstRaw) ? fastHurstRaw : m_lastValidFastHurst;
                 m_obs.mutate_fast_hurst_exponent(m_lastValidFastHurst);
-            }
-
-            if (mdr::IsCandidateDim(kObsFastMeanRevZ)) {
-                // wired 2026-09-17, explicit operator authorization -- see
-                // ContextManager.cpp's own comment at the live call site for the full trail.
-                const float fastMeanRevZRaw = ActivityClockMeanRevZ(returnsArray.data(), 100);
-                m_lastValidFastMeanRevZ = std::isfinite(fastMeanRevZRaw) ? fastMeanRevZRaw : m_lastValidFastMeanRevZ;
-                m_obs.mutate_fast_mean_rev_z(m_lastValidFastMeanRevZ);
             }
 
             if (mdr::IsCandidateDim(kObsRecurrenceRate)) {
@@ -2536,9 +2522,6 @@ private:
             }
             if (mdr::IsCandidateDim(kObsFastHurstExponent)) {
                 m_obs.mutate_fast_hurst_exponent(m_lastValidFastHurst);
-            }
-            if (mdr::IsCandidateDim(kObsFastMeanRevZ)) {
-                m_obs.mutate_fast_mean_rev_z(m_lastValidFastMeanRevZ);
             }
             if (mdr::IsCandidateDim(kObsRecurrenceRate)) {
                 m_obs.mutate_recurrence_rate(m_cachedRecurrenceRate);
@@ -2950,7 +2933,6 @@ private:
     float m_lastValidFastTalebKurtosis = 1.23f;
     float m_lastValidSkewnessIdx = 0.0f;
     float m_lastValidFastHurst = 0.5f;
-    float m_lastValidFastMeanRevZ = 0.0f;
     RecurrenceRateEngine m_recurrenceEngine;
     std::size_t m_lastRecurrenceBarCount = 0;
     float m_cachedRecurrenceRate = 0.0f;
