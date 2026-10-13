@@ -288,8 +288,11 @@ pub fn bootstrap_threshold_ci(
 
 /// Linear-interpolation percentile over an ALREADY-SORTED slice -- matches `numpy.percentile`'s
 /// default (`method="linear"`) convention, the same one `_bootstrap_threshold_ci`'s own
-/// `np.percentile` call relies on implicitly.
-fn percentile_sorted(sorted: &[f64], pct: f64) -> f64 {
+/// `np.percentile` call relies on implicitly. `pub(crate)` (not private): `bootstrap.rs`'s own
+/// windowed gate statistics and CI orchestration need the exact same numpy-percentile convention
+/// and share this implementation rather than duplicating it, per this crate's established
+/// "share, don't duplicate" principle (the same one this port fixed for `mean_tenure_by_state`).
+pub(crate) fn percentile_sorted(sorted: &[f64], pct: f64) -> f64 {
     if sorted.is_empty() {
         return f64::NAN;
     }

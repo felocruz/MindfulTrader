@@ -432,7 +432,7 @@ redeployed, test artifacts deleted.
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
 | `observation_vector` | 12 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
-| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration all shipped); full K-selection not started (deprioritized) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32), G7 (C++ cutover) not started |
+| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
 | `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.) still blocked on W0e (algo what-if spike, needs reachable TWS/Gateway) |
@@ -772,7 +772,30 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
     point of the algorithm over uniform seeding). 8 new tests. Workspace: 151/151 tests pass,
     clippy clean.
 - **G3 — dependent on `model.rs`'s output shape**: `bootstrap.rs` (needs `model.rs`'s emission
-  formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2);
+  formula + shares a helper with `gate_metrics.rs`, fixing the Python-side duplication per F2).
+  **SHIPPED, 2026-10-12** (spec decision #33): ports `hmm_parametric_bootstrap.py` in full —
+  Markov-chain state-path simulation + 2D Student-t emission simulation directly from a fitted
+  model's own `transmat`/`startprob`/`means`/`covars`/`dof` (not resampled real history, sidesteps
+  the real nonparametric block bootstrap's `N_eff>=30` ceiling per the real module's own
+  motivation), the 3 windowed gate statistics (`pareto_top_state_ratio`/`shannon_mean_tenure`/
+  `taleb_signal_sigma`), and the CI + misspecification-p-value orchestrator. New pieces this
+  module needed that didn't exist yet anywhere in the crate: a Box-Muller standard-normal sampler
+  and a Marsaglia-Tsang (2000) gamma/chi-squared sampler (with an Ahrens-Dieter 1974 boost for
+  `shape<1`, not reachable at this crate's own `dof_min=2.1` floor but implemented anyway so the
+  sampler is correct over its full domain, not just the floor-constrained case). Found and fixed
+  one real algorithmic mismatch while porting `simulate_state_path`: the real Python's per-step
+  state draw is `(u[:, None] > row_cum).sum(axis=1)` (a direct count of cumulative-probability
+  entries strictly less than `u`), which is NOT equivalent to a naive "first index with
+  `cum[k] > u`" search at the exact-tie edge (`u` landing precisely on a cumulative boundary) —
+  the count formula keeps the LOWER state at that edge; fixed with a `u <= cum[k]` comparison
+  instead, caught by deriving both formulas by hand on a worked example before trusting either.
+  Shares `gate_metrics::mean_tenure_by_state` (fixing the real Python module's own flagged
+  duplication) and `calibration::percentile_sorted` (newly made `pub(crate)` for this). Not
+  bit-exact cross-language parity (same scope boundary `init.rs`'s k-means++ seeding and
+  `calibration.rs`'s stationary bootstrap already established) — validated via moment-matching
+  (gamma/chi-squared sampler mean/variance converge to closed-form values across 200k draws for
+  several dof) and structural checks instead. 16 new tests, workspace 216/216 pass, clippy clean
+  (incl. Windows cross-compile).
   `registry.rs` **(corrected scope, 2026-10-11, operator: confirmed understanding of `MarketClimate`'s
   real ownership before implementing)** — ports `lbrnet/models/regime_registry.py`'s real
   `build_regime_registry()` classification cascade (tenure/Taleb-DOF-fragility/Pareto-thrust/
