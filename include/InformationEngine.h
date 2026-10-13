@@ -171,10 +171,9 @@ namespace MindfulTrader {
 
         /**
          * @brief Snapshots the LZ ring buffer into chronological order (oldest first) -- the
-         * same reconstruction `GetLempelZivComplexity()` itself uses, exposed separately so
-         * callers (the `MTS_WITH_RUST` shadow-wire comparison in `ContextManager.cpp`) can feed
-         * the Rust port (`LempelZivComplexity.h`'s extracted pure function) the exact same input
-         * without duplicating this class's own circular-buffer bookkeeping.
+         * reconstruction `GetLempelZivComplexity()` itself uses, exposed separately so callers
+         * (tests) can feed `LempelZivComplexity()` the exact same input without duplicating this
+         * class's own circular-buffer bookkeeping.
          * @return Number of valid elements written to `out` (may be < WINDOW_SIZE_LZ pre-warmup).
          */
         size_t GetLzWindowSnapshot(std::array<double, WINDOW_SIZE_LZ>& out) const {

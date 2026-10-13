@@ -1,12 +1,12 @@
-//! observation_vector -- pure ports of this codebase's C++ observation-vector dim math.
+//! observation_vector -- the observation-vector dim math, the single implementation.
 //! Zero ACSIL/zmq/pyo3 dependency (infrastructure guide §2.1 "pure core, thin edges").
 //!
-//! Every function here is a byte-for-byte port of an existing, natively-tested C++ header; the
-//! ported-from file is named in each function's own doc comment. Parity with C++ is proven two ways:
-//! (1) this crate's own unit tests, mirroring each C++ test file's structure; (2) a separate C++ test
-//! (tests/cpp/test_rust_observation_vector_parity.cpp) that calls both the original C++ function and
-//! this crate's FFI wrapper (via rust/ffi) on the *same* input and asserts equality -- the real,
-//! authoritative cross-language proof, not just "ported independently and hoping".
+//! Every function here began as a byte-for-byte port of a natively-tested C++ header (named in
+//! each function's doc comment). Parity was proven by this crate's unit tests, a C++ test calling
+//! both implementations on the same input, and a live Sierra Chart shadow run (2026-10-13: all 19
+//! call sites matched, zero mismatches). Since the cutover (spec decision #42) those C++ headers
+//! are thin wrappers over these functions via rust/ffi -- live Sierra, the offline `.context`
+//! generator and every native tool all run this code.
 
 /// Linear-interpolation empirical quantile (R's default "Type 7" method) over an already-sorted
 /// slice. Port of RobustMoments.h's `EmpiricalQuantile<N>`.

@@ -130,10 +130,9 @@ namespace MindfulTrader {
         /**
          * @brief Snapshots the current window (absolute log-returns, ANY order -- see
          * HillTailIndex.h's own doc comment for why order doesn't matter here) and the engine's
-         * own `m_tailCutoff`, so callers (the `MTS_WITH_RUST` shadow-wire comparison in
-         * `ContextManager.cpp`) can independently recompute the raw (pre-EWMA) Hill alpha via the
-         * same pure `HillTailIndex()` this class delegates to internally, without needing their
-         * own parallel EWMA state.
+         * own `m_tailCutoff`, so callers (tests) can independently recompute the raw (pre-EWMA) Hill
+         * alpha via the same `HillTailIndex()` this class delegates to internally, without needing
+         * their own parallel EWMA state.
          * @return Number of valid elements written to `out` (may be < windowSize pre-warmup).
          */
         size_t GetWindowSnapshot(std::vector<double>& out) const {

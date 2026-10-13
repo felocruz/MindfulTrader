@@ -14,9 +14,6 @@
 #include "LogScaleRatio.h"
 #include "MeanReversionCalculator.h"
 #include "LiquidityFragilityEngine.h"
-#ifdef MTS_WITH_RUST
-#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
-#endif
 
 /// ============================================================================
 /// INSTITUTIONAL-GRADE: RollingWindowCalculator Template
@@ -2219,29 +2216,6 @@ float CalculateHurstExponent(SCStudyInterfaceRef sc, int length, int minScale) {
 
     const float hurst = DfaHurstExponent(logReturns.data(), length, minScale);
 
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for
-    // anything -- `hurst` (computed above) remains the only value this function returns or that
-    // any downstream caller sees.
-    {
-        const float rustHurst = mts::observation_vector_dfa_hurst_exponent(
-            logReturns.data(), static_cast<std::size_t>(length), minScale);
-        const bool bothNan = std::isnan(hurst) && std::isnan(rustHurst);
-        const bool matches = bothNan || std::fabs(hurst - rustHurst) < 1e-4f;
-        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: DfaHurstExponent cpp=" + std::to_string(hurst) +
-                " rust=" + std::to_string(rustHurst) + " length=" + std::to_string(length));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: DfaHurstExponent shadow-mode OK (cpp==rust=" + std::to_string(hurst) + ")");
-        }
-    }
-#endif
-
     if (std::isnan(hurst)) {
         return fallback_hurst();
     }
@@ -2374,30 +2348,6 @@ float CalculateLiquidityFragility(SCStudyInterfaceRef sc, float prev_fragility) 
     const float fragility = lfe::ComputeLiquidityFragility(rangeWindow.data(), sqrtVolWindow.data(),
                                                             barRange, liveVolumeSoFar, prev_fragility);
 
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for
-    // anything -- `fragility` (computed above) remains the only value this function returns or
-    // that any downstream caller sees.
-    {
-        const float rustFragility = mts::observation_vector_compute_liquidity_fragility(
-            rangeWindow.data(), sqrtVolWindow.data(), rangeWindow.size(), barRange, liveVolumeSoFar,
-            prev_fragility);
-        const bool matches = std::fabs(fragility - rustFragility) < 1e-4f;
-        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: ComputeLiquidityFragility cpp=" + std::to_string(fragility) +
-                " rust=" + std::to_string(rustFragility));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: ComputeLiquidityFragility shadow-mode OK (cpp==rust=" +
-                std::to_string(fragility) + ")");
-        }
-    }
-#endif
-
     return fragility;
 }
 
@@ -2527,31 +2477,6 @@ void UpdateObservationVectorSubgraphs(
 /// CANONICAL OBSERVATIONDATA VECTOR IMPLEMENTATIONS
 /// ============================================================================
 
-#ifdef MTS_WITH_RUST
-namespace {
-// Shadow-mode validation shared by CalculateLogScaleRatio/CalculateLogScaleExpansionRatio's
-// window-BV lambdas below (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-// §5.2). Compares and logs only -- `cppResult` remains the only value either lambda returns.
-// One shared loggedMatchOnce across both call sites: the goal is proof the Rust port executes and
-// matches at all, not per-call-site bookkeeping.
-void ShadowCheckBipowerVariation(const double* returns, int n, double cppResult) {
-    const double rustResult =
-        mts::observation_vector_compute_bipower_variation(returns, static_cast<std::size_t>(n));
-    const bool matches = std::fabs(cppResult - rustResult) < 1e-9;
-    static bool loggedMatchOnce = false;
-    if (!matches) {
-        Logger::getInstance().log(
-            "MTS_WITH_RUST MISMATCH: ComputeBipowerVariation cpp=" + std::to_string(cppResult) +
-            " rust=" + std::to_string(rustResult) + " n=" + std::to_string(n));
-    } else if (!loggedMatchOnce) {
-        loggedMatchOnce = true;
-        Logger::getInstance().log(
-            "MTS_WITH_RUST: ComputeBipowerVariation shadow-mode OK (cpp==rust=" + std::to_string(cppResult) + ")");
-    }
-}
-}  // namespace
-#endif
-
 float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
     // Canonical metric: log(short_BV / long_BV) -- a short-vs-long-horizon
     // scale ratio (HAR-RV/Corsi 2009-style multi-horizon volatility
@@ -2588,39 +2513,12 @@ float CalculateLogScaleRatio(SCStudyInterfaceRef sc, int lookback_n) {
             }
         }
         const double bv = ComputeBipowerVariation(logReturns, count);
-#ifdef MTS_WITH_RUST
-        ShadowCheckBipowerVariation(logReturns, count, bv);
-#endif
         return bv;
     };
 
     const double short_bv = windowBipowerVariation(short_n);
     const double long_bv = windowBipowerVariation(long_n);
     const float logScaleRatio = LogScaleRatio(short_bv, long_bv);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port (observation_vector::log_scale_ratio) stays correct on live data,
-    // without using its result for anything -- `logScaleRatio` (computed above) remains the only
-    // value this function returns. The underlying `short_bv`/`long_bv` bipower-variation inputs
-    // are independently shadow-checked already (ShadowCheckBipowerVariation, inside
-    // windowBipowerVariation above); this check is specifically for the ratio+clamp step itself.
-    {
-        const float rustLogScaleRatio = mts::observation_vector_log_scale_ratio(short_bv, long_bv);
-        const bool matches = std::fabs(logScaleRatio - rustLogScaleRatio) < 1e-4f;
-        static bool loggedMatchOnce = false;
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: LogScaleRatio cpp=" + std::to_string(logScaleRatio) +
-                " rust=" + std::to_string(rustLogScaleRatio));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: LogScaleRatio shadow-mode OK (cpp==rust=" +
-                std::to_string(logScaleRatio) + ")");
-        }
-    }
-#endif
 
     return logScaleRatio;
 }
@@ -2643,29 +2541,6 @@ float CalculateFisherInformation(SCStudyInterfaceRef sc, int lookback_n) {
     float currentPrice = sc.BaseData[SC_LAST][sc.Index];
     float& lastValidFisherInfo = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::FISHER_INFO_LAST_VALID_VALUE);
     const float fisherInfo = cfc::ComputeFisherInformation(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
-    // -- `fisherInfo` (computed above) remains the only value this function returns or that any
-    // downstream caller sees.
-    {
-        const float rustFisherInfo =
-            mts::observation_vector_compute_fisher_information(minPrice, maxPrice, currentPrice, lastValidFisherInfo);
-        const bool matches = std::fabs(fisherInfo - rustFisherInfo) < 1e-4f;
-        static bool loggedMatchOnce = false;
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: ComputeFisherInformation cpp=" + std::to_string(fisherInfo) +
-                " rust=" + std::to_string(rustFisherInfo));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: ComputeFisherInformation shadow-mode OK (cpp==rust=" +
-                std::to_string(fisherInfo) + ")");
-        }
-    }
-#endif
 
     lastValidFisherInfo = fisherInfo;
     return fisherInfo;
@@ -2695,9 +2570,6 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
             window[count++] = std::log(static_cast<double>(sc.Close[idx]) / sc.Close[idx - 1]);
         }
         const double bv = ComputeBipowerVariation(window, count);
-#ifdef MTS_WITH_RUST
-        ShadowCheckBipowerVariation(window, count, bv);
-#endif
         return bv;
     };
 
@@ -2718,29 +2590,6 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
     // audit against the new BV-based signal (see FeatureScaler.h's dim3
     // comment).
     const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
-    // -- `logScaleExpansionRatio` (computed above) remains the only value this function returns or
-    // that any downstream caller sees.
-    {
-        const float rustLogScaleExpansionRatio = mts::observation_vector_compute_burstiness_index(
-            bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
-        const bool matches = std::fabs(logScaleExpansionRatio - rustLogScaleExpansionRatio) < 1e-4f;
-        static bool loggedMatchOnce = false;
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: ComputeBurstinessIndex(dim3) cpp=" +
-                std::to_string(logScaleExpansionRatio) + " rust=" + std::to_string(rustLogScaleExpansionRatio));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: ComputeBurstinessIndex(dim3) shadow-mode OK (cpp==rust=" +
-                std::to_string(logScaleExpansionRatio) + ")");
-        }
-    }
-#endif
 
     lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
     return logScaleExpansionRatio;
@@ -2811,28 +2660,6 @@ float CalculateAmihudIlliquidity(SCStudyInterfaceRef sc, int lookback_n) {
     float& lastValidAmihud = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::AMIHUD_LAST_VALID_VALUE);
     const float amihud = cfc::ComputeAmihudIlliquidity(sumLogRatio, count, lastValidAmihud);
 
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
-    // -- `amihud` (computed above) remains the only value this function returns or that any
-    // downstream caller sees.
-    {
-        const float rustAmihud = mts::observation_vector_compute_amihud_illiquidity(sumLogRatio, count, lastValidAmihud);
-        const bool matches = std::fabs(amihud - rustAmihud) < 1e-4f;
-        static bool loggedMatchOnce = false;
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: ComputeAmihudIlliquidity cpp=" + std::to_string(amihud) +
-                " rust=" + std::to_string(rustAmihud));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: ComputeAmihudIlliquidity shadow-mode OK (cpp==rust=" +
-                std::to_string(amihud) + ")");
-        }
-    }
-#endif
-
     lastValidAmihud = amihud;
     return amihud;
 }
@@ -2857,28 +2684,6 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
     float& lastValidFractalDim = sc.GetPersistentFloat(persistentVarIndex);
 
     const float dim = SevcikFractalDimension(prices.data(), lookback_n);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for
-    // anything -- `dim` (computed above) remains the only value this function returns or that any
-    // downstream caller sees.
-    {
-        const float rustDim = mts::observation_vector_sevcik_fractal_dimension(prices.data(), prices.size());
-        const bool bothNan = std::isnan(dim) && std::isnan(rustDim);
-        const bool matches = bothNan || std::fabs(dim - rustDim) < 1e-4f;
-        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: SevcikFractalDimension cpp=" + std::to_string(dim) +
-                " rust=" + std::to_string(rustDim) + " lookback_n=" + std::to_string(lookback_n));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: SevcikFractalDimension shadow-mode OK (cpp==rust=" + std::to_string(dim) + ")");
-        }
-    }
-#endif
 
     // Degenerate (flat price window or zero-length path) carries the last
     // valid value forward instead of a fabricated reading -- same
@@ -2925,28 +2730,6 @@ float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
 
     float& lastValidMeanRevZ = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::MEAN_REV_Z_LAST_VALID_VALUE);
     const float meanRevZ = mrc::ComputeMeanReversionZ(prices.data(), n, lastValidMeanRevZ);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for
-    // anything -- `meanRevZ` (computed above) remains the only value this function returns or that
-    // any downstream caller sees.
-    {
-        const float rustMeanRevZ = mts::observation_vector_compute_mean_reversion_z(
-            prices.data(), static_cast<std::size_t>(n), lastValidMeanRevZ);
-        const bool matches = std::fabs(meanRevZ - rustMeanRevZ) < 1e-4f;
-        static bool loggedMatchOnce = false;  // proves it ran, without spamming every tick
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: ComputeMeanReversionZ cpp=" + std::to_string(meanRevZ) +
-                " rust=" + std::to_string(rustMeanRevZ) + " n=" + std::to_string(n));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: ComputeMeanReversionZ shadow-mode OK (cpp==rust=" + std::to_string(meanRevZ) + ")");
-        }
-    }
-#endif
 
     lastValidMeanRevZ = meanRevZ;
     return meanRevZ;

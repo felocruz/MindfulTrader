@@ -18,6 +18,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -26,27 +28,6 @@
 /// window -- callers own the carry-forward/cold-start fallback decision (this
 /// function holds no persistent state, unlike CalculateFractalDimension).
 inline float SevcikFractalDimension(const float* prices, int lookback_n) {
-    if (lookback_n < 2) return std::numeric_limits<float>::quiet_NaN();
-
-    float minP = prices[1], maxP = prices[1];
-    for (int i = 2; i <= lookback_n; ++i) {
-        if (prices[i] < minP) minP = prices[i];
-        if (prices[i] > maxP) maxP = prices[i];
-    }
-    if (maxP <= minP) return std::numeric_limits<float>::quiet_NaN();
-
-    const int segments = lookback_n - 1;
-    if (segments <= 0) return std::numeric_limits<float>::quiet_NaN();
-
-    double length = 0.0;
-    const double priceRange = static_cast<double>(maxP) - static_cast<double>(minP);
-    for (int i = 1; i < lookback_n; ++i) {
-        const double dy = (static_cast<double>(prices[i]) - static_cast<double>(prices[i - 1])) / priceRange;
-        const double dx = 1.0 / static_cast<double>(segments);
-        length += std::sqrt(dx * dx + dy * dy);
-    }
-    if (length <= 0.0) return std::numeric_limits<float>::quiet_NaN();
-
-    const float dim = static_cast<float>(1.0 + std::log(length) / std::log(2.0 * static_cast<double>(segments)));
-    return std::clamp(dim, 1.0f, 2.0f);
+    // The Rust function takes the point count (lookback_n + 1), not the lookback.
+    return mts::observation_vector_sevcik_fractal_dimension(prices, lookback_n < 0 ? 0 : static_cast<std::size_t>(lookback_n) + 1);
 }

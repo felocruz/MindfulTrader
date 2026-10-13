@@ -1,7 +1,7 @@
 #!/bin/bash
 # build_rust.sh [--features student_t_hmm,observation_vector,transport] -- cross-builds rust/ffi
-# (ffi.lib) for Sierra. Called by build_dll.sh before CMake whenever MTS_WITH_RUST=ON; safe to
-# run standalone too.
+# (ffi.lib) for Sierra. Called by build_dll.sh before CMake on every build (the DLL requires it);
+# safe to run standalone too.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 source "$ROOT/scripts/rust_windows_env.sh"

@@ -17,6 +17,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -33,35 +35,8 @@ constexpr int kWindow = 30;
 inline float ComputeLiquidityFragility(const float* rangeWindow, const float* sqrtVolWindow,
                                         float liveBarRange, float liveVolumeSoFar,
                                         float prev_fragility) {
-    constexpr float kLiveBarMinVolume = 50.0f;
-    constexpr float kEps = 1e-6f;
-    constexpr int kMid = kWindow / 2;
-
-    std::array<float, kWindow> rangeScratch{};
-    std::copy_n(rangeWindow, kWindow, rangeScratch.begin());
-    std::nth_element(rangeScratch.begin(), rangeScratch.begin() + kMid, rangeScratch.end());
-    const float medRange = rangeScratch[kMid];
-
-    std::array<float, kWindow> volScratch{};
-    std::copy_n(sqrtVolWindow, kWindow, volScratch.begin());
-    std::nth_element(volScratch.begin(), volScratch.begin() + kMid, volScratch.end());
-    const float medSqrtVol = volScratch[kMid];
-    const float scaleRef = medRange / (medSqrtVol + kEps);
-
-    if (liveVolumeSoFar < kLiveBarMinVolume || scaleRef < kEps) {
-        return std::clamp(prev_fragility, 0.0f, 1.0f);
-    }
-
-    float barRange = liveBarRange;
-    if (barRange < 0.00001f) barRange = 0.00001f;  // avoid div-by-zero on doji
-
-    const float eta = barRange / (std::sqrt(liveVolumeSoFar) + kEps);
-    const float fRaw = eta / scaleRef;
-    const float logF = std::log(std::max(fRaw, 1e-6f));
-    const float fragilityRaw = 1.0f / (1.0f + std::exp(-2.0f * logF));
-
-    const float alpha = (fragilityRaw > prev_fragility) ? 0.30f : 0.15f;
-    return std::clamp(alpha * fragilityRaw + (1.0f - alpha) * prev_fragility, 0.0f, 1.0f);
+    return mts::observation_vector_compute_liquidity_fragility(rangeWindow, sqrtVolWindow, static_cast<std::size_t>(kWindow),
+                                                               liveBarRange, liveVolumeSoFar, prev_fragility);
 }
 
 }  // namespace lfe

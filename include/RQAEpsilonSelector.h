@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <array>
 #include <cmath>
 #include <algorithm>
@@ -58,39 +60,5 @@ inline constexpr std::size_t kRQASelectorMaxPairs =
 /// distance, which under production's strict `dist < epsilon` test yields
 /// M = 0 and therefore RR = 1/n, the closest achievable value to the target).
 inline double SelectEpsilonForTargetRecurrenceRate(const float* prices, int n, double targetRR) {
-    if (n < 2) return 1e-6;
-    if (n > kRQASelectorMaxN) n = kRQASelectorMaxN;
-
-    std::array<float, kRQASelectorMaxPairs> distances{};
-    std::size_t numPairs = 0;
-    for (int i = 0; i < n; ++i) {
-        for (int j = i + 1; j < n; ++j) {
-            distances[numPairs++] = std::fabs(prices[i] - prices[j]);
-        }
-    }
-    if (numPairs == 0) return 1e-6;
-
-    std::sort(distances.begin(), distances.begin() + static_cast<std::ptrdiff_t>(numPairs));
-
-    const double nd = static_cast<double>(n);
-    const double offDiagTarget = (targetRR * nd * nd - nd) / (nd * (nd - 1.0));
-
-    // Infeasible (targetRR <= 1/n): the LOI alone already meets or exceeds the
-    // requested full-matrix rate. Smallest achievable epsilon == the minimum
-    // pairwise distance (strict `<` in the production test means no
-    // off-diagonal pair is counted at that epsilon), giving RR == 1/n exactly.
-    if (!(offDiagTarget > 0.0)) {
-        return std::max(static_cast<double>(distances[0]), 1e-6);
-    }
-
-    const double clampedTarget = std::min(offDiagTarget, 1.0);
-    // Round (not floor): distances[rank] leaves exactly `rank` distances
-    // strictly below epsilon (ties aside), so `rank` IS the achieved M --
-    // rounding puts M closest to the back-solved target.
-    double rankF = std::floor(clampedTarget * static_cast<double>(numPairs) + 0.5);
-    if (rankF < 0.0) rankF = 0.0;
-    std::size_t rank = static_cast<std::size_t>(rankF);
-    rank = std::min(rank, numPairs - 1);
-
-    return std::max(static_cast<double>(distances[rank]), 1e-6);
+    return mts::observation_vector_select_epsilon_for_target_recurrence_rate(prices, n < 0 ? 0 : static_cast<std::size_t>(n), targetRR);
 }

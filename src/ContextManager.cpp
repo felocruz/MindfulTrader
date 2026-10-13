@@ -10,9 +10,6 @@
 #include "RecurrenceRateEngine.h"
 #include "RQAEpsilonSelector.h"
 #include "DfaHurstExponent.h"
-#ifdef MTS_WITH_RUST
-#include "generated/mts_core.h"  // mts::observation_vector_* (rust/ffi, cbindgen-generated)
-#endif
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -400,29 +397,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             double rawLZ = m_infoEngine.GetLempelZivComplexity();
             obs[OBS_LEMPEL_ZIV] = static_cast<float>(rawLZ);
 
-#ifdef MTS_WITH_RUST
-            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-            // §5.2): proves the Rust port (rust/observation_vector::lempel_ziv_complexity, ported
-            // from the newly-extracted LempelZivComplexity.h) stays correct on live data, without
-            // using its result for anything -- `rawLZ` (computed above) remains the only value used.
-            {
-                std::array<double, MindfulTrader::kLempelZivMaxWindow> lzWindow{};
-                const size_t lzCount = m_infoEngine.GetLzWindowSnapshot(lzWindow);
-                const double rustLZ = mts::observation_vector_lempel_ziv_complexity(lzWindow.data(), lzCount);
-                const bool matches = std::fabs(rawLZ - rustLZ) < 1e-9;
-                static bool loggedMatchOnce = false;
-                if (!matches) {
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST MISMATCH: LempelZivComplexity cpp=" + std::to_string(rawLZ) +
-                        " rust=" + std::to_string(rustLZ));
-                } else if (!loggedMatchOnce) {
-                    loggedMatchOnce = true;
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST: LempelZivComplexity shadow-mode OK (cpp==rust=" +
-                        std::to_string(rawLZ) + ")");
-                }
-            }
-#endif
         } else {
             obs[OBS_LEMPEL_ZIV] = 0.0f;  // Warmup: IE not yet primed
         }
@@ -442,39 +416,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
                               ? alpha : 2.5f;  // 2.5 = neutral if pathological
         m_cachedHillAlpha.store(obs[OBS_TAIL_INDEX], std::memory_order_relaxed);  // P1.4: cache for direct gate
 
-#ifdef MTS_WITH_RUST
-        // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-        // §5.2): proves the Rust port (observation_vector::hill_tail_index, ported from the
-        // newly-extracted HillTailIndex.h) stays correct on live data. Compares the RAW
-        // (pre-EWMA) Hill alpha -- not `alpha` above, which is the engine's own smoothed output
-        // and depends on its entire call history, state Rust has no parallel copy of -- by
-        // independently recomputing it via the same pure HillTailIndex() TailRiskEngine itself
-        // delegates to internally, on the same window snapshot.
-        {
-            std::vector<double> window;
-            const size_t count = m_tailRiskEngine.GetWindowSnapshot(window);
-            const size_t tailCutoff = m_tailRiskEngine.GetTailCutoff();
-            std::vector<double> rustWindow = window;  // independent copy -- both sides mutate in place
-            const auto cppRawAlpha = HillTailIndex(window.data(), count, tailCutoff);
-            const double rustRawAlpha =
-                mts::observation_vector_hill_tail_index(rustWindow.data(), rustWindow.size(), tailCutoff);
-            const bool bothNoEstimate = !cppRawAlpha.has_value() && std::isnan(rustRawAlpha);
-            const bool matches = bothNoEstimate ||
-                (cppRawAlpha.has_value() && std::fabs(*cppRawAlpha - rustRawAlpha) < 1e-9);
-            static bool loggedMatchOnce = false;
-            if (!matches) {
-                Logger::getInstance().log(
-                    "MTS_WITH_RUST MISMATCH: HillTailIndex cpp=" +
-                    (cppRawAlpha.has_value() ? std::to_string(*cppRawAlpha) : std::string("none")) +
-                    " rust=" + std::to_string(rustRawAlpha));
-            } else if (!loggedMatchOnce) {
-                loggedMatchOnce = true;
-                Logger::getInstance().log(
-                    "MTS_WITH_RUST: HillTailIndex shadow-mode OK (cpp==rust=" +
-                    (cppRawAlpha.has_value() ? std::to_string(*cppRawAlpha) : std::string("none")) + ")");
-            }
-        }
-#endif
     } else {
         obs[OBS_TAIL_INDEX] = 0.0f;  // Warmup: TRE not yet primed
         m_cachedHillAlpha.store(4.0f, std::memory_order_relaxed);  // P1.4: assume safe during warmup
@@ -511,33 +452,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             static float s_lastValidFastTalebKurtosis = 1.23f;
             const float moorsKurtosisRaw = MoorsKurtosis(returnsArray);
 
-#ifdef MTS_WITH_RUST
-            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-            // §5.2): proves the Rust port stays correct on live data, without using its result for
-            // anything -- `moorsKurtosisRaw` (computed above) remains the only value used below. This
-            // port (and bowleySkewnessRaw's just below) existed in rust/observation_vector/src/lib.rs
-            // with a cross-language parity test and an FFI wrapper well before this call site was
-            // found and wired -- found 2026-10-09 via a direct audit for exactly this gap (ported but
-            // never actually shadow-wired to live data).
-            {
-                const float rustMoorsKurtosis =
-                    mts::observation_vector_moors_kurtosis(returnsArray.data(), returnsArray.size());
-                const bool bothNan = std::isnan(moorsKurtosisRaw) && std::isnan(rustMoorsKurtosis);
-                const bool matches = bothNan || std::fabs(moorsKurtosisRaw - rustMoorsKurtosis) < 1e-4f;
-                static bool loggedMatchOnce = false;
-                if (!matches) {
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST MISMATCH: MoorsKurtosis cpp=" + std::to_string(moorsKurtosisRaw) +
-                        " rust=" + std::to_string(rustMoorsKurtosis));
-                } else if (!loggedMatchOnce) {
-                    loggedMatchOnce = true;
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST: MoorsKurtosis shadow-mode OK (cpp==rust=" +
-                        std::to_string(moorsKurtosisRaw) + ")");
-                }
-            }
-#endif
-
             m_localRiskContext.fastTalebKurtosis = std::isfinite(moorsKurtosisRaw) ? moorsKurtosisRaw : s_lastValidFastTalebKurtosis;
             if (std::isfinite(moorsKurtosisRaw)) { s_lastValidFastTalebKurtosis = m_localRiskContext.fastTalebKurtosis; }
 
@@ -547,29 +461,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // old value, unlike kurtosis, so no additive twin was needed.
             static float s_lastValidSkewnessIdx = 0.0f;
             const float bowleySkewnessRaw = BowleySkewness(returnsArray);
-
-#ifdef MTS_WITH_RUST
-            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-            // §5.2): proves the Rust port stays correct on live data, without using its result for
-            // anything -- `bowleySkewnessRaw` (computed above) remains the only value used below.
-            {
-                const float rustBowleySkewness =
-                    mts::observation_vector_bowley_skewness(returnsArray.data(), returnsArray.size());
-                const bool bothNan = std::isnan(bowleySkewnessRaw) && std::isnan(rustBowleySkewness);
-                const bool matches = bothNan || std::fabs(bowleySkewnessRaw - rustBowleySkewness) < 1e-4f;
-                static bool loggedMatchOnce = false;
-                if (!matches) {
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST MISMATCH: BowleySkewness cpp=" + std::to_string(bowleySkewnessRaw) +
-                        " rust=" + std::to_string(rustBowleySkewness));
-                } else if (!loggedMatchOnce) {
-                    loggedMatchOnce = true;
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST: BowleySkewness shadow-mode OK (cpp==rust=" +
-                        std::to_string(bowleySkewnessRaw) + ")");
-                }
-            }
-#endif
 
             obs[OBS_SKEWNESS] = std::isfinite(bowleySkewnessRaw) ? bowleySkewnessRaw : s_lastValidSkewnessIdx;
             if (std::isfinite(bowleySkewnessRaw)) { s_lastValidSkewnessIdx = obs[OBS_SKEWNESS]; }
@@ -581,32 +472,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
             // overload (StudyHelperFunctions.cpp), not borrowed from kurtosis by analogy.
             static float s_lastValidFastHurst = 0.5f;
             const float fastHurstRaw = DfaHurstExponent(returnsArray.data(), 100, 8);
-
-#ifdef MTS_WITH_RUST
-            // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-            // §5.2): second, independent call site for the hurst_exponent port (the other one,
-            // StudyHelperFunctions.cpp's CalculateHurstExponent, was already shadow-wired) -- proves
-            // the Rust port stays correct here too, without using its result for anything. Found
-            // 2026-10-09 via a direct audit for exactly this kind of gap (a second real call site
-            // that was missed when the dim was first ported).
-            {
-                const float rustFastHurst = mts::observation_vector_dfa_hurst_exponent(
-                    returnsArray.data(), returnsArray.size(), 8);
-                const bool bothNan = std::isnan(fastHurstRaw) && std::isnan(rustFastHurst);
-                const bool matches = bothNan || std::fabs(fastHurstRaw - rustFastHurst) < 1e-4f;
-                static bool loggedMatchOnce = false;
-                if (!matches) {
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST MISMATCH: DfaHurstExponent(fast) cpp=" + std::to_string(fastHurstRaw) +
-                        " rust=" + std::to_string(rustFastHurst));
-                } else if (!loggedMatchOnce) {
-                    loggedMatchOnce = true;
-                    Logger::getInstance().log(
-                        "MTS_WITH_RUST: DfaHurstExponent(fast) shadow-mode OK (cpp==rust=" +
-                        std::to_string(fastHurstRaw) + ")");
-                }
-            }
-#endif
 
             m_localRiskContext.fastHurstExponent = std::isfinite(fastHurstRaw) ? fastHurstRaw : s_lastValidFastHurst;
             if (std::isfinite(fastHurstRaw)) { s_lastValidFastHurst = m_localRiskContext.fastHurstExponent; }
@@ -643,34 +508,6 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
                 s_cachedRecurrenceRate = s_recurrenceEngine.ComputeRate(returnsArray[99], epsilon);
                 s_lastRecurrenceBarCount = completedBarCount;
 
-#ifdef MTS_WITH_RUST
-                // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-
-                // migration-plan.md §5.1): recurrence_rate (dim 13) shadow-wired, 2026-10-11 --
-                // proves the Rust port of SelectEpsilonForTargetRecurrenceRate + RecurrenceRateEngine
-                // (combined into one stateless recurrence_rate() call, spec §6.1) matches here,
-                // without using its result for anything.
-                {
-                    const double rustEpsilonD = mts::observation_vector_select_epsilon_for_target_recurrence_rate(
-                        returnsArray.data(), returnsArray.size(), 0.05);
-                    const float rustEpsilon = static_cast<float>(rustEpsilonD);
-                    const float rustRecurrenceRate = mts::observation_vector_recurrence_rate(
-                        returnsArray.data(), 99, returnsArray[99], rustEpsilon);
-                    const bool epsilonMatches = std::fabs(epsilon - rustEpsilon) < 1e-5f;
-                    const bool rateMatches = std::fabs(s_cachedRecurrenceRate - rustRecurrenceRate) < 1e-5f;
-                    static bool loggedMatchOnce = false;
-                    if (!epsilonMatches || !rateMatches) {
-                        Logger::getInstance().log(
-                            "MTS_WITH_RUST MISMATCH: RecurrenceRate cpp_eps=" + std::to_string(epsilon) +
-                            " rust_eps=" + std::to_string(rustEpsilon) + " cpp_rr=" +
-                            std::to_string(s_cachedRecurrenceRate) + " rust_rr=" + std::to_string(rustRecurrenceRate));
-                    } else if (!loggedMatchOnce) {
-                        loggedMatchOnce = true;
-                        Logger::getInstance().log(
-                            "MTS_WITH_RUST: RecurrenceRate shadow-mode OK (cpp==rust, eps=" +
-                            std::to_string(epsilon) + " rr=" + std::to_string(s_cachedRecurrenceRate) + ")");
-                    }
-                }
-#endif
             }
             obs[OBS_RECURRENCE_RATE] = s_cachedRecurrenceRate;
             // Keeps AreTs2StructuralDimsReady()'s direct m_observationData read live even
@@ -1642,34 +1479,6 @@ float ContextManager::CalculateBurstinessIndex(uint64_t now_us) {
     // dependency and was only unreachable by a standalone test as a
     // ContextManager member function, behind sierrachart.h.
     const float burstiness = eve::CalculateBurstinessIndex(m_eventTimestampsUS);
-
-#ifdef MTS_WITH_RUST
-    // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
-    // §5.2): proves the Rust port stays correct on live data, without using its result for anything
-    // -- `burstiness` (computed above) remains the only value this function returns. Flattened into
-    // a fixed-size stack array (no heap allocation) to cross the (ptr, len) FFI boundary.
-    {
-        std::array<uint64_t, EVENT_VELOCITY_MAX + 1> flatTimestamps{};
-        const size_t n = m_eventTimestampsUS.size();
-        for (size_t i = 0; i < n; ++i) {
-            flatTimestamps[i] = m_eventTimestampsUS[i];
-        }
-        const float rustBurstiness =
-            mts::observation_vector_calculate_burstiness_index(flatTimestamps.data(), n);
-        const bool matches = std::fabs(burstiness - rustBurstiness) < 1e-4f;
-        static bool loggedMatchOnce = false;
-        if (!matches) {
-            Logger::getInstance().log(
-                "MTS_WITH_RUST MISMATCH: CalculateBurstinessIndex cpp=" + std::to_string(burstiness) +
-                " rust=" + std::to_string(rustBurstiness));
-        } else if (!loggedMatchOnce) {
-            loggedMatchOnce = true;
-            Logger::getInstance().log(
-                "MTS_WITH_RUST: CalculateBurstinessIndex shadow-mode OK (cpp==rust=" +
-                std::to_string(burstiness) + ")");
-        }
-    }
-#endif
 
     return burstiness;
 }

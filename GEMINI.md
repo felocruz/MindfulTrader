@@ -54,7 +54,7 @@ the single authoritative pair for this entire effort — one Rust core (behind a
 owns every computation with separate train/offline/live implementations today (HMM, the
 observation vector, ZMQ transport, and the execution layer), ported incrementally
 (port → parity-test → shadow-wire → live-confirm → cutover), never a big-bang rewrite. Status
-(updated 2026-10-12): `observation_vector` 10 of ~18 dims ported; `student_t_hmm` substantially
+(updated 2026-10-13): `observation_vector` **cut over** -- all 17 live dims' formulas now run in Rust (live Sierra, offline generator, tools; shadow run matched 19/19 sites first, decision #42); `student_t_hmm` substantially
 built (`model.rs` inference, `train.rs` EM/MAP-EM + ECME dof + orchestration, `init.rs` k-means++,
 `registry.rs` classification, `artifact.rs` save/load, `audit.rs`/`gate_metrics.rs`, and the live
 `regime_engine.rs` producer — `RegimeState`/`RegimeEngine`, decision #30 — all shipped) and **now
@@ -264,13 +264,14 @@ cd tests && ./run_python_tests.sh
 ```
 
 **Do not** use ad-hoc `flatc` or raw `cmake`/`ninja` invocations — always go through `build_dll.sh`.
+`build_dll.sh` builds `rust/ffi` first (`scripts/build_rust.sh`): the DLL requires it -- the observation-vector formulas are implemented in Rust since the 2026-10-13 cutover (rust-migration spec decision #42).
 
 ## Standalone Analysis Tools (`tools/`)
 
 `tools/` hosts standalone, natively-tested analysis/calibration/ingestion utilities — never
 added to `CMakeLists.txt`/`build_dll.sh`; built via bare `mamba run -n mts g++ -std=c++17 ...`
 (Arrow/Parquet tools also need `$(mamba run -n mts pkg-config --cflags/--libs arrow parquet)`
-plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`).
+plus `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`). Anything that includes an observation-vector formula header (and everything built on them, e.g. `MarketDataReplayEngine.h`) must also link Rust: run `scripts/build_rust_native.sh`, then append `rust/target/release/libffi.a -lpthread -ldl -lm` (full list: `tools/README.md`).
 
 - **Organized into subfolders by function** (reorg 2026-09-02): `tools/observation_vector/`
   (16D HMM observation-vector dimension calibration/eval, incl. `market_test_stats.h`/

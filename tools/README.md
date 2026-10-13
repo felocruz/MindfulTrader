@@ -7,6 +7,16 @@ diagnostics — **never** added to `CMakeLists.txt`/`build_dll.sh`. See `CLAUDE.
 - Build via bare `mamba run -n mts g++ -std=c++17 ...` (Arrow/Parquet tools also need
   `$(mamba run -n mts pkg-config --cflags/--libs arrow parquet)` plus
   `-Wl,-rpath,/home/rcruz/anaconda3/envs/mts/lib`). Never wire these into the DLL build.
+- **Anything that includes an observation-vector formula header must link Rust** (2026-10-13,
+  spec decision #42: the formulas are implemented in `rust/observation_vector`, the C++ headers
+  are thin wrappers): run `scripts/build_rust_native.sh` once, then append
+  `rust/target/release/libffi.a -lpthread -ldl -lm` to the `g++` line. The headers:
+  `SevcikFractalDimension.h`, `RobustMoments.h`, `BipowerVariation.h`, `LogScaleRatio.h`,
+  `DfaHurstExponent.h`, `MeanReversionCalculator.h`, `LiquidityFragilityEngine.h`,
+  `CarryForwardCalculators.h`, `OrderFlowAsymmetryEngine.h`, `RQAEpsilonSelector.h`,
+  `RecurrenceRateEngine.h`, `LempelZivComplexity.h`, `HillTailIndex.h`, `EventVelocityEngine.h`
+  (and everything that includes them, e.g. `MarketDataReplayEngine.h`, `TailRiskEngine.h`,
+  `InformationEngine.h`, `FeatureScaler.h`).
 - Compiled binaries go in `tools/bin/` (gitignored) — never next to source.
 - Every tool that can run more than a few seconds must route all output through
   `ToolProgressLogger::Log()` (never bare `printf`/`puts`) — auto-archives to

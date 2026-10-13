@@ -63,6 +63,18 @@ echo -e "${BLUE}  Elite v2.4 Triple-Lock (int8_t enums + int8 FlatBuffers)${NC}"
 echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 echo ""
 
+# Rust first: the DLL links rust/ffi (ffi.lib), and CMake refuses to configure without it. The
+# observation-vector formulas are implemented in Rust (spec decision #42); student_t_hmm is the
+# HMM's hmm_init/hmm_step boundary. Incremental -- a no-op when nothing in rust/ changed.
+RUST_FEATURES="observation_vector,student_t_hmm"
+echo -e "${YELLOW}[0/3] Building rust/ffi (features: ${RUST_FEATURES})...${NC}"
+if ! "$SCRIPT_DIR/scripts/build_rust.sh" --features "$RUST_FEATURES"; then
+    echo -e "${RED}✗ rust/ffi build failed${NC}"
+    exit 1
+fi
+echo -e "${GREEN}✓ rust/ffi built${NC}"
+echo ""
+
 # Check if build directory exists
 if [ ! -d "$BUILD_DIR" ]; then
     echo -e "${YELLOW}[0/3] Initializing build directory...${NC}"

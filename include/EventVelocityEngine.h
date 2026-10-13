@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -174,50 +176,11 @@ inline float UpdateAndGetVelocity(VelocityState& state, uint64_t nowUs, double t
 /// capacity without needing production's full 100-timestamp window.
 template <size_t Capacity>
 float CalculateBurstinessIndex(const RingBuffer<uint64_t, Capacity>& timestamps) {
-    constexpr size_t kBins = 10;
-    constexpr size_t kMinSamples = 20;  // avg >=2 ticks/bin -- below this, a 10-bin count estimate is too noisy to trust
+    // Flattened into a fixed-size stack array (no heap allocation) for the (ptr, len) FFI call.
+    std::array<uint64_t, Capacity> flat{};
     const size_t n = timestamps.size();
-    if (n < kMinSamples) return 0.0f;  // Poisson-neutral default -- insufficient data
-
-    const uint64_t first = timestamps[0];
-    const uint64_t last = timestamps.back();
-    const uint64_t span = last - first;
-    if (span == 0) return 1.0f;  // every tick in the exact same instant -- maximal burstiness by definition
-
-    std::array<uint32_t, kBins> counts{};
-    for (size_t i = 0; i < n; ++i) {
-        const uint64_t dt = timestamps[i] - first;
-        size_t bin = static_cast<size_t>((static_cast<double>(dt) / static_cast<double>(span)) * kBins);
-        if (bin >= kBins) bin = kBins - 1;
-        ++counts[bin];
-    }
-
-    std::array<float, kBins> vals{};
-    for (size_t i = 0; i < kBins; ++i) vals[i] = static_cast<float>(counts[i]);
-
-    // Median count -- nth_element at index kBins/2, matching this repo's own
-    // established median/MAD convention (FeatureScaler.h's RobustLocation()):
-    // NOT the textbook averaged-middle-two for even n.
-    std::array<float, kBins> sorted = vals;
-    constexpr size_t mid = kBins / 2;
-    std::nth_element(sorted.begin(), sorted.begin() + mid, sorted.end());
-    const float median = sorted[mid];
-    if (median <= 0.0f) return 1.0f;  // majority-empty bins -- extreme clustering, maximal burstiness
-
-    // MAD: median of |count - median|, same nth_element convention.
-    std::array<float, kBins> absDev{};
-    for (size_t i = 0; i < kBins; ++i) absDev[i] = std::fabs(vals[i] - median);
-    std::nth_element(absDev.begin(), absDev.begin() + mid, absDev.end());
-    const float mad = absDev[mid];
-
-    // Poisson(N/kBins)-consistency scale factor, see this function's own doc
-    // comment for the derivation and why it beats the seemingly-more-exact
-    // Binomial-derived alternative in practice.
-    constexpr float kPoissonConsistency = 1.58113883f;
-    const float idc = (kPoissonConsistency * mad) * (kPoissonConsistency * mad) / median;
-    // Goh & Barabási (2008) bounded transform: idc is always >= 0, so
-    // (idc + 1) is always >= 1 -- no new division-by-zero risk introduced here.
-    return (idc - 1.0f) / (idc + 1.0f);
+    for (size_t i = 0; i < n; ++i) flat[i] = timestamps[i];
+    return mts::observation_vector_calculate_burstiness_index(flat.data(), n);
 }
 
 }  // namespace eve

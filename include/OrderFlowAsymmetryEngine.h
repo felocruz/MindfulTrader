@@ -15,6 +15,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 namespace ofae {
 
 // Order-flow asymmetry in [-1, 1]: +1 = all buying (aggressor at ask),
@@ -24,11 +26,7 @@ namespace ofae {
 // free to guard), carries the last valid reading forward instead of
 // fabricating a misleading exact-zero "balanced" reading.
 inline float ComputeMicroAsymmetry(float askVolume, float bidVolume, float lastValidValue) {
-    const float total = askVolume + bidVolume;
-    if (total <= 0.0f) {
-        return lastValidValue;
-    }
-    return (askVolume - bidVolume) / total;
+    return mts::observation_vector_micro_asymmetry(askVolume, bidVolume, lastValidValue);
 }
 
 }  // namespace ofae

@@ -19,8 +19,7 @@ void check(const char* name, bool ok) {
     else { ++g_failures; std::printf("  FAIL  %s\n", name); }
 }
 
-// Same LCG convention as rust/observation_vector's own #[cfg(test)] and
-// tests/cpp/test_rust_observation_vector_parity.cpp's MakeWalk -- deliberately NOT
+// Same LCG convention as rust/observation_vector's own #[cfg(test)] -- deliberately NOT
 // std::mt19937/<random> (implementation-defined, not portable across languages).
 std::vector<double> MakePositiveNoise(int n, double scale, uint32_t seed) {
     std::vector<double> v(static_cast<std::size_t>(n));

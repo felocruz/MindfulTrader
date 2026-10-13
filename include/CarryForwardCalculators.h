@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <algorithm>
 #include <cmath>
 
@@ -61,24 +63,15 @@ namespace cfc {
 // legitimate quiet-regime readings. [-10,+6] gives real margin below the
 // observed -6.160 extreme.
 inline float ComputeBurstinessIndex(double rvRecentRate, double rvOlderRate, float lastValidValue,
-                                     float clampLow = -6.0f, float clampHigh = 6.0f) {
-    constexpr double kFloor = 1e-12;
-    if (rvOlderRate < kFloor) {
-        return lastValidValue;
-    }
-    const float ratio = static_cast<float>(std::log(std::max(rvRecentRate, kFloor) / rvOlderRate));
-    return std::clamp(ratio, clampLow, clampHigh);
+                                   float clampLow = -6.0f, float clampHigh = 6.0f) {
+    return mts::observation_vector_compute_burstiness_index(rvRecentRate, rvOlderRate, lastValidValue, clampLow, clampHigh);
 }
 
 // Dim 2 (relative_range): (high - low) / atr. Degenerate when atr is at/near
 // zero (unpopulated ATR array) — carries the last valid value forward instead
 // of a fabricated exact-zero "no range" reading.
 inline float ComputeRelativeRange(float high, float low, float atr, float lastValidValue) {
-    constexpr float kAtrFloor = 0.00001f;
-    if (atr <= kAtrFloor) {
-        return lastValidValue;
-    }
-    return (high - low) / atr;
+    return mts::observation_vector_compute_relative_range(high, low, atr, lastValidValue);
 }
 
 // Dim 8 (fisher_info): Fisher transform of price position within its lookback
@@ -87,13 +80,7 @@ inline float ComputeRelativeRange(float high, float low, float atr, float lastVa
 // (max <= min) — carries the last valid value forward instead of a fabricated
 // exact-zero "midpoint" reading.
 inline float ComputeFisherInformation(float minPrice, float maxPrice, float currentPrice, float lastValidValue) {
-    if (maxPrice <= minPrice) {
-        return lastValidValue;
-    }
-    const float rawPos = (currentPrice - minPrice) / (maxPrice - minPrice);
-    float x = 2.0f * (rawPos - 0.5f);
-    x = std::clamp(x, -0.99f, 0.99f);
-    return 0.5f * std::log((1.0f + x) / (1.0f - x));
+    return mts::observation_vector_compute_fisher_information(minPrice, maxPrice, currentPrice, lastValidValue);
 }
 
 // Dim 11 (amihud_illiquidity): geometric mean of |log-return|/sqrt(dollar-volume)
@@ -134,10 +121,7 @@ inline float ComputeFisherInformation(float minPrice, float maxPrice, float curr
 // lookback) -- carries the last valid value forward instead of a fabricated
 // exact-zero "perfectly liquid" reading.
 inline float ComputeAmihudIlliquidity(double sumLogRatio, int count, float lastValidValue) {
-    if (count < 2) {
-        return lastValidValue;
-    }
-    return static_cast<float>(std::exp(sumLogRatio / count));
+    return mts::observation_vector_compute_amihud_illiquidity(sumLogRatio, count, lastValidValue);
 }
 
 }  // namespace cfc

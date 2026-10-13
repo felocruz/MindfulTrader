@@ -15,6 +15,8 @@
 // that need one window's BV value rather than a whole-series sliding scan.
 #pragma once
 
+#include "generated/mts_core.h"  // the formulas below are implemented in Rust (spec decision #42)
+
 #include <cmath>
 
 // BV = (pi/2) * sum_{k=1}^{n-1} |returns[k-1]| * |returns[k]|
@@ -22,11 +24,5 @@
 // the same neutral value CalculateLogScaleRatio's raw-variance windows return
 // for a degenerate (too-short) window.
 inline double ComputeBipowerVariation(const double* returns, int n) {
-    constexpr double kHalfPi = 1.5707963267948966;  // pi/2
-    if (n < 2) return 0.0;
-    double bv_sum = 0.0;
-    for (int k = 1; k < n; ++k) {
-        bv_sum += std::fabs(returns[k - 1]) * std::fabs(returns[k]);
-    }
-    return kHalfPi * bv_sum;
+    return mts::observation_vector_compute_bipower_variation(returns, n < 0 ? 0 : static_cast<std::size_t>(n));
 }

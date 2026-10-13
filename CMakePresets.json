@@ -5,25 +5,14 @@
       "name": "wsl-clang-cl-release",
       "displayName": "WSL Clang-cl (Windows DLL)",
       "description": "Cross-compile Windows DLL using clang-cl-22 with a custom toolchain file.",
-      "generator": "Ninja", 
+      "generator": "Ninja",
       "binaryDir": "${sourceDir}/build-windows",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
         "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/toolchain-clang-cl.cmake",
-        "CMAKE_BUILD_TYPE": "Release",
-        "MTS_WITH_RUST": "OFF"
+        "CMAKE_BUILD_TYPE": "Release"
       },
       "toolchainFile": "${sourceDir}/toolchain-clang-cl.cmake"
-    },
-    {
-      "name": "wsl-clang-cl-release-rust",
-      "displayName": "WSL Clang-cl (Windows DLL + rust/ffi)",
-      "description": "Same as wsl-clang-cl-release, with rust/ffi (ffi.lib) linked in. Build rust/ffi first (scripts/build_rust.sh).",
-      "inherits": "wsl-clang-cl-release",
-      "binaryDir": "${sourceDir}/build-windows-rust",
-      "cacheVariables": {
-        "MTS_WITH_RUST": "ON"
-      }
     }
   ]
 }
