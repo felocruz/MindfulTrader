@@ -204,6 +204,7 @@ of hardware.
 | 43 | `observation_engine`: one Rust engine for the whole observation pipeline, live and offline (operator directive 2026-10-13: institutional-grade, DOD, zero copy, not a verbatim port) | **DESIGN PROPOSED 2026-10-13, §6.2 -- not built.** Inventory found 11 structural problems in today's pipeline (§6.2.1 F1-F11), the most serious being F1: live code sends SCALED observations to the HMM while the training parquet holds RAW values. Design: zero-copy borrowed views of Sierra's own bar arrays live (verified layout: contiguous `float*` columns, `SCDateTime` = `int64` us) and a Rust bar builder offline behind one `BarSource` trait; trades from time-and-sales; explicit per-dim status; no statics or persistent carry-forward; a lifecycle table for SetDefaults / recalculation / download / replay / last call (§6.2.5). Needs operator decisions D1-D6 (§6.2.8; D1, the HMM input space, is blocking) and Sierra checks V1-V4 |
 | 44 | D1: the HMM's input space (operator, 2026-10-13, after four research passes and Gemini BRIEF_159-163) | **RULED.** A fixed affine transform of the raw features fitted on the training set, stored in the model artifact, applied by one Rust function in training and live; no rolling statistics, no nonlinear transforms or winsorization; non-ready dimensions missing (marginalized), out-of-range measurements censored. Live today feeds the HMM a rolling (~8-27 min) nonlinear scaling while the production model was trained on raw values -- an unrecorded switch at the 2026-09-08 offline generator. Also ruled: B12-B16 (formula clamps removed, estimator failures as missing, `tail_index` sentinel split, Fisher transform dropped, `mean_rev_z` signed z + persistence; `fast_mean_rev_z` re-admitted as a candidate, reopening #38's retirement). **B15 and B16 revised the same day: decision #45.** Record: §6.2.8, §6.2.11; experiment: §6.2.12 |
 | 45 | `fisher_info` is not Fisher information: B15 and B16 revised (operator, 2026-10-13, Gemini BRIEF_164) | **RULED.** `fisher_info` is Ehlers' (2002) Fisher Transform -- arctanh of the close's position in its TS1 high-low range, a range-position oscillator -- not R.A. Fisher's information. It carries price position and direction, not a regime property (rank #2 between/within-state separation with tail enrichment 0.000; Atratus measured the same formula splitting its HMM states into "price at window low/high" and dropped it). B15 now DROPS it from the HMM input (the schema field is renamed honestly and stays available to the signal layer). B16 now feeds `mean_rev_z` as unsigned \|z\| (unclamped) plus a separate persistence ρ; signed z becomes an experiment arm, not a ruling. B17: delete `PositionManager`'s "GAP 23" TTL scaling, which reads the signed oscillator as "regime sharpness". B18: audit every remaining HMM input for what it really is before the §6.2.12 experiment. Record: §6.2.7, §6.2.13 |
+| 46 | B18 audit result: what the 16 remaining HMM inputs really are (operator, 2026-10-13; four read-only research passes, mechanisms verified in code; Gemini BRIEF_165 concurred) | **RULED.** None of the 16 passes as a correctly built named method on the right input. Five sit on tick-lattice inputs where ties dominate, about eight include the still-forming bar (bar-clock artifacts), at least seven differ live vs offline, and four leak direction. The old feature-selection top four (`recurrence_rate`, `fisher_info`, `relative_range`, `mean_rev_z`) are a tautology, price position, minute-in-the-hour and price position: the old model's states were not regimes. Rulings B19-B24: `mean_rev_z` leaves the HMM (supersedes B16 again); drop `log_scale_expansion_ratio`, `recurrence_rate`, `skewness_idx`, `micro_asymmetry`, `tail_index` (to the risk layer) and `fractal_dim` (arm A9); fix and keep the rest; new candidates (VPIN-style imbalance, realized-volatility level, deseasonalized volume intensity); six admission rules; confirm effect sizes on raw ticks first. The old training parquet is invalid as evidence except as the A0 control. Record: §6.2.7, §6.2.13 |
 
 ---
 
@@ -1961,7 +1962,7 @@ Per closed bar: that timeframe's estimators. Zero heap allocation after `create`
 in place. Measure with criterion benches on recorded MES days; a budget per event is set from the first
 measurement, not guessed.
 
-#### 6.2.7 Behaviour-change register (B1-B11 PROPOSED; B12-B18 RULED 2026-10-13; B15/B16 revised by decision #45)
+#### 6.2.7 Behaviour-change register (B1-B11 PROPOSED; B12-B24 RULED 2026-10-13; B15/B16 revised by decision #45; B16 superseded by B19, decision #46)
 
 | # | Change | Fixes |
 |---|---|---|
@@ -1980,9 +1981,15 @@ measurement, not guessed.
 | B13 | **RULED** -- an estimator failure is status `Invalid` (treated as missing), never a clamped value; DFA Hurst's accepted range widened to its true domain (values > 1 are valid for non-stationary series, up to ~2 for first-order detrending); Sevcik stays [1,2] by definition, out-of-range = failure (kind 3) | -- |
 | B14 | **RULED** -- `tail_index`: both sentinels removed. Warmup (0.0) and estimator failure -> missing; Hill α beyond [1.1, 8] -> censored at the bound. Today 2.5 is written in 41.7% of training rows, reporting fat tails exactly when the estimator found none or very thin ones; it also feeds the execution layer's Pareto-α gate | F1 |
 | B15 | **RULED, REVISED 2026-10-13 (decision #45)** -- `fisher_info` is DROPPED from the HMM input. It is Ehlers' Fisher Transform of the close's position in its window (a range-position oscillator), not Fisher information: it encodes where price sits in its range, i.e. direction, which is the signal layer's job (Elder Screen 1), not the regime layer's. The schema field is renamed (e.g. `range_position_fisher`, comment corrected -- today `mts_schema.fbs` calls it "Reliability of Signal (Sharpness)") and stays available to the signal layer. ~~Keep it as the raw window position in [-1,1]~~ (the first ruling, superseded: it fixed the transform and kept the wrong quantity). Confirmed by experiment arm A7 (§6.2.12) | mislabel |
-| B16 | **RULED, REVISED 2026-10-13 (decision #45)** -- `mean_rev_z` becomes two features: the UNSIGNED robust stretch \|z\| (unclamped) and the lag-1 persistence ρ as its own feature (no product gate, no clamp). The abs-folding is kept: a signed deviation from the window median is, like `fisher_info`, mostly price position/direction; for a regime model the question is "how stretched", not "which way". Signed z is tested as arm A8 (§6.2.12) -- the leverage-effect argument for keeping the sign (Black 1976) is about return shocks, not range position, so it is a hypothesis to test, not a reason to rule. `fast_mean_rev_z` is re-admitted as a CANDIDATE in the same form and re-tested (arm A6; its decision-#38 retirement is reopened: §6.2.11) | -- |
+| B16 | **SUPERSEDED by B19 (decision #46)**; was: RULED, REVISED 2026-10-13 (decision #45) -- `mean_rev_z` becomes two features: the UNSIGNED robust stretch \|z\| (unclamped) and the lag-1 persistence ρ as its own feature (no product gate, no clamp). The abs-folding is kept: a signed deviation from the window median is, like `fisher_info`, mostly price position/direction; for a regime model the question is "how stretched", not "which way". Signed z is tested as arm A8 (§6.2.12) -- the leverage-effect argument for keeping the sign (Black 1976) is about return shocks, not range position, so it is a hypothesis to test, not a reason to rule. `fast_mean_rev_z` is re-admitted as a CANDIDATE in the same form and re-tested (arm A6; its decision-#38 retirement is reopened: §6.2.11) | -- |
 | B17 | **RULED 2026-10-13 (decision #45)** -- delete `PositionManager.cpp` "GAP 23: Fisher information -> TTL tuning" (~L559-583): it reads `fisherInfo` as how sharply the HMM regime estimate is localized and scales the entry TTL x0.75 above 0.60 and x1.50 below 0.20. The input is the signed range oscillator, so entries get less time near the window high and more near the low -- an unintended direction-dependent TTL. If a regime-clarity input is wanted for order working, it comes from the HMM posterior (entropy, or the margin of the most likely state); the Rust order watcher (decision #40) has no time-only cancels anyway | mislabel |
-| B18 | **RULED 2026-10-13 (decision #45)** -- before the §6.2.12 experiment, audit every HMM input for what it really is (§6.2.13) | -- |
+| B18 | **RULED 2026-10-13 (decision #45)** -- before the §6.2.12 experiment, audit every HMM input for what it really is (§6.2.13) -- **done 2026-10-13, result: decision #46, B19-B24** | -- |
+| B19 | **RULED 2026-10-13 (decision #46)** -- `mean_rev_z` leaves the HMM entirely. It is already \|z\| times a gate that is 1 in ~55% of windows (corr(z, z·gate) ≈ 0.97); \|z\| is unsigned price position; ρ over 10-40 TS3 bars has SE ≈ 0.16-0.31 and duplicates Hurst; the Kim & White (2004) citation is about robust skewness/kurtosis. Renamed `median_deviation_z`, available to the signal layer. `fast_mean_rev_z`'s decision-#38 retirement stands (the B16 reopening is withdrawn) | mislabel |
+| B20 | **RULED (decision #46)** -- dropped from the HMM: `log_scale_expansion_ratio` (a second, nested short/long volatility ratio, bounded above by ln 2), `recurrence_rate` (ε is chosen from the same 100 points to give RR = 0.05, so RR ≡ 0.05 on continuous data; its variation is tie mass), `skewness_idx` (Bowley on tick-lattice imbalance-bar returns: atoms at 0/±1/NaN; the buy/sell bar mix makes it an inverse direction indicator), `micro_asymmetry` (signed imbalance of the forming 15-min bar: direction, plus a bar-phase artifact; to the signal layer), `tail_index` (Hill on 1-tick-lattice returns degenerates; per-state ν already models tail weight; a properly computed per-tail Hill on aggregated returns may serve the risk layer), `fractal_dim` (Sevcik on 60-min closes behaves as a choppiness index -- trend vs chop, the signal layer's job; tested back in by arm A9) | -- |
+| B21 | **RULED (decision #46)** -- fix and keep: `log_scale_ratio` (mean BV per product, closed bars), `relative_range` (closed-bar or rolling-60-min range, deseasonalized), `amihud_illiquidity` (renamed volume-clock volatility, zero-safe; merged with `liq_fragility` if redundant), `liq_fragility` (renamed, no asymmetric EMA, ln F), `burstiness_index` (trade timestamps in every path; Goh-Barabási B with finite-n correction, or a plain IDC), `lempel_ziv` (sign binarization, Kaspar-Schuster count, surrogate normalization, integer tick changes), `hurst_exponent`/`fast_hurst_exponent` (one fixed window ≥ 256, 2Ns segments, log-spaced scales to ~N/10; mid-quote returns for the fast one), `fast_taleb_kurtosis` (renamed `moors_kurtosis`, bars coarse enough to leave the tick lattice). Details: §6.2.13 | -- |
+| B22 | **RULED (decision #46)** -- new candidates, admitted only through the B23 rules and the §6.2.12 arms: VPIN-style unsigned order-flow imbalance on volume buckets (Easley, López de Prado & O'Hara 2012); realized-volatility LEVEL as log RV of returns (both retained volatility features are level-free); volume intensity, deseasonalized by time of day | -- |
+| B23 | **RULED (decision #46)** -- admission rules for every HMM input: (1) no still-forming bar; (2) one definition live and offline; (3) no statistic on tick-lattice returns where ties dominate (raise the imbalance threshold or aggregate); (4) passes a direction-leak check (correlation with the window's net return); (5) stationary over multi-year horizons (no units that scale with the index level); (6) explicit behaviour on degenerate windows (halts, half-days, zero volume) -- missing, never a sentinel | -- |
+| B24 | **RULED (decision #46)** -- before formulas are rewritten, confirm the audit's effect sizes on the full raw ticks (`mes_ticks.parquet`), not on the old training parquet (§6.2.13 checklist) | -- |
 
 
 #### 6.2.8 Decisions (operator)
@@ -2134,9 +2141,9 @@ jitter, likely under-converged EM). Re-admitted as a candidate in the B16 form a
 holdout log-likelihood/BIC gain, occupancy stability across restarts and cross-state separation of its
 emission distributions (Feature Saliency).
 
-#### 6.2.12 The experiment (after B12-B18 and the missing-aware emission are built)
+#### 6.2.12 The experiment (after B12-B24 and the missing-aware emission are built)
 
-Arms A1-A6 use the revised input (no `fisher_info`; `mean_rev_z` as |z| plus ρ). Same data, same seeds, tight convergence (tolerance well below 0.01; enough iterations to converge);
+Training data: regenerated from the raw ticks with the fixed formulas (the old parquet is A0's control data only). Arms A1-A4 use the B21 vector (decision #46). Same data, same seeds, tight convergence (tolerance well below 0.01; enough iterations to converge);
 report holdout log-likelihood, BIC, per-state ν and occupancy, stability across restarts:
 
 | Arm | Transform | Covariance prior | ν |
@@ -2146,16 +2153,16 @@ report holdout log-likelihood, BIC, per-state ν and occupancy, stability across
 | A2 | fixed affine | Fraley-Raftery scale (~d+2) | shared |
 | A3 | fixed affine | Fraley-Raftery | grouped: blocks chosen from tail-only estimates (Hill on each tail, atoms excluded) |
 | A4 | fixed affine | Fraley-Raftery | per-feature, weak Gamma prior on each ν (ssm-style) |
-| A5 | as the best of A2-A4, with the most atomic features dropped (`lempel_ziv`, `burstiness_index`, `skewness_idx`) | -- | -- |
-| A6 | as the best arm, with `fast_mean_rev_z` (B16 form: \|z\| plus ρ) added | -- | -- |
+| A5 | as the best of A2-A4, plus the B22 candidates (realized-volatility level, deseasonalized volume intensity, VPIN-style imbalance), each kept only if it improves holdout likelihood and passes B23 | -- | -- |
 | A7 | as the best arm, with `fisher_info` re-added as the raw window position in [-1,1] -- confirms B15: if states split on range position (centroids at the window extremes) without better holdout likelihood or fat-tail separation, the drop stands | -- | -- |
-| A8 | as the best arm, with signed `mean_rev_z` z instead of \|z\| -- tests B16: the sign stays only if it improves holdout likelihood without the states degenerating into a direction switch | -- | -- |
+| A8 | as the best arm, with `median_deviation_z` (\|z\|) re-added -- confirms B19, same criterion as A7 | -- | -- |
+| A9 | as the best arm, with `fractal_dim` (fixed, closed bars) re-added -- confirms B20's drop: kept only if it improves holdout likelihood without states splitting on trend vs chop | -- | -- |
 
 Market-vs-model criterion: if A2 (fixed affine, weak prior) still yields an eligible state with low ν
 and genuine extreme Mahalanobis distances, the fat tails belong to the market; if not, the failing
 fat-tail sign-off was produced by the old preprocessing and prior.
 
-#### 6.2.13 What each HMM input really is (decision #45, 2026-10-13)
+#### 6.2.13 What each HMM input really is (decisions #45, #46, 2026-10-13)
 
 **The `fisher_info` finding (operator catch).** `compute_fisher_information`
 (`rust/observation_vector/src/lib.rs`): `pos = (close - min)/(max - min)` over the TS1 window (72 bars of
@@ -2185,23 +2192,57 @@ Screen 1). Markov-switching models that do have bull/bear states (Hamilton 1989;
 them from returns, whose emission fits drift and variance -- not from a range oscillator. The regime
 layer characterizes volatility, tails, liquidity and information flow.
 
-**The audit (B18), before the experiment.** For each of the 16 remaining inputs: what the formula
-computes, which named method it claims, whether it is built correctly, and whether its input (time bars,
-ticks, activity-clock bars) is the one that method assumes. Verdict per input: validated / engineering
-choice / mislabeled / wrong. Atratus's audit (`Atratus/knowledge/observation_features_literature.md`)
-flags candidates to check -- not verdicts to copy, since many of ours are bar-based where Atratus's are
-tick- or imbalance-bar-based:
-- `burstiness_index`: our IDC construction matches Goh-Barabási B only at the Poisson point.
-- `hurst_exponent` / `fast_hurst_exponent`: DFA on trades measures bid-ask bounce.
-- `recurrence_rate`: local recurrence density, not RQA recurrence rate as named.
-- `fast_taleb_kurtosis`: Moors' octile kurtosis, not a "Taleb" statistic.
-- `fractal_dim`: Sevcik's estimate depends on n.
-- `lempel_ziv`: the normalization is biased at small n (n = 64).
-- `mean_rev_z`: the persistence gate is inert on tick returns (ρ1 < 0); ours is on time bars -- check.
-- Any estimator fed tick returns with many zero returns.
+**The audit (B18) -- result, 2026-10-13 (decision #46).** Four read-only research passes over the Rust
+formulas, the live C++ callers and the offline generator, against primary sources; no statistics from
+the old training parquet. The main session verified the decisive mechanism of each finding in the code.
+Effect sizes marked ~ come from small synthetic simulations or light raw-tick samples (B24 confirms
+them). Atratus's audit was a lead only; several findings (the `recurrence_rate` tautology, the
+`lempel_ziv` direction leak) are specific to our code.
 
-The input count after B15/B16: 17 - `fisher_info` + ρ = 17 (`rust/student_t_hmm/src/input.rs` changes
-when these are built).
+| Input | Verdict | What it really is (mechanism) | Ruling |
+|---|---|---|---|
+| `log_scale_ratio` | WRONG, fixable | ln of bipower-variation SUMS over 25 vs 100 TS1 returns (`lib.rs:110-131`, `StudyHelperFunctions.cpp:2480-2523`): a built-in offset ln(24/99) = -1.42, plus the forming bar -- why it is always negative (median -1.50). Regression from `d2ab57c` (sample variance, a mean, -> BV sum). BV is BNS (2004), correctly scaled by π/2 | B21 fix, keep |
+| `log_scale_expansion_ratio` | WRONG (minor) | Same construct on TS2: divides by returns not products (-0.054); nested windows bound it above by ln 2; forming-bar sawtooth; ~r 0.81 with `log_scale_ratio` | B20 drop |
+| `relative_range` | WRONG input | Forming 60-min bar's H-L / SMA-14 ATR (`TripleScreen2.cpp:270-275`): expected partial range grows ~√(elapsed), so it encodes minute-in-the-hour; strong session seasonality; level-free (a volatility surprise); not Parkinson | B21 fix, keep |
+| `amihud_illiquidity` | MISLABELED + bug | Geometric mean of \|r\|/√(P·V) over 10-40 TS3 bars: volume-clock volatility, not Amihud (2002)'s arithmetic \|R\|/dollar volume. A zero return enters as ln(1e-20) = -46 (`StudyHelperFunctions.cpp:2613`), cutting the value ~5x per zero in a 20-bar window -- it reads MORE liquid when trading is thin | B21 rename, zero-safe |
+| `liq_fragility` | ENGINEERING CHOICE | range/√volume of the forming TS3 bar vs its 30-bar median, mapped to F²/(1+F²), then an asymmetric per-call EMA; the cited papers (Foucault-Kadan-Kandel 2005, Morris-Shin 2004) do not define it; live EMA state = previous bar, offline = previous tick; 100-bar 0.0 warmup | B21 rename, simplify; merge with Amihud if redundant |
+| `burstiness_index` | MISLABELED + wrong input live | Goh-Barabási's bounding transform applied to a median/MAD count-IDC over 10 bins (≈ CV², not CV; a burst is invisible unless ≥ 6 bins are empty). Live timestamps are study-call times (`now_us`, `ContextManager.cpp:1115-1130`); offline uses trade timestamps | B21 fix, keep |
+| `lempel_ziv` | WRONG (direction leak) | Binarized at v >= upper median (`lib.rs:768-800`); on tick-tied returns the median falls in the down-tick atom when down-moves are the majority and the string collapses: ~live mean LZ 0.30 / 0.68 / 1.07 at p_up 0.4 / 0.5 / 0.6. Undercounts by 1 vs Kaspar-Schuster (1987) in ~87% of strings; float live vs double offline; FeatureScaler's center 0.5 should be ~1.15 | B21 fix, keep |
+| `recurrence_rate` | MISLABELED (tautology) | ε is chosen from the same 100 imbalance-bar returns to give RR = 0.05 (`ContextManager.cpp:500-516`), so RR ≡ 0.05 on continuous data; variation is tie mass -- an inverse of ticks moved per imbalance bar. No embedding. Fixed-RR RQA (Schinkel et al. 2008) uses DET/LAM, never RR | B20 drop |
+| `fractal_dim` | ENGINEERING CHOICE, borderline mislabel | Sevcik (1998) as published, on 400 x 60-min closes; with dx ≪ dy it is ≈ a choppiness index (inverse Kaufman efficiency); ~a random walk reads 1.36 at n = 400; the live bar enters only through the range | B20 drop; arm A9 |
+| `hurst_exponent` | ENGINEERING CHOICE | Correct DFA1 on TS1 returns; live window adaptive 50-200 vs offline 100; ~SD 0.29 at N = 50, 0.13 at 100 (Weron 2002; Barunik-Kristoufek 2010); forward-only segments, linear scales | B21 fix, keep |
+| `fast_hurst_exponent` | ENGINEERING CHOICE, input at risk | Same DFA on 100 imbalance-bar open-to-close trade-price returns: bid-ask bounce (Roll 1984) and order-flow sign memory | B21 fix, keep |
+| `mean_rev_z` | MISLABELED | \|z\| of log price vs its window median times an inert persistence gate (`lib.rs:405-445`); unsigned price position | B19 out of the HMM |
+| `skewness_idx` | WRONG input | Bowley (correct) on 100 tick-lattice imbalance-bar returns: atoms at 0/±1/NaN; the buy/sell bar mixture makes it an inverse direction indicator | B20 drop |
+| `tail_index` | WRONG | Hill on per-price-change \|r\| (`SCStudies.cpp:290-305`): ~95.6% of nonzero MES changes are exactly 1 tick, so ties make α ≈ k/(m·ln 2) with no plateau (~median 7, p90 3,855; Matsui-Mikosch-Tafakori 2013). The k-selector is home-made and credited to Resnick-Stărică (1997), which averages over k; EWMA on α; history feeds bar returns, live feeds tick returns; 0.0 warmup sentinel | B20 out; risk layer if rebuilt |
+| `fast_taleb_kurtosis` | MISLABELED | Moors (1988) octile kurtosis, correctly built; nothing by Taleb. ~26% of windows at lattice atoms 1 / 1.5 / 2 | B21 rename, coarser bars |
+| `micro_asymmetry` | WRONG for the HMM | Signed (ask-bid)/(ask+bid) aggressor volume of the forming TS3 bar (`TripleScreen3.cpp:646-661`): ~corr 0.54 with the bar's return; mean \|value\| falls 4x over the bar. Not Cont-Kukanov-Stoikov OFI | B20 to signal layer; VPIN candidate (B22) |
+
+**Cross-cutting causes.** Tick lattice: 50-contract imbalance bars and per-price-change returns put
+five statistics on a grid where ties dominate. The forming bar: about eight inputs include it, building
+bar-clock artifacts. Live vs offline: at least seven differ (timestamps, float vs double, windows,
+warmup, EMA state, history-load returns). Direction: four leak it. Redundancy: `amihud_illiquidity`,
+`liq_fragility` and `recurrence_rate` all measure price movement per unit volume.
+
+**Gemini (BRIEF_165)** disputed nothing and accepted R1-R7. Corrections to its reply: the offset is
+ln(24/99) = -1.42 (products, not returns), not ln(25/100), and it does not "perfectly" explain -1.50
+(the forming bar and Jensen add ~-0.08); its `lempel_ziv` mechanism (long runs in a trend) is not ours
+(tie collapse at the median) though the verdict is the same. Its two additions are adopted with a
+qualification: a volatility LEVEL must be log realized volatility of returns, not ATR in points (its
+own stationarity rule); volume intensity must be deseasonalized, or the HMM learns the clock
+(the `relative_range` failure).
+
+**Resulting vector (before candidates):** `log_scale_ratio`, `relative_range`, volume-clock volatility
+(Amihud/liq_fragility, merged if redundant), `burstiness_index`, `lempel_ziv`, `hurst_exponent`,
+`fast_hurst_exponent`, `moors_kurtosis` -- 8-9 inputs; with the B22 candidates 9-12.
+`rust/student_t_hmm/src/input.rs` changes when these are built.
+
+**B24 checklist (full raw ticks, before rewriting formulas):** zero-return share of 15-min bars and the
+share of 20-bar windows with a zero; a Hill plot on aggregated (≥ 1-min, imbalance-bar) returns with
+n ≥ 5,000; `lempel_ziv` (float path) vs (#up - #down) per window; `relative_range` vs minute-in-bar and
+session; `recurrence_rate` vs median \|ticks\| per imbalance bar; `skewness_idx` vs net return; Moors
+atoms vs imbalance threshold (50/200/500) and n; live `now_us` vs trade timestamps in a replay;
+DFA on imbalance bars, trade vs mid-quote returns; Amihud vs `liq_fragility` redundancy.
 
 ---
 
