@@ -6,6 +6,7 @@
 
 pub mod artifact;
 pub mod audit;
+pub mod calibration;
 pub mod gate_metrics;
 pub mod init;
 pub mod model;

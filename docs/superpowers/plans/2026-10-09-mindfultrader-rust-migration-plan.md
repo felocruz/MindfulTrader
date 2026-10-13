@@ -432,7 +432,7 @@ redeployed, test artifacts deleted.
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
 | `observation_vector` | 12 of ~18 dims ported (every self-contained one) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
-| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration all shipped); `calibration.rs` (G0(e)) and full K-selection not started | Spec §5; plan §4 Stages G0-G4 done, G5 (K=4 fixed, deprioritized), G6 half-done (`runtime_calibration.rs` shipped, `calibration.rs` blocked on G0(e)), G7 not started |
+| `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration all shipped); full K-selection not started (deprioritized) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
 | `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.) still blocked on W0e (algo what-if spike, needs reachable TWS/Gateway) |
@@ -880,7 +880,26 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   is reachable only via `+Infinity`, never NaN, in BOTH languages; confirmed identical in real
   Python before writing the Rust test, not assumed — a faithful-port quirk documented in the test
   itself, not treated as a bug to "fix". 6 new tests, workspace 189/189 pass, clippy clean (incl.
-  Windows cross-compile). `calibration.rs` remains blocked on G0(e).
+  Windows cross-compile).
+  **`calibration.rs` SHIPPED, 2026-10-12** (spec decision #32, G0(e) resolved):
+  `rust/student_t_hmm/src/calibration.rs` — `politis_white_block_length`/`geyer_tau_int`/
+  `stationary_bootstrap_indices`/`bootstrap_threshold_ci`, ported directly from the real, installed
+  `arch` package's own source (v8.0.0), not reconstructed from the papers alone. **A real
+  methodology fork was raised and resolved via an independent consultation**
+  (`lbrnet/logs/rc_gemini.log` `CLAUDE_BRIEF_158`/`_REPLY`, read-only `--approval-mode plan`): our
+  own hypothesis that Politis-White's finite-variance assumption is unsound for this crate's
+  fat-tailed Student-t data (`dof_min=2.1`) was independently reviewed and rejected — the `series`
+  bootstrapped here are window-level summary statistics (bounded ratios, interior-order-statistic
+  percentiles), not raw observations, and have well-behaved tails by extreme value theory
+  regardless of the raw data's own tail weight; Politis-Romano-Wolf subsampling would have been an
+  unjustified downgrade. Two real bugs found via golden-parity testing against the real `arch`
+  package: Rust's `f64::min` always prefers the finite operand over NaN regardless of argument
+  order, but CPython's built-in `min(a, b)` (what `arch`'s own source calls) is order-dependent —
+  needed a hand-written `python_min` helper at the one load-bearing call site; and an overly
+  conservative early-exit guard incorrectly returned NaN for a legitimate small-`n` case Python
+  computes a finite value for (Python's out-of-range slicing clips to empty, never raises — fixed
+  with `saturating_sub`/`.min(nobs)` clamping). 10 new tests, workspace 199/199 pass, clippy clean
+  (incl. Windows cross-compile). G0(e) is now fully resolved; G6 is complete.
 - **G7 — integration/cutover**: wire `materialize_hmm_features.py`'s and `regime_calibration.py`'s
   replacement logic into whatever Rust pipeline stamps posteriors and computes live decay params;
   hook `regime_engine.rs`/`model.rs` behind `ffi`'s `hmm_step` (already designed, spec §5.2); delete
@@ -904,7 +923,10 @@ G0(b) and G0(d) are now both resolved (decisions #25-#26) — G0(a) (gates G4 on
 can proceed without waiting on anything further from G0. **Further update, same day**: G0(c) is
 now ALSO resolved (decision #28) — `artifact.rs` shipped in full, not just a stub; the only true
 remaining G0 blocker gating anything beyond a stub is G0(a) (`regime_engine.rs`'s external API, G4) and
-G0(e) (the `arch`-crate spike, `calibration.rs`, G6).
+G0(e) (the `arch`-crate spike, `calibration.rs`, G6). **Update, 2026-10-12**: G0(a) resolved
+(decision #30, `regime_engine.rs` shipped) and G0(e) resolved (decision #32, `calibration.rs`
+shipped) — **every G0 blocker is now resolved.** G4 and G6 are both done; the remaining critical
+path is G7 only (the C++-side cutover).
 
 ### 4a. `RegimeManager` 8-file call-site migration (spec §5.2's companion groundwork, approved 2026-10-10)
 
