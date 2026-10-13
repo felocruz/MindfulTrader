@@ -2107,6 +2107,11 @@ owner — either the Rust service writes `.btst` records itself (new FlatBuffer-
 Rust, reusing `rust/schema`), or `BackTesterStudy.cpp` keeps writing them by observing the
 `ReplayFillAdapter`'s own output over a local channel. **Open, §8.7 D7.**
 
+**RULED 2026-10-13 (§8.7 D2)**: (A), with a Sierra Chart simulation "broker" -- an evolved
+`BackTesterStudy.cpp` relaying the Rust service's intents into Sierra's simulator -- as the primary
+replay adapter, deliberately pessimistic (limit entries filled only on trade-through), plus an
+explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. Full ruling in D2.
+
 ### 8.7 Decision register — open items (operator sign-off needed before implementation)
 
 - **D1 — Wire contract. RULED (operator, 2026-10-10): split channel** (§8.5), **and all of it
@@ -2136,7 +2141,85 @@ Rust, reusing `rust/schema`), or `BackTesterStudy.cpp` keeps writing them by obs
     revert = flip back" discipline exists precisely because a live peer could regress) — pull
     forward only `transport`'s skeleton + these two new ports (plan's W9 row/crate table
     already reflect this split).
-- **D2 — Backtesting fill simulation.** Recommended: `BrokerAdapter` trait, (A) in §8.6.
+- **D2 — Backtesting fill simulation. RULED (operator, 2026-10-13): (A), `BrokerAdapter` trait,
+  with a Sierra Chart simulation "broker" as the primary replay adapter, built by evolving
+  `src/BackTesterStudy.cpp`; entries modelled as limits filled only on trade-through.**
+  - **Purpose, stated by the operator**: the Sierra replay is a deliberately *pessimistic* test of
+    the execution logic, not a live-P&L forecast. IBKR's algos are expected to execute at least as
+    well as the replay's fills, so a system that holds up here should do no worse live, and
+    fundamental execution-logic flaws surface in replay rather than in live trading.
+  - **Why Sierra replay is the primary engine, not a stopgap**: under §8.2's scope Sierra/ACSIL
+    keeps owning signal generation (Triple Screen, Raschke patterns, indicators), so a full-system
+    backtest needs Sierra replaying the charts. A pure-Rust tick-driven adapter (the 476M-tick
+    history via `tools/market_data_replay/`) can only exercise the execution layer against recorded
+    signals -- a later, narrower tool the trait keeps possible; revisit once §9 moves indicator
+    computation to Rust.
+  - **Sierra's simulator as a broker**: the backtest-only C++ is a thin relay (place / cancel /
+    flatten by order id, report fills and order updates back), with no decisions in it -- the same
+    relationship `IbkrAdapter` has with TWS, so it does not violate the "no parallel business logic"
+    governance rule. A Rust DTC client to Sierra's DTC server is a possible later replacement for
+    the relay, not a prerequisite (whether DTC orders fill under *chart replay* is unverified).
+  - **What `BackTesterStudy.cpp` already provides and keeps**: in-process replay of the real
+    pipeline, Phase 2/3 modes, fault injection (emergency flatten at bar N, simulated
+    disconnect/reconnect), walk-forward windows, run manifest, `.btst` output. It evolves by
+    swapping its direct `sc.BuyOrder`/`CancelOrder`/`FlattenAndCancelAllOrders` path (today inside
+    `PositionManager`/`RiskManager`) for intents from the Rust service, and gains unattended
+    orchestration via ACSIL replay control (verified present in the vendored `sierrachart.h`):
+    `StartChartReplayNew` with `REPLAY_MODE_ACCURATE_TRADING_SYSTEM_BACK_TEST` and `ChartsToReplay`
+    covering the TS1/TS2/TS3 charts, `GetReplayHasFinishedStatus`, `Pause`/`ResumeChartReplay`.
+  - **A1 -- conservative fills, imposed by construction (Sierra's simulator is not automatically
+    conservative)**:
+    - *Entries: limit, filled only on trade-through.* On MES's 0.25 grid, a buy limit at P is traded
+      through exactly when a trade prints at <= P - 1 tick -- which is exactly when a touch-filled buy
+      limit at P - 1 tick fills. So if Sierra's simulator fills limits on touch, the relay places
+      the limit one tick better and the Rust ledger books the fill at P (mirror for sells). **First
+      verify which semantics Sierra uses**; if it is already trade-through, no offset (otherwise the
+      pessimism is double-counted).
+    - *One-event activation delay*: under lockstep the relay places each order on the replay event
+      after the decision, never on the decision's own tick.
+    - *No `LIMIT_CHASE` in this tier*: its zero-latency repricing (`PositionManager.cpp`'s own
+      comment) is optimistic, the opposite of this tier's purpose. (Today's C++ entry path uses it;
+      that is the pre-migration live behaviour, not the backtest model.)
+    - *Stops*: Sierra fills a triggered stop at the triggering trade; real stops slip, worst in gaps,
+      so the Rust ledger applies a 1-tick adverse haircut to every stop and market fill.
+    - *Costs*: the real $0.61/side commission measured in W0e (D3), plus CME exchange/regulatory
+      fees (exact figure to confirm).
+    - *Calibration check, once*: replay a few days with the A1 rules vs. plain touch-filled limits
+      and Sierra's limit-chase, and confirm A1 is the most pessimistic of the three.
+  - **IBKR algo -> Sierra-sim order mapping** (match the algo's character where it can be modelled,
+    and resolve every ambiguity pessimistically):
+
+    | Live order (IBKR) | Sierra-sim translation | Notes |
+    |---|---|---|
+    | Adaptive Patient | `LIMIT` at the passive touch (buy at bid), trade-through | Patient rests; may miss the fill -- intended |
+    | Adaptive Normal | `LIMIT` at the passive touch, trade-through | MES's 1-tick spread has no on-grid midpoint, so Normal's price improvement is not modelled -- pessimistic |
+    | Adaptive Urgent | `MARKET`, ledger +1 tick adverse | Urgent is meant to fill, so the trade-through rule does not apply; it pays the spread plus slippage |
+    | Bracket target leg (IBKR `LMT` child) | attached `LIMIT` (OCO), trade-through | Same one-tick emulation |
+    | Bracket stop leg (IBKR `STP` child) | attached `STOP_WITH_LAST_TRIGGERING` (OCO), ledger +1 tick adverse | Last-trade triggering avoids bid/ask-trigger differences from IBKR's default |
+    | Emergency flatten / trap-floor exit | `MARKET`, ledger +1 tick adverse | |
+    | TWAP / VWAP / PctVol / DarkIce | not modelled | Slicing/size-hiding algos have nothing to slice at 1 to a few MES contracts. If live size ever warrants them, the relay emulates them as N child limits spaced over the window (deferred) |
+
+  - **A2 -- lockstep and clock**: replay must never run ahead of the Rust service. The study blocks
+    on (or pauses replay for) an acknowledgement per decision -- the existing 5558 REQ/REP
+    `BacktestLiveAgent` pattern is the precedent -- and the Rust service's clock is the replay's
+    event timestamp, never wall time (every timer in `order_watcher.rs`/time-barrier logic goes
+    through an injectable clock from its first line).
+  - **Results**: the Rust `position_state` ledger is the single source of P&L and trade records
+    (`.btst` ownership, D7); Sierra's own `GetTradeStatisticsForSymbolV2` is a cross-check that
+    must reconcile with the ledger after removing the documented A1 adjustments. Parameter sweeps
+    change the Rust service's config per run; `SetChartStudyInput` only for signal-side (ACSIL)
+    parameters.
+  - **Migration parity mode**: while C++ `PositionManager` still exists, the same replay runs the
+    C++ logic and the Rust service side by side and compares decisions -- the observation-vector
+    shadow-wire discipline applied to execution, making the cutover verifiable.
+  - **Validation ladder (acceptance path)**: (1) Sierra replay, pessimistic fills -- logic flaws,
+    fast, repeatable; (2) IBKR paper trading forward in real time -- real algos, rejects, partial
+    fills, disconnects, pacing, bracket-child handling, none of which replay can show; (3) live at
+    minimum size.
+  - **Still open under D2**: Sierra's limit-fill (touch vs. trade-through) and stop-fill-price
+    semantics in `REPLAY_MODE_ACCURATE_TRADING_SYSTEM_BACK_TEST` (first spike: one automated replay
+    across the three charts, one stub decision from Rust, one relayed order, fill checked against
+    replay-time prices); exact CME fee figure; relay vs. DTC.
 - **D3 — IBKR algo selection for MES futures. Order-working mechanism RULED (operator,
   2026-10-10): rely on IBKR algos exclusively — no Rust-native stepping fallback.** The
   order-watcher's only two actions on a live algo order are **update** (IBKR `modifyOrder` in
@@ -2157,7 +2240,45 @@ Rust, reusing `rust/schema`), or `BackTesterStudy.cpp` keeps writing them by obs
   (`ES`/`MES`) specifically, with **Adaptive**, **TWAP**, **VWAP**, and **Balance Impact and Risk**
   named as concrete candidates — this was an unverified assumption before, now a
   documentation-confirmed expectation, substantially lowering the risk this blocks the design.
-  **Still required before fully committing, now a confirmation step rather than an open unknown**:
+  **W0e RESULT, 2026-10-13 (empirical, paper account `DUT056479`, TWS server version 225, front
+  month `MESZ6` conId 815824257 -- min tick 0.25 and multiplier 5 both read from IBKR's contract
+  details, not assumed)**: `rust/execution/examples/w0e_mes_algo_whatif.rs`, `ibapi` 5.0.0
+  blocking client, every order `what_if = true`, paper-account guard before any request, and an
+  independent post-run open-orders check (0 open orders). What-if BUY 1 MES, commission $0.61,
+  initial-margin change ~$3,538 for every accepted variant:
+  - **ACCEPTED**: plain LMT and MKT; **Adaptive** at Urgent/Normal/Patient on LMT, and Normal on
+    MKT (D3's first choice -- confirmed); **TWAP** (no params, or `allowPastEndTime=1` -- a first
+    attempt with `strategyType=Marketable` got `[443] Unknown algo attribute: strategyType`, a
+    parameter error on this product, not a support gap); **VWAP** (`maxPctVol=0.1`).
+  - **REJECTED**: **Balance Impact and Risk** (`BalanceImpactRisk`) and **Arrival Price**
+    (`ArrivalPx`) -- both `[439] Algorithm definition not found`, i.e. not defined for this
+    instrument on this account. This contradicts the 2026-10-10 documentation research, which
+    named Balance Impact and Risk as CME-futures-capable -- exactly the "documentation can be stale
+    or account-permission-gated" risk this check existed for. Neither was a primary candidate, so
+    nothing in D3's ruling changes: `order_watcher.rs` works orders with Adaptive (alternates:
+    TWAP, VWAP); BalanceImpactRisk/ArrivalPx are out unless a later check on the live account
+    says otherwise (the live account's algo permissions were deliberately not probed -- the spike
+    refuses non-paper accounts).
+  - **Round 2, same day** -- testing a teammate research note (Gemini) that claimed
+    BalanceImpactRisk is options-only and named Arrival Price, PctVol and Dark Ice as the CME-futures
+    alternatives, routed via an `IBALGO` destination. Empirically: **PctVol** (`pctVol=0.1`) and
+    **DarkIce** (`displaySize=1`) are ACCEPTED -- two more usable alternates; Arrival Price is
+    REJECTED under both strategy strings (`ArrivalPx` and the note's `ArrivalPrice`, both `[439]`);
+    routing to an `IBALGO` exchange is REJECTED (`[200] No security definition`) -- through the
+    API, algos are chosen by `algo_strategy` with the contract on its own CME exchange, which is
+    how every accepted variant was sent. The options-only claim for BalanceImpactRisk is consistent
+    with round 1's `[439]` but unsourced. Usable on MES, all accepted: Adaptive, TWAP, VWAP, PctVol,
+    DarkIce.
+  - **`ibapi` 5.0.0 over WSL2 (mirrored networking) -> Windows TWS**: the stock 1s read timeout
+    held -- the session survived a 300s idle soak, after which fresh `managed_accounts`/
+    `contract_details` round trips took 47ms. Atratus's vendored 1s->20s patch (on 4.2.0) is NOT
+    needed on this evidence, so `ibkr_session.rs` starts on unpatched upstream 5.0.0. Caveat:
+    this exercised an idle long-lived connection, not slow/gappy responses (5.0.0's own
+    mid-frame-stall tolerance targets that case; not yet observed here).
+  - **Implementation note for `mes_futures.rs`**: a `ContractDetails.contract` echoed back into a
+    request fails `[10372]` (its `last_trade_date_or_contract_month` comes back in a form TWS
+    rejects); reference contracts by conId + exchange (Atratus's `by_con_id` precedent).
+  **Original framing, kept for the record (now done, see the result above)**:
   an empirical read-only what-if check against this specific account/contract-month (Atratus's own
   precedent: `scripts/put_order_whatif.py`, generalized to an MES-futures equivalent, trying
   Adaptive first, TWAP/VWAP/Balance Impact and Risk as alternates) — documentation can be stale or
@@ -2231,6 +2352,11 @@ Rust, reusing `rust/schema`), or `BackTesterStudy.cpp` keeps writing them by obs
   COORDINATION.md`)? Needs its own small design pass once D1–D3 are settled.
 
 ### 8.8 Next concrete step
+
+**Update, 2026-10-13**: the spike below has RUN -- D3 confirmed (Adaptive/TWAP/VWAP accepted on MES,
+BalanceImpactRisk/ArrivalPx not defined; PctVol/DarkIce also accepted in a round-2 check), and stock
+`ibapi` 5.0.0 held over WSL2; full result in
+§8.7 D3. D2 and D9 remain open as stated below.
 
 Not a go-ahead to start writing `order_gate.rs`/`position_state.rs` yet — D2 (backtesting) still
 changes how much of §8.4's module list needs a `ReplayFillAdapter`-aware design from day one, and

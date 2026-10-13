@@ -359,10 +359,16 @@ design content) instead.**
    `ExecutionGate` + direct IBKR via `ibapi`/`tokio`, replacing Sierra's `SCTradingInterface`
    routing) — scope confirmed and deepened 2026-10-09/2026-10-10, full design in spec §8 (folded in
    2026-10-10 from a standalone doc, same day, per the one-spec-one-plan rule above). Crate:
-   `execution` (§3, W12 below). **Next concrete action**: W0e, the MES-futures IBKR-algo
-   what-if spike (spec §8.8) — de-risked by teammate research (Adaptive/TWAP/VWAP/Balance Impact
-   and Risk all documented as supporting CME futures) but not yet empirically confirmed against
-   this account; needs a reachable TWS/Gateway, which this dev environment does not have.
+   `execution` (§3, W12 below). **W0e DONE, 2026-10-13** (spec §8.7 D3 has the full result):
+   what-if checks on the paper account confirmed Adaptive (all priorities), TWAP, VWAP, PctVol
+   and DarkIce are accepted on MES futures; Balance Impact and Risk and Arrival Price are NOT defined for MES
+   (`[439]`), contradicting the earlier documentation research; stock `ibapi` 5.0.0 survived a
+   300s idle soak over WSL2, so Atratus's read-timeout patch isn't needed. Broker-connectivity
+   modules are no longer blocked on W0e. **D2 (backtesting) RULED 2026-10-13** (spec §8.7 D2): a
+   `BrokerAdapter` trait whose primary replay adapter is a pessimistic Sierra-sim "broker" built by
+   evolving `BackTesterStudy.cpp` (trade-through limit entries, IBKR-algo-to-Sierra-order mapping,
+   lockstep plus injectable clock, three-tier validation ladder). Next under D2: a spike confirming
+   Sierra's replay fill semantics. D9 (deployment) remains open.
 3. `rust/transport` — deliberately last for its original six-port scope (removing ZMQ port 5561 via
    the HMM port removes the hardest socket `transport` would otherwise have to handle) — **except
    its skeleton + two brand-new ports** (the execution-intent channel, the position/fill feed),
@@ -446,7 +452,7 @@ pre-commit hook's real source needs locating before moving it; Windows-side path
 | ID | Workstream | Depends on | Status |
 |---|---|---|---|
 | W0s | Rust-in-Sierra integration spike | — | **Done** (§2) |
-| W0e | MES-futures IBKR-algo what-if spike (bare `ibapi` binary, no module skeleton) | — | De-risked by teammate documentation research (spec §8.7 D3), not yet empirically run — needs a reachable TWS/Gateway |
+| W0e | MES-futures IBKR-algo what-if spike (bare `ibapi` binary, no module skeleton) | — | **Done, 2026-10-13** — `rust/execution/examples/w0e_mes_algo_whatif.rs`; Adaptive/TWAP/VWAP/PctVol/DarkIce accepted on MES, BalanceImpactRisk/ArrivalPx not defined; stock `ibapi` 5.0.0 held over WSL2 (spec §8.7 D3) |
 | W1 | Merge into `VSCode/MindfulTrader/` | W0 pre-work | Deferred (§1.2) |
 | W2 | `rust/` workspace bootstrap (toolchain, cbindgen, DLL link, CI) | P2/P3, W0s | **Mostly done** — `rust-toolchain.toml`, workspace, `ffi` skeleton all exist and are proven; not yet done: `install_py_ext.sh`, `check_all.sh`, CI |
 | W3 | `student_t_hmm` inference + regime engine | W2, P9 | Not started |
@@ -527,7 +533,7 @@ redeployed, test artifacts deleted.
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
 | `py` (`mindful_core`) | Not started | PyO3 extension for `lbrnet`/`GUI` |
-| `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.) still blocked on W0e (algo what-if spike, needs reachable TWS/Gateway) |
+| `execution` | 3 of ~5 pure sub-modules ported (`order_gate.rs` 2026-10-10, `stop_manager.rs`/`trap_exit.rs` 2026-10-11) | `rust/execution/` — spec §8; W12 above. Broker-connectivity sub-modules (`ibkr_session`/`order_watcher`/etc.): W0e cleared 2026-10-13 (spec §8.7 D3); remaining design gates are D2 (backtesting) and D9 (deployment) |
 
 **Principles governing every crate** (established 2026-10-08, proven in practice across all five
 `observation_vector` ports so far): pure logic crates have zero Sierra/zmq/pyo3 dependency; the FFI

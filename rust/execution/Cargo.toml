@@ -16,3 +16,7 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+# W0e spike only (examples/w0e_mes_algo_whatif.rs) -- see the workspace table's ibapi comment.
+[dev-dependencies]
+ibapi.workspace = true

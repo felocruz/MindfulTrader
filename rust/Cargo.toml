@@ -43,6 +43,15 @@ serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # hand-rolling special functions (`ln_gamma`/`digamma`/`SplitMix64`) doesn't share: hash-function
 # bugs are far harder to self-verify than a numerical special function's known closed-form values.
 sha2 = "0.10"
+# For `execution`'s broker-connectivity layer (spec §8.4: ibkr_session/order_watcher). Blocking
+# `sync` client, default `async` feature off (Atratus precedent: async must not unify into the
+# blocking client). Pinned exactly: spec §8.7 D3a verified Order fields against 5.0.0's source.
+# Today a dev-dependency only, for the W0e MES-algo what-if spike
+# (execution/examples/w0e_mes_algo_whatif.rs) -- the crate's pure business-logic core
+# (order_gate/stop_manager/trap_exit) stays broker-free. Upstream 5.0.0, not Atratus's vendored,
+# 1s->20s-read-timeout-patched 4.2.0: W0e (2026-10-13) showed the stock 1s timeout holding over
+# WSL2 through a 300s idle soak (spec §8.7 D3).
+ibapi = { version = "=5.0.0", default-features = false, features = ["sync"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
