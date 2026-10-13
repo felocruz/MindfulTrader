@@ -519,8 +519,9 @@ unload/reload, Rust is scrapped from MindfulTrader entirely.
 **Check 6 resolution (2026-10-08)**: not run empirically, but walked through mechanism-by-mechanism with
 no applicable known failure mode found: (a) this codebase already proves the explicit-shutdown-via-
 `sc.LastCallToFunction` pattern works for long-lived ZMQ sockets/threads (`TransportStream`, `HMMClient`,
-`SystemOrchestrator`, `AIHeartbeatMonitor`, `TradeExecutionServer` — every `SCSFExport` entry point
-already has its own `LastCallToFunction` handler); (b) the Windows loader-lock/`DllMain` deadlock risk
+`SystemOrchestrator`, `AIHeartbeatMonitor`, `TradeExecutionServer`) [**corrected 2026-10-13**: the
+original text said every `SCSFExport` entry point has its own `LastCallToFunction` handler -- false, only
+6 of 19 do (spec §6.2.5); the conclusion about the pattern itself stands]; (b) the Windows loader-lock/`DllMain` deadlock risk
 doesn't apply because shutdown happens on Sierra's normal thread, never in `DllMain`; (c) Rust's
 historical unwind-across-FFI UB (pre-1.71) doesn't apply because every entry point already calls
 `catch_unwind` before returning to C++ (check 7 proved this); (d) the crate is a `staticlib`, not its
@@ -545,7 +546,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
-| `observation_vector` | **CUT OVER 2026-10-13 (decision #42)**: 17 of 17 live dims ported, shadow-run in live Sierra + replay (19/19 sites OK, 0 mismatches), then the C++ formula headers became thin wrappers over the Rust functions -- live DLL, offline `.context` generator, native tests and tools all run the Rust code; Rust is a required part of `build_dll.sh`. The 18th schema dim, `fast_mean_rev_z`, was RETIRED 2026-10-13 (constant 0.0f). Next for this pillar: move the plumbing (bar engines, `FeatureScaler`, trigger gate) into one Rust observation engine shared by live and offline | spec §6 / §5 below |
+| `observation_vector` | **CUT OVER 2026-10-13 (decision #42)**: 17 of 17 live dims ported, shadow-run in live Sierra + replay (19/19 sites OK, 0 mismatches), then the C++ formula headers became thin wrappers over the Rust functions -- live DLL, offline `.context` generator, native tests and tools all run the Rust code; Rust is a required part of `build_dll.sh`. The 18th schema dim, `fast_mean_rev_z`, was RETIRED 2026-10-13 (constant 0.0f). Next for this pillar: the `observation_engine` crate -- whole pipeline, live and offline, designed in spec §6.2 (decision #43, PROPOSED). D1 RULED 2026-10-13 (decision #44: fixed affine transform fitted on training, missing/censored handling, formula clamps removed -- B12-B16); D2-D6 still open; next: build B12-B16 and the missing-aware emission, then the §6.2.12 experiment (arms A0-A6) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34). **Rust training on real data, 2026-10-13 (decision #41)**: D=17 input contract (`input.rs`), production preparation rules (`training_data.rs`), `rust/tools` `hmm_tool train` reading `.context.parquet`; first 22M-row run done (fat-tail sign-off still fails; convergence tolerance to tighten next) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |
