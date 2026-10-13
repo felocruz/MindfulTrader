@@ -201,7 +201,7 @@ of hardware.
 | 40 | Execution: how long an entry works, and what happens on disconnect (operator, 2026-10-13) | **RULED + BUILT 2026-10-13.** (a) An entry works while the reason for it holds -- no time-only cancels for IBKR algos (`WatcherConfig::thesis_driven()`; the C++ chase limits survive only as `sierra_chase_defaults()` for parity). It ends on a market/model condition or its intent deadline, which must exist (`NoIntentDeadline` otherwise) and be derived from the signal's horizon -- derivation OPEN (D3). (b) Can't observe the market -> can't check the thesis -> cancel (`MarketDataStale`, 3 s of silence incl. feed heartbeats). (c) Never acknowledged -> `Escalate(NoAcknowledgement)` after 5 s, not cancel. (d) Disconnect: `ibapi` 5.0.0 has no cancel-on-disconnect (source searched: only `global_cancel()`, `good_till_date`, order conditions) and no IBKR TWS/Gateway setting was found; IBKR algos keep working server-side. No automatic dead-man's switch (rolling GTD / time condition): the operator cancels by hand in an emergency. Requirement: the GUI must tell the operator when the system disconnected with working orders (`position_state::Alert::DisconnectedWithWorkingOrders`, entries separated from protective legs, which must never be cancelled) -- see D3 |
 | 41 | `student_t_hmm`: Rust training on real data; HMM input = 17 of the 18 schema fields (operator chose Option A, 2026-10-13) | **BUILT + FIRST REAL RUN 2026-10-13.** (a) `input.rs`: the 18D `ObservationData` schema is unchanged; the HMM consumes 17 fields (`fast_mean_rev_z`, a constant 0.0, excluded -- it would otherwise count in the Student-t's true dimension D and bias the dof estimates); `PRODUCTION_D` 18 -> 17; `hmm_step` still takes the raw 18D vector and projects through `input::project`, the same function training uses. The 2026-09-18 Python model was already 17D (`hmm_utils.py` `_EXCLUDED_FIELD_NAMES`). (b) Model units: the HMM consumes RAW `ObservationData` values (as `.context.parquet` stores them, not `FeatureScaler` output); `amihud_illiquidity`'s raw scale (~1e-8, variance ~1.7e-15) sits below the model's absolute variance floor (1e-12), so it is expressed in units of 1e-8 (`input::MODEL_UNITS`) -- an exact reparameterization except for the floor. Finding: the 2026-09-18 Python run added 1e-4 jitter to every row (2,500x amihud's own spread); that model's amihud variances are ~1e-8, the jitter's -- the dimension was noise. Jitter not ported. (c) `training_data.rs` ports the production preparation rules (dead-physics flat-run filter, 500/200 trim, sessions split at gaps > 3600 s, k-means++/global-variance/0.9-sticky initialization, effective covariance eta) and the run's EM configuration; deviation: the flat-run filter runs in model units, so rows where only amihud moved are moves (0 rows dropped vs Python's 66). (d) `rust/tools` `hmm_tool train` (Apache `parquet` 60.0.0; patterns from Atratus's `atratus_tool train`: by-name columns, refuse non-finite and near-floor-variance features, seeded restarts kept by training likelihood, BIC, optional session holdout behind a one-session embargo; archived report + ledger row). (e) First run, `offline_replay_full_20260918.context.parquet`, 5 restarts, latest 20% of sessions held out (`tools/output/hmm_tool_train_20261013_124809.txt`, model `tools/output/hmm_model_20261013_124809.json`): 16.9M train rows / 669 sessions, 5.0M holdout / 168; 633 s total. Restarts disagree materially (best MAP LL -81.90M to -83.77M; per-state dof sets differ) and every one "converged" in 5-9 iterations under the production `tol` = 0.01 -- likely premature (the Python run used the same setting). Kept seed 46: dof 31.4 / 9.6 / 30.0 / 20.9, shares 0.32/0.23/0.18/0.27, no state pinned, holdout LL -4.95/row vs train -5.48/row (no overfit signal). Two states classified SHANNON_CHAOS (as in the 2026-09-18 model). **Fat-tail (Taleb) sign-off still fails**: lowest eligible dof 9.6, threshold 4. Open: convergence tolerance / iteration budget (re-run tighter before reading anything into the dof values), then the K / fat-tail question itself  **Superseded in part by #44 (2026-10-13)**: the hand-set `MODEL_UNITS` (amihud x 1e8) gives way to a fixed affine transform fitted on the training set; the raw-input finding (b) is what exposed the train/serve mismatch.|
 | 42 | `observation_vector` cutover: Rust becomes the only implementation of the observation-vector formulas (operator, 2026-10-13) | **DONE 2026-10-13.** Gate first: a clean Rust-enabled shadow DLL in live Sierra Chart plus a replay -- all 19 comparison sites (17 dims; relative range and DFA Hurst checked at two sites each) logged OK and **zero `MISMATCH` lines** (only Sevcik had ever been checked live before, 2026-10-08). Weak spot recorded: the Amihud check's absolute tolerance (1e-4) far exceeds the values (~1e-8), so its OK was vacuous; Rust unit tests cover it exactly. **Mechanism**: rather than switching the 19 call sites, every C++ formula header (`SevcikFractalDimension.h`, `RobustMoments.h` Bowley/Moors, `BipowerVariation.h`, `LogScaleRatio.h`, `DfaHurstExponent.h`, `MeanReversionCalculator.h`, `LiquidityFragilityEngine.h`, `CarryForwardCalculators.h`' 4 functions, `OrderFlowAsymmetryEngine.h`, `RQAEpsilonSelector.h`, `LempelZivComplexity.h`, `HillTailIndex.h`, `EventVelocityEngine.h` burstiness, and `RecurrenceRateEngine`'s rate) keeps its signature and becomes a one-line call into `rust/ffi` -- the formulas are also called inside shared engines (`TailRiskEngine`, `InformationEngine`, `ImbalanceContextManager`) and by the offline generator and tools, so wrapping cuts all of them over at once and nothing can drift. `RecurrenceRateEngine` drops its per-tick O(n) closed-pair cache (every caller rebuilds and computes together, once per newly closed bar). All `#ifdef MTS_WITH_RUST` shadow blocks removed; `MTS_WITH_RUST` and the `-rust` CMake preset deleted -- `CMakeLists.txt` always links `ffi.lib` and `build_dll.sh` builds it first. `tests/cpp/test_rust_observation_vector_parity.cpp` deleted (it would compare Rust with Rust). Native C++ tests and tools link `rust/target/release/libffi.a` (`scripts/build_rust_native.sh`, `tools/README.md`). **Verified**: clean `build_dll.sh` (DLL: no shadow strings, `SCDLLName` present, same 16 imports); all 49 `tests/cpp` tests pass; the 4 offline-generator tests pass; `MarketDataReplay`, `whole_vector_redundancy_eval`, `observation_vector_recalibration` build. Remaining for this pillar: the plumbing (bar engines, `FeatureScaler`, `ObservationTriggerGate`) is still C++; moving it into one Rust observation engine shared by live and offline is the next step |
-| 43 | `observation_engine`: one Rust engine for the whole observation pipeline, live and offline (operator directive 2026-10-13: institutional-grade, DOD, zero copy, not a verbatim port) | **DESIGN PROPOSED 2026-10-13, §6.2 -- not built.** Inventory found 11 structural problems in today's pipeline (§6.2.1 F1-F11), the most serious being F1: live code sends SCALED observations to the HMM while the training parquet holds RAW values. Design: zero-copy borrowed views of Sierra's own bar arrays live (verified layout: contiguous `float*` columns, `SCDateTime` = `int64` us) and a Rust bar builder offline behind one `BarSource` trait; trades from time-and-sales; explicit per-dim status; no statics or persistent carry-forward; a lifecycle table for SetDefaults / recalculation / download / replay / last call (§6.2.5). Needs operator decisions D1-D6 (§6.2.8; D1, the HMM input space, is blocking) and Sierra checks V1-V4 |
+| 43 | `observation_engine`: one Rust engine for the whole observation pipeline, live and offline (operator directive 2026-10-13: institutional-grade, DOD, zero copy, not a verbatim port) | **APPROVED TO BUILD 2026-10-13 (operator: "Let's build the Rust observation_engine"); FOUNDATION BUILT 2026-10-13 (§6.2.14)** -- dims, frame, scaler and gate wait on D2-D6. Was: design proposed, §6.2. Inventory found 11 structural problems in today's pipeline (§6.2.1 F1-F11), the most serious being F1: live code sends SCALED observations to the HMM while the training parquet holds RAW values. Design: zero-copy borrowed views of Sierra's own bar arrays live (verified layout: contiguous `float*` columns, `SCDateTime` = `int64` us) and a Rust bar builder offline behind one `BarSource` trait; trades from time-and-sales; explicit per-dim status; no statics or persistent carry-forward; a lifecycle table for SetDefaults / recalculation / download / replay / last call (§6.2.5). Needs operator decisions D1-D6 (§6.2.8; D1, the HMM input space, is blocking) and Sierra checks V1-V4 |
 | 44 | D1: the HMM's input space (operator, 2026-10-13, after four research passes and Gemini BRIEF_159-163) | **RULED.** A fixed affine transform of the raw features fitted on the training set, stored in the model artifact, applied by one Rust function in training and live; no rolling statistics, no nonlinear transforms or winsorization; non-ready dimensions missing (marginalized), out-of-range measurements censored. Live today feeds the HMM a rolling (~8-27 min) nonlinear scaling while the production model was trained on raw values -- an unrecorded switch at the 2026-09-08 offline generator. Also ruled: B12-B16 (formula clamps removed, estimator failures as missing, `tail_index` sentinel split, Fisher transform dropped, `mean_rev_z` signed z + persistence; `fast_mean_rev_z` re-admitted as a candidate, reopening #38's retirement). **B15 and B16 revised the same day: decision #45.** Record: §6.2.8, §6.2.11; experiment: §6.2.12 |
 | 45 | `fisher_info` is not Fisher information: B15 and B16 revised (operator, 2026-10-13, Gemini BRIEF_164) | **RULED.** `fisher_info` is Ehlers' (2002) Fisher Transform -- arctanh of the close's position in its TS1 high-low range, a range-position oscillator -- not R.A. Fisher's information. It carries price position and direction, not a regime property (rank #2 between/within-state separation with tail enrichment 0.000; Atratus measured the same formula splitting its HMM states into "price at window low/high" and dropped it). B15 now DROPS it from the HMM input (the schema field is renamed honestly and stays available to the signal layer). B16 now feeds `mean_rev_z` as unsigned \|z\| (unclamped) plus a separate persistence ρ; signed z becomes an experiment arm, not a ruling. B17: delete `PositionManager`'s "GAP 23" TTL scaling, which reads the signed oscillator as "regime sharpness". B18: audit every remaining HMM input for what it really is before the §6.2.12 experiment. Record: §6.2.7, §6.2.13 |
 | 46 | B18 audit result: what the 16 remaining HMM inputs really are (operator, 2026-10-13; four read-only research passes, mechanisms verified in code; Gemini BRIEF_165 concurred) | **RULED.** None of the 16 passes as a correctly built named method on the right input. Five sit on tick-lattice inputs where ties dominate, about eight include the still-forming bar (bar-clock artifacts), at least seven differ live vs offline, and four leak direction. The old feature-selection top four (`recurrence_rate`, `fisher_info`, `relative_range`, `mean_rev_z`) are a tautology, price position, minute-in-the-hour and price position: the old model's states were not regimes. Rulings B19-B24: `mean_rev_z` leaves the HMM (supersedes B16 again); drop `log_scale_expansion_ratio`, `recurrence_rate`, `skewness_idx`, `micro_asymmetry`, `tail_index` (to the risk layer) and `fractal_dim` (arm A9); fix and keep the rest; new candidates (VPIN-style imbalance, realized-volatility level, deseasonalized volume intensity); six admission rules; fixes accepted on known-answer tests, never on statistics of the current data (B24, amended the same day). The old training parquet is invalid as evidence except as the A0 control. Record: §6.2.7, §6.2.13 |
@@ -1784,7 +1784,7 @@ Safety Rules.
 (Current port status and the port-by-port execution methodology both live in the plan's §5 — this
 section is the architectural trace only, and does not change as individual dims get ported.)
 
-### 6.2 Target architecture: one Rust observation engine (design, 2026-10-13 — PROPOSED, operator sign-off needed, decision #43)
+### 6.2 Target architecture: one Rust observation engine (design 2026-10-13, decision #43 — approved to build; foundation built, §6.2.14)
 
 Operator directive (2026-10-13): move the whole observation pipeline to Rust -- not a verbatim port,
 but "an institutional-grade part using the best that Rust has to offer", applying data-oriented
@@ -1840,9 +1840,11 @@ gate, and the offline generator's second copy of all of it.
    the engine writes its output into a caller-owned `#[repr(C)]` frame.
 5. **State is explicit and owned.** No statics, no globals, no `sc.GetPersistent*`: all state lives in
    one engine value per handle. A reload rebuilds it from history, so a reload is reproducible.
-6. **Types replace conventions.** Each dim carries a status (`Warming { have, need }`, `Ready`,
-   `CarriedForward { since }`) instead of sentinels (0.0, 0.5, 1.23, 1.5, 2.5); units are newtypes;
-   time is one monotonic event clock (microseconds); no wall clock anywhere in the engine.
+6. **Types replace conventions.** Each dim carries a status instead of a sentinel (0.0, 0.5, 1.23, 1.5,
+   2.5): `Warming { have, need }`, `Ready`, `Invalid` (estimator undefined on this input -> missing,
+   B13), `Censored` (beyond the estimator's valid range, B14) -- no `CarriedForward`: carry-forward is
+   gone with the sentinels (built: `observation_engine::status`, 2026-10-13). Units are newtypes; time
+   is one monotonic event clock (microseconds); no wall clock anywhere in the engine.
 7. **Deterministic.** Same input sequence, same output, bit for bit -- live, replay, offline.
 8. **Behaviour changes are deliberate and listed** (6.2.7), each approved before it ships; everything
    else must match the baseline (6.2.9).
@@ -1953,6 +1955,16 @@ copies -- they read the frame.
 - V2: is time-and-sales available, and complete, during replay (each replay mode)?
 - V3: does replay start trigger a full recalculation of every chart in the chartbook?
 - V4: are studies on different charts called on one thread (so a registry needs no lock)?
+- V5: do Sierra's 240/60/15-minute bars start where the engine's session calendar puts them (session
+  open 18:00 ET, bars at open + k x period, the last 240-minute bar cut at the 17:00 close)? Check the
+  charts' session times against bar start times in a chart export; the offline builder must match
+  live Sierra, not the other way round.
+- V6: which symbol do the live charts use -- one contract (e.g. `MESZ26`) or a continuous contract
+  that rolls? Offline replay resets the engine at every roll in the tick file (`ResetReason::
+  NewContract`); a live continuous chart would not, and the two would then differ around rolls.
+- V7: in the live adapter, the bars a trade closes must reach the engine before that trade (the
+  event-order rule, 6.2.13): confirm the T&S records of the trade that opens a new bar arrive in the
+  same study call in which `sc.ArraySize` first includes that bar.
 
 #### 6.2.6 Hot-path budget
 
@@ -2241,6 +2253,61 @@ own stationarity rule); volume intensity must be deseasonalized, or the HMM lear
 **Acceptance (B24 as amended):** each rebuilt input passes its known-answer tests on synthetic inputs,
 including the sign-flip invariance of B23 rule 4; nothing is accepted or rejected on statistics of the
 current tick data.
+
+#### 6.2.14 Foundation as built (2026-10-13) -- refinements to the design above
+
+Crate `rust/observation_engine` (pure; depends only on `observation_vector`) plus the offline tick
+source and replay driver in `rust/tools`. Built independently of the open decisions D2-D6; the dims,
+the frame, the scaler and the gate come next, on top of it. 22 known-answer unit tests (synthetic
+inputs only) plus 3 for the tick stream.
+
+| Module | What it is | Refines the design how |
+|---|---|---|
+| `clock` | `EventTime` (Unix us UTC), `Timeframe`, `SessionCalendar` (18:00 ET open, 17:00 close, US DST rules since 2007), `bar_span`, `scdatetime_to_unix_us` | Bars are session-anchored: 240-minute bars at 18:00/22:00/02:00/06:00/10:00/14:00 ET, the last cut at 17:00 (V5 to confirm against Sierra) |
+| `input` | `Trade { time, price, buy_volume, sell_volume }`, `TradeColumns<'a>` (borrowed SoA, sliceable without copy), `BarColumns<'a>` (Sierra's f32 layout), `Bar` | A trade carries BOTH aggressor volumes instead of an aggressor enum: lossless for records that merge matches; signed volume = buy - sell |
+| `ring` | `WindowRing<T, N>`: every value stored twice in a 2N buffer, so the last n values are always ONE contiguous slice; `SortedWindow<N>`: rolling median/MAD by binary-search insert/remove and an outward walk | Formulas take `&[f32]`/`&[f64]` and run on the window in place -- no per-read copy; median is the standard one (mean of the two middle values), not today's upper median |
+| `bars` | `TimeBarBuilder`: trades -> the same `BarColumns` view Sierra lends live; a bar exists only if it has a trade; closes on the first trade outside its span | Holds only undelivered closed bars plus the forming bar; `drain_closed` keeps the allocation |
+| `activity` | `ImbalanceBarBuilder`: signed aggressor volume accumulates; closes when \|sum\| >= threshold; a trade is never split; records prices, volumes, imbalance, span | Derived quantities (which return, which window) belong to the dims; the threshold is a construction parameter (B21: from a rule relative to tick size and volatility, not a number read off today's data) |
+| `engine` | Ingestion: `on_trade(s)`, `on_bars(tf, &BarColumns, live_index)` taking only closed bars newer than the last (so live can pass Sierra's whole arrays every call), per-clock SoA rolling stores, `reset(ResetReason)` | **Event-order rule:** a bar closed by a trade is processed BEFORE that trade (offline enforced by the feeder; live V7). Time only moves forward: older trades or older closed bars are an error, never absorbed |
+| `offline` | `OfflineFeeder`: splits each trade batch at every bar close and feeds trades / closed bars / trades in that order | Does not send forming-bar updates (no dim reads the forming bar, B23 rule 1) |
+| `status` | `DimStatus { Warming, Ready, Invalid, Censored }`, `DimValue` | See principle 6 |
+| `tools::tick_stream` | Parquet tick source: column projection; row groups skipped by `timestamp_us` statistics for a date range (lazy loading); decoding on its own thread through a bounded channel; times and prices lent zero-copy from Arrow, volumes validated into reused `u32` buffers; runs split at contract rolls and backwards time | Replaces the load-everything reader; memory bounded by the channel depth |
+| `tools obs_replay` | Streams the tick file through feeder + engine, resetting at each roll; grows into the `.context.parquet` generator | -- |
+
+**Why no lazy expression engine (Polars `LazyFrame`, DataFusion)**: the pipeline is a sequential
+stateful scan (bars that close on running sums, rolling windows, an emission gate that depends on its
+own history) -- not relational work an optimizer can fuse -- and offline must run the live engine's
+code, fed faster, or the train/serve split returns. Parquet's strengths are used at the edges
+(projection, row-group skipping, streaming, zero-copy buffers) and data-oriented layout in the core.
+
+**Measured** (one run, 2026-10-13, all 476.7M trades of `mes_ticks.parquet`, 14 contracts): 10.7 s
+wall clock (about 45M trades/s, decode pipelined with the engine), 55 MB peak resident memory; the
+activity-bar count at threshold 50 equals the count under today's C++ `ImbalanceBarEngine` semantics.
+A throughput figure for the foundation only -- the dims add their own cost, mostly at bar closes.
+
+**Feature layer: one definition, two schedules (operator, 2026-10-13).** Every dim is written ONCE, as
+a pure function of its window of closed bars (or closed activity bars) -- no forming bar (B23 rule 1),
+no carry-forward or other state fed back from its own previous output. Two schedulers call the same
+functions:
+- *streaming* (live, and the default offline replay): the engine calls a dim's function on the newest
+  window when that dim's bar closes;
+- *bulk* (optional, training only): with the whole history in hand, the same functions run over every
+  window at once, data-parallel across windows (`rayon`), with whole-column arithmetic where a dim is
+  plain column math (returns, rolling sums by prefix sums, ranges). The emission gate -- which depends
+  on its own past decisions -- then runs once, sequentially, over the finished columns; activity-bar
+  construction stays the sequential scan it is.
+
+Rejected: a separate bulk implementation of the features (e.g. Polars/DataFusion expressions for
+training next to the streaming engine for live) -- that is a second definition of every dim, the
+train/serve split this whole design removes. Equivalence of the two schedules is a known-answer
+property test on synthetic input (bulk and streaming frames bit-identical), not a comparison on
+market data.
+
+Speed: both schedules compute each window once, so total work is equal; bulk only spreads it across
+cores. Order of work: (1) build every dim as a pure window function; (2) measure the streaming replay
+once the dims exist; (3) if it is too slow, first run the streaming engine per contract (or per date
+chunk with a warmup overlap) on separate cores -- no new code path -- and add the bulk schedule only if
+that is still not enough.
 
 ---
 

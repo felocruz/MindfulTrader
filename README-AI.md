@@ -99,7 +99,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 
 ## Hard Requirements (Must Follow)
 1. **Schema regeneration**: `bash /home/rcruz/devel/VSCode/schema/regenerate_schema.sh`
-2. **C++ build**: `cd /home/rcruz/devel/VSCode/MindfulTrader && ./build_dll.sh` -- it builds `rust/ffi` first; the DLL requires it (observation-vector formulas run in Rust since 2026-10-13, rust-migration spec decision #42). Native tests/tools that include those formula headers link `rust/target/release/libffi.a` (`scripts/build_rust_native.sh`; see `tools/README.md`).
+2. **C++ build**: `cd /home/rcruz/devel/VSCode/MindfulTrader && ./build_dll.sh` -- it builds `rust/ffi` first; the DLL requires it (observation-vector formulas run in Rust since 2026-10-13, rust-migration spec decision #42). The `rust/observation_engine` crate (foundation built 2026-10-13, spec §6.2.14, decision #43) is the coming single observation pipeline, live and offline; `cargo run --release -p tools --bin obs_replay` streams the raw tick file through it. Native tests/tools that include those formula headers link `rust/target/release/libffi.a` (`scripts/build_rust_native.sh`; see `tools/README.md`).
 3. **Do not** use ad-hoc `flatc` or manual cmake/ninja flows for normal work.
 4. This project is now a **local Git repo** (`master` branch, no remote by default). Use Git-based validation (`git status`, `git diff`, changed-file queries) as a source of truth alongside file reads and runtime command exits. Git-ignored: `build-windows/`, generated `*.bak_*` backups, `__pycache__/`, `.btst`/`.lbr` artifacts.
 

@@ -1,0 +1,16 @@
+# rust/observation_engine -- the one observation pipeline, live and offline (rust-migration spec §6.2,
+# decision #43): trades and bars in, observation frames out. Pure crate: no Sierra, zmq, pyo3 or
+# parquet dependency -- the live adapter lives in `rust/ffi`, the offline tick source in `rust/tools`.
+# The per-dim formulas stay in `observation_vector`.
+[package]
+name = "observation_engine"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[dependencies]
+observation_vector = { path = "../observation_vector" }
+
+[lints]
+workspace = true

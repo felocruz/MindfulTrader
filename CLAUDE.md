@@ -52,7 +52,7 @@ the single authoritative pair for this entire effort — one Rust core (behind a
 owns every computation with separate train/offline/live implementations today (HMM, the
 observation vector, ZMQ transport, and the execution layer), ported incrementally
 (port → parity-test → shadow-wire → live-confirm → cutover), never a big-bang rewrite. Status
-(updated 2026-10-13): `observation_vector` **cut over** -- all 17 live dims' formulas now run in Rust (live Sierra, offline generator, tools; shadow run matched 19/19 sites first, decision #42); `student_t_hmm` substantially
+(updated 2026-10-13): `observation_vector` **cut over** -- all 17 live dims' formulas now run in Rust (live Sierra, offline generator, tools; shadow run matched 19/19 sites first, decision #42); `observation_engine` foundation built (spec §6.2.14: session clock, zero-copy views, contiguous rolling windows, bar builders, event-order rule; `obs_replay` streams all 476.7M ticks in ~11 s) -- dims/frame/scaler/gate wait on D2-D6; `student_t_hmm` substantially
 built (`model.rs` inference, `train.rs` EM/MAP-EM + ECME dof + orchestration, `init.rs` k-means++,
 `registry.rs` classification, `artifact.rs` save/load, `audit.rs`/`gate_metrics.rs`, and the live
 `regime_engine.rs` producer — `RegimeState`/`RegimeEngine`, decision #30 — all shipped) and **now

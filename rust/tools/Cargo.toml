@@ -11,9 +11,15 @@ publish.workspace = true
 name = "hmm_tool"
 path = "src/bin/hmm_tool.rs"
 
+[[bin]]
+name = "obs_replay"
+path = "src/bin/obs_replay.rs"
+
 [dependencies]
 student_t_hmm = { path = "../student_t_hmm" }
-parquet = { workspace = true }
+observation_engine = { path = "../observation_engine" }
+# zstd: the raw tick file (`mes_ticks.parquet`, scid_to_ticks_parquet.cpp) is ZSTD-compressed.
+parquet = { workspace = true, features = ["zstd"] }
 arrow-array = { workspace = true }
 clap = { workspace = true }
 
