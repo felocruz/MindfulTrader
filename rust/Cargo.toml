@@ -27,7 +27,16 @@ flatbuffers = "25.12"
 # large, error-prone, and lower quality than the well-established crate, unlike ndarray (hot-path
 # allocation concern, model.rs's own header) -- no such concern applies to batch tooling.
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# `float_roundtrip` (2026-10-12, found via `hmm_tool import-legacy`'s own round-trip verification
+# assertion, not assumed): WITHOUT it, serde_json's float deserializer is not guaranteed
+# correctly-rounded for every decimal string -- confirmed directly (not from the changelog alone)
+# by reproducing a genuine 1-ULP mis-parse of a real trained model's `amihud_illiquidity`
+# covariance value (`5.801714613487153e-08`, serde-rs/json#707's exact failure class). The
+# deserializer's own fast-path trades perfect correctness for speed by default; this flag opts
+# every crate in this workspace into the strict, always-correctly-rounded parser instead -- a
+# small, deliberate perf cost `artifact.rs`'s offline, once-per-training-run I/O can absorb for
+# free, in exchange for model-weight round-trips this crate can actually trust bit-for-bit.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 # For `student_t_hmm`'s artifact.rs (model-manifest content-hash fingerprinting, decision #25's
 # calibration-provenance design) -- a well-vetted crypto-hash crate, not hand-rolled, the same
 # "batch tooling, not hot-path" reasoning as serde/serde_json above, plus a correctness argument
