@@ -3,8 +3,10 @@
 //! §5.2/§6.5 names (the first stateful resource in this crate -- every `observation_vector`
 //! wrapper is a one-shot pure function, never holding state across calls).
 //!
-//! Monomorphized to the production shape (`PRODUCTION_D`=18, `PRODUCTION_K`=4,
-//! `student_t_hmm::model`) -- the opaque handle hides a boxed
+//! Monomorphized to the production shape (`PRODUCTION_D`=17, `PRODUCTION_K`=4,
+//! `student_t_hmm::model`). `hmm_step` takes the full 18D `ObservationData` vector and projects
+//! it to the model's 17 inputs through `student_t_hmm::input::project` -- the same projection
+//! offline training uses, so C++ never needs to know which fields the HMM consumes -- the opaque handle hides a boxed
 //! `RegimeEngine<PRODUCTION_D, PRODUCTION_K>`, never exposed to C++ as anything but a pointer.
 //!
 //! `f64` inside the model, `f32` on the wire (plan §6.5) -- every floating-point field on the
@@ -15,6 +17,7 @@ use std::ffi::{c_char, CStr};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::Path;
 
+use student_t_hmm::input::{project, OBSERVATION_D};
 use student_t_hmm::model::{PRODUCTION_D, PRODUCTION_K};
 use student_t_hmm::regime_engine::{RegimeEngine, StepContext};
 use student_t_hmm::registry::MarketClimate as CoreMarketClimate;
@@ -178,7 +181,8 @@ pub unsafe extern "C" fn hmm_init(path: *const c_char, out_handle: *mut *mut Hmm
 ///
 /// # Safety
 /// `handle` must be a valid, non-null handle from `hmm_init`, not yet passed to `hmm_shutdown`.
-/// `obs` must be valid for reads of exactly `obs_len` contiguous `f64` elements. `out_state` must
+/// `obs` must be valid for reads of exactly `obs_len` contiguous `f64` elements: the full
+/// `ObservationData` vector in schema order (`obs_len` = 18). `out_state` must
 /// be non-null and valid for writes of one `RegimeState`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn hmm_step(
@@ -194,15 +198,15 @@ pub unsafe extern "C" fn hmm_step(
         if handle.is_null() {
             return Status::NotInitialized;
         }
-        if obs.is_null() || obs_len != PRODUCTION_D || out_state.is_null() {
+        if obs.is_null() || obs_len != OBSERVATION_D || out_state.is_null() {
             return Status::BadArg;
         }
         let engine = unsafe { &mut *(handle as *mut ProdEngine) };
         let obs_slice = unsafe { std::slice::from_raw_parts(obs, obs_len) };
-        let mut obs_arr = [0.0f64; PRODUCTION_D];
-        obs_arr.copy_from_slice(obs_slice);
+        let mut schema_obs = [0.0f64; OBSERVATION_D];
+        schema_obs.copy_from_slice(obs_slice);
         let ctx = StepContext { tail_index, liq_fragility, burstiness_index };
-        let state = engine.step(&obs_arr, &ctx);
+        let state = engine.step(&project(&schema_obs), &ctx);
         unsafe {
             *out_state = state.into();
         }
@@ -302,7 +306,7 @@ mod tests {
         assert!(matches!(status, Status::Ok), "hmm_init: {status:?}");
         assert!(!handle.is_null());
 
-        let obs = [0.0f64; PRODUCTION_D];
+        let obs = [0.0f64; OBSERVATION_D];
         let mut state = RegimeState::default();
         let status = unsafe {
             hmm_step(handle, obs.as_ptr(), obs.len(), 4.0, 0.0, 0.001, &mut state)
@@ -357,6 +361,7 @@ mod tests {
 
         let mut state = RegimeState::default();
         let short_obs = [0.0f64; 3];
+        let model_sized_obs = [0.0f64; PRODUCTION_D];
         assert!(matches!(
             unsafe {
                 hmm_step(std::ptr::null_mut(), short_obs.as_ptr(), short_obs.len(), 0.0, 0.0, 0.0, &mut state)
@@ -369,6 +374,13 @@ mod tests {
             },
             Status::BadArg
         ));
+        assert!(
+            matches!(
+                unsafe { hmm_step(handle, model_sized_obs.as_ptr(), model_sized_obs.len(), 0.0, 0.0, 0.0, &mut state) },
+                Status::BadArg
+            ),
+            "the C++ side passes the 18D schema vector, never the 17D model input"
+        );
 
         unsafe { hmm_shutdown(handle) };
         let _ = std::fs::remove_file(&path);

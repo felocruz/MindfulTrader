@@ -23,7 +23,7 @@
 //!    directly `joblib.load()`s the HMM artifact to compute the Kazemi et al. (2019)
 //!    volatility-adjusted-time `sigma_eff` feature from the model's own covariances. Rejecting
 //!    `bincode` for these two files alone is sufficient justification on its own.
-//! 2. **Simplified further than the original proposal, 2026-10-11**: given `PRODUCTION_D=18`/
+//! 2. **Simplified further than the original proposal, 2026-10-11**: given `PRODUCTION_D=17`/
 //!    `PRODUCTION_K=4`, the full parameter count (means + covars + transmat + startprob + dof +
 //!    feature_weights) is on the order of 190 `f64`s -- a few KB as plain JSON numbers. A separate
 //!    binary weights file with its own header format is complexity this tiny a payload doesn't

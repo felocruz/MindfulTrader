@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["execution", "ffi", "observation_vector", "schema", "student_t_hmm"]
+members = ["execution", "ffi", "observation_vector", "schema", "student_t_hmm", "tools"]
 
 [workspace.package]
 edition = "2024"
@@ -52,6 +52,13 @@ sha2 = "0.10"
 # 1s->20s-read-timeout-patched 4.2.0: W0e (2026-10-13) showed the stock 1s timeout holding over
 # WSL2 through a 300s idle soak (spec §8.7 D3).
 ibapi = { version = "=5.0.0", default-features = false, features = ["sync"] }
+# For `tools`' offline HMM training (`hmm_tool train`, spec decision #41): reads `.context.parquet`
+# column-by-name. The Apache crates rather than polars (Atratus's choice): a read-only scan of 18
+# named columns needs nothing polars adds. Default features off: the training files are
+# uncompressed (parquet-cpp-arrow 22.0.0 writer); `snap` covers pyarrow's default codec too.
+parquet = { version = "=60.0.0", default-features = false, features = ["arrow", "snap"] }
+arrow-array = "=60.0.0"
+clap = { version = "4.6", features = ["derive"] }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

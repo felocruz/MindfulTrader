@@ -45,11 +45,12 @@ pub const DEFAULT_DOF_MAX: f64 = 100.0;
 /// (same defensive idea, independently useful, not formula-specific -- safe to reuse the pattern).
 const LOG_PROB_PENALTY: f64 = -1e10;
 
-/// Production dimension count (current 18D observation vector) and state count (K=4,
-/// production-locked per the runbook's own Smart Tuner V1 frozen contract). A single point of
-/// change if either moves -- see this crate's own Cargo.toml header for why that's an acceptable,
-/// already-routine cost, not a reason to avoid const generics.
-pub const PRODUCTION_D: usize = 18;
+/// Production model-input dimension count and state count (K=4, production-locked per the
+/// runbook's own Smart Tuner V1 frozen contract). D=17: the 18D `ObservationData` schema minus the
+/// retired `fast_mean_rev_z` (`input.rs`, spec decision #41). A single point of change if either
+/// moves -- see this crate's own Cargo.toml header for why that's an acceptable, already-routine
+/// cost, not a reason to avoid const generics.
+pub const PRODUCTION_D: usize = 17;
 pub const PRODUCTION_K: usize = 4;
 
 /// Diagonal-covariance, per-feature-weighted Student-t Hidden Markov Model.

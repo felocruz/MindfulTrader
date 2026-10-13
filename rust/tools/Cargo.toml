@@ -1,0 +1,21 @@
+# rust/tools -- offline command-line tools over the pure crates (spec §5.2 `hmm_tool`). Never linked
+# into the DLL; reads training data from disk, writes artifacts and archived reports.
+[package]
+name = "tools"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "hmm_tool"
+path = "src/bin/hmm_tool.rs"
+
+[dependencies]
+student_t_hmm = { path = "../student_t_hmm" }
+parquet = { workspace = true }
+arrow-array = { workspace = true }
+clap = { workspace = true }
+
+[lints]
+workspace = true

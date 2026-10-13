@@ -249,7 +249,8 @@ Status hmm_init(const char *path, HmmHandle **out_handle);
 ///
 /// # Safety
 /// `handle` must be a valid, non-null handle from `hmm_init`, not yet passed to `hmm_shutdown`.
-/// `obs` must be valid for reads of exactly `obs_len` contiguous `f64` elements. `out_state` must
+/// `obs` must be valid for reads of exactly `obs_len` contiguous `f64` elements: the full
+/// `ObservationData` vector in schema order (`obs_len` = 18). `out_state` must
 /// be non-null and valid for writes of one `RegimeState`.
 Status hmm_step(HmmHandle *handle,
                 const double *obs,
