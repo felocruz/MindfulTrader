@@ -147,6 +147,38 @@ design content) instead.**
   in code size, 3 inline lines replaced by 1 header call) and `=ON` (2,036,224 bytes, links and
   grows). **2 of 18 dims now genuinely remain unported**: `tail_index` and `fast_mean_rev_z` (the
   latter's own unresolved contradiction, noted above, is worth resolving before porting it).
+- **17th `rust/observation_vector` dim ported and shadow-wired, 2026-10-12**: `tail_index`
+  (`TailRiskEngine::ComputeRawAlpha()`, the Resnick & Stărică 1997 Hill-plot stability-region
+  Hill-estimator k-selector). The most complex port in this series so far — `partial_sort` +
+  running-prefix-log-sum Hill(k) scan + first-plateau-wins stability selector over `[10, 4×
+  tail_cutoff]`. Unlike `lempel_ziv`'s class, this one's `GetHillAlpha()` getter is already a pure
+  O(1) state read (`return m_smoothedAlpha`) — the real estimation work happens inside
+  `AddObservation()`, feeding an EWMA-smoothed alpha whose value depends on the ENTIRE observation
+  history, not a recomputable snapshot. Extracted `ComputeRawAlpha()`'s math into
+  `include/HillTailIndex.h` (returning `std::optional<double>`, not an implicit NaN sentinel, per
+  this session's own institutional-NaN-handling precedent, `calibration.rs`'s `Option<f64>`
+  refactor) and added `GetWindowSnapshot()`/`GetTailCutoff()` accessors, so shadow-wiring could
+  compare the RAW (pre-EWMA) Hill alpha — the only level that's meaningfully comparable without
+  replicating the engine's own sequential EWMA state in Rust — not the smoothed `GetHillAlpha()`
+  output itself. A regression test proves `TailRiskEngine`'s own refactored computation still
+  matches an independent `HillTailIndex()` call on the identical window. **Design choice,
+  documented not left implicit**: `HillTailIndex.h` takes a MUTABLE buffer it `partial_sort`s in
+  place (not `const` + an internal copy) specifically to preserve `ComputeRawAlpha`'s own
+  zero-extra-allocation design — found and fixed during this port, the first draft introduced a
+  needless second buffer copy before this was caught. Found and removed one now-genuinely-dead
+  member (`m_hillAtK`, a pre-allocated scratchpad only ever touched inside the now-extracted
+  method body) — per this repo's own standing "default is deletion once verified dead" rule. Ported
+  to Rust (`hill_tail_index`, taking `&mut [f64]`, Rust's own idiom for "sort my buffer in place"),
+  FFI-wrapped (`observation_vector_hill_tail_index`, the first wrapper in this family needing a
+  MUTABLE `*mut f64` rather than `const`), cross-language-parity-tested (3 new assertions on a
+  real 500-element production-shaped window, exact to 1e-9), and shadow-wired at the real call
+  site. 4 new Rust unit tests (67/67 total), 6 new native C++ checks
+  (`tests/cpp/test_hill_tail_index.cpp`). Both DLL configurations build clean: `MTS_WITH_RUST=OFF`
+  (1,780,736 bytes, +512 from the `log_scale_ratio` baseline — the `m_hillAtK` removal and two new
+  accessor methods are a small net-positive unconditional change) and `=ON` (2,053,632 bytes, links
+  and grows). **1 of 18 observation-vector dims now genuinely remains unported**: `fast_mean_rev_z`
+  (its own unresolved "MOOT, DROPPED" vs. "wired, EXPLICIT operator authorization" contradiction,
+  noted above, is worth resolving before porting it).
 - **`rust/schema` crate scaffolded, 2026-10-09**: generates from `schema/mts_schema.fbs`
   via a new `flatc --rust` target in `regenerate_schema.sh` (schema commit `2e9528d`). Builds, clippies,
   and tests clean.
@@ -482,7 +514,7 @@ redeployed, test artifacts deleted.
 | Crate | Status | Notes |
 |---|---|---|
 | `ffi` | Skeleton shipped, 2026-10-08; `student_t_hmm` feature wired 2026-10-12 | One staticlib, features `observation_vector`/`student_t_hmm`/`transport` turn subsystems on |
-| `observation_vector` | 16 of 18 dims ported; remaining: `tail_index`, `fast_mean_rev_z` | spec §6 / §5 below |
+| `observation_vector` | 17 of 18 dims ported; remaining: `fast_mean_rev_z` (unresolved MOOT/DROPPED-vs-wired contradiction, see dated bullet log) | spec §6 / §5 below |
 | `schema` | Scaffolded 2026-10-09 | Generates from the now-single `mts_schema.fbs`; see spec §4.2 for the merge that simplified this |
 | `student_t_hmm` | Substantially built (model/train/init/registry/artifact/audit/gate-metrics/regime_engine/runtime_calibration/calibration/bootstrap all shipped — every lifecycle module in spec §5.2's target architecture now exists); full K-selection not started (deprioritized); first real (non-synthetic) model artifact now on disk at `fixtures/hmm_model_20260918_manifest.json` (decision #34) | Spec §5; plan §4 Stages G0-G6 all done (every G0 blocker resolved, decisions #30/#32/#33/#34), G7 (C++ cutover) not started |
 | `transport` | Not started | Deliberately last; spec §7 — except skeleton + 2 new ports, see W9 row above |

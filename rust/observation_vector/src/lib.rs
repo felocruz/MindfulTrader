@@ -130,6 +130,92 @@ pub fn log_scale_ratio(short_bv: f64, long_bv: f64) -> f32 {
     (log_ratio as f32).clamp(-6.0, 6.0)
 }
 
+/// Port of `HillTailIndex.h`: the raw (pre-EWMA-smoothing) Hill estimator via the Resnick &
+/// Stărică (1997) Hill-plot stability-region k-selector. `window` is sorted in PLACE (mirrors the
+/// C++ original's own in-place `partial_sort` -- a full descending sort here, not a partial one,
+/// since Rust's std has no `partial_sort` equivalent and a full sort produces an identical
+/// top-`(max_k+1)` prefix, the only range this algorithm ever reads). `window` must already
+/// contain absolute log-return magnitudes, in ANY order -- this algorithm only ever operates on
+/// the sorted magnitude distribution, never on chronological position.
+///
+/// Returns `None` when the window cannot support an estimate yet, matching `ComputeRawAlpha`'s
+/// own early-exit convention -- an explicit optional, not an implicit sentinel float, per this
+/// crate's institutional NaN-handling principle (`calibration.rs`'s `Option<f64>` refactor).
+///
+/// See `HillTailIndex.h`'s own doc comment for the deliberate precondition simplification this
+/// port inherits (`count < tail_cutoff + 1` alone, not the real engine's fuller
+/// `!is_full && head_index < tail_cutoff + 1` gate -- behaviorally identical for every
+/// configuration this codebase actually constructs).
+pub fn hill_tail_index(window: &mut [f64], tail_cutoff: usize) -> Option<f64> {
+    let count = window.len();
+    if count < tail_cutoff + 1 {
+        return None;
+    }
+
+    let max_k = (tail_cutoff * 4).min(count - 1);
+    if max_k < 2 {
+        return None;
+    }
+
+    const MIN_SCAN_K: usize = 10;
+    let start_k = MIN_SCAN_K.min(max_k).max(2);
+
+    // Descending sort -- matches std::greater<double>() ordering.
+    window.sort_unstable_by(|a, b| b.total_cmp(a));
+
+    let mut hill_at_k: Vec<f64> = Vec::with_capacity(max_k - start_k + 1);
+    // Prime the prefix sum with the first `start_k` log-magnitudes, so running_log_sum ==
+    // sum_{i<k} log(x_i) at the top of each iteration. hill_at_k index j corresponds to
+    // k = start_k + j.
+    let mut running_log_sum: f64 = window[..start_k].iter().map(|x| x.ln()).sum();
+    for k in start_k..=max_k {
+        if k > start_k {
+            running_log_sum += window[k - 1].ln();
+        }
+        let threshold = window[k];
+        if threshold <= 1e-9 {
+            hill_at_k.push(4.0);
+            continue;
+        }
+        let log_threshold = threshold.ln(); // hoisted: computed once per k, not per i
+        let log_sum = running_log_sum - (k as f64) * log_threshold;
+        hill_at_k.push(if log_sum > 1e-9 { k as f64 / log_sum } else { 4.0 });
+    }
+
+    // Hill-plot bias grows with k, so prefer the FIRST plateau reached scanning outward from
+    // small k, not whichever plateau happens to be numerically widest anywhere in the range.
+    const STABILITY_BAND_RELATIVE: f64 = 0.15; // 15% band
+    const MIN_PLATEAU_WIDTH: usize = 5;
+    let mut best_start = 0usize;
+    let mut best_len = 1usize; // fallback: widest plateau found, if none meets MIN_PLATEAU_WIDTH
+    let mut first_start = 0usize;
+    let mut first_len = 0usize; // first plateau meeting MIN_PLATEAU_WIDTH (preferred)
+    let mut start = 0usize;
+    for i in 1..=hill_at_k.len() {
+        let broke_or_end = i == hill_at_k.len()
+            || (hill_at_k[i] - hill_at_k[start]).abs() / hill_at_k[start].max(1e-6) > STABILITY_BAND_RELATIVE;
+        if broke_or_end {
+            let run_len = i - start;
+            if run_len > best_len {
+                best_len = run_len;
+                best_start = start;
+            }
+            if first_len == 0 && run_len >= MIN_PLATEAU_WIDTH {
+                first_start = start;
+                first_len = run_len;
+            }
+            start = i;
+        }
+    }
+    let chosen_start = if first_len > 0 { first_start } else { best_start };
+    let chosen_len = if first_len > 0 { first_len } else { best_len };
+    if hill_at_k.is_empty() {
+        return None;
+    }
+    let midpoint_idx = (chosen_start + chosen_len / 2).min(hill_at_k.len() - 1);
+    Some(hill_at_k[midpoint_idx])
+}
+
 /// Largest window this estimator supports (matches DfaHurstExponent.h's own capacity constant --
 /// fixed-capacity stack buffers, no heap allocation, same hot-path discipline as the C++ original).
 pub const DFA_MAX_WINDOW: usize = 512;
@@ -1456,5 +1542,42 @@ mod tests {
     fn log_scale_ratio_extreme_values_clamp_to_bounds() {
         assert_eq!(log_scale_ratio(1e6, 1e-9), 6.0);
         assert_eq!(log_scale_ratio(1e-9, 1e6), -6.0);
+    }
+
+    fn make_positive_noise(n: usize, scale: f64, seed: u32) -> Vec<f64> {
+        let mut rng = Lcg(seed);
+        (0..n).map(|_| scale * (0.1 + rng.next_unit())).collect()
+    }
+
+    #[test]
+    fn hill_tail_index_below_threshold_is_none() {
+        let mut window = make_positive_noise(20, 0.01, 1);
+        assert!(hill_tail_index(&mut window, 25).is_none());
+    }
+
+    #[test]
+    fn hill_tail_index_real_production_config_produces_finite_positive_value() {
+        let mut window = make_positive_noise(500, 0.001, 7);
+        let result = hill_tail_index(&mut window, 25);
+        assert!(result.is_some());
+        let alpha = result.expect("checked is_some above");
+        assert!(alpha.is_finite() && alpha > 0.0, "alpha={alpha}");
+    }
+
+    #[test]
+    fn hill_tail_index_tiny_but_valid_window_produces_a_value() {
+        // tail_cutoff=1 -> count(3) >= tail_cutoff+1(2) passes the first gate;
+        // max_k=min(4,2)=2, which is NOT < 2, so this should still produce a value.
+        let mut window = make_positive_noise(3, 0.01, 3);
+        assert!(hill_tail_index(&mut window, 1).is_some());
+    }
+
+    #[test]
+    fn hill_tail_index_is_deterministic() {
+        let mut window_a = make_positive_noise(500, 0.002, 99);
+        let mut window_b = window_a.clone();
+        let result_a = hill_tail_index(&mut window_a, 25);
+        let result_b = hill_tail_index(&mut window_b, 25);
+        assert_eq!(result_a, result_b);
     }
 }

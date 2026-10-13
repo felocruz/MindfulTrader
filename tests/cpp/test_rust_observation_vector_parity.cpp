@@ -16,6 +16,7 @@
 #include "CarryForwardCalculators.h"
 #include "DfaHurstExponent.h"
 #include "EventVelocityEngine.h"
+#include "HillTailIndex.h"
 #include "LempelZivComplexity.h"
 #include "LiquidityFragilityEngine.h"
 #include "LogScaleRatio.h"
@@ -142,6 +143,41 @@ int main() {
         const float rustResult = mts::observation_vector_log_scale_ratio(1e6, 1e-9);
         check("LogScaleRatio extreme ratio: Rust matches C++ exactly (both clamp to +6.0)",
               cppResult == 6.0f && rustResult == 6.0f);
+    }
+
+    // --- HillTailIndex: C++ production function vs. Rust FFI wrapper, same window (two
+    // independent copies, since both mutate their argument in place via sort) ---
+    {
+        std::vector<double> cppWindow(500);
+        uint32_t s = 2424u;
+        for (auto& v : cppWindow) {
+            s = s * 1664525u + 1013904223u;
+            const double u = static_cast<double>(s >> 8) / 16777216.0;
+            v = 0.001 * (0.1 + u);
+        }
+        std::vector<double> rustWindow = cppWindow;
+
+        const auto cppResult = HillTailIndex(cppWindow.data(), cppWindow.size(), 25);
+        const double rustResult =
+            mts::observation_vector_hill_tail_index(rustWindow.data(), rustWindow.size(), 25);
+        check("HillTailIndex real production config: Rust matches C++ exactly",
+              cppResult.has_value() && std::fabs(*cppResult - rustResult) < 1e-9);
+    }
+    {
+        // Below the tail_cutoff+1 threshold: both report "no estimate" (nullopt / NaN).
+        std::vector<double> cppWindow(20, 0.01);
+        std::vector<double> rustWindow = cppWindow;
+        const auto cppResult = HillTailIndex(cppWindow.data(), cppWindow.size(), 25);
+        const double rustResult =
+            mts::observation_vector_hill_tail_index(rustWindow.data(), rustWindow.size(), 25);
+        check("HillTailIndex below-threshold: Rust matches C++ exactly (both no-estimate)",
+              !cppResult.has_value() && std::isnan(rustResult));
+    }
+    {
+        // Null/empty input: the Rust wrapper's own documented convention maps this to NaN,
+        // matching the C++ side's own insufficient-data (nullopt) case at count=0.
+        const double rustResult = mts::observation_vector_hill_tail_index(nullptr, 0, 25);
+        check("HillTailIndex Rust wrapper: null input returns NaN", std::isnan(rustResult));
     }
 
     // Null/empty-input contract: Rust wrapper must not crash, must return NaN.

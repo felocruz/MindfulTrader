@@ -4,6 +4,8 @@
 #include <cmath>
 #include <algorithm>
 
+#include "HillTailIndex.h"
+
 namespace MindfulTrader {
 
     /**
@@ -37,11 +39,6 @@ namespace MindfulTrader {
 
             // Temporary buffer for sorting (avoid allocating in the hot path)
             m_sortBuffer.reserve(windowSize);
-
-            // Pre-allocated scratchpad for the stability-region Hill(k) scan (Task 4
-            // fix, 2026-08-13): reserved once here, reused every GetHillAlpha() call,
-            // never reallocates since its size is capped at windowSize - 1.
-            m_hillAtK.reserve(windowSize);
 
             // Safety check for tail size
             if (m_tailCutoff < 2) m_tailCutoff = 2;
@@ -130,23 +127,39 @@ namespace MindfulTrader {
             return m_smoothedAlpha;
         }
 
+        /**
+         * @brief Snapshots the current window (absolute log-returns, ANY order -- see
+         * HillTailIndex.h's own doc comment for why order doesn't matter here) and the engine's
+         * own `m_tailCutoff`, so callers (the `MTS_WITH_RUST` shadow-wire comparison in
+         * `ContextManager.cpp`) can independently recompute the raw (pre-EWMA) Hill alpha via the
+         * same pure `HillTailIndex()` this class delegates to internally, without needing their
+         * own parallel EWMA state.
+         * @return Number of valid elements written to `out` (may be < windowSize pre-warmup).
+         */
+        size_t GetWindowSnapshot(std::vector<double>& out) const {
+            const size_t count = m_isFull ? m_windowSize : m_headIndex;
+            out.assign(m_buffer.begin(), m_buffer.begin() + static_cast<std::ptrdiff_t>(count));
+            return count;
+        }
+
+        size_t GetTailCutoff() const {
+            return m_tailCutoff;
+        }
+
     private:
         /**
          * @brief Computes the un-smoothed (raw) Hill alpha over the current
          * window via the Resnick & Stărică (1997) stability-region k-selector.
          * Complexity: O(N * log K) using partial_sort + an O(maxK) scan.
+         * Math extracted to HillTailIndex.h (2026-10-12) so it can be natively unit-tested and
+         * ported to Rust independent of this class's own stateful ring-buffer/EWMA bookkeeping --
+         * same extraction precedent as LempelZivComplexity.h. This method is now a thin
+         * snapshot-then-delegate wrapper; the math itself is unchanged.
          * @param outAlpha receives the raw alpha on success.
          * @return false when the window cannot support an estimate yet (caller
          *         must leave the smoothed state untouched).
          */
         bool ComputeRawAlpha(double& outAlpha) {
-            if (!m_isFull && m_headIndex < m_tailCutoff + 1) {
-                return false; // Not enough data yet, assume Gaussian safety
-            }
-
-            // 1. Copy active window to sort buffer
-            // Since it's a circular buffer, we copy everything.
-            // If strictly partially filled, only copy what we have.
             m_sortBuffer.clear();
             if (m_isFull) {
                 m_sortBuffer.assign(m_buffer.begin(), m_buffer.end()); // Copy all -- .assign() avoids
@@ -156,92 +169,11 @@ namespace MindfulTrader {
                 m_sortBuffer.insert(m_sortBuffer.end(), m_buffer.begin(), m_buffer.begin() + m_headIndex);
             }
 
-            size_t validSize = m_sortBuffer.size();
-            // Widen the sort to the largest k we might scan (up to 4x the configured
-            // tail cutoff, capped at validSize-1) so the stability-region scan below
-            // has a real range to search, not just the single configured k.
-            size_t maxK = std::min(m_tailCutoff * 4, validSize - 1);
-            if (maxK < 2) return false;
-
-            // Scan k in [10, maxK], matching the spec's stated k range. Very
-            // small k (2-6) yields extremely noisy per-k Hill estimates -- only
-            // a handful of order statistics -- and the first-plateau-wins
-            // selector below is most exposed to locking onto a noise-driven
-            // "plateau" precisely where k is smallest and variance is highest,
-            // on a live risk-classification input. Starting at k=10 removes
-            // that exposure (final-review Finding 10). With the default
-            // config (windowSize=500, tailPercent=0.05 -> m_tailCutoff=25)
-            // maxK = 100, giving exactly the specified k in [10, 100].
-            constexpr size_t kMinScanK = 10;
-            size_t startK = std::min(kMinScanK, maxK);
-            if (startK < 2) startK = 2;  // degenerate tiny-window configs only
-
-            std::partial_sort(
-                m_sortBuffer.begin(),
-                m_sortBuffer.begin() + static_cast<std::ptrdiff_t>(maxK) + 1,
-                m_sortBuffer.end(),
-                std::greater<double>()
-            );
-
-            // 2. Resnick & Stărică (1997) Hill-plot stability-region selector: compute
-            // Hill(k) across a k-range, find a stable window of k where consecutive
-            // Hill(k) values stay within a fixed relative band of the window's anchor,
-            // take its midpoint. Hill(k) is computed via a running prefix log-sum
-            // (cumLogSum[k] = cumLogSum[k-1] + log(x_{k-1})) so this whole scan is
-            // true O(maxK) (~maxK std::log() calls total) -- the naive per-k resum
-            // from i=0 is O(maxK^2) and was measured at ~10,000 log() calls for
-            // maxK=100 (fixed 2026-08-13 post-review). m_hillAtK is a pre-allocated
-            // member (reserved once in the constructor, like m_sortBuffer) so this
-            // scan does zero heap allocation on the hot path.
-            m_hillAtK.clear();
-            // Prime the prefix sum with the first `startK` log-magnitudes, so
-            // runningLogSum == sum_{i<k} log(x_i) at the top of each iteration.
-            // m_hillAtK index j therefore corresponds to k = startK + j.
-            double runningLogSum = 0.0;
-            for (size_t i = 0; i < startK; ++i) runningLogSum += std::log(m_sortBuffer[i]);
-            for (size_t k = startK; k <= maxK; ++k) {
-                if (k > startK) {
-                    runningLogSum += std::log(m_sortBuffer[k - 1]);
-                }
-                double threshold = m_sortBuffer[k];
-                if (threshold <= 1e-9) { m_hillAtK.push_back(4.0); continue; }
-                const double logThreshold = std::log(threshold);  // hoisted: computed once per k, not per i
-                double logSum = runningLogSum - static_cast<double>(k) * logThreshold;
-                m_hillAtK.push_back(logSum > 1e-9 ? static_cast<double>(k) / logSum : 4.0);
+            const auto result = HillTailIndex(m_sortBuffer.data(), m_sortBuffer.size(), m_tailCutoff);
+            if (!result.has_value()) {
+                return false;
             }
-
-            constexpr double kStabilityBandRelative = 0.15;  // 15% band, engineering choice within
-                                                                // the practitioner "eyeball stability"
-                                                                // convention -- no literature-prescribed
-                                                                // exact figure found (2026-08-13 grounding pass).
-            // Hill-plot bias grows with k (more of the bulk distribution, further from
-            // the true tail), so prefer the FIRST plateau reached scanning outward from
-            // small k, not whichever plateau happens to be numerically widest anywhere
-            // in the range -- a review on 2026-08-13 found the widest-anywhere rule
-            // picks a k=56-100 bulk-distribution plateau over a k=13-30 near-tail one on
-            // synthetic alpha=3.0 Pareto data, producing alpha=1.55 (48% error) instead
-            // of alpha=2.54 (15% error). kMinPlateauWidth=5 is an engineering choice
-            // (stable across 5-10 on the validation case) requiring a plateau to span at
-            // least 5 k-values before it's trusted as real rather than sampling noise.
-            constexpr size_t kMinPlateauWidth = 5;
-            size_t bestStart = 0, bestLen = 1;      // fallback: widest plateau found, if none meets kMinPlateauWidth
-            size_t firstStart = 0, firstLen = 0;    // first plateau meeting kMinPlateauWidth (preferred)
-            size_t start = 0;
-            for (size_t i = 1; i <= m_hillAtK.size(); ++i) {
-                const bool brokeOrEnd = (i == m_hillAtK.size()) ||
-                    (std::fabs(m_hillAtK[i] - m_hillAtK[start]) / std::max(m_hillAtK[start], 1e-6) > kStabilityBandRelative);
-                if (brokeOrEnd) {
-                    const size_t runLen = i - start;
-                    if (runLen > bestLen) { bestLen = runLen; bestStart = start; }
-                    if (firstLen == 0 && runLen >= kMinPlateauWidth) { firstStart = start; firstLen = runLen; }
-                    start = i;
-                }
-            }
-            const size_t chosenStart = (firstLen > 0) ? firstStart : bestStart;
-            const size_t chosenLen = (firstLen > 0) ? firstLen : bestLen;
-            if (m_hillAtK.empty()) return false;
-            const size_t midpointIdx = chosenStart + chosenLen / 2;
-            outAlpha = m_hillAtK[std::min(midpointIdx, m_hillAtK.size() - 1)];
+            outAlpha = *result;
             return true;
         }
 
@@ -254,9 +186,6 @@ namespace MindfulTrader {
 
         // Pre-allocated scratchpad for calculation to avoid heap-alloc on hot path
         std::vector<double> m_sortBuffer;
-
-        // Pre-allocated scratchpad for the stability-region Hill(k) scan (Task 4)
-        std::vector<double> m_hillAtK;
 
         // EWMA state for the smoothed alpha output (Task 4)
         double m_smoothedAlpha = 4.0;

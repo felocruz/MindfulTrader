@@ -224,6 +224,16 @@ float observation_vector_recurrence_rate(const float *closed_bars,
 /// `window` must be either null or valid for reads of `len` contiguous `f64` elements.
 double observation_vector_lempel_ziv_complexity(const double *window, uintptr_t len);
 
+/// Port of `HillTailIndex.h`. `window` points to `len` absolute-log-return magnitudes (ANY
+/// order) and is MUTATED IN PLACE (sorted) by this call, mirroring the C++ original's own
+/// in-place `partial_sort` design -- the caller's buffer is reordered, not copied. Maps both
+/// "insufficient data" (`None`) and null/empty input to NaN -- this dim's own degenerate-input
+/// convention, same sentinel either way since both mean "no estimate available this tick."
+///
+/// # Safety
+/// `window` must be either null or valid for reads AND writes of `len` contiguous `f64` elements.
+double observation_vector_hill_tail_index(double *window, uintptr_t len, uintptr_t tail_cutoff);
+
 /// Loads a trained model + registry manifest (`student_t_hmm::artifact::load`'s JSON format) and
 /// returns a live, stateful opaque handle. Call once per `sc.LastCallToFunction`-adjacent study
 /// load (spec §6.5) -- never per tick, never per step.

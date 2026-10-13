@@ -442,6 +442,40 @@ std::array<float, ContextManager::OBSERVATION_VECTOR_SIZE> ContextManager::Build
         obs[OBS_TAIL_INDEX] = (std::isfinite(alpha) && alpha >= 1.1f && alpha <= 8.0f)
                               ? alpha : 2.5f;  // 2.5 = neutral if pathological
         m_cachedHillAlpha.store(obs[OBS_TAIL_INDEX], std::memory_order_relaxed);  // P1.4: cache for direct gate
+
+#ifdef MTS_WITH_RUST
+        // Shadow-mode validation (docs/superpowers/plans/2026-10-09-mindfultrader-rust-migration-plan.md
+        // §5.2): proves the Rust port (observation_vector::hill_tail_index, ported from the
+        // newly-extracted HillTailIndex.h) stays correct on live data. Compares the RAW
+        // (pre-EWMA) Hill alpha -- not `alpha` above, which is the engine's own smoothed output
+        // and depends on its entire call history, state Rust has no parallel copy of -- by
+        // independently recomputing it via the same pure HillTailIndex() TailRiskEngine itself
+        // delegates to internally, on the same window snapshot.
+        {
+            std::vector<double> window;
+            const size_t count = m_tailRiskEngine.GetWindowSnapshot(window);
+            const size_t tailCutoff = m_tailRiskEngine.GetTailCutoff();
+            std::vector<double> rustWindow = window;  // independent copy -- both sides mutate in place
+            const auto cppRawAlpha = HillTailIndex(window.data(), count, tailCutoff);
+            const double rustRawAlpha =
+                mts::observation_vector_hill_tail_index(rustWindow.data(), rustWindow.size(), tailCutoff);
+            const bool bothNoEstimate = !cppRawAlpha.has_value() && std::isnan(rustRawAlpha);
+            const bool matches = bothNoEstimate ||
+                (cppRawAlpha.has_value() && std::fabs(*cppRawAlpha - rustRawAlpha) < 1e-9);
+            static bool loggedMatchOnce = false;
+            if (!matches) {
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST MISMATCH: HillTailIndex cpp=" +
+                    (cppRawAlpha.has_value() ? std::to_string(*cppRawAlpha) : std::string("none")) +
+                    " rust=" + std::to_string(rustRawAlpha));
+            } else if (!loggedMatchOnce) {
+                loggedMatchOnce = true;
+                Logger::getInstance().log(
+                    "MTS_WITH_RUST: HillTailIndex shadow-mode OK (cpp==rust=" +
+                    (cppRawAlpha.has_value() ? std::to_string(*cppRawAlpha) : std::string("none")) + ")");
+            }
+        }
+#endif
     } else {
         obs[OBS_TAIL_INDEX] = 0.0f;  // Warmup: TRE not yet primed
         m_cachedHillAlpha.store(4.0f, std::memory_order_relaxed);  // P1.4: assume safe during warmup

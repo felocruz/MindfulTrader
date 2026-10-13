@@ -34,6 +34,16 @@ unsafe fn slice_or_none_f64<'a>(ptr: *const f64, len: usize) -> Option<&'a [f64]
     }
 }
 
+/// Mutable counterpart of `slice_or_none_f64`, for `hill_tail_index`'s own in-place sort
+/// (mirrors `HillTailIndex.h`'s own mutable-buffer design, see that header's doc comment).
+unsafe fn slice_mut_or_none_f64<'a>(ptr: *mut f64, len: usize) -> Option<&'a mut [f64]> {
+    if ptr.is_null() || len == 0 {
+        None
+    } else {
+        Some(unsafe { std::slice::from_raw_parts_mut(ptr, len) })
+    }
+}
+
 /// `u64` counterpart of `slice_or_none`, for `calculate_burstiness_index`'s timestamp buffer.
 unsafe fn slice_or_none_u64<'a>(ptr: *const u64, len: usize) -> Option<&'a [u64]> {
     if ptr.is_null() || len == 0 {
@@ -329,3 +339,24 @@ pub unsafe extern "C" fn observation_vector_lempel_ziv_complexity(window: *const
         observation_vector::lempel_ziv_complexity(slice)
     })
 }
+
+/// Port of `HillTailIndex.h`. `window` points to `len` absolute-log-return magnitudes (ANY
+/// order) and is MUTATED IN PLACE (sorted) by this call, mirroring the C++ original's own
+/// in-place `partial_sort` design -- the caller's buffer is reordered, not copied. Maps both
+/// "insufficient data" (`None`) and null/empty input to NaN -- this dim's own degenerate-input
+/// convention, same sentinel either way since both mean "no estimate available this tick."
+///
+/// # Safety
+/// `window` must be either null or valid for reads AND writes of `len` contiguous `f64` elements.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn observation_vector_hill_tail_index(
+    window: *mut f64,
+    len: usize,
+    tail_cutoff: usize,
+) -> f64 {
+    guard_f64(|| match unsafe { slice_mut_or_none_f64(window, len) } {
+        Some(s) => observation_vector::hill_tail_index(s, tail_cutoff).unwrap_or(f64::NAN),
+        None => f64::NAN,
+    })
+}
+
