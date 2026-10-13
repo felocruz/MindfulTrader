@@ -556,30 +556,11 @@ void PositionManager::ManageWorkingEntryOrder(SCStudyInterfaceRef sc) {
         return;
     }
 
-    // === GAP 23: FISHER INFORMATION → TTL TUNING (Shannon — estimate sharpness) ===
-    // fisherInfo measures how sharply the HMM regime estimate is localized.
-    // High Fisher = regime is clear; if you're not filled fast, the market disagrees.
-    // Low Fisher = regime boundary is fuzzy; give the order more runway.
-    float fisherTtlScale = 1.0f;
-    {
-        const auto& lrc = ContextManager::Instance().GetLocalRiskContext();
-        if (lrc.isValid) {
-            if (lrc.fisherInfo > 0.60f) {
-                fisherTtlScale = 0.75f;   // Sharp estimate → tighten TTL by 25%
-            } else if (lrc.fisherInfo < 0.20f) {
-                fisherTtlScale = 1.50f;   // Fuzzy estimate → extend TTL by 50%
-            }
-        }
-    }
-
     int executionBudgetMs = GetSessionExecutionBudgetMs();
     const float maxSpreadTicks = GetSessionSpreadLimit();
 
     // Policy-owned watchdog budget: caps working-order wait before ACK-timeout handling.
     executionBudgetMs = std::min(executionBudgetMs, RiskManager::Instance().GetOrderAckTimeoutMs());
-
-    // Gap 23: Apply Fisher information TTL scaling
-    executionBudgetMs = static_cast<int>(static_cast<float>(executionBudgetMs) * fisherTtlScale);
 
     // === GAP 17: REGIME-ADAPTIVE CHASE TIME CAP (Elder — market structure awareness) ===
     // SC has no native chase time limit field; enforce via executionBudgetMs cap.
@@ -2327,7 +2308,7 @@ void PositionManager::ProcessPendingPrediction(SCStudyInterfaceRef sc) {
     // === GAP 17: REGIME-ADAPTIVE CHASE TIME CAP ===
     // SC lacks a native chase time limit field on s_SCNewOrder.
     // Regime-based chase time capping is enforced in ManageWorkingEntryOrder
-    // via executionBudgetMs (see Gap 17 cap after Gap 23 Fisher scaling).
+    // via executionBudgetMs (see the Gap 17 cap there).
 
     // TextTag: intent ID + pattern name for SC Trade Activity Log identification
     {

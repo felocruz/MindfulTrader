@@ -296,12 +296,7 @@ double Scoring::GetDeepContextMultiplier(PatternType pattern, const LocalRiskCon
         multiplier *= 0.60; // significant size-down
     }
 
-    // --- 8. FISHER INFORMATION RELIABILITY (new: regime-estimate confidence) ---
-    if (ctx.fisherInfo < 0.30f) {
-        multiplier *= 0.85; // low confidence in parameter estimates
-    }
-
-    // --- 9. MEAN-REVERSION Z BOOST (new: mean-rev Z > 2 in MR patterns) ---
+    // --- 8. MEAN-REVERSION Z BOOST (new: mean-rev Z > 2 in MR patterns) ---
     if (isMeanReversionPattern && ctx.meanRevZ > 2.0f) {
         multiplier *= 1.10; // stretched rubber-band boost
     }
