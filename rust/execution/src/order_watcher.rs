@@ -7,9 +7,18 @@
 //! `trap_exit`, the triple-barrier doctrine), not this module's concern; amending the orders that
 //! implement them goes through `BrokerAdapter::amend`.
 //!
+//! **An entry works while the reason for it holds** (operator ruling 2026-10-13, spec §8.7 D3):
+//! it is cancelled when a market or model condition invalidates it, or when its intent deadline
+//! -- derived from the signal's horizon -- passes, not when a stopwatch runs out. With
+//! `WatcherConfig::thesis_driven()` (IBKR algos) there are no time-only cancels; an entry without
+//! a deadline is refused (`NoIntentDeadline`) rather than left to work indefinitely. Two
+//! further rules follow from the same principle: if the market cannot be observed, the thesis
+//! cannot be checked, so the entry is cancelled (`MarketDataStale`); and an order the broker never
+//! acknowledges is a connectivity failure, not a strategy question (`Escalate(NoAcknowledgement)`).
+//!
 //! Port of `PositionManager::ManageWorkingEntryOrder` (`src/PositionManager.cpp`) plus its
 //! `IsQuoteChurnBreached` filter -- same cancel checks, same order, first match wins (spec §8.7
-//! D4, behavior-preserving). The C++ never amends a working entry because Sierra's limit-chase
+//! D4); `WatcherConfig::sierra_chase_defaults()` keeps the C++ time limits for parity. The C++ never amends a working entry because Sierra's limit-chase
 //! repriced by cancel + new; with IBKR algos the algo reprices its own child orders, so the
 //! watcher only holds or cancels. That is a consequence of the algo choice, not a rule: raising
 //! an Adaptive order's urgency instead of cancelling it is an open decision (spec §8.7 D3).
@@ -22,28 +31,33 @@
 //!   a timer as well as on market events, for the same reason.
 //! - **An unreachable broker escalates; it is never dropped.** The C++ released the order
 //!   (`ScDisconnected`) and stopped watching -- an orphaned live order. Here it is
-//!   `Decision::Escalate`: the order's state is unknown, and the caller must reconcile it
-//!   (`position_state`) on reconnect, or flatten.
+//!   `Decision::Escalate`: the order's state is unknown; the operator is alerted (the GUI shows
+//!   it, `position_state::Alert::DisconnectedWithWorkingOrders`) and the order is reconciled on
+//!   reconnect. IBKR offers no API cancel-on-disconnect; emergency cancels are manual (D3).
 //! - **A finished order is a fact, not a decision.** `Decision::Finished` only tells the caller to
 //!   stop watching; the fill or cancel itself is recorded by `position_state`.
-//! - **Budgets are configuration, not constants.** The C++ values (session budgets 800-1200 ms,
-//!   regime caps 100-500 ms, ack timeout 1200 ms, working TTL 5000 ms) are `WatcherConfig::
-//!   sierra_chase_defaults()`. They were tuned for Sierra's zero-latency limit-chase: the regime
-//!   cap always wins, so an entry gets at most ~375-750 ms before an `OrderAckTimeout` cancel --
-//!   far too short for an IBKR Adaptive order. Values for IBKR algos are an open operator decision
-//!   (spec §8.7 D3), deliberately not chosen here.
+//! - **The C++ time limits are optional (`ChaseLimits`).** Session budgets 800-1200 ms, regime
+//!   caps 100-500 ms, ack timeout 1200 ms and working TTL 5000 ms were tuned for Sierra's
+//!   zero-latency limit-chase: the regime cap always wins, so an entry got at most ~375-750 ms --
+//!   meaningless for an IBKR algo. `thesis_driven()` has none of them.
 //! - **"OrderAckTimeout" keeps its C++ name** although it measures time since submission against
-//!   the execution budget, not time to acknowledgement.
+//!   the chase execution budget, not time to acknowledgement (`NoAcknowledgement` does that).
 
 use crate::position_state::{OrderStatus, TimestampUs};
 
 /// Why the watcher cancels an order. Names mirror the C++ `ReasonCode` values the original emits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reason {
+    /// Thesis-driven mode only: the entry carries no intent deadline, so nothing would ever end
+    /// it short of a market change. Not in the C++.
+    NoIntentDeadline,
     IntentExpired,
     WorkingOrderTtlExceeded,
     ClimateShiftExit,
     OrderAckTimeout,
+    /// No market data (ticks or feed heartbeat) for longer than allowed: the thesis cannot be
+    /// checked. Not in the C++.
+    MarketDataStale,
     SpreadBreach,
     ToxicFlowBreach,
     QuoteChurnBreach,
@@ -60,9 +74,16 @@ pub enum Decision {
     /// The broker reports the order filled, cancelled or rejected: stop watching (C++
     /// `IntentCancelled`). `position_state` has already recorded what happened.
     Finished,
-    /// The broker cannot be asked about the order, so its state is unknown (C++ `ScDisconnected`,
-    /// which stopped watching). Hand it to reconciliation / the kill switch -- never drop it.
-    Escalate,
+    /// The order's state is unknown. Alert the operator, reconcile on reconnect -- never drop it.
+    Escalate(Escalation),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Escalation {
+    /// The broker cannot be asked about the order (C++ `ScDisconnected`, which stopped watching).
+    BrokerUnreachable,
+    /// Still `Submitted` -- never acknowledged -- after `ack_escalation_ms`. Not in the C++.
+    NoAcknowledgement,
 }
 
 /// `::MarketClimate` (the C++ enum `InferenceManager` caps budgets by). Local mirror; unify with
@@ -87,39 +108,20 @@ pub enum Session {
     Core,
 }
 
+/// The C++ limit-chase time limits. Not used for IBKR algos (see module doc).
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WatcherConfig {
+pub struct ChaseLimits {
     pub order_ack_timeout_ms: i64,
     pub working_order_ttl_ms: i64,
     /// Execution budget per session (`GetSessionExecutionBudgetMs`).
     pub opening_budget_ms: i64,
     pub closing_budget_ms: i64,
     pub core_budget_ms: i64,
-    /// Max spread in ticks per session (`GetSessionSpreadLimit`).
-    pub opening_max_spread_ticks: f64,
-    pub closing_max_spread_ticks: f64,
-    pub core_max_spread_ticks: f64,
     /// Per-climate budget cap (`GetRegimeExecutionBudgetCap`), indexed by `climate_index`.
     pub climate_budget_cap_ms: [i64; 5],
 }
 
-impl WatcherConfig {
-    /// The C++ values verbatim, including `RiskManager`'s clamps on the two policy timeouts
-    /// (ack 100..=60000 ms, TTL 500..=300000 ms). Tuned for Sierra limit-chase -- see module doc.
-    pub fn sierra_chase_defaults() -> Self {
-        Self {
-            order_ack_timeout_ms: 1200,
-            working_order_ttl_ms: 5000,
-            opening_budget_ms: 900,
-            closing_budget_ms: 800,
-            core_budget_ms: 1200,
-            opening_max_spread_ticks: 1.5,
-            closing_max_spread_ticks: 1.0,
-            core_max_spread_ticks: 2.0,
-            climate_budget_cap_ms: [500, 350, 400, 150, 100],
-        }
-    }
-
+impl ChaseLimits {
     /// Apply `RiskManager::GetOrderAckTimeoutMs`/`GetWorkingOrderTtlMs`'s clamps.
     pub fn clamped(mut self) -> Self {
         self.order_ack_timeout_ms = self.order_ack_timeout_ms.clamp(100, 60_000);
@@ -135,16 +137,62 @@ impl WatcherConfig {
         }
     }
 
+    fn climate_cap_ms(&self, c: MarketClimate) -> i64 {
+        self.climate_budget_cap_ms[climate_index(c)]
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct WatcherConfig {
+    /// `Some` = the C++ limit-chase time limits; `None` = thesis-driven (IBKR algos).
+    pub chase: Option<ChaseLimits>,
+    /// Max spread in ticks per session (`GetSessionSpreadLimit`).
+    pub opening_max_spread_ticks: f64,
+    pub closing_max_spread_ticks: f64,
+    pub core_max_spread_ticks: f64,
+    /// Escalate an order still unacknowledged after this long (local clock).
+    pub ack_escalation_ms: i64,
+    /// Cancel when nothing has been heard from the market-data source for this long (local
+    /// clock). The source's heartbeat counts, so a quiet market is not mistaken for a dead feed.
+    pub max_market_data_silence_ms: i64,
+}
+
+impl WatcherConfig {
+    /// For IBKR algos: no time-only cancels; the order works until its thesis or its intent
+    /// deadline ends it. Silence limit = three missed 1 s feed heartbeats (port 5559 cadence);
+    /// ack escalation = 5 s, two orders of magnitude above W0e's measured ~47 ms round trips.
+    pub fn thesis_driven() -> Self {
+        Self {
+            chase: None,
+            opening_max_spread_ticks: 1.5,
+            closing_max_spread_ticks: 1.0,
+            core_max_spread_ticks: 2.0,
+            ack_escalation_ms: 5_000,
+            max_market_data_silence_ms: 3_000,
+        }
+    }
+
+    /// The C++ values verbatim (Sierra limit-chase parity), plus the two new liveness rules.
+    pub fn sierra_chase_defaults() -> Self {
+        Self {
+            chase: Some(ChaseLimits {
+                order_ack_timeout_ms: 1200,
+                working_order_ttl_ms: 5000,
+                opening_budget_ms: 900,
+                closing_budget_ms: 800,
+                core_budget_ms: 1200,
+                climate_budget_cap_ms: [500, 350, 400, 150, 100],
+            }),
+            ..Self::thesis_driven()
+        }
+    }
+
     fn max_spread_ticks(&self, s: Session) -> f64 {
         match s {
             Session::Opening => self.opening_max_spread_ticks,
             Session::Closing => self.closing_max_spread_ticks,
             Session::Core => self.core_max_spread_ticks,
         }
-    }
-
-    fn climate_cap_ms(&self, c: MarketClimate) -> i64 {
-        self.climate_budget_cap_ms[climate_index(c)]
     }
 }
 
@@ -170,6 +218,9 @@ pub struct WatchInputs {
     pub is_long: bool,
     /// When the order was sent, on the local clock.
     pub submitted_at_local: TimestampUs,
+    /// When anything (tick, quote or feed heartbeat) was last heard from the market-data source,
+    /// on the local clock.
+    pub market_data_heard_local: TimestampUs,
     /// The intent ticket's deadline, if it has one, in market time.
     pub intent_valid_until: Option<TimestampUs>,
     pub high_transition_risk: bool,
@@ -241,38 +292,55 @@ impl WorkingOrder {
     /// One decision. Order of checks = the C++ original's.
     pub fn decide(&mut self, input: &WatchInputs, config: &WatcherConfig, churn: &mut QuoteChurnFilter) -> Decision {
         let Some(status) = input.order_status else {
-            return Decision::Escalate;
+            return Decision::Escalate(Escalation::BrokerUnreachable);
         };
         if !matches!(status, OrderStatus::Submitted | OrderStatus::Acknowledged | OrderStatus::PartiallyFilled) {
             return Decision::Finished;
         }
         let local_now = input.local_now;
+        if status == OrderStatus::Submitted && local_now - input.submitted_at_local > config.ack_escalation_ms * 1000 {
+            return Decision::Escalate(Escalation::NoAcknowledgement);
+        }
         let working_since = *self.working_since.get_or_insert(local_now);
 
-        if input.intent_valid_until.is_some_and(|until| until > 0 && input.market_now > until) {
+        let deadline = input.intent_valid_until.filter(|&until| until > 0); // 0 = none (C++)
+        if deadline.is_some_and(|until| input.market_now > until) {
             return Decision::Cancel(Reason::IntentExpired);
         }
-        if local_now - working_since > config.working_order_ttl_ms * 1000 {
+        if deadline.is_none() && config.chase.is_none() {
+            return Decision::Cancel(Reason::NoIntentDeadline);
+        }
+        if let Some(chase) = config.chase
+            && local_now - working_since > chase.working_order_ttl_ms * 1000
+        {
             return Decision::Cancel(Reason::WorkingOrderTtlExceeded);
         }
         if input.high_transition_risk {
             return Decision::Cancel(Reason::ClimateShiftExit);
         }
 
-        // Execution budget: session budget, capped by the ack timeout, Fisher-scaled, then capped
-        // by the climate (the C++'s exact composition and order, integer truncation included).
-        let fisher_scale: f32 = match input.fisher_info {
-            Some(f) if f > 0.60 => 0.75,
-            Some(f) if f < 0.20 => 1.50,
-            _ => 1.0,
-        };
-        let mut budget_ms = config.session_budget_ms(input.session).min(config.order_ack_timeout_ms);
-        budget_ms = (budget_ms as f32 * fisher_scale) as i64;
-        if let Some(c) = input.climate {
-            budget_ms = budget_ms.min(config.climate_cap_ms(c));
+        if let Some(chase) = config.chase {
+            // Execution budget: session budget, capped by the ack timeout, Fisher-scaled, then
+            // capped by the climate (the C++'s exact composition and order, truncation included).
+            let fisher_scale: f32 = match input.fisher_info {
+                Some(f) if f > 0.60 => 0.75,
+                Some(f) if f < 0.20 => 1.50,
+                _ => 1.0,
+            };
+            let mut budget_ms = chase.session_budget_ms(input.session).min(chase.order_ack_timeout_ms);
+            budget_ms = (budget_ms as f32 * fisher_scale) as i64;
+            if let Some(c) = input.climate {
+                budget_ms = budget_ms.min(chase.climate_cap_ms(c));
+            }
+            if local_now - input.submitted_at_local > budget_ms * 1000 {
+                return Decision::Cancel(Reason::OrderAckTimeout);
+            }
         }
-        if local_now - input.submitted_at_local > budget_ms * 1000 || input.inject_ack_timeout {
+        if input.inject_ack_timeout {
             return Decision::Cancel(Reason::OrderAckTimeout);
+        }
+        if local_now - input.market_data_heard_local > config.max_market_data_silence_ms * 1000 {
+            return Decision::Cancel(Reason::MarketDataStale);
         }
 
         if !(input.ask > input.bid && input.tick_size > 0.0) {
@@ -311,6 +379,7 @@ mod tests {
             order_status: Some(OrderStatus::Acknowledged),
             is_long: true,
             submitted_at_local: T0,
+            market_data_heard_local: T0,
             intent_valid_until: None,
             high_transition_risk: false,
             fisher_info: Some(0.4),
@@ -343,7 +412,7 @@ mod tests {
         }
         // Even an order that would otherwise be cancelled escalates: nothing is known about it.
         let unknown = WatchInputs { order_status: None, inject_ack_timeout: true, ..calm() };
-        assert_eq!(decide(unknown), Decision::Escalate);
+        assert_eq!(decide(unknown), Decision::Escalate(Escalation::BrokerUnreachable));
         assert_eq!(decide(WatchInputs { order_status: Some(OrderStatus::PartiallyFilled), ..calm() }), Decision::Hold);
     }
 
@@ -354,7 +423,9 @@ mod tests {
         assert_eq!(decide(WatchInputs { intent_valid_until: Some(0), ..calm() }), Decision::Hold, "0 = no deadline (C++ validUntilUs > 0 guard)");
 
         // TTL counts from the first time the watcher saw the order working, not from submission.
-        let cfg = WatcherConfig { core_budget_ms: 60_000, order_ack_timeout_ms: 60_000, ..WatcherConfig::sierra_chase_defaults() };
+        let mut cfg = WatcherConfig::sierra_chase_defaults();
+        cfg.chase = cfg.chase.map(|c| ChaseLimits { core_budget_ms: 60_000, order_ack_timeout_ms: 60_000, ..c });
+        cfg.max_market_data_silence_ms = 60_000;
         let mut w = WorkingOrder::new();
         let mut churn = QuoteChurnFilter::default();
         assert_eq!(w.decide(&calm(), &cfg, &mut churn), Decision::Hold);
@@ -366,8 +437,8 @@ mod tests {
 
     #[test]
     fn liveness_runs_on_the_local_clock_and_market_checks_on_market_time() {
-        // A stalled feed: market time frozen at T0, local clock 10 s on. The budget still fires.
-        let stalled = WatchInputs { local_now: T0 + 10_000 * MS, ..calm() };
+        // A stalled feed: market time frozen at T0, local clock 2 s on. The budget still fires.
+        let stalled = WatchInputs { local_now: T0 + 2_000 * MS, ..calm() };
         assert_eq!(decide(stalled), Decision::Cancel(Reason::OrderAckTimeout));
         // Market time far ahead (e.g. replay fast-forward) does not consume the local budget...
         let ahead = WatchInputs { market_now: T0 + 10_000 * MS, ..calm() };
@@ -468,7 +539,68 @@ mod tests {
 
     #[test]
     fn config_clamps_match_risk_manager() {
-        let c = WatcherConfig { order_ack_timeout_ms: 5, working_order_ttl_ms: 10_000_000, ..WatcherConfig::sierra_chase_defaults() }.clamped();
+        let chase = WatcherConfig::sierra_chase_defaults().chase.expect("chase limits");
+        let c = ChaseLimits { order_ack_timeout_ms: 5, working_order_ttl_ms: 10_000_000, ..chase }.clamped();
         assert_eq!((c.order_ack_timeout_ms, c.working_order_ttl_ms), (100, 300_000));
+    }
+
+    // ---- thesis-driven mode (IBKR algos) ----
+
+    const HOUR: TimestampUs = 3_600_000 * MS;
+
+    fn thesis(input: WatchInputs) -> Decision {
+        WorkingOrder::new().decide(&input, &WatcherConfig::thesis_driven(), &mut QuoteChurnFilter::default())
+    }
+
+    /// A thesis-mode order an hour into its life, with a deadline still ahead and a live feed.
+    fn long_lived() -> WatchInputs {
+        WatchInputs { market_now: T0 + HOUR, local_now: T0 + HOUR, market_data_heard_local: T0 + HOUR, intent_valid_until: Some(T0 + 2 * HOUR), ..calm() }
+    }
+
+    #[test]
+    fn thesis_mode_has_no_time_only_cancels() {
+        assert_eq!(thesis(long_lived()), Decision::Hold, "an hour of working is fine while the thesis holds");
+        // Fisher, session and climate only ever shaped the chase budget; they no longer matter.
+        let i = WatchInputs { fisher_info: Some(0.9), session: Session::Closing, climate: Some(MarketClimate::TalebianFragile), ..long_lived() };
+        assert_eq!(thesis(i), Decision::Hold);
+        // The deadline is what ends it.
+        let past = WatchInputs { market_now: T0 + 2 * HOUR + 1, ..long_lived() };
+        assert_eq!(thesis(past), Decision::Cancel(Reason::IntentExpired));
+        // ...and every market/model condition still does.
+        assert_eq!(thesis(WatchInputs { prediction_freshness: 0.0, ..long_lived() }), Decision::Cancel(Reason::PredictionStaleDecay));
+        assert_eq!(thesis(WatchInputs { high_transition_risk: true, ..long_lived() }), Decision::Cancel(Reason::ClimateShiftExit));
+    }
+
+    #[test]
+    fn thesis_mode_refuses_an_entry_without_a_deadline() {
+        assert_eq!(thesis(WatchInputs { intent_valid_until: None, ..long_lived() }), Decision::Cancel(Reason::NoIntentDeadline));
+        assert_eq!(thesis(WatchInputs { intent_valid_until: Some(0), ..long_lived() }), Decision::Cancel(Reason::NoIntentDeadline), "0 = none");
+        // Chase mode keeps the C++ behavior: no deadline is allowed, its TTL bounds the order.
+        assert_eq!(decide(calm()), Decision::Hold);
+    }
+
+    #[test]
+    fn a_silent_feed_cancels_but_a_quiet_market_does_not() {
+        // Heartbeats keep arriving although no trade has printed for minutes: held.
+        let quiet = WatchInputs { market_now: T0 + HOUR - 600_000 * MS, ..long_lived() };
+        assert_eq!(thesis(quiet), Decision::Hold);
+        let at_limit = WatchInputs { market_data_heard_local: T0 + HOUR - 3_000 * MS, ..long_lived() };
+        assert_eq!(thesis(at_limit), Decision::Hold, "exactly at the limit is still allowed");
+        let silent = WatchInputs { market_data_heard_local: T0 + HOUR - 3_000 * MS - 1, ..long_lived() };
+        assert_eq!(thesis(silent), Decision::Cancel(Reason::MarketDataStale));
+        // Checked before the quote: a stale quote cannot vouch for anything.
+        let stale_bad_quote = WatchInputs { bid: 0.0, ask: 0.0, ..silent };
+        assert_eq!(thesis(stale_bad_quote), Decision::Cancel(Reason::MarketDataStale));
+    }
+
+    #[test]
+    fn an_unacknowledged_order_escalates_in_both_modes() {
+        let unacked = |ms: i64| WatchInputs { order_status: Some(OrderStatus::Submitted), local_now: T0 + ms * MS, market_data_heard_local: T0 + ms * MS, ..calm() };
+        assert_eq!(thesis(WatchInputs { intent_valid_until: Some(T0 + HOUR), ..unacked(5_000) }), Decision::Hold);
+        assert_eq!(thesis(unacked(5_001)), Decision::Escalate(Escalation::NoAcknowledgement), "before the deadline check");
+        let acked = WatchInputs { order_status: Some(OrderStatus::Acknowledged), intent_valid_until: Some(T0 + HOUR), ..unacked(60_000) };
+        assert_eq!(thesis(acked), Decision::Hold, "acknowledged orders never escalate on time");
+        // Chase parity: the C++ budget (<= 1.8 s) cancels long before the 5 s escalation.
+        assert_eq!(decide(unacked(1_201)), Decision::Cancel(Reason::OrderAckTimeout));
     }
 }

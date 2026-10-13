@@ -198,6 +198,7 @@ of hardware.
 | 37 | `observation_vector`: `tail_index` (17th dim) | **SHIPPED 2026-10-12** (`include/HillTailIndex.h`, `rust/observation_vector::hill_tail_index`). The most complex port in this series so far -- Resnick & Starica (1997) Hill-plot stability-region k-selector (partial_sort + running-prefix-log-sum Hill(k) scan + first-plateau-wins selector over [10, 4*tail_cutoff]). Unlike `lempel_ziv`'s class, `TailRiskEngine::GetHillAlpha()` is already a pure O(1) state read -- the real estimation happens inside `AddObservation()`, feeding an EWMA-smoothed alpha that depends on the entire observation history, not a recomputable snapshot. Extracted `ComputeRawAlpha()`'s math into a new header returning `std::optional<double>` (not an implicit NaN sentinel, per this session's own institutional-NaN-handling precedent, `calibration.rs`'s `Option<f64>` refactor); added `GetWindowSnapshot()`/`GetTailCutoff()` accessors so shadow-wiring could compare the RAW (pre-EWMA) Hill alpha -- the only level meaningfully comparable without replicating the engine's sequential EWMA state in Rust, not the smoothed `GetHillAlpha()` output itself. A regression test proves the refactored class method still matches an independent `HillTailIndex()` call on the identical window. **Design choice caught and fixed mid-port**: the header takes a MUTABLE buffer it `partial_sort`s in place (not `const` + an internal copy) specifically to preserve `ComputeRawAlpha`'s own zero-extra-allocation design -- the first draft introduced a needless second buffer copy before this was caught. Also removed one now-genuinely-dead member (`m_hillAtK`), per this repo's own standing dead-code-deletion rule. Ported to Rust (`hill_tail_index`, taking `&mut [f64]`), FFI-wrapped (`observation_vector_hill_tail_index`, the first wrapper in this family needing a mutable `*mut f64` rather than `const`), cross-language-parity-tested (3 new assertions on a real 500-element production-shaped window, exact to 1e-9), and shadow-wired at the real call site. 4 new Rust tests (67/67 total), 6 new native C++ checks. Both DLL configs build clean -- `MTS_WITH_RUST=OFF` (1,780,736 bytes) and `=ON` (2,053,632 bytes, links and grows). 1 of 18 observation-vector dims now genuinely remains unported: `fast_mean_rev_z` (its own unresolved "MOOT, DROPPED" vs. "wired, EXPLICIT operator authorization" contradiction worth resolving before porting it). |
 | 38 | `observation_vector`: `fast_mean_rev_z` (18th schema dim) — port or retire | **RETIRED 2026-10-13, not ported** — rejected by both its forward-return test (corrected 5-horizon declustered sweep, no significant cell) and the 2026-09-18 HMM state-occupancy test. Live/offline computation deleted; dim stays in the 18D schema as a constant 0.0f. `observation_vector` port is therefore complete at 17 of 17 live dims. Full account: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` row 19 |
 | 39 | Execution: separate ORDER management from POSITION management; give the broker seam an amend; fix the watcher's release/clock semantics (operator review of the order-watcher port, 2026-10-13) | **DONE 2026-10-13.** D3a had turned a strategy rule ("Phase 1 barriers don't move", triple-barrier doctrine, `docs/ADR/triple_barrier_cutover_phase1_plan.md` §1) into an execution rule ("bracket orders are never updated"), and the order-watcher port cited the legacy C++ ("never modifies a working order") as if it confirmed that. Neither is institutional reasoning: amend (FIX `OrderCancelReplaceRequest`, IBKR `modifyOrder`) is a standard order-management action. Now: `BrokerAdapter::amend` (`broker::Amend`: quantity and/or price only; side, role, type and algo fixed) with IBKR and pessimistic-Sierra translations and a broker-confirmed `Event::OrderAmended` in `position_state`; whether a bracket LEVEL may move stays a strategy decision above the seam. `order_watcher`: `Release` split into `Finished` (a fact) and `Escalate` (broker unreachable -- state unknown, reconcile or flatten, never dropped: the C++ orphaned the order); two caller-supplied clocks (market time for intent expiry and churn, a steady local clock for TTL and budget, so a stalled feed cannot freeze the watchdog; the shell must also call it on a timer). D3/D3a rewritten below |
+| 40 | Execution: how long an entry works, and what happens on disconnect (operator, 2026-10-13) | **RULED + BUILT 2026-10-13.** (a) An entry works while the reason for it holds -- no time-only cancels for IBKR algos (`WatcherConfig::thesis_driven()`; the C++ chase limits survive only as `sierra_chase_defaults()` for parity). It ends on a market/model condition or its intent deadline, which must exist (`NoIntentDeadline` otherwise) and be derived from the signal's horizon -- derivation OPEN (D3). (b) Can't observe the market -> can't check the thesis -> cancel (`MarketDataStale`, 3 s of silence incl. feed heartbeats). (c) Never acknowledged -> `Escalate(NoAcknowledgement)` after 5 s, not cancel. (d) Disconnect: `ibapi` 5.0.0 has no cancel-on-disconnect (source searched: only `global_cancel()`, `good_till_date`, order conditions) and no IBKR TWS/Gateway setting was found; IBKR algos keep working server-side. No automatic dead-man's switch (rolling GTD / time condition): the operator cancels by hand in an emergency. Requirement: the GUI must tell the operator when the system disconnected with working orders (`position_state::Alert::DisconnectedWithWorkingOrders`, entries separated from protective legs, which must never be cancelled) -- see D3 |
 
 ---
 
@@ -2346,23 +2347,47 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     time for intent expiry and quote churn, a steady local clock for working TTL and execution
     budget, so a stalled feed cannot freeze the watchdog; the async shell calls it on a timer as
     well as on market events.
-  - **OPEN DECISION (operator) -- escalate urgency instead of cancelling.** Raising a working
-    Adaptive entry from Patient/Normal to Urgent (an amend of `adaptivePriority`) is the
-    institutional alternative to an `OrderAckTimeout` cancel. Not built: it changes behavior, it
-    is coupled to the budget decision below, IBKR's acceptance of an algo-parameter modify on MES
-    is unverified (W0e did not test modifies), and its Sierra-sim equivalent (limit -> market)
-    needs D2's fill-semantics spike first.
-  - **OPEN DECISION (operator) -- entry time budgets for IBKR algos.** The C++ budgets were tuned
-    for Sierra's zero-latency limit-chase: execution budget = min(session budget 800-1200 ms,
-    ack-timeout 1200 ms) x Fisher scale (0.75/1.0/1.5), then capped by the climate (100-500 ms,
-    `InferenceManager::GetRegimeExecutionBudgetCap`). The climate cap is always below the session
-    budget, so in practice an entry is cancelled as `OrderAckTimeout` after ~375-750 ms -- far too
-    short for an IBKR Adaptive order (Patient especially routinely needs seconds or more). The
-    port therefore takes every budget as configuration (`WatcherConfig::sierra_chase_defaults()`
-    holds the C++ values for parity); the values for IBKR algos are not chosen yet. Two related
-    notes: the climate the cap keys on is today's `MarketClimateIndicator`, whose live write race
-    (decision #29) means it mostly reflects the native heuristic, not the trained HMM; and the
-    C++ quote-churn window reads the machine's local clock, not exchange time.
+  - **RULED (operator, 2026-10-13, decision #40) -- an entry works while the reason for it
+    holds.** No time-only cancels for IBKR algos: `WatcherConfig::thesis_driven()` drops the C++
+    limit-chase limits (working TTL 5 s; execution budget = min(session 800-1200 ms, ack 1200 ms)
+    x Fisher scale, capped by climate at 100-500 ms, which always won, so entries died after
+    ~375-750 ms). They survive only in `sierra_chase_defaults()` for C++ parity. An entry ends when
+    a market or model condition invalidates it (direction flip, stale prediction, regime shift,
+    spread, toxic flow, quote churn) or its intent deadline passes. Three rules follow from the
+    same principle: an entry with no deadline is refused (`NoIntentDeadline`); if nothing has been
+    heard from the market-data source (ticks or its heartbeat) for 3 s the thesis cannot be
+    checked, so the entry is cancelled (`MarketDataStale`); an order never acknowledged after 5 s
+    is a connectivity failure, escalated, not cancelled (`Escalate(NoAcknowledgement)`).
+    Rationale for the deadline: the signal is a forecast over a fixed horizon (the triple-barrier
+    vertical barrier); a late fill has less of it left, and a resting limit that fills late is
+    adversely selected (filled because the market is turning against it).
+  - **OPEN DECISION (operator) -- how the intent deadline is derived from the signal.** E.g. the
+    end of the TS3 bar the signal formed on, or a fraction of the triple-barrier time barrier. The
+    C++ intent ticket carries `validUntilUs`; until this is decided, thesis-driven entries without
+    one are refused.
+  - **Urgency escalation (Patient -> Urgent instead of cancelling) -- parked.** It was the
+    alternative to a budget timeout; with no time-only cancels it has no trigger. Revisit only if
+    a thesis-based reason to hurry appears (and IBKR's acceptance of an algo-parameter modify on
+    MES is still untested).
+  - **Disconnect policy (operator, 2026-10-13, decision #40).** `ibapi` 5.0.0 has no
+    cancel-on-disconnect (source searched: only `global_cancel()`, per-order `good_till_date`, and
+    order conditions), and no TWS/Gateway setting for it was found in IBKR's documentation;
+    working orders, including IBKR algos (which run on IBKR's servers), keep working unmanaged
+    until reconnect. Cases: (1) Sierra/C++ -> Rust lost, Rust -> TWS alive: the watcher cancels
+    entries itself (`MarketDataStale`); (2) Rust -> TWS lost, or (3) TWS/machine -> IBKR lost:
+    nothing can cancel from our side. No automatic dead-man's switch (a rolling short
+    `good_till_date` or a cancelling time condition, both possible in `ibapi`) -- the operator
+    cancels by hand in an emergency (TWS or IBKR Mobile). **Requirement: the operator must be told
+    when the system disconnected while orders were working.** Rust side built:
+    `position_state::Alert::DisconnectedWithWorkingOrders { since, entries, protective, other }`,
+    raised once per disconnect -- `entries` are the manual-cancel candidates; `protective`
+    (target, stop, flatten) guard an open position and must NOT be cancelled. Still to build:
+    `position_feed.rs` publishes it with working orders and a service heartbeat, and the MTS GUI
+    (separate repo) raises an unmissable alarm on that alert AND when the Rust service's heartbeat
+    stops while its last snapshot had working orders (case: the service itself died). Notes kept
+    from the chase-budget finding: the climate the old cap keyed on is `MarketClimateIndicator`
+    (write race, decision #29), and the C++ quote-churn window reads the machine's local clock,
+    not exchange time.
 - **D3a — Bracket order construction mechanics, verified against the real `ibapi` 5.0.0 crate
   (already vendored in this environment), 2026-10-11** (operator-supplied research, checked
   against actual crate source rather than trusted as documentation claims; **premise corrected

@@ -142,6 +142,13 @@ pub enum Alert {
     /// Fill-implied and broker-reported positions disagreed for longer than the grace window.
     /// The implied position has been re-based to the broker's (the broker wins).
     PositionDiverged { implied: i64, broker: i64, since: TimestampUs },
+    /// The broker connection dropped while orders were working (raised once per disconnect).
+    /// IBKR has no API cancel-on-disconnect, so these keep working at the broker unmanaged until
+    /// reconnect; the operator decides whether to cancel by hand (spec §8.7 D3). `entries` are the
+    /// unfilled entries -- the candidates for a manual cancel; `protective` are the target, stop
+    /// and flatten orders reducing an open position, which must be left alone; `other` are orders
+    /// of no known role.
+    DisconnectedWithWorkingOrders { since: TimestampUs, entries: Vec<OrderId>, protective: Vec<OrderId>, other: Vec<OrderId> },
 }
 
 /// The broker's last-reported position.
@@ -328,8 +335,22 @@ impl PositionState {
                 if connected {
                     self.disconnected_since = None;
                     self.heard_from_broker(at);
-                } else {
-                    self.disconnected_since.get_or_insert(at);
+                } else if self.disconnected_since.is_none() {
+                    self.disconnected_since = Some(at);
+                    let (mut entries, mut protective, mut other) = (Vec::new(), Vec::new(), Vec::new());
+                    for o in self.working_orders() {
+                        match o.role {
+                            OrderRole::Entry => entries.push(o.order_id),
+                            OrderRole::Target | OrderRole::Stop | OrderRole::Flatten => protective.push(o.order_id),
+                            OrderRole::Other => other.push(o.order_id),
+                        }
+                    }
+                    if !(entries.is_empty() && protective.is_empty() && other.is_empty()) {
+                        for v in [&mut entries, &mut protective, &mut other] {
+                            v.sort_unstable();
+                        }
+                        alerts.push(Alert::DisconnectedWithWorkingOrders { since: at, entries, protective, other });
+                    }
                 }
             }
         }
@@ -805,6 +826,23 @@ mod tests {
         assert_eq!(ps.broker_position().map(|b| b.at), Some(10 * S), "last known value stays readable, with its timestamp");
         ps.apply(Event::BrokerConnectivity { connected: true, at: 60 * S });
         assert_eq!(ps.broker_status(61 * S), BrokerStatus::Live);
+    }
+
+    #[test]
+    fn disconnect_with_working_orders_alerts_once_and_separates_protective_legs() {
+        let mut ps = mes();
+        flat_baseline(&mut ps);
+        assert!(ps.apply(Event::BrokerConnectivity { connected: false, at: S }).is_empty(), "nothing working: no alert");
+        ps.apply(Event::BrokerConnectivity { connected: true, at: 2 * S });
+
+        ps.apply(submit(5, 1, Some(9), 3 * S));
+        for (id, role) in [(6, OrderRole::Stop), (7, OrderRole::Target), (8, OrderRole::Flatten), (9, OrderRole::Other)] {
+            ps.apply(Event::OrderSubmitted { order_id: id, role, signed_qty: -1, decision_id: Some(9), at: 3 * S });
+        }
+        let alerts = ps.apply(Event::BrokerConnectivity { connected: false, at: 4 * S });
+        assert_eq!(alerts, vec![Alert::DisconnectedWithWorkingOrders { since: 4 * S, entries: vec![5], protective: vec![6, 7, 8], other: vec![9] }]);
+        assert!(ps.apply(Event::BrokerConnectivity { connected: false, at: 5 * S }).is_empty(), "once per disconnect");
+        assert_eq!(ps.broker_status(6 * S), BrokerStatus::Disconnected { since: 4 * S });
     }
 
     #[test]
