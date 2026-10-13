@@ -8,12 +8,15 @@
 //! attribute was rejected `[443]` on MES). Anything else is `NotModelled` rather than a guess.
 //! Emergency flattens are always a plain market order -- no algo between us and flat.
 //!
+//! Amends (`amend`) follow IBKR's `modifyOrder` model: the whole order is re-sent under its
+//! original id with only quantity and/or price changed, snapped with the same rounding rules.
+//!
 //! Brackets follow D3a: parent (not transmitted), target `LMT` child (not transmitted), stop `STP`
 //! child (transmitted -- releasing the whole tree atomically). Prices are snapped to the tick
 //! grid with `sierra_sim`'s exact rules (limits against us, stops triggering later), so live and
 //! replay round identically.
 
-use crate::broker::{BrokerError, Entry, ExecutionStyle, OrderRequest, Side};
+use crate::broker::{Amend, BrokerError, Entry, ExecutionStyle, OrderRequest, Side};
 use crate::position_state::{ContractSpec, OrderRole};
 use crate::sierra_sim::{round_against, round_stop_late};
 
@@ -87,6 +90,28 @@ pub fn translate(req: &OrderRequest, spec: ContractSpec) -> Result<IbkrPlan, Bro
         orders.push(child("STP", None, Some(round_stop_late(exit, b.stop, tick)), true));
     }
     Ok(IbkrPlan { orders })
+}
+
+/// The order to re-send for `modifyOrder`: `working` as last sent, with the amend applied. The
+/// price goes to the limit for "LMT" and to the trigger for "STP"; a "MKT" order has no price.
+pub fn amend(working: &IbkrOrder, change: &Amend, spec: ContractSpec) -> Result<IbkrOrder, BrokerError> {
+    change.validate()?;
+    let tick = spec.tick_size();
+    let mut order = working.clone();
+    if let Some(q) = change.quantity {
+        order.quantity = q;
+    }
+    if let Some(p) = change.price {
+        match working.order_type {
+            "LMT" => order.limit_price = Some(round_against(working.action, p, tick)),
+            "STP" => order.aux_price = Some(round_stop_late(working.action, p, tick)),
+            _ => return Err(BrokerError::InvalidRequest("a market order has no price to amend".into())),
+        }
+    }
+    // A bracket child's tree was released when the stop child was transmitted; the amend itself
+    // is always transmitted.
+    order.transmit = true;
+    Ok(order)
 }
 
 fn algo(style: ExecutionStyle, entry: Entry) -> Result<(&'static str, AlgoParams), BrokerError> {
@@ -193,6 +218,33 @@ mod tests {
         let r = OrderRequest { role: OrderRole::Flatten, ..req(Side::Sell, Entry::Limit { price: 7858.0 }, ExecutionStyle::Adaptive(AdaptivePriority::Patient)) };
         let o = &translate(&r, mes()).expect("ok").orders[0];
         assert_eq!((o.order_type, o.limit_price, o.algo_strategy), ("MKT", None, ""));
+    }
+
+    #[test]
+    fn amends_keep_the_order_and_snap_prices_like_a_new_order() {
+        let r = OrderRequest {
+            bracket: Some(Bracket { target: 7862.0, stop: 7854.0 }),
+            ..req(Side::Buy, Entry::Limit { price: 7858.0 }, ExecutionStyle::Adaptive(AdaptivePriority::Normal))
+        };
+        let plan = translate(&r, mes()).expect("ok");
+        let a = |price, quantity| Amend { order_id: 1, quantity, price };
+
+        let parent = amend(&plan.orders[0], &a(Some(7858.40), Some(2)), mes()).expect("ok");
+        assert_eq!((parent.quantity, parent.algo_strategy, parent.transmit), (2, "Adaptive", true), "algo kept");
+        assert!(parent.limit_price.is_some_and(|p| (p - 7858.25).abs() < 1e-9), "buy limit rounds down");
+
+        let target = amend(&plan.orders[1], &a(Some(7862.10), None), mes()).expect("ok");
+        assert!(target.limit_price.is_some_and(|p| (p - 7862.25).abs() < 1e-9), "sell target rounds up");
+        assert_eq!((target.parent_index, target.transmit), (Some(0), true));
+
+        let stop = amend(&plan.orders[2], &a(Some(7854.10), None), mes()).expect("ok");
+        assert!(stop.aux_price.is_some_and(|p| (p - 7854.0).abs() < 1e-9), "sell stop rounds down: triggers later");
+        assert_eq!(stop.limit_price, None);
+
+        let mkt = translate(&req(Side::Buy, Entry::Market, ExecutionStyle::Direct), mes()).expect("ok");
+        assert!(matches!(amend(&mkt.orders[0], &a(Some(7858.0), None), mes()), Err(BrokerError::InvalidRequest(_))));
+        assert_eq!(amend(&mkt.orders[0], &a(None, Some(3)), mes()).expect("qty only").quantity, 3);
+        assert!(matches!(amend(&mkt.orders[0], &a(None, None), mes()), Err(BrokerError::InvalidRequest(_))));
     }
 
     #[test]

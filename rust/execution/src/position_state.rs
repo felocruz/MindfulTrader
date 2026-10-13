@@ -118,6 +118,9 @@ pub enum Event {
     OrderAcknowledged { order_id: OrderId, at: TimestampUs },
     OrderRejected { order_id: OrderId, code: i32, message: String, at: TimestampUs },
     OrderCancelled { order_id: OrderId, at: TimestampUs },
+    /// The broker confirmed an amend. Only the quantity matters here (it bounds over-fill
+    /// detection); price changes are the broker's business.
+    OrderAmended { order_id: OrderId, quantity: Option<i64>, at: TimestampUs },
     Fill(Fill),
     /// The broker's own position report -- the truth this module mirrors.
     BrokerPosition { quantity: i64, average_price: f64, realized_pnl: Option<f64>, unrealized_pnl: Option<f64>, at: TimestampUs },
@@ -295,6 +298,15 @@ impl PositionState {
                 self.heard_from_broker(at);
                 if let Some(o) = self.orders.get_mut(&order_id).filter(|o| !o.status.is_terminal()) {
                     o.status = OrderStatus::Cancelled;
+                }
+            }
+            Event::OrderAmended { order_id, quantity, at } => {
+                self.heard_from_broker(at);
+                if let (Some(q), Some(o)) = (quantity, self.orders.get_mut(&order_id).filter(|o| !o.status.is_terminal())) {
+                    o.signed_qty = o.signed_qty.signum() * q.abs();
+                    if o.filled_qty != 0 && o.filled_qty.abs() >= o.signed_qty.abs() {
+                        o.status = OrderStatus::Filled; // cut down to what had already filled
+                    }
                 }
             }
             Event::Fill(fill) => self.apply_fill(fill, &mut alerts),
@@ -753,6 +765,31 @@ mod tests {
         ps.apply(Event::Fill(fill("e1", 3, 1, 100.0, S)));
         let alerts = ps.apply(Event::Fill(fill("e2", 3, 1, 100.0, S)));
         assert_eq!(alerts, vec![Alert::OverFill { order_id: 3, ordered: 1, filled: 2 }]);
+        assert_eq!(ps.working_orders().count(), 0);
+    }
+
+    #[test]
+    fn confirmed_amends_move_the_overfill_bound() {
+        let mut ps = mes();
+        flat_baseline(&mut ps);
+        ps.apply(submit(1, 3, None, S));
+        ps.apply(Event::OrderAmended { order_id: 1, quantity: Some(1), at: S });
+        ps.apply(Event::Fill(fill("e1", 1, 1, 100.0, S)));
+        assert_eq!(ps.working_orders().count(), 0, "amended down to 1: one fill completes it");
+        let alerts = ps.apply(Event::Fill(fill("e2", 1, 1, 100.0, S)));
+        assert_eq!(alerts, vec![Alert::OverFill { order_id: 1, ordered: 1, filled: 2 }]);
+
+        // Raising a working sell keeps its sign; a price-only amend changes nothing here.
+        ps.apply(submit(2, -1, None, S));
+        ps.apply(Event::OrderAmended { order_id: 2, quantity: None, at: S });
+        ps.apply(Event::OrderAmended { order_id: 2, quantity: Some(2), at: S });
+        let alerts = ps.apply(Event::Fill(fill("e3", 2, -2, 100.0, S)));
+        assert!(alerts.is_empty());
+
+        // Cutting a partly filled order down to its filled quantity completes it.
+        ps.apply(submit(3, 2, None, S));
+        ps.apply(Event::Fill(fill("e4", 3, 1, 100.0, S)));
+        ps.apply(Event::OrderAmended { order_id: 3, quantity: Some(1), at: S });
         assert_eq!(ps.working_orders().count(), 0);
     }
 

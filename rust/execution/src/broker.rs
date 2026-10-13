@@ -1,5 +1,5 @@
-//! The broker seam (spec §8.6/§8.7 D2): one broker-neutral order request, one `BrokerAdapter`
-//! trait, two implementations -- IBKR live (`ibkr_orders` describes its orders) and Sierra Chart's
+//! The broker seam (spec §8.6/§8.7 D2): one broker-neutral order request, one amend, one
+//! `BrokerAdapter` trait, two implementations -- IBKR live (`ibkr_orders` describes its orders) and Sierra Chart's
 //! simulator in replay (`sierra_sim` describes its orders, deliberately pessimistic). The business
 //! logic (`position_state`, `order_gate`, `trap_exit`, ...) only ever sees this module's types, so
 //! backtest and live run the same logic.
@@ -74,8 +74,9 @@ pub enum ExecutionStyle {
     DarkIce { display_size: u32 },
 }
 
-/// An immutable bracket attached at entry (spec §8.7 D3a): never modified after placement, only
-/// cancelled.
+/// The stop/target pair attached at entry (spec §8.7 D3a). Its LEVELS are strategy (position
+/// management): Phase 1's triple-barrier doctrine keeps them where entry put them. The orders
+/// that implement them are execution (order management) and may still be amended -- see `Amend`.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Bracket {
     pub target: f64,
@@ -132,6 +133,40 @@ impl OrderRequest {
     }
 }
 
+/// An execution-level change to one working order: FIX `OrderCancelReplaceRequest`, IBKR
+/// `modifyOrder`, Sierra `ModifyOrder`. It changes how the order is worked, never what the order
+/// is -- side, role, order type and algo stay fixed (changing those is cancel + new). Whether a
+/// given change is allowed (e.g. moving a bracket stop's level) is a strategy decision made above
+/// this seam, not here (spec §8.7 D3a).
+///
+/// On CME a price change or a quantity increase loses queue priority; a quantity decrease keeps
+/// it. An amend is still preferable to cancel + new: it is one atomic broker operation, with no
+/// window in which a fill can race the cancel.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Amend {
+    pub order_id: OrderId,
+    /// New total quantity (whole contracts, > 0), unsigned: the side never changes.
+    pub quantity: Option<i64>,
+    /// New limit price for a limit order, or new trigger for a stop. Not valid on a market order.
+    pub price: Option<f64>,
+}
+
+impl Amend {
+    pub fn validate(&self) -> Result<(), BrokerError> {
+        let bad = |why: &str| Err(BrokerError::InvalidRequest(why.into()));
+        if self.quantity.is_none() && self.price.is_none() {
+            return bad("an amend must change the quantity or the price");
+        }
+        if self.quantity.is_some_and(|q| q <= 0) {
+            return bad("amended quantity must be a positive whole number of contracts");
+        }
+        if self.price.is_some_and(|p| !(p.is_finite() && p > 0.0)) {
+            return bad("amended price must be finite and positive");
+        }
+        Ok(())
+    }
+}
+
 /// Broker ids for what one `place` created.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PlacedOrder {
@@ -159,6 +194,10 @@ pub trait BrokerAdapter {
     /// `Event::OrderSubmitted` per created order, so submissions reach `PositionState` through
     /// `poll_events` like everything else.
     fn place(&mut self, request: &OrderRequest) -> Result<PlacedOrder, BrokerError>;
+
+    /// Amends one working order in place. The adapter queues `Event::OrderAmended` once the
+    /// broker confirms the change, not when it is sent.
+    fn amend(&mut self, amend: &Amend) -> Result<(), BrokerError>;
 
     fn cancel(&mut self, order_id: OrderId) -> Result<(), BrokerError>;
 
@@ -211,6 +250,9 @@ mod tests {
                 self.0.push(Event::OrderSubmitted { order_id: 1, role: r.role, signed_qty: r.side.sign() * r.quantity, decision_id: r.decision_id, at: 0 });
                 Ok(PlacedOrder { parent: 1, target: None, stop: None })
             }
+            fn amend(&mut self, a: &Amend) -> Result<(), BrokerError> {
+                a.validate()
+            }
             fn cancel(&mut self, _: OrderId) -> Result<(), BrokerError> {
                 Ok(())
             }
@@ -226,5 +268,16 @@ mod tests {
         let mut out = Vec::new();
         b.poll_events(&mut out);
         assert!(matches!(out.as_slice(), [Event::OrderSubmitted { signed_qty: -1, .. }]));
+        assert!(b.amend(&Amend { order_id: 1, quantity: None, price: Some(7858.0) }).is_ok());
+    }
+
+    #[test]
+    fn amend_validation() {
+        let a = Amend { order_id: 7, quantity: None, price: None };
+        assert!(matches!(a.validate(), Err(BrokerError::InvalidRequest(_))), "must change something");
+        assert!(matches!(Amend { quantity: Some(0), ..a }.validate(), Err(BrokerError::InvalidRequest(_))));
+        assert!(matches!(Amend { price: Some(f64::INFINITY), ..a }.validate(), Err(BrokerError::InvalidRequest(_))));
+        assert_eq!(Amend { quantity: Some(2), ..a }.validate(), Ok(()));
+        assert_eq!(Amend { price: Some(7858.25), ..a }.validate(), Ok(()));
     }
 }

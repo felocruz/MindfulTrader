@@ -8,6 +8,7 @@
 pub mod broker;
 pub mod ibkr_orders;
 pub mod order_gate;
+pub mod order_watcher;
 pub mod position_state;
 pub mod sierra_sim;
 pub mod stop_manager;

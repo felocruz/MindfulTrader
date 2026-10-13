@@ -19,12 +19,16 @@
 //! - TWAP / VWAP / PctVol / DarkIce -> `NotModelled`: slicing and size-hiding algos have nothing
 //!   to do at 1 to a few MES contracts; emulation as spaced child limits is deferred (D2).
 //!
+//! Amends (`amend`) re-derive the leg exactly as a new leg at the amended price would be built --
+//! same rounding, same trade-through placement and overlay -- so an amended order is no less
+//! pessimistic than a fresh one.
+//!
 //! Trade-through: on a tick grid a buy limit at P is traded through exactly when a trade prints
 //! at <= P - 1 tick, which is exactly when a touch-filled buy limit at P - 1 tick fills. So under
 //! `LimitFillSemantics::Touch` the limit is placed one tick better and the overlay books it at P;
 //! under `TradeThrough` it is placed at P unchanged (offsetting it too would double-count).
 
-use crate::broker::{AdaptivePriority, BrokerError, Entry, ExecutionStyle, OrderRequest, Side};
+use crate::broker::{AdaptivePriority, Amend, BrokerError, Entry, ExecutionStyle, OrderRequest, Side};
 use crate::position_state::{ContractSpec, OrderRole};
 
 /// How Sierra's trade simulator fills resting limits in replay -- to be measured by D2's spike,
@@ -142,6 +146,21 @@ pub fn translate(req: &OrderRequest, quote: Quote, spec: ContractSpec, fills: Li
         }
     };
     Ok(SierraPlan { parent, target, stop })
+}
+
+/// The leg the relay re-sends through Sierra's `ModifyOrder`: `working` with the amend applied.
+pub fn amend(working: &SierraLeg, change: &Amend, spec: ContractSpec, fills: LimitFillSemantics) -> Result<SierraLeg, BrokerError> {
+    change.validate()?;
+    let tick = spec.tick_size();
+    let quantity = change.quantity.unwrap_or(working.quantity);
+    let Some(p) = change.price else {
+        return Ok(SierraLeg { quantity, ..*working });
+    };
+    match working.order_type {
+        SierraOrderType::Limit => Ok(limit_leg(working.side, quantity, round_against(working.side, p, tick), tick, fills)),
+        SierraOrderType::StopWithLastTriggering => Ok(SierraLeg { quantity, price: Some(round_stop_late(working.side, p, tick)), ..*working }),
+        SierraOrderType::Market => Err(BrokerError::InvalidRequest("a market order has no price to amend".into())),
+    }
 }
 
 /// A resting limit filled only on trade-through (see module doc).
@@ -282,6 +301,30 @@ mod tests {
         assert_eq!((t.side, s.side), (Side::Buy, Side::Buy));
         assert!(close(t.price, 7854.00), "buy target rounds down");
         assert!(close(s.price, 7862.25), "buy stop rounds up: triggers later");
+    }
+
+    #[test]
+    fn amended_legs_are_as_pessimistic_as_new_ones() {
+        let r = OrderRequest {
+            bracket: Some(Bracket { target: 7862.0, stop: 7854.0 }),
+            ..req(Side::Buy, Entry::Market, ExecutionStyle::Adaptive(AdaptivePriority::Patient))
+        };
+        let p = plan(&r, LimitFillSemantics::Touch);
+        let a = |price, quantity| Amend { order_id: 1, quantity, price };
+
+        let t = amend(&p.target.expect("target"), &a(Some(7863.10), None), mes(), LimitFillSemantics::Touch).expect("ok");
+        assert!(close(t.price, 7863.50), "sell target rounds up to 7863.25, then +1 tick for touch");
+        assert!(close(t.overlay.book_at, 7863.25));
+
+        let s = amend(&p.stop.expect("stop"), &a(Some(7855.10), Some(2)), mes(), LimitFillSemantics::Touch).expect("ok");
+        assert!(close(s.price, 7855.00), "sell stop rounds down: triggers later");
+        assert_eq!((s.quantity, s.overlay), (2, Overlay::SLIP_ONE));
+
+        let parent = amend(&p.parent, &a(None, Some(3)), mes(), LimitFillSemantics::Touch).expect("qty only");
+        assert_eq!((parent.quantity, parent.price), (3, p.parent.price), "quantity-only keeps the placed price");
+
+        let mkt = plan(&req(Side::Buy, Entry::Market, ExecutionStyle::Direct), LimitFillSemantics::Touch).parent;
+        assert!(matches!(amend(&mkt, &a(Some(7858.0), None), mes(), LimitFillSemantics::Touch), Err(BrokerError::InvalidRequest(_))));
     }
 
     #[test]

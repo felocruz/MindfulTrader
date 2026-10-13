@@ -197,6 +197,7 @@ of hardware.
 | 36 | `observation_vector`: `log_scale_ratio` (16th dim) | **SHIPPED 2026-10-12** (`include/LogScaleRatio.h`, `rust/observation_vector::log_scale_ratio`). Unlike every prior dim, the hard math (bipower variation) was already ported and shadow-wired (`compute_bipower_variation`, 2026-10-08) -- only the thin ratio+clamp composition step remained. Extracted as a function of two ALREADY-COMPUTED BV values (not raw log-return windows), so the Rust port composes the existing `compute_bipower_variation` port rather than duplicating it, and the C++ extraction avoids a second BV computation the caller already did. FFI wrapper (`observation_vector_log_scale_ratio`) is the first in this codebase to take two plain scalar `f64` arguments instead of a pointer/length pair. Cross-language parity exact to 1e-6 (3 new assertions); shadow-wired at the real call site alongside its pre-existing BV-level shadow checks -- two independent shadow comparisons now cover this one dim end-to-end. 5 new Rust tests (63/63 total), 5 new native C++ checks. Both DLL configs build clean -- `MTS_WITH_RUST=OFF` unchanged in size from decision #35's own baseline (net-neutral refactor: 3 inline lines replaced by 1 header call), `=ON` links and grows. 2 of 18 observation-vector dims now genuinely remain unported: `tail_index`, `fast_mean_rev_z`. |
 | 37 | `observation_vector`: `tail_index` (17th dim) | **SHIPPED 2026-10-12** (`include/HillTailIndex.h`, `rust/observation_vector::hill_tail_index`). The most complex port in this series so far -- Resnick & Starica (1997) Hill-plot stability-region k-selector (partial_sort + running-prefix-log-sum Hill(k) scan + first-plateau-wins selector over [10, 4*tail_cutoff]). Unlike `lempel_ziv`'s class, `TailRiskEngine::GetHillAlpha()` is already a pure O(1) state read -- the real estimation happens inside `AddObservation()`, feeding an EWMA-smoothed alpha that depends on the entire observation history, not a recomputable snapshot. Extracted `ComputeRawAlpha()`'s math into a new header returning `std::optional<double>` (not an implicit NaN sentinel, per this session's own institutional-NaN-handling precedent, `calibration.rs`'s `Option<f64>` refactor); added `GetWindowSnapshot()`/`GetTailCutoff()` accessors so shadow-wiring could compare the RAW (pre-EWMA) Hill alpha -- the only level meaningfully comparable without replicating the engine's sequential EWMA state in Rust, not the smoothed `GetHillAlpha()` output itself. A regression test proves the refactored class method still matches an independent `HillTailIndex()` call on the identical window. **Design choice caught and fixed mid-port**: the header takes a MUTABLE buffer it `partial_sort`s in place (not `const` + an internal copy) specifically to preserve `ComputeRawAlpha`'s own zero-extra-allocation design -- the first draft introduced a needless second buffer copy before this was caught. Also removed one now-genuinely-dead member (`m_hillAtK`), per this repo's own standing dead-code-deletion rule. Ported to Rust (`hill_tail_index`, taking `&mut [f64]`), FFI-wrapped (`observation_vector_hill_tail_index`, the first wrapper in this family needing a mutable `*mut f64` rather than `const`), cross-language-parity-tested (3 new assertions on a real 500-element production-shaped window, exact to 1e-9), and shadow-wired at the real call site. 4 new Rust tests (67/67 total), 6 new native C++ checks. Both DLL configs build clean -- `MTS_WITH_RUST=OFF` (1,780,736 bytes) and `=ON` (2,053,632 bytes, links and grows). 1 of 18 observation-vector dims now genuinely remains unported: `fast_mean_rev_z` (its own unresolved "MOOT, DROPPED" vs. "wired, EXPLICIT operator authorization" contradiction worth resolving before porting it). |
 | 38 | `observation_vector`: `fast_mean_rev_z` (18th schema dim) — port or retire | **RETIRED 2026-10-13, not ported** — rejected by both its forward-return test (corrected 5-horizon declustered sweep, no significant cell) and the 2026-09-18 HMM state-occupancy test. Live/offline computation deleted; dim stays in the 18D schema as a constant 0.0f. `observation_vector` port is therefore complete at 17 of 17 live dims. Full account: `docs/superpowers/specs/2026-08-31-elite-feature-set-curation-initiative.md` row 19 |
+| 39 | Execution: separate ORDER management from POSITION management; give the broker seam an amend; fix the watcher's release/clock semantics (operator review of the order-watcher port, 2026-10-13) | **DONE 2026-10-13.** D3a had turned a strategy rule ("Phase 1 barriers don't move", triple-barrier doctrine, `docs/ADR/triple_barrier_cutover_phase1_plan.md` §1) into an execution rule ("bracket orders are never updated"), and the order-watcher port cited the legacy C++ ("never modifies a working order") as if it confirmed that. Neither is institutional reasoning: amend (FIX `OrderCancelReplaceRequest`, IBKR `modifyOrder`) is a standard order-management action. Now: `BrokerAdapter::amend` (`broker::Amend`: quantity and/or price only; side, role, type and algo fixed) with IBKR and pessimistic-Sierra translations and a broker-confirmed `Event::OrderAmended` in `position_state`; whether a bracket LEVEL may move stays a strategy decision above the seam. `order_watcher`: `Release` split into `Finished` (a fact) and `Escalate` (broker unreachable -- state unknown, reconcile or flatten, never dropped: the C++ orphaned the order); two caller-supplied clocks (market time for intent expiry and churn, a steady local clock for TTL and budget, so a stalled feed cannot freeze the watchdog; the shell must also call it on a timer). D3/D3a rewritten below |
 
 ---
 
@@ -1994,12 +1995,11 @@ rust/execution/
 │                           not redesigned (§8.7 D4)
 ├── order_watcher.rs      -- the ONLY async module: dedicated tokio runtime + thread + its own
 │                           TWS client id, tokio::select! over order status / quote / stop-recalc
-│                           trigger / time limit. Never works the order itself — an IBKR algo
-│                           always does (ruled 2026-10-10, no Rust-native stepping fallback); this
-│                           module only decides update-in-place (modifyOrder: price/qty-only
-│                           changes, same algo/direction) vs. cancel-and-reissue (structural
-│                           changes: direction flip, algo-type change, thesis invalidated) —
-│                           proposed default, §8.7 D3, **corrected 2026-10-11, see D3a**
+│                           trigger / timer. Never works the order itself — an IBKR algo
+│                           always does (ruled 2026-10-10, no Rust-native stepping fallback); for
+│                           the unfilled entry it decides hold / cancel / finished / escalate
+│                           (built 2026-10-13, decision #39; amends go through
+│                           BrokerAdapter::amend, see D3a's order- vs. position-management split)
 ├── signal_feed.rs        -- consumes rust/transport's port-5555 subscription (continuous
 │                           price/context ticks only, §8.5) — an `transport` client, not its
 │                           own zmq socket; decodes with rust/schema's generated FlatBuffer bindings
@@ -2010,7 +2010,8 @@ rust/execution/
 ├── position_feed.rs      -- publishes through a NEW rust/transport port (§8.5): position/fill/P&L
 │                           state for MTS/GUI, replacing PositionUpdate's old C++-side publisher —
 │                           again, new `transport` inventory, not this crate's own PUB socket
-├── broker_adapter.rs     -- trait BrokerAdapter { fn submit(...), fn modify(...), fn cancel(...),
+├── broker_adapter.rs     -- [built as broker.rs: place / amend / cancel / flatten / poll_events]
+│                           trait BrokerAdapter { fn submit(...), fn modify(...), fn cancel(...),
 │                           ... } with two impls: IbkrAdapter (real ibapi, modify = IBKR
 │                           modifyOrder on the live algo order) and ReplayFillAdapter (backtest,
 │                           §8.6) — position_state/stop_manager/trap_exit run identically against
@@ -2245,11 +2246,12 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     shared-schema change, D1)**. The C++ relay study is dumb: Rust sends it `sierra_sim::translate`'s
     output verbatim, and it reports back what Sierra did.
     - *Rust -> relay*: `PlaceSierraPlan { request_id, decision_id, parent, target?, stop? }` (each
-      leg: `SCT_ORDERTYPE_*` id, side, quantity, price); `Cancel { internal_order_id }`;
-      `Flatten {}`.
+      leg: `SCT_ORDERTYPE_*` id, side, quantity, price); `Amend { internal_order_id, quantity,
+      price }` (`sierra_sim::amend`'s leg, via `sc.ModifyOrder`; added 2026-10-13, decision #39);
+      `Cancel { internal_order_id }`; `Flatten {}`.
     - *Relay -> Rust*: `OrderAck { request_id, parent/target/stop InternalOrderIDs }`,
       `OrderRejected { request_id, code, message }`, `OrderCancelled { internal_order_id }`,
-      `Fill { internal_order_id, fill_id, signed_qty, price, at }`, `PositionSnapshot { quantity,
+      `OrderAmended { internal_order_id, quantity }`, `Fill { internal_order_id, fill_id, signed_qty, price, at }`, `PositionSnapshot { quantity,
       average_price, open_pnl, closed_pnl, at }` (from `sc.GetTradePosition`) -- each maps 1:1 onto
       a `position_state::Event` -- plus the replay timestamp of every step (the Rust clock, A2).
     - *Lockstep*: the relay is the requesting side; each replay step that carries anything (a
@@ -2267,7 +2269,9 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
 - **D3 — IBKR algo selection for MES futures. Order-working mechanism RULED (operator,
   2026-10-10): rely on IBKR algos exclusively — no Rust-native stepping fallback.** The
   order-watcher's only two actions on a live algo order are **update** (IBKR `modifyOrder` in
-  place — for price/quantity-only changes that don't change direction or algo type) and **cancel**
+  place [**superseded 2026-10-13, decision #39**: the watcher's entry-order repertoire is hold /
+  cancel (+ `Finished`/`Escalate`); amends exist on the broker seam as `BrokerAdapter::amend`,
+  see D3a's order- vs. position-management split] — for price/quantity-only changes that don't change direction or algo type) and **cancel**
   (for structural changes — direction flip, algo-type change, thesis invalidated by the trap floor,
   time limit expired), never a hand-rolled price-stepping loop. **Corrected 2026-10-11 (see D3a)**:
   the original "e.g. a trailing-stop recompute moving the stop a tick" example for **update** was
@@ -2329,6 +2333,36 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
   account-permission-gated, so this isn't skipped, but it is no longer the hard blocking spike it
   was originally framed as; a negative result would now be a genuine surprise worth escalating,
   not an expected possible outcome.
+  - **Order-watcher decision core built, 2026-10-13** (`rust/execution/src/order_watcher.rs`): a
+    behavior-preserving port of `PositionManager::ManageWorkingEntryOrder` + `IsQuoteChurnBreached`
+    -- the same ordered cancel checks (intent expiry, working-order TTL, HMM transition risk,
+    execution budget, spread, toxic flow, quote churn, prediction direction, prediction staleness),
+    first match wins. Its repertoire is hold / cancel for the unfilled entry, plus `Finished`
+    (the broker reports the order done) and `Escalate` (broker unreachable: unknown state, hand to
+    reconciliation / kill switch -- the C++ `ScDisconnected` path dropped the order, an orphan).
+    No amend decision, because an IBKR algo reprices its own child orders -- a consequence of the
+    algo choice, not evidence for D3a (the C++ never amended only because Sierra's limit-chase
+    repriced by cancel + new). Clock-free, with two caller-supplied clocks (decision #39): market
+    time for intent expiry and quote churn, a steady local clock for working TTL and execution
+    budget, so a stalled feed cannot freeze the watchdog; the async shell calls it on a timer as
+    well as on market events.
+  - **OPEN DECISION (operator) -- escalate urgency instead of cancelling.** Raising a working
+    Adaptive entry from Patient/Normal to Urgent (an amend of `adaptivePriority`) is the
+    institutional alternative to an `OrderAckTimeout` cancel. Not built: it changes behavior, it
+    is coupled to the budget decision below, IBKR's acceptance of an algo-parameter modify on MES
+    is unverified (W0e did not test modifies), and its Sierra-sim equivalent (limit -> market)
+    needs D2's fill-semantics spike first.
+  - **OPEN DECISION (operator) -- entry time budgets for IBKR algos.** The C++ budgets were tuned
+    for Sierra's zero-latency limit-chase: execution budget = min(session budget 800-1200 ms,
+    ack-timeout 1200 ms) x Fisher scale (0.75/1.0/1.5), then capped by the climate (100-500 ms,
+    `InferenceManager::GetRegimeExecutionBudgetCap`). The climate cap is always below the session
+    budget, so in practice an entry is cancelled as `OrderAckTimeout` after ~375-750 ms -- far too
+    short for an IBKR Adaptive order (Patient especially routinely needs seconds or more). The
+    port therefore takes every budget as configuration (`WatcherConfig::sierra_chase_defaults()`
+    holds the C++ values for parity); the values for IBKR algos are not chosen yet. Two related
+    notes: the climate the cap keys on is today's `MarketClimateIndicator`, whose live write race
+    (decision #29) means it mostly reflects the native heuristic, not the trained HMM; and the
+    C++ quote-churn window reads the machine's local clock, not exchange time.
 - **D3a — Bracket order construction mechanics, verified against the real `ibapi` 5.0.0 crate
   (already vendored in this environment), 2026-10-11** (operator-supplied research, checked
   against actual crate source rather than trusted as documentation claims; **premise corrected
@@ -2351,7 +2385,23 @@ explicit IBKR-algo-to-Sierra-order mapping and a three-tier validation ladder. F
     `target` outputs map directly onto `.stop_loss(price)`/`.take_profit(price)`). No manual
     trailing-stop construction (`TrailBy`, `trailing_percent`, `trail_stop_price`) is needed —
     those fields exist in the crate for other use cases, not this one.
-  - **What "update" and "cancel" actually mean for this bracket, now precise rather than assumed**:
+  - **ORDER management vs. POSITION management (rewritten 2026-10-13, decision #39 -- supersedes
+    the next bullet's "never update")**. Two layers, which the earlier text conflated:
+    - *Position management (strategy)*: where the stop and target sit, and when to leave (TRAP,
+      regime invalidation, time). Phase 1's triple-barrier doctrine keeps the barrier LEVELS where
+      entry put them, for label parity with the triple-barrier labeler (cutover ADR §1, Option A);
+      breakeven/trailing moves were rejected on evidence for these fade stops (ADR §1 item 4).
+      This is deferred, not prohibited: a tactical level change is admissible once the labeler
+      can reproduce it (a deterministic path rule or a trained meta-model, ADR §1 items 1/4), and
+      regime-scaled targets at entry are already sanctioned (ADR §1, "Rank 2").
+    - *Order management (execution)*: how the orders implementing those levels are worked. Amends
+      that do not move a barrier level (quantity, repricing a target limit for fill quality, and
+      later possibly stop-market vs. stop-limit as the C++ once chose by regime) are ordinary
+      execution and go through `BrokerAdapter::amend`. The adapter does not police doctrine; the
+      strategy layer decides what to ask for. Single-controller rule (ADR §1, "dual-controller
+      stop = critical defect") still holds: one owner per order.
+  - **What "update" and "cancel" actually mean for this bracket (2026-10-11 text; its "never
+    modified" is the Phase 1 STRATEGY rule for levels, not an execution rule -- see above)**:
     once placed, the stop/target legs are never modified (matching D3's corrected update/cancel
     split above) — `TripleBarrierExitManager::Evaluate()`'s own public API has no mutation method
     at all (`OpenBracket`/`Evaluate`/`Current`/`Close` only), confirmed by direct read. The only
