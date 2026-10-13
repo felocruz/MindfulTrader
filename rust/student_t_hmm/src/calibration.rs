@@ -38,18 +38,21 @@ use crate::init::SplitMix64;
 /// output, not `b_cb` (circular bootstrap, which this codebase never uses). Fully deterministic
 /// (no randomness at all), so golden-parity tested bit-for-bit against the real installed package.
 ///
-/// Can legitimately return `NaN` (e.g. a constant input series, where the long-run-variance
-/// estimate is exactly zero and the formula hits a genuine `0.0/0.0`) -- matches the real `arch`
-/// package's own behavior exactly (verified directly, not assumed); callers must check
-/// `is_finite()`/`>= 1.0` and fall back to `geyer_tau_int`-based block length when it fails, same
-/// as `_optimal_block_length_sb`'s own documented fallback.
+/// Returns `None` when the long-run-variance estimate is exactly zero (e.g. a constant input
+/// series) -- the real `arch` package's own `_single_optimal_block` hits a genuine `0.0/0.0` in
+/// this case and returns `NaN` (verified directly, not assumed), but that's a Python/NumPy
+/// idiom -- an implicit float sentinel standing in for "could not be estimated" -- not part of
+/// the algorithm's actual mathematical contract. Rust has a better, zero-cost way to say the same
+/// thing: detect the degenerate precondition explicitly and return `None`, so every caller is
+/// compiler-forced to handle it, the same mathematical contract `_optimal_block_length_sb`'s own
+/// `is_finite()`-check-then-fallback already expresses, just made explicit instead of implicit.
 #[allow(clippy::many_single_char_names)] // g/m/d_sb/b_sb/b_max mirror the cited paper's own
 // notation and the real arch package's own variable names -- renaming would make this harder,
 // not easier, to verify against the source it's ported from.
-pub fn politis_white_block_length(series: &[f64]) -> f64 {
+pub fn politis_white_block_length(series: &[f64]) -> Option<f64> {
     let nobs = series.len();
     if nobs == 0 {
-        return f64::NAN;
+        return None;
     }
     let mean = series.iter().sum::<f64>() / nobs as f64;
     let eps: Vec<f64> = series.iter().map(|&x| x - mean).collect();
@@ -102,31 +105,20 @@ pub fn politis_white_block_length(series: &[f64]) -> f64 {
         lr_acv += 2.0 * lam * acv[k];
     }
     let d_sb = 2.0 * lr_acv * lr_acv;
-    // Deliberately NOT guarded against `d_sb == 0.0`: IEEE-754 float division already produces
-    // the same `inf`/`NaN` the real numpy-backed package does for this degenerate input (verified
-    // directly against a real constant-series invocation, this module's own tests) -- adding a
-    // branch here would diverge from, not match, the ported behavior.
-    let b_sb = ((2.0 * g * g) / d_sb).cbrt() * (nobs as f64).cbrt();
-    // NOT Rust's `f64::min` -- its IEEE-754 "minNum" semantics always prefer the finite operand
-    // over NaN regardless of argument order, but CPython's built-in `min(a, b)` (what the real
-    // `arch` source literally calls, `b_sb = min(b_sb, b_max)`) is order-dependent: it keeps its
-    // FIRST argument unless a later one compares strictly less, and any NaN comparison is always
-    // False. So `min(nan, 17.0)` stays `nan` in real Python (verified directly), the opposite of
-    // what `b_sb.min(b_max)` would give here. `python_min` replicates that exact two-argument
-    // left-to-right behavior.
-    python_min(b_sb, b_max)
-}
-
-/// Replicates CPython's built-in two-argument `min(a, b)`: keeps `a` unless `b < a` (a comparison
-/// that is always `False` when either operand is NaN) -- NOT the same as `f64::min`, which always
-/// prefers a finite operand over NaN regardless of argument order. See `politis_white_block_length`'s
-/// own call site for why this distinction is load-bearing here, not a stylistic preference.
-fn python_min(a: f64, b: f64) -> f64 {
-    if b < a {
-        b
-    } else {
-        a
+    // Explicit precondition check, not an implicit NaN that arithmetic happens to produce:
+    // `d_sb <= 0.0` iff `lr_acv == 0.0` exactly (`d_sb` is `2*lr_acv^2`, never negative) -- the
+    // ONLY input shape for which the real `arch` package's own division-based formula degenerates
+    // (`0.0/0.0` when `g` is also zero, as it always is when `lr_acv` is, since both are weighted
+    // sums of the same `acv[k]` values; `x/0.0` -> `+inf` in the hypothetical case `g != 0`, which
+    // `_optimal_block_length_sb`'s `is_finite()` check already treats identically to `NaN` either
+    // way). Checking this BEFORE computing `b_sb` means `b_sb` is guaranteed finite by the time
+    // it reaches the final clamp below -- ordinary `f64::min` is correct there, no NaN-aware
+    // comparison logic needed at all.
+    if d_sb <= 0.0 {
+        return None;
     }
+    let b_sb = ((2.0 * g * g) / d_sb).cbrt() * (nobs as f64).cbrt();
+    Some(b_sb.min(b_max))
 }
 
 /// Geyer's (1992) initial monotone sequence estimator of the integrated autocorrelation time,
@@ -177,14 +169,16 @@ pub fn geyer_tau_int(series: &[f64], max_lag: Option<usize>) -> f64 {
 }
 
 /// Ported from `_optimal_block_length_sb`: Politis-White block length, falling back to
-/// `2 * geyer_tau_int` when Politis-White fails (non-finite or `< 1.0` -- e.g. too few
-/// observations, or a near-degenerate window the autocorrelation-band procedure can't resolve).
+/// `2 * geyer_tau_int` when Politis-White fails (`None`, or a finite `< 1.0` result -- e.g. too
+/// few observations, or a near-degenerate window the autocorrelation-band procedure can't
+/// resolve). **Always returns a finite value `>= 1.0`** -- `geyer_tau_int` is guaranteed finite
+/// `>= 1.0` by its own construction (every early-return path and its final `.max(1.0)`), so no
+/// degenerate/non-finite value can ever escape this function's boundary into
+/// `bootstrap_threshold_ci` or any other caller.
 pub fn optimal_block_length_sb(series: &[f64]) -> f64 {
-    let b_sb = politis_white_block_length(series);
-    if !b_sb.is_finite() || b_sb < 1.0 {
-        2.0 * geyer_tau_int(series, None)
-    } else {
-        b_sb
+    match politis_white_block_length(series) {
+        Some(b_sb) if b_sb >= 1.0 => b_sb,
+        _ => 2.0 * geyer_tau_int(series, None),
     }
 }
 
@@ -325,7 +319,9 @@ mod tests {
 
     #[test]
     fn golden_politis_white_block_length_ar1_228() {
-        check("b_sb_228", politis_white_block_length(&AR1_FIXTURE_228), 4.704129104006514, 1e-9);
+        let b_sb = politis_white_block_length(&AR1_FIXTURE_228)
+            .expect("a real AR(1) series must produce a defined block length, not None");
+        check("b_sb_228", b_sb, 4.704129104006514, 1e-9);
     }
 
     #[test]
@@ -341,25 +337,49 @@ mod tests {
     #[test]
     fn golden_short_series_n10() {
         let short = &AR1_FIXTURE_228[..10];
-        check("b_sb_n10", politis_white_block_length(short), 0.7244335300449274, 1e-9);
+        let b_sb = politis_white_block_length(short).expect("n=10 must still produce a value");
+        check("b_sb_n10", b_sb, 0.7244335300449274, 1e-9);
         check("tau_int_n10", geyer_tau_int(short, None), 1.2422105308269145, 1e-9);
     }
 
     #[test]
-    fn golden_constant_series_nan_and_floor() {
+    fn golden_constant_series_none_and_floor() {
         let constant = [5.0; 50];
-        assert!(
-            politis_white_block_length(&constant).is_nan(),
-            "a constant series must produce NaN (0.0/0.0), matching the real arch package exactly"
+        assert_eq!(
+            politis_white_block_length(&constant),
+            None,
+            "a constant series must produce None (the real arch package's own equivalent: a \
+             genuine 0.0/0.0 degenerate case) -- Rust expresses 'could not be estimated' as an \
+             explicit None instead of an implicit NaN sentinel a caller could forget to check"
         );
         check("tau_int_constant", geyer_tau_int(&constant, None), 1.0, 1e-12);
-        // optimal_block_length_sb must catch the NaN and fall back to 2*geyer_tau_int.
-        check("fallback_on_nan", optimal_block_length_sb(&constant), 2.0, 1e-9);
+        // optimal_block_length_sb must catch the None and fall back to 2*geyer_tau_int.
+        check("fallback_on_none", optimal_block_length_sb(&constant), 2.0, 1e-9);
     }
 
     #[test]
     fn golden_too_short_for_geyer() {
         check("geyer_n_lt_4", geyer_tau_int(&[1.0, 2.0, 3.0], None), 1.0, 1e-12);
+    }
+
+    #[test]
+    fn optimal_block_length_sb_is_always_finite_and_at_least_one() {
+        // The explicit finite-guarantee `optimal_block_length_sb`'s own doc comment states --
+        // exercised here directly, not just inferred from reading `geyer_tau_int`'s guards, for
+        // a battery of inputs including every known-degenerate case this module's other tests
+        // exercise individually.
+        let cases: Vec<Vec<f64>> = vec![
+            AR1_FIXTURE_228.to_vec(),
+            AR1_FIXTURE_228[..10].to_vec(),
+            vec![5.0; 50],   // constant -> politis_white_block_length returns None
+            vec![1.0, 2.0, 3.0], // too short even for geyer_tau_int's own n>=4 floor
+            vec![],
+        ];
+        for series in &cases {
+            let result = optimal_block_length_sb(series);
+            assert!(result.is_finite(), "optimal_block_length_sb must never return non-finite, got {result} for {series:?}");
+            assert!(result >= 1.0, "optimal_block_length_sb must never return < 1.0, got {result} for {series:?}");
+        }
     }
 
     #[test]

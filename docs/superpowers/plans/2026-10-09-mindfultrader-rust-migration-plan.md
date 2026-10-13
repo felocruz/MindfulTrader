@@ -899,7 +899,13 @@ into one). Organized by what blocks what, not by file-list order. Nothing here i
   conservative early-exit guard incorrectly returned NaN for a legitimate small-`n` case Python
   computes a finite value for (Python's out-of-range slicing clips to empty, never raises — fixed
   with `saturating_sub`/`.min(nobs)` clamping). 10 new tests, workspace 199/199 pass, clippy clean
-  (incl. Windows cross-compile). G0(e) is now fully resolved; G6 is complete.
+  (incl. Windows cross-compile). **Follow-up refactor, same day**: `politis_white_block_length`
+  changed from `f64` (implicit NaN sentinel + the `python_min` workaround) to `Option<f64>` — the
+  degenerate precondition is now checked explicitly before any possibly-NaN arithmetic runs, so
+  `python_min` is deleted entirely, not just unused; a representation change only, every golden
+  value unchanged. 1 new test (an explicit property check that `optimal_block_length_sb` is always
+  finite `>= 1.0`), workspace 200/200 pass, clippy clean. G0(e) is now fully resolved; G6 is
+  complete.
 - **G7 — integration/cutover**: wire `materialize_hmm_features.py`'s and `regime_calibration.py`'s
   replacement logic into whatever Rust pipeline stamps posteriors and computes live decay params;
   hook `regime_engine.rs`/`model.rs` behind `ffi`'s `hmm_step` (already designed, spec §5.2); delete
