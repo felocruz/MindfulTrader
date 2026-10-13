@@ -202,7 +202,8 @@ of hardware.
 | 41 | `student_t_hmm`: Rust training on real data; HMM input = 17 of the 18 schema fields (operator chose Option A, 2026-10-13) | **BUILT + FIRST REAL RUN 2026-10-13.** (a) `input.rs`: the 18D `ObservationData` schema is unchanged; the HMM consumes 17 fields (`fast_mean_rev_z`, a constant 0.0, excluded -- it would otherwise count in the Student-t's true dimension D and bias the dof estimates); `PRODUCTION_D` 18 -> 17; `hmm_step` still takes the raw 18D vector and projects through `input::project`, the same function training uses. The 2026-09-18 Python model was already 17D (`hmm_utils.py` `_EXCLUDED_FIELD_NAMES`). (b) Model units: the HMM consumes RAW `ObservationData` values (as `.context.parquet` stores them, not `FeatureScaler` output); `amihud_illiquidity`'s raw scale (~1e-8, variance ~1.7e-15) sits below the model's absolute variance floor (1e-12), so it is expressed in units of 1e-8 (`input::MODEL_UNITS`) -- an exact reparameterization except for the floor. Finding: the 2026-09-18 Python run added 1e-4 jitter to every row (2,500x amihud's own spread); that model's amihud variances are ~1e-8, the jitter's -- the dimension was noise. Jitter not ported. (c) `training_data.rs` ports the production preparation rules (dead-physics flat-run filter, 500/200 trim, sessions split at gaps > 3600 s, k-means++/global-variance/0.9-sticky initialization, effective covariance eta) and the run's EM configuration; deviation: the flat-run filter runs in model units, so rows where only amihud moved are moves (0 rows dropped vs Python's 66). (d) `rust/tools` `hmm_tool train` (Apache `parquet` 60.0.0; patterns from Atratus's `atratus_tool train`: by-name columns, refuse non-finite and near-floor-variance features, seeded restarts kept by training likelihood, BIC, optional session holdout behind a one-session embargo; archived report + ledger row). (e) First run, `offline_replay_full_20260918.context.parquet`, 5 restarts, latest 20% of sessions held out (`tools/output/hmm_tool_train_20261013_124809.txt`, model `tools/output/hmm_model_20261013_124809.json`): 16.9M train rows / 669 sessions, 5.0M holdout / 168; 633 s total. Restarts disagree materially (best MAP LL -81.90M to -83.77M; per-state dof sets differ) and every one "converged" in 5-9 iterations under the production `tol` = 0.01 -- likely premature (the Python run used the same setting). Kept seed 46: dof 31.4 / 9.6 / 30.0 / 20.9, shares 0.32/0.23/0.18/0.27, no state pinned, holdout LL -4.95/row vs train -5.48/row (no overfit signal). Two states classified SHANNON_CHAOS (as in the 2026-09-18 model). **Fat-tail (Taleb) sign-off still fails**: lowest eligible dof 9.6, threshold 4. Open: convergence tolerance / iteration budget (re-run tighter before reading anything into the dof values), then the K / fat-tail question itself  **Superseded in part by #44 (2026-10-13)**: the hand-set `MODEL_UNITS` (amihud x 1e8) gives way to a fixed affine transform fitted on the training set; the raw-input finding (b) is what exposed the train/serve mismatch.|
 | 42 | `observation_vector` cutover: Rust becomes the only implementation of the observation-vector formulas (operator, 2026-10-13) | **DONE 2026-10-13.** Gate first: a clean Rust-enabled shadow DLL in live Sierra Chart plus a replay -- all 19 comparison sites (17 dims; relative range and DFA Hurst checked at two sites each) logged OK and **zero `MISMATCH` lines** (only Sevcik had ever been checked live before, 2026-10-08). Weak spot recorded: the Amihud check's absolute tolerance (1e-4) far exceeds the values (~1e-8), so its OK was vacuous; Rust unit tests cover it exactly. **Mechanism**: rather than switching the 19 call sites, every C++ formula header (`SevcikFractalDimension.h`, `RobustMoments.h` Bowley/Moors, `BipowerVariation.h`, `LogScaleRatio.h`, `DfaHurstExponent.h`, `MeanReversionCalculator.h`, `LiquidityFragilityEngine.h`, `CarryForwardCalculators.h`' 4 functions, `OrderFlowAsymmetryEngine.h`, `RQAEpsilonSelector.h`, `LempelZivComplexity.h`, `HillTailIndex.h`, `EventVelocityEngine.h` burstiness, and `RecurrenceRateEngine`'s rate) keeps its signature and becomes a one-line call into `rust/ffi` -- the formulas are also called inside shared engines (`TailRiskEngine`, `InformationEngine`, `ImbalanceContextManager`) and by the offline generator and tools, so wrapping cuts all of them over at once and nothing can drift. `RecurrenceRateEngine` drops its per-tick O(n) closed-pair cache (every caller rebuilds and computes together, once per newly closed bar). All `#ifdef MTS_WITH_RUST` shadow blocks removed; `MTS_WITH_RUST` and the `-rust` CMake preset deleted -- `CMakeLists.txt` always links `ffi.lib` and `build_dll.sh` builds it first. `tests/cpp/test_rust_observation_vector_parity.cpp` deleted (it would compare Rust with Rust). Native C++ tests and tools link `rust/target/release/libffi.a` (`scripts/build_rust_native.sh`, `tools/README.md`). **Verified**: clean `build_dll.sh` (DLL: no shadow strings, `SCDLLName` present, same 16 imports); all 49 `tests/cpp` tests pass; the 4 offline-generator tests pass; `MarketDataReplay`, `whole_vector_redundancy_eval`, `observation_vector_recalibration` build. Remaining for this pillar: the plumbing (bar engines, `FeatureScaler`, `ObservationTriggerGate`) is still C++; moving it into one Rust observation engine shared by live and offline is the next step |
 | 43 | `observation_engine`: one Rust engine for the whole observation pipeline, live and offline (operator directive 2026-10-13: institutional-grade, DOD, zero copy, not a verbatim port) | **DESIGN PROPOSED 2026-10-13, §6.2 -- not built.** Inventory found 11 structural problems in today's pipeline (§6.2.1 F1-F11), the most serious being F1: live code sends SCALED observations to the HMM while the training parquet holds RAW values. Design: zero-copy borrowed views of Sierra's own bar arrays live (verified layout: contiguous `float*` columns, `SCDateTime` = `int64` us) and a Rust bar builder offline behind one `BarSource` trait; trades from time-and-sales; explicit per-dim status; no statics or persistent carry-forward; a lifecycle table for SetDefaults / recalculation / download / replay / last call (§6.2.5). Needs operator decisions D1-D6 (§6.2.8; D1, the HMM input space, is blocking) and Sierra checks V1-V4 |
-| 44 | D1: the HMM's input space (operator, 2026-10-13, after four research passes and Gemini BRIEF_159-163) | **RULED.** A fixed affine transform of the raw features fitted on the training set, stored in the model artifact, applied by one Rust function in training and live; no rolling statistics, no nonlinear transforms or winsorization; non-ready dimensions missing (marginalized), out-of-range measurements censored. Live today feeds the HMM a rolling (~8-27 min) nonlinear scaling while the production model was trained on raw values -- an unrecorded switch at the 2026-09-08 offline generator. Also ruled: B12-B16 (formula clamps removed, estimator failures as missing, `tail_index` sentinel split, Fisher transform dropped, `mean_rev_z` signed z + persistence; `fast_mean_rev_z` re-admitted as a candidate, reopening #38's retirement). Record: §6.2.8, §6.2.11; experiment: §6.2.12 |
+| 44 | D1: the HMM's input space (operator, 2026-10-13, after four research passes and Gemini BRIEF_159-163) | **RULED.** A fixed affine transform of the raw features fitted on the training set, stored in the model artifact, applied by one Rust function in training and live; no rolling statistics, no nonlinear transforms or winsorization; non-ready dimensions missing (marginalized), out-of-range measurements censored. Live today feeds the HMM a rolling (~8-27 min) nonlinear scaling while the production model was trained on raw values -- an unrecorded switch at the 2026-09-08 offline generator. Also ruled: B12-B16 (formula clamps removed, estimator failures as missing, `tail_index` sentinel split, Fisher transform dropped, `mean_rev_z` signed z + persistence; `fast_mean_rev_z` re-admitted as a candidate, reopening #38's retirement). **B15 and B16 revised the same day: decision #45.** Record: §6.2.8, §6.2.11; experiment: §6.2.12 |
+| 45 | `fisher_info` is not Fisher information: B15 and B16 revised (operator, 2026-10-13, Gemini BRIEF_164) | **RULED.** `fisher_info` is Ehlers' (2002) Fisher Transform -- arctanh of the close's position in its TS1 high-low range, a range-position oscillator -- not R.A. Fisher's information. It carries price position and direction, not a regime property (rank #2 between/within-state separation with tail enrichment 0.000; Atratus measured the same formula splitting its HMM states into "price at window low/high" and dropped it). B15 now DROPS it from the HMM input (the schema field is renamed honestly and stays available to the signal layer). B16 now feeds `mean_rev_z` as unsigned \|z\| (unclamped) plus a separate persistence ρ; signed z becomes an experiment arm, not a ruling. B17: delete `PositionManager`'s "GAP 23" TTL scaling, which reads the signed oscillator as "regime sharpness". B18: audit every remaining HMM input for what it really is before the §6.2.12 experiment. Record: §6.2.7, §6.2.13 |
 
 ---
 
@@ -1960,7 +1961,7 @@ Per closed bar: that timeframe's estimators. Zero heap allocation after `create`
 in place. Measure with criterion benches on recorded MES days; a budget per event is set from the first
 measurement, not guessed.
 
-#### 6.2.7 Behaviour-change register (B1-B11 PROPOSED; B12-B16 RULED 2026-10-13)
+#### 6.2.7 Behaviour-change register (B1-B11 PROPOSED; B12-B18 RULED 2026-10-13; B15/B16 revised by decision #45)
 
 | # | Change | Fixes |
 |---|---|---|
@@ -1978,8 +1979,10 @@ measurement, not guessed.
 | B12 | **RULED 2026-10-13** -- remove statistical clamps on unbounded features (`log_scale_ratio` +-6, `log_scale_expansion_ratio` [-10,6], `mean_rev_z` at 5, the liq-fragility and recurrence clamps layered on their own ranges); keep only non-finite -> missing (§6.2.11 clamp audit, kind 4) | F1, ν bias |
 | B13 | **RULED** -- an estimator failure is status `Invalid` (treated as missing), never a clamped value; DFA Hurst's accepted range widened to its true domain (values > 1 are valid for non-stationary series, up to ~2 for first-order detrending); Sevcik stays [1,2] by definition, out-of-range = failure (kind 3) | -- |
 | B14 | **RULED** -- `tail_index`: both sentinels removed. Warmup (0.0) and estimator failure -> missing; Hill α beyond [1.1, 8] -> censored at the bound. Today 2.5 is written in 41.7% of training rows, reporting fat tails exactly when the estimator found none or very thin ones; it also feeds the execution layer's Pareto-α gate | F1 |
-| B15 | **RULED** -- `fisher_info`: drop the Fisher (arctanh) transform; the feature becomes the raw position of price in its window, in [-1,1]. The ±1 atom ("at the window extreme", ~15% of rows) is structural, not censored: handle by an explicit indicator (if mixed emissions are adopted) or a longer window | -- |
-| B16 | **RULED** -- `mean_rev_z` becomes two features: the signed robust z and the lag-1 persistence ρ (no abs-folding, no product gate, no clamp). `fast_mean_rev_z` is re-admitted as a CANDIDATE in the same form and re-tested in the §6.2.12 experiment (its decision-#38 retirement is reopened: §6.2.11) | -- |
+| B15 | **RULED, REVISED 2026-10-13 (decision #45)** -- `fisher_info` is DROPPED from the HMM input. It is Ehlers' Fisher Transform of the close's position in its window (a range-position oscillator), not Fisher information: it encodes where price sits in its range, i.e. direction, which is the signal layer's job (Elder Screen 1), not the regime layer's. The schema field is renamed (e.g. `range_position_fisher`, comment corrected -- today `mts_schema.fbs` calls it "Reliability of Signal (Sharpness)") and stays available to the signal layer. ~~Keep it as the raw window position in [-1,1]~~ (the first ruling, superseded: it fixed the transform and kept the wrong quantity). Confirmed by experiment arm A7 (§6.2.12) | mislabel |
+| B16 | **RULED, REVISED 2026-10-13 (decision #45)** -- `mean_rev_z` becomes two features: the UNSIGNED robust stretch \|z\| (unclamped) and the lag-1 persistence ρ as its own feature (no product gate, no clamp). The abs-folding is kept: a signed deviation from the window median is, like `fisher_info`, mostly price position/direction; for a regime model the question is "how stretched", not "which way". Signed z is tested as arm A8 (§6.2.12) -- the leverage-effect argument for keeping the sign (Black 1976) is about return shocks, not range position, so it is a hypothesis to test, not a reason to rule. `fast_mean_rev_z` is re-admitted as a CANDIDATE in the same form and re-tested (arm A6; its decision-#38 retirement is reopened: §6.2.11) | -- |
+| B17 | **RULED 2026-10-13 (decision #45)** -- delete `PositionManager.cpp` "GAP 23: Fisher information -> TTL tuning" (~L559-583): it reads `fisherInfo` as how sharply the HMM regime estimate is localized and scales the entry TTL x0.75 above 0.60 and x1.50 below 0.20. The input is the signed range oscillator, so entries get less time near the window high and more near the low -- an unintended direction-dependent TTL. If a regime-clarity input is wanted for order working, it comes from the HMM posterior (entropy, or the margin of the most likely state); the Rust order watcher (decision #40) has no time-only cancels anyway | mislabel |
+| B18 | **RULED 2026-10-13 (decision #45)** -- before the §6.2.12 experiment, audit every HMM input for what it really is (§6.2.13) | -- |
 
 
 #### 6.2.8 Decisions (operator)
@@ -2098,6 +2101,9 @@ floors/priors in hmmlearn, studenttmixture and dynamax assume unit-scale feature
   asserted per-block ν without data -- acknowledged (BRIEF_162). Grouping will be chosen from data.
 - Ours: we proposed treating `fisher_info`'s bound as censored -- wrong: the window position is truly
   bounded, so the atom is structural; the arctanh transform is the defect (accepted, BRIEF_163; B15).
+- Both of us (BRIEF_163, corrected BRIEF_164, operator catch): we audited the clamp and the transform but never asked what
+  the quantity is. `fisher_info` is a range-position oscillator, not Fisher information (always positive; ours is signed) --
+  name-driven reasoning. B15 revised to drop it; B16 revised to |z| (decision #45, §6.2.13).
 - Gemini (BRIEF_163) said the 0.39% state collapse was "almost certainly" caused by atoms and called
   the old prior "weak" -- the first is plausible but confounded, the second is false (~660k per state).
 
@@ -2114,7 +2120,7 @@ floors/priors in hmmlearn, studenttmixture and dynamax assume unit-scale feature
 **Clamp audit** (operator question: are the formula clamps institutional?). Kind 1, the statistic's
 true range by definition (`micro_asymmetry`, Bowley skewness, recurrence rate): fine -- genuine atoms;
 lengthen windows where they are large. Kind 2, a guard against a singularity (`fisher_info` arctanh at
-±0.99): the transform is the defect (B15). Kind 3, hiding an estimator failure (DFA Hurst [0,1.5],
+±0.99): the transform is a defect, but the quantity itself does not belong in the HMM (B15 as revised, decision #45). Kind 3, hiding an estimator failure (DFA Hurst [0,1.5],
 Sevcik [1,2]): status `Invalid` -> missing, with DFA's true domain (B13). Kind 4, winsorizing an
 unbounded statistic: removed (B12). The `tail_index` sentinel inverts meaning (B14). The retired
 `fast_mean_rev_z` had the kind-4 clamp too (`|z| * clamp(1-max(ρ,0),0,1)`, clamped to [0,5],
@@ -2128,9 +2134,9 @@ jitter, likely under-converged EM). Re-admitted as a candidate in the B16 form a
 holdout log-likelihood/BIC gain, occupancy stability across restarts and cross-state separation of its
 emission distributions (Feature Saliency).
 
-#### 6.2.12 The experiment (after B12-B16 and the missing-aware emission are built)
+#### 6.2.12 The experiment (after B12-B18 and the missing-aware emission are built)
 
-Same data, same seeds, tight convergence (tolerance well below 0.01; enough iterations to converge);
+Arms A1-A6 use the revised input (no `fisher_info`; `mean_rev_z` as |z| plus ρ). Same data, same seeds, tight convergence (tolerance well below 0.01; enough iterations to converge);
 report holdout log-likelihood, BIC, per-state ν and occupancy, stability across restarts:
 
 | Arm | Transform | Covariance prior | ν |
@@ -2141,11 +2147,61 @@ report holdout log-likelihood, BIC, per-state ν and occupancy, stability across
 | A3 | fixed affine | Fraley-Raftery | grouped: blocks chosen from tail-only estimates (Hill on each tail, atoms excluded) |
 | A4 | fixed affine | Fraley-Raftery | per-feature, weak Gamma prior on each ν (ssm-style) |
 | A5 | as the best of A2-A4, with the most atomic features dropped (`lempel_ziv`, `burstiness_index`, `skewness_idx`) | -- | -- |
-| A6 | as the best arm, with `fast_mean_rev_z` (B16 form) added | -- | -- |
+| A6 | as the best arm, with `fast_mean_rev_z` (B16 form: \|z\| plus ρ) added | -- | -- |
+| A7 | as the best arm, with `fisher_info` re-added as the raw window position in [-1,1] -- confirms B15: if states split on range position (centroids at the window extremes) without better holdout likelihood or fat-tail separation, the drop stands | -- | -- |
+| A8 | as the best arm, with signed `mean_rev_z` z instead of \|z\| -- tests B16: the sign stays only if it improves holdout likelihood without the states degenerating into a direction switch | -- | -- |
 
 Market-vs-model criterion: if A2 (fixed affine, weak prior) still yields an eligible state with low ν
 and genuine extreme Mahalanobis distances, the fat tails belong to the market; if not, the failing
 fat-tail sign-off was produced by the old preprocessing and prior.
+
+#### 6.2.13 What each HMM input really is (decision #45, 2026-10-13)
+
+**The `fisher_info` finding (operator catch).** `compute_fisher_information`
+(`rust/observation_vector/src/lib.rs`): `pos = (close - min)/(max - min)` over the TS1 window (72 bars of
+240 min), `x = clamp(2(pos - 0.5), -0.99, 0.99)`, output `arctanh x`. This is Ehlers (2002, *Stocks &
+Commodities*), "The Fisher Transform": a Stochastic-%K-like range-position oscillator. It borrows R.A.
+Fisher's z = arctanh r (1915, *Biometrika* 10:507-521; 1921, *Metron* 1:3-32), which normalizes sample
+correlation coefficients. It is not Fisher information (the variance of the score; always positive).
+If X ~ U(-1,1), arctanh X is logistic, not Gaussian. The ±2.6467 atom (15% of rows) is the ±0.99 clamp
+meeting a close at its window edge.
+- Already known, never acted on: `2026-08-12-gang-literature-grounding-spec.md` finding 1 identified
+  Ehlers' transform and a window 3-12x Ehlers' 9-10 bars, and recommended a rename.
+- Our evidence: `lbrnet/knowledge/global/training/hmm_feature_selection.md` Finding 2 ranks it #2 of 18
+  by between/within-state variance ratio (0.478) with tail enrichment 0.000 -- strong state separation
+  with nothing about tails, the signature of states cut by range position. The curation ledger
+  (`2026-08-31-elite-feature-set-curation-initiative.md`) has it IN-WEAK.
+- External precedent (Atratus, inspiration only, a separate system): 69.8% of its observations at the
+  clamp; its two largest HMM states had Fisher centroids of exactly ∓2.6467 ("price at window low/high";
+  "the HMM splits on direction, not tails"); dropped 2026-10-05 as mislabeled and redundant with
+  `mean_rev_z` (`Atratus/docs/superpowers/plans/2026-10-05-feature-fix-and-hmm-retrain.md`).
+- Live consumer misreading it: `PositionManager.cpp` "GAP 23" (B17).
+- Gemini (BRIEF_164) agreed on every point and withdrew its BRIEF_163 acceptance. One correction to its
+  reply: Ehlers claimed the transform makes the distribution *more* Gaussian; our pile-up comes from the
+  clamp and the window edges, not from Ehlers' intent.
+
+**Where the information belongs.** Range position and trend direction are signal-layer quantities (Elder
+Screen 1). Markov-switching models that do have bull/bear states (Hamilton 1989; Ang & Bekaert 2002) get
+them from returns, whose emission fits drift and variance -- not from a range oscillator. The regime
+layer characterizes volatility, tails, liquidity and information flow.
+
+**The audit (B18), before the experiment.** For each of the 16 remaining inputs: what the formula
+computes, which named method it claims, whether it is built correctly, and whether its input (time bars,
+ticks, activity-clock bars) is the one that method assumes. Verdict per input: validated / engineering
+choice / mislabeled / wrong. Atratus's audit (`Atratus/knowledge/observation_features_literature.md`)
+flags candidates to check -- not verdicts to copy, since many of ours are bar-based where Atratus's are
+tick- or imbalance-bar-based:
+- `burstiness_index`: our IDC construction matches Goh-Barabási B only at the Poisson point.
+- `hurst_exponent` / `fast_hurst_exponent`: DFA on trades measures bid-ask bounce.
+- `recurrence_rate`: local recurrence density, not RQA recurrence rate as named.
+- `fast_taleb_kurtosis`: Moors' octile kurtosis, not a "Taleb" statistic.
+- `fractal_dim`: Sevcik's estimate depends on n.
+- `lempel_ziv`: the normalization is biased at small n (n = 64).
+- `mean_rev_z`: the persistence gate is inert on tick returns (ρ1 < 0); ours is on time bars -- check.
+- Any estimator fed tick returns with many zero returns.
+
+The input count after B15/B16: 17 - `fisher_info` + ρ = 17 (`rust/student_t_hmm/src/input.rs` changes
+when these are built).
 
 ---
 
