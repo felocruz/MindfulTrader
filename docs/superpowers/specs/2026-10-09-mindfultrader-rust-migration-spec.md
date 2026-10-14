@@ -2279,6 +2279,77 @@ measurement, not guessed.
   `accumulate_segment` itself has no finite-value check (a NaN would propagate into means and
   variances); under the producer contract this is not a training-side fix. With missing-input
   handling (item 2), "missing" will be an explicit per-input flag, never a NaN.
+- **D4 companion -- review of the R package LaMa (2026-10-14).** `janolefi/LaMa` v2.1.3, "Fast
+  Numerical Maximum Likelihood Estimation for Latent Markov Models" (Jan-Ole Fischer; MIT licence),
+  built on Zucchini, MacDonald & Langrock (2016). Read with `gh api` only. Two key claims spot-checked
+  by Claude in the code (`tpm_ct(Q, timediff, rates)` forms Q - diag(rates); `forward(..., bw)`
+  blocked approximation). LaMa fits by direct likelihood maximization with automatic differentiation
+  (RTMB), which does not scale to our 1e6-1e7 steps; its value is constructions and checks. The
+  missing-input rule is confirmed in its own example (`allprobs = matrix(1, ...)`, filled only where
+  `!is.na(step)`) -- with `msm` and Rubin (1976), the third independent confirmation. Ranked:
+  1. **Step timing as evidence -- Markov-modulated Poisson process** (MMPP vignette): likelihood
+     pi prod expm((Q - Lambda) dt_i) Lambda P(y_i) 1'; (Q - Lambda) = "no event in the gap", Lambda =
+     the event that ends it. Our trigger is trade/volume driven, so if trade intensity depends on the
+     regime, step times depend on the hidden state -- the non-ignorable kind (Gruger, Kay & Schumacher
+     1991); fitting the CT-HMM conditional on those times is misspecified. Exact factors: a 60 s-floor
+     step = the z^n coefficient of expm((Q - Lambda + z Lambda) d); an N-trade step = N-1 arrivals in
+     [0, d) then Lambda at d; both non-negative under uniformization (extends
+     `elapsed_time_transitions.rs`; needs a sub-generator type, rows need not sum to 0). EM route:
+     Ryden (1996, CSDA -- not verified). Limits: within a regime trades are assumed Poisson; real trades
+     cluster (Hawkes-like). Suggested path: first the cheap version -- step length (log d, or trades
+     per second) as an additional Student-t emission (EM-native); keep the exact MMPP as the
+     known-answer reference. Effort M-L.
+  2. **Blocked forward-backward for a parallel E-step** (`forward(..., bw)`): each block restarts from
+     a uniform distribution after a burn-in of bw steps not counted; the docs claim the error "decays
+     geometrically in bw" (forgetting of the initial distribution; no citation). With session gaps now
+     P(gap) factors instead of resets, training is one long chain; overlapping blocks parallelize it
+     across cores. Exactly testable: blocked vs exact posteriors on synthetic data as bw grows. Our
+     `train.rs` has nothing equivalent. Effort M.
+  3. **Forecast pseudo-residuals** (`pseudo_res`, `stateprobs(..., forecast = TRUE)`): u_t = sum_k
+     P(S_t = k | x_<t) F_k(x_t), then the normal quantile. Exact for us: per dimension a univariate t
+     with the same nu; jointly, a sequential (Rosenblatt) transform is closed form because the shared
+     chi-square factor makes x_d | x_<d, state k a t with nu + d - 1 dof and scale inflated by
+     (nu + delta_<d)/(nu + d - 1); missing inputs: observed ones only; needs a t CDF (regularized
+     incomplete beta) in Rust. Do NOT copy two LaMa flaws: its first row uses the filtered
+     probabilities (which already contain x_1) instead of the initial distribution, and `stateprobs`
+     defaults to smoothed probabilities, which are not valid residuals. Effort S-M.
+  4. **Regime age -> phase-type in continuous time.** LaMa's `tpm_hsmm` (Langrock & Zucchini 2011
+     state aggregation: each regime a block of sub-states with a hazard-driven exit, the last sub-state
+     looping to give a geometric tail; emissions tied across the block) assumes equal steps. Our
+     equivalent: each regime an Erlang/Coxian chain of phases (Titman & Sharples 2010), emissions tied
+     across phases, CT-HMM EM on the expanded space with a tied closed-form update; M = 15-25 expanded
+     states is affordable. **Caution (LaMa `ddwell`; Koslik et al. 2025):** time-of-day-varying
+     switching alone produces non-geometric dwell times -- test session effects before attributing
+     duration dependence to regime age. Effort L.
+  5. **Session / time-of-day effects on switching** (`generator_g`, `tpm_p`, `stationary_p`): fitted
+     model parameters, not hand tuning. Log-linear rates break the closed-form EM update; piecewise
+     session buckets keep it (q_ij,b = E[N_ij,b]/E[T_i,b]; a step crossing a boundary is a product of
+     transition matrices). `stationary_p`'s idea gives a principled initial distribution at the session
+     open. Penalized splines / qREML are tied to RTMB -- not transferable. Effort M.
+  6. **Cheaper exact forward recursion**: scaled alpha/beta with max-shifted emissions (~K exps per
+     step instead of K^2 in `train.rs` `forward_backward`; `accumulate_segment` recomputes emissions per
+     xi term). Confirms the `msm` finding. Effort S.
+  7. Low value: `stationary_ct` (solve (Q + 1)' pi = 1) as a cross-check of
+     `Generator::stationary_distribution`; Monte Carlo propagation of parameter draws through derived
+     quantities (use our parametric bootstrap draws, not a Hessian).
+  **Not worth adopting:** direct optimization (nlm/nlminb), RTMB tapes, qREML, penalties, generator
+  log-rate parameterization (optimizer-only); `tpm_ct`'s per-step `expm` (no non-negativity guarantee;
+  ours is better); discrete-time HSMM code (`forward_hsmm`, `tpm_ihsmm`, `tpm_phsmm`); state-space by
+  fine discretization (Gaussian latent volatility); its distributions (no multivariate or
+  heavy-tailed family); numerical fudges (1e-7 added to the initial distribution, eps floors, jitter
+  loops); its tests (two row-sum checks). **Licence:** MIT permits adaptation with the copyright and
+  permission notice; every item above is published mathematics to reimplement, so no LaMa code is
+  copied; if any is ever translated directly, keep the MIT notice.
+  **Papers LaMa cites -- NOT verified yet:** Mews, Koslik & Langrock (2025, Statistical Modelling
+  25(6)); Langrock & Zucchini (2011, CSDA 55(1)); Koslik (2025, CSDA 209:108171, inhomogeneous HSMM
+  dwell times); Koslik, Feldmann, Mews, Michels & Langrock (2025, Ann. Appl. Stat. 19(4), periodic
+  HMMs); Pohle, Adam & Beumer (2022, CSDA, flexible dwell times); Feldmann et al. (2023, J. Stat.
+  Theory Pract., diel variation); Meier-Hellstern (1987, EJOR, MMPP fitting); Langrock, Borchers &
+  Skaug (2013, JASA, Markov-modulated nonhomogeneous Poisson); Lu (2012, Ann. Inst. Stat. Math.);
+  Mews et al. (2023, Stat. Med., marked MMPP); Langrock (2011, PhD thesis); Koslik (2024, qREML);
+  Wood (2017); Dobrow (2016). Relevant, not cited by LaMa: Ryden (1996, EM for MMPPs). Verify the
+  ones we build on before relying on them. Not read in full: several vignettes, qREML/penalty code,
+  inhomogeneous HSMM bodies.
 - D5 (proposed): risk diagnostics computed in the engine from the same data; document which consumer
   uses which feature (a feature used both inside the regime model and as a separate gate double-counts
   evidence).
