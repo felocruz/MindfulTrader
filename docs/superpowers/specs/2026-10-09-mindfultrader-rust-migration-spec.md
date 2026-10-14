@@ -2624,6 +2624,35 @@ index with bootstrap k; threshold BPV / MedRV instead of plain BPV. **Tie rule:*
 tick-quantized MES returns (Lempel-Ziv, permutation entropy, signs, quantiles) needs an explicit,
 documented tie rule; never inherit a reference's silent one.
 
+**Fat-tail tools -- research verdict and recommendations (2026-10-14; citations verified by search
+unless marked).** None becomes a new regime-model input as it stands.
+1. **BUILD FIRST -- per-regime tail check of the model's own nu_k** (the HMM's never-passed fat-tail
+   sign-off): estimate the tail of the data assigned to each regime with a bias-reduced tail-index
+   estimator (Gomes, de Haan & Henriques Rodrigues 2008, JRSS B 70:31-52; Beirlant, Joossens & Segers
+   2009, JSPI 139:2800-2815; k by Danielsson, de Haan, Peng & de Vries 2001, JMVA 76:226-248) and
+   compare with nu_k. Dependent data: naive IID errors are far too optimistic (Kearns & Pagan 1997,
+   REStat 79:171-175) -- block bootstrap. Diagnostic + risk layer (a slow tail estimate), never an HMM
+   input.
+2. **Model-adequacy check with surrogates** (MF-DFA / generalized Hurst on real data vs data simulated
+   from the fitted model; shuffled copy keeps tails and destroys memory = Noah vs Joseph; Kantelhardt
+   et al. 2002, Physica A 316). Contested literature on the source of multifractality (Barunik, Aste, Di
+   Matteo & Liu 2012, Physica A 391:4234 vs Kwapien et al. 2023, arXiv 2211.00728 -- venue unverified;
+   finite-size spurious multifractality, Grech & Pamula 2013, Physica A 392:5845) -> comparative use
+   only, never an absolute measurement; q > 0 only on tick data.
+3. **Replace the Hurst input's estimator by the generalized Hurst exponent H(1)** (Di Matteo, Aste &
+   Dacorogna 2003/2005; Di Matteo 2007, Quant. Finance 7(1); lowest bias/variance under alpha-stable
+   increments in Barunik & Kristoufek 2010, Physica A 389:3844) -- a swap, not an addition; condition:
+   a known-answer bias/variance curve on fBm rounded to the 0.25 tick lattice.
+4. **Risk layer: MedRV continuous volatility and jump share 1 - MedRV/RV** (Andersen, Dobrev &
+   Schaumburg 2012, J. Econometrics 169:75-93; Corsi, Pirino & Reno 2010, J. Econometrics 159:276-288),
+   on activity bars; jump share an input candidate only after a redundancy check.
+5. **Rejected as inputs:** Lambert W delta and alpha-stable alpha (a short-window copy of nu_k -- the
+   tail-index redundancy trap; alpha-stable contradicts finite-variance Student-t emissions and is
+   badly conditioned near alpha = 2, Weron 2001, IJMPC 12:209); permutation entropy, weighted or not
+   (false structure on tie-dominated data, Zunino, Olivares, Scholkmann & Rosso 2017, Phys. Lett. A
+   381:1883; likely redundant with Lempel-Ziv).
+Operator (2026-10-14): "Record it in the spec, then build item 1."
+
 #### 6.2.14 Foundation as built (2026-10-13) -- refinements to the design above
 
 Crate `rust/observation_engine` (pure; depends only on `observation_vector`) plus the offline tick
