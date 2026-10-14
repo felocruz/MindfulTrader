@@ -8,6 +8,7 @@ pub mod artifact;
 pub mod audit;
 pub mod bootstrap;
 pub mod calibration;
+pub mod regime_path_simulator;
 pub mod gate_metrics;
 pub mod init;
 pub mod input;

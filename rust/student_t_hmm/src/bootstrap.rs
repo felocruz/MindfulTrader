@@ -41,7 +41,7 @@ use crate::init::SplitMix64;
 /// Box-Muller (1958) standard normal draw. Discards the paired sine-branch value for simplicity
 /// -- this module runs offline during calibration, not a live hot path, so redrawing two uniforms
 /// per normal is an accepted, deliberate inefficiency, not an oversight.
-fn standard_normal(rng: &mut SplitMix64) -> f64 {
+pub(crate) fn standard_normal(rng: &mut SplitMix64) -> f64 {
     let u1 = rng.next_f64().max(f64::MIN_POSITIVE); // guard ln(0.0) = -inf at the u1=0.0 edge
     let u2 = rng.next_f64();
     (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
@@ -91,7 +91,7 @@ fn gamma_sample(shape: f64, rng: &mut SplitMix64) -> f64 {
 
 /// Chi-squared(df) = 2 * Gamma(df/2, scale=1). Matches `numpy.random.Generator.chisquare`'s own
 /// distributional definition (not its bit stream, see module doc).
-fn chi_square_sample(df: f64, rng: &mut SplitMix64) -> f64 {
+pub(crate) fn chi_square_sample(df: f64, rng: &mut SplitMix64) -> f64 {
     2.0 * gamma_sample(df / 2.0, rng)
 }
 
