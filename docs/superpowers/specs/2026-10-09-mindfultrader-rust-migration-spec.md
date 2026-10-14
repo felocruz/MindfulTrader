@@ -2596,6 +2596,34 @@ own stationarity rule); volume intensity must be deseasonalized, or the HMM lear
 including the sign-flip invariance of B23 rule 4; nothing is accepted or rejected on statistics of the
 current tick data.
 
+**Reference implementations for rebuilding the dims (survey 2026-10-14, read-only; source read where
+marked SRC, otherwise documentation only).** Use: references fix the arithmetic and generate known
+answers; they do NOT prove a method suits fat-tailed markets. Almost all are GPL -- reimplement the
+published method, never translate code; permissive: arfima (MIT), antropy (Python, BSD-3), neurokit2
+(Python, MIT).
+| Dim | Reference (package, function) | Notes |
+|---|---|---|
+| `log_scale_ratio` (jump-robust realized variation) | highfrequency `RBPVar`, `rMinRVar`, `rMedRVar` (Andersen-Dobrev-Schaumburg 2012), internal `ctBV` (Corsi-Pirino-Reno threshold BPV) -- SRC | MedRV/MinRV robust to adjacent jumps. GAUSSIAN constants (pi/2, pi/(pi-2), MedRV constant) -- partly cancel in a log ratio only if both windows use the same estimator and N-correction |
+| `relative_range` | TTR `volatility(calc = "parkinson")` (+ Garman-Klass, Rogers-Satchell, Yang-Zhang) -- SRC | GAUSSIAN 1/(4 ln 2); a ratio to typical range removes it |
+| `amihud_illiquidity`, `liq_fragility` | none in R (highfrequency `getLiquidityMeasures` has 23 measures, no Amihud / Kyle-Obizhaeva) | the papers are the reference (Amihud 2002; Kyle & Obizhaeva 2016) |
+| `burstiness_index` | none in R | papers (Daley & Vere-Jones; Goh & Barabasi; Kim & Jo 2016 finite-size); known answer: Poisson -> IDC 1, B 0. Related: CTRE (Mittag-Leffler inter-exceedance times) |
+| `lempel_ziv` | antropy `lziv_complexity` (Kaspar-Schuster 1987 LZ76; normalized per Zhang 2009) -- SRC, BSD-3 | binarizes with `x >= median` -- with tick-quantized MES returns (many zeros) the TIE RULE changes the answer: ours must be an explicit decision |
+| Hurst / DFA | MFDFA `MFDFA` (Kantelhardt 2002) -- SRC: forward-only segmentation and coefficients rounded to 4 decimals (loose cross-check only); fractal `DFA`; nonlinearTseries `dfa`; pracma `hurstexp` (R/S; GAUSSIAN Anis-Lloyd correction); long memory d: LongMemoryTS `ELW`/`gph`, longmemo, arfima (MIT) | Generalized Hurst exponent (Di Matteo 2003/2007): no R package (MATLAB only) -- lowest bias/variance under alpha-stable tails (Barunik & Kristoufek 2010, Physica A 389:3844); implement from the paper |
+| `moors_kurtosis` | rquest `q.test(measure = "moors")` -- SRC | quantile TYPE 8 by default -- fix the quantile type for exact known answers; quantile-density SEs; no R Hogg / Crow-Siddiqui |
+| VPIN candidate | PINstimation `vpin`, `ivpin` -- SRC | bulk volume classification with `pnorm(dp / sd(dp))` -- GAUSSIAN CDF and non-robust scale; later work uses Student-t CDFs: use as the 2012 known answer, then deviate deliberately |
+| log RV level / deseasonalized intensity | highfrequency `rRVar`, `rMedRVar`, realized kernels; `spotVol(method = "detPer")` / `diurnal` (Boudt-Croux-Laurent 2011, Andersen-Bollerslev 1997) -- SRC | GAUSSIAN consistency constants (0.7413, 1.081); for volume/trade intensity reuse the method, not the constants |
+| Tail index (risk layer) | ReIns `Hill`, `Moment` (Dekkers-Einmahl-de Haan), `genHill` -- SRC; `EPD` (bias-reduced), `Hill.kopt`; tea `danielsson` (double bootstrap k; needs a fixed seed) -- SRC | assume i.i.d. -- decluster or block-bootstrap CIs under volatility clustering |
+| Entropy | entropy `entropy.MillerMadow`, `entropy.ChaoShen` -- SRC; `entropy.NSB`, `entropy.shrink`; statcomp `permutation_entropy` (Bandt-Pompe), weighted PE, `MPR_complexity` -- SRC | statcomp folds ties (`<=` or |diff| < 1e-10) into one ordering -- tie rule again |
+| alpha-stable / Lambert W | libstableR (McCulloch quantiles, Koutrouvelis, MLE); StableEstim, fBasics `stableFit`; LambertW `IGMM`, `MLE_LambertW` (by Goerg) | building blocks for a live tail-heaviness dim |
+**Fat-tail constructs we do not have yet (candidates, through the B23 admission rules and §6.2.12 arms):**
+Joseph-vs-Noah separation (MF-DFA on the series vs a shuffled surrogate: shuffling keeps the fat tails
+and destroys the memory; a phase-randomized surrogate does the reverse); generalized Hurst H(q) (q = 1
+tail-robust; spread of H(q) = multiscaling); Lambert W tail parameter or alpha-stable alpha as a live
+tail-heaviness dim; weighted permutation entropy and the entropy-complexity plane; bias-reduced tail
+index with bootstrap k; threshold BPV / MedRV instead of plain BPV. **Tie rule:** every statistic on
+tick-quantized MES returns (Lempel-Ziv, permutation entropy, signs, quantiles) needs an explicit,
+documented tie rule; never inherit a reference's silent one.
+
 #### 6.2.14 Foundation as built (2026-10-13) -- refinements to the design above
 
 Crate `rust/observation_engine` (pure; depends only on `observation_vector`) plus the offline tick
