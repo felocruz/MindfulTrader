@@ -2149,6 +2149,31 @@ measurement, not guessed.
      based sampling for control, not for training a model).
   8. **Resume with**: a Gemini consultation with working search on (a)-(d) and item 6; then put the
      clock decision to the operator in plain English.
+- **D4 rulings (operator, 2026-10-14, made on the evidence verified by Claude -- the `msm` audit below
+  and the literature checks above -- not on Gemini's unsearched replies):**
+  1. **RULED: the regime model becomes a continuous-time Student-t HMM** (operator: "I agree").
+     It learns a generator Q (switching rates) instead of a per-step transition matrix; each step
+     carries its length d and uses P(d) = expm(Q d); trained by CT-HMM EM (Liu et al. 2015: expected
+     occupancy times and jump counts, closed-form rate update, Gamma priors on rates for MAP); the
+     Student-t emission part (means, diagonal scales, dof via ECME, priors, feature weights) is
+     unchanged. Regime durations and leave-probabilities become real seconds. The artifact stores Q.
+     Accepted on known-answer tests: simulate with known Q, irregular steps (and missing inputs once
+     ruled), refit, recover the parameters. What sets the pace of steps is a separate decision.
+  2. **RULED: the step trigger** (operator: "I agree with the trigger"). A step fires when, since
+     the last step, a set number of trades OR a set volume (both sides) OR a calendar floor (60 s
+     proposed) is reached, whichever first. Exogenous to the input values; identical in training and
+     live; the Mahalanobis significance test is no longer a trigger and survives only as an alarm for
+     decision layers. The trade count, volume and floor come from a theoretical rule, never tuned on
+     current data (open). Each step records its trades, volume and seconds; how they combine into the
+     step length d (e.g. d = d_act + lambda * d_sec) is part of the continuous-time model's design.
+     Later decisions, separate: regime age (phase-type semi-Markov, Titman & Sharples 2010 Biometrics,
+     as in `msm` `phase.R`; Bulla & Bulla 2006 CSDA; Durland & McCurdy 1994 JBES -- all verified);
+     next-step timing from already-recorded values (Gruger, Kay & Schumacher 1991 Biometrics 47:595-605,
+     verified); step length as an emission. Operator's earlier idea of a gap-filling stage before the
+     HMM (Neural ODE inspiration): its core -- state evolving across gaps, missingness known to the
+     model -- is what the CT-HMM already does (cf. Rubanova, Chen & Duvenaud 2019 NeurIPS; Che et al.
+     2018 Sci. Rep. GRU-D, both verified); filling gaps with imputed values before the HMM is rejected
+     (fabricated evidence); neural variants may suit the lbrnet Transformer later, out of scope here.
 - **D4 companion -- audit of the R package `msm` (2026-10-14), input to the postponed clock decision.**
   Question (operator): is there a continuous-time Student-t HMM? Yes: the two halves of the model are
   independent (how regimes switch over time; what the data looks like inside a regime). `msm`
