@@ -2149,6 +2149,81 @@ measurement, not guessed.
      based sampling for control, not for training a model).
   8. **Resume with**: a Gemini consultation with working search on (a)-(d) and item 6; then put the
      clock decision to the operator in plain English.
+- **D4 companion -- audit of the R package `msm` (2026-10-14), input to the postponed clock decision.**
+  Question (operator): is there a continuous-time Student-t HMM? Yes: the two halves of the model are
+  independent (how regimes switch over time; what the data looks like inside a regime). `msm`
+  (C. Jackson; CRAN 1.8.2; the standard continuous-time multi-state / hidden Markov package) ships a
+  Student-t outcome (`hmmT`: "the Student t distribution with general mean mu, scale sigma and degrees
+  of freedom df") and builds multivariate outcomes as a product of univariate ones (our diagonal
+  case). Liu, Li, Li, Song & Rehg (NeurIPS 2015) train a CT-HMM by recasting it as a discrete-time,
+  time-inhomogeneous HMM, with emissions handled "from the standard discrete time HMM formulation" --
+  our Student-t EM/ECME carries over unchanged. No published intraday-futures application was found.
+  Naming trap: "continuous HMM" in finance usually means continuous-valued emissions, not continuous
+  time (e.g. arXiv 2606.23492). The audit read `msm` source with `gh api` (read-only). **`msm` is GPL:
+  take only the published mathematics, never its code.** Ranked findings:
+  1. **P(dt) per step from the generator Q** (`pijt.c` `MatrixExpMSM`: eigendecomposition
+     P = U diag(e^{lambda t}) U^-1, Pade fallback on repeated/complex eigenvalues or LAPACK failure; R
+     default routes to Higham scaling-and-squaring). For us: decompose Q once per EM iteration, then
+     each step costs K exponentials + ~K^3 flops; guard on the condition number of U and fall back to
+     Higham 2005 Pade or uniformization; floor P at a tiny positive value, not 0 (it feeds a log).
+     `msm`'s `MatrixExpPade` takes the norm of `At` before filling it (scaling never happens) -- do
+     not model ours on that path. Our status: absent. Effort M.
+  2. **Inputs missing at some steps** (`lik.c` `GetOutcomeProb`: product over outcomes skipping NA;
+     all-NA = emission 1, a pure time step; the manual states the MAR assumption). We can be exact:
+     any subset of a multivariate Student-t is Student-t with the same nu, so the density uses the
+     observed part only, with D_obs, the observed Mahalanobis term and the feature-weight term over
+     observed inputs; tail weight u = (nu + D_obs)/(nu + delta_obs); M-step sums over observed entries;
+     the dof profile equation takes a per-step D_t. Our status: absent. Effort M.
+  3. **Steps where only time passes** (`msm.pci` inserts censored dummy rows at cut times). For us:
+     quiet periods and session gaps become a P(gap) factor with no emission, decaying belief toward
+     Q's stationary distribution -- replaces the hard `RegimeEngine::reset()` at gaps. Effort S once 1
+     exists.
+  4. **Estimation at our scale.** `msm` maximizes the likelihood directly (BFGS; finite-difference
+     Hessian; analytic gradients in `hmmderiv.c` incl. `DhmmT` via digamma; log/logit parameter
+     ranges). That does not scale to 1e6-1e7 steps. Use CT-HMM EM (Liu et al. 2015, eigen method):
+     E-step expected occupancy times E[T_i] and jump counts E[N_ij]; closed-form M-step
+     q_ij = E[N_ij]/E[T_i]; Gamma priors on rates keep MAP-EM. Initialize Q from the existing transition
+     matrix via the matrix log with generator regularization (Israel, Rosenthal & Wei 2001;
+     Kreinin & Sidelnikova 2001 -- not verified this session), since log(P) is often not a valid
+     generator. Effort L.
+  5. **Known-answer simulation** (`simul.R` `sim.msm`: exact CT path -- exponential sojourns +
+     jump chain -- then sampled at observation times; `simhidden.msm` adds emissions). For us: simulate
+     known Q, irregular dt, random missing-input masks and multivariate-t emissions (shared chi-square
+     factor), refit, recover Q, means, scales and nu. It never calls the matrix exponential, so it
+     checks item 1 independently. Our `bootstrap.rs` simulates discrete-time paths only. Effort S-M.
+  6. **Derived quantities in real time** (mean sojourn -1/q_kk; next-state probability q_kl/-q_kk;
+     expected first passage `efpt.R` via solve(-Q_sub, 1); passage probability `ppass.R`; total length
+     of stay `totlos.R` via Van Loan's block exponential; P(leave k within h) = 1 - P(h)_kk). Ours
+     (`runtime_calibration.rs` `expected_state_durations_steps`) are in steps. Effort S.
+  7. **Uncertainty / diagnostics**: report standard errors only when the Hessian is finite and positive
+     definite, otherwise warn of non-convergence (adopt as a convergence/identifiability diagnostic;
+     keep our bootstrap for intervals -- Hessian SEs would be far too narrow on 1e7 autocorrelated
+     steps); EM monotonicity test (likelihood never decreases) and score-vs-finite-difference test
+     (`msm` has `deriv_test`); validate Q on load (non-negative off-diagonals, rows sum to 0);
+     the linear-space scaled forward recursion (`normalize`) is cheaper than full log-sum-exp at 1e7
+     steps; per-session influence (`scoreresid.R` idea) is lower value. Effort S-M.
+  8. **Observation timing that depends on the state.** The `msm` manual cites Gruger et al. (1991; not
+     independently confirmed): timing chosen from values ALREADY OBSERVED ("doctor's care") is
+     ignorable for likelihood inference; timing driven by the hidden condition ("patient
+     self-selection") biases it. Correction to the audit agent: our significance gate is NOT the
+     ignorable kind -- it keeps or drops the current row by that row's own value and discards the
+     dropped rows unseen (selection on the value itself). Two ideas for the postponed clock
+     discussion: (a) a rule that sets WHEN TO TAKE THE NEXT STEP from values already recorded is the
+     ignorable kind (with a CT-HMM so each step's length is known) -- a legitimate way for the inputs
+     to speed up the flow; (b) treat the step length (log dt) as an emission so a regime-dependent
+     clock (volume, trades) becomes evidence instead of bias.
+  **Not worth adopting:** `analyticp.c` closed forms (specific sparse 2-5-state structures; our Q is
+  full); Fisher scoring / expected information (panel, categorical); Pearson goodness of fit (panel
+  data; use HMM pseudo-residuals, Zucchini & MacDonald, instead); DRAIC/DRLCV (nested aggregated state
+  spaces); misclassification, truncated-normal and measurement-error outcome models; `est.initprobs`
+  (not identifiable from one long series -- use Q's stationary distribution); log-linear covariates on
+  Q fitted by direct likelihood (breaks closed-form EM -- piecewise buckets keep it); `boot.msm`
+  (resamples subjects; invalid for one long series by its own docs); `MatrixExpSeries`.
+  **Data quality (operator, 2026-10-14):** the `.context.parquet` producer is required to emit valid
+  data -- no NaN or invalid values reach training. The audit observed that `train.rs`
+  `accumulate_segment` itself has no finite-value check (a NaN would propagate into means and
+  variances); under the producer contract this is not a training-side fix. With missing-input
+  handling (item 2), "missing" will be an explicit per-input flag, never a NaN.
 - D5 (proposed): risk diagnostics computed in the engine from the same data; document which consumer
   uses which feature (a feature used both inside the regime model and as a separate gate double-counts
   evidence).
