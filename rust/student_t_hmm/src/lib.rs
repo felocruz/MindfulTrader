@@ -18,6 +18,7 @@ pub mod model;
 pub mod regime_engine;
 pub mod regime_modulated_hawkes;
 pub mod regime_path_simulator;
+pub mod regime_tail_check;
 pub mod registry;
 pub mod runtime_calibration;
 pub mod train;

@@ -2652,6 +2652,18 @@ unless marked).** None becomes a new regime-model input as it stands.
    (false structure on tie-dominated data, Zunino, Olivares, Scholkmann & Rosso 2017, Phys. Lett. A
    381:1883; likely redundant with Lempel-Ziv).
 Operator (2026-10-14): "Record it in the spec, then build item 1."
+**Item 1 built (2026-10-14), `rust/student_t_hmm/src/regime_tail_check.rs`:** per regime, the radius
+sqrt(delta) of confidently assigned steps (tail index nu_k under the model, any number of inputs,
+weights or absent inputs); bias-corrected Hill (Caeiro, Gomes & Pestana 2005 (1.13); rho by Fraga
+Alves, Gomes & de Haan 2003, tau = 0; beta by Gomes & Martins 2002; second-order level k1 = min(n-1,
+[2n / ln ln n]) -- formulas checked against the paper's text) compared with the SAME estimator on
+radii simulated from the fitted regime (matched masks), z-scored with a moving-block bootstrap; plus
+estimator-free exceedance ratios at the model's 99% / 99.9% radius quantiles. **Finding:** even the
+corrected estimator reads thinner tails as heavier (exact multivariate-t, 150k radii: true nu 3 / 4 /
+6 / 8 / 12 -> 3.0 / 3.85 / 5.4 / 6.2 / 7.5; rho = -2/nu is estimated very slowly as rho -> 0), so a
+direct 1/gamma vs nu_k comparison would accuse a correct model -- hence the like-with-like test.
+Tested: correct model passes (exceedance ratio ~1); a near-Gaussian model (nu = 30) on nu = 3 data is
+flagged (99.9% exceedance ratio > 3). Not yet run on real data (waits for the rebuilt inputs).
 
 #### 6.2.14 Foundation as built (2026-10-13) -- refinements to the design above
 
