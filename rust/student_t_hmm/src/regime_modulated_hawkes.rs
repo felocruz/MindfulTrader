@@ -36,7 +36,7 @@
 
 use crate::elapsed_time_transitions::{ElapsedTimeError, StepStatistics, no_event_matrix};
 use crate::init::SplitMix64;
-use crate::regime_path_simulator::{Generator, GeneratorError, simulate_path};
+use crate::regime_path_simulator::{CtPath, Generator, GeneratorError, simulate_path};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegimeHawkes<const K: usize> {
@@ -101,7 +101,7 @@ fn check_window(w: &EventWindow) -> Result<(), HawkesError> {
 }
 
 /// Excitation just before each event: g_i = e^{-beta dt} (g_{i-1} + n beta), g before the first = 0.
-fn excitation_before_events(times: &[f64], n: f64, beta: f64) -> Vec<f64> {
+pub(crate) fn excitation_before_events(times: &[f64], n: f64, beta: f64) -> Vec<f64> {
     let mut g = Vec::with_capacity(times.len());
     let mut current = 0.0;
     let mut prev: Option<f64> = None;
@@ -116,7 +116,7 @@ fn excitation_before_events(times: &[f64], n: f64, beta: f64) -> Vec<f64> {
 }
 
 /// int_0^T g(s) ds = n sum_j (1 - e^{-beta (T - t_j)}).
-fn excitation_integral(times: &[f64], horizon: f64, n: f64, beta: f64) -> f64 {
+pub(crate) fn excitation_integral(times: &[f64], horizon: f64, n: f64, beta: f64) -> f64 {
     n * times.iter().map(|&t| 1.0 - (-beta * (horizon - t)).exp()).sum::<f64>()
 }
 
@@ -194,13 +194,21 @@ impl<const K: usize> RegimeHawkes<K> {
 /// Exact simulation on [0, horizon]: the regime path and the event times.
 pub fn simulate<const K: usize>(model: &RegimeHawkes<K>, horizon: f64, rng: &mut SplitMix64) -> (Vec<usize>, Vec<f64>, EventWindow) {
     let path = simulate_path(&model.generator, &model.initial, horizon, rng);
+    let (regimes, times) = simulate_events_on_path(model, &path, rng);
+    (regimes, times.clone(), EventWindow { times, horizon })
+}
+
+/// Events on a given regime path over [0, path.horizon] by Ogata (1981) thinning: within a regime
+/// segment the intensity only decays between events, so mu_k + g(t) bounds it until the next
+/// event or switch. Returns (regime at each event, event times).
+pub fn simulate_events_on_path<const K: usize>(model: &RegimeHawkes<K>, path: &CtPath, rng: &mut SplitMix64) -> (Vec<usize>, Vec<f64>) {
     let jump_amount = model.branching_ratio * model.decay;
     let mut events = Vec::new();
     let mut regimes_at_events = Vec::new();
     let mut t = 0.0;
     let mut g = 0.0;
     for (seg, &state) in path.states.iter().enumerate() {
-        let seg_end = path.jump_times.get(seg + 1).copied().unwrap_or(horizon);
+        let seg_end = path.jump_times.get(seg + 1).copied().unwrap_or(path.horizon);
         loop {
             let bound = model.baseline[state] + g;
             let wait = if bound > 0.0 { -(1.0 - rng.next_f64()).ln() / bound } else { f64::INFINITY };
@@ -218,7 +226,7 @@ pub fn simulate<const K: usize>(model: &RegimeHawkes<K>, horizon: f64, rng: &mut
             }
         }
     }
-    (regimes_at_events, events.clone(), EventWindow { times: events, horizon })
+    (regimes_at_events, events)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -241,7 +249,7 @@ pub struct HawkesFitReport {
 }
 
 /// Golden-section maximization on [lo, hi] (unimodal objective).
-fn golden_max(f: impl Fn(f64) -> f64, mut lo: f64, mut hi: f64) -> f64 {
+pub(crate) fn golden_max(f: impl Fn(f64) -> f64, mut lo: f64, mut hi: f64) -> f64 {
     let ratio = (5f64.sqrt() - 1.0) / 2.0;
     let mut x1 = hi - ratio * (hi - lo);
     let mut x2 = lo + ratio * (hi - lo);
@@ -436,8 +444,8 @@ mod tests {
             let n = 200_000;
             let mut counts = [0usize; 2];
             for _ in 0..n {
-                let path = simulate_path(&m.generator, &m.initial, d + 1.0, &mut rng);
-                let (_, events, _) = simulate_from_path(&m, &path, d, &mut rng);
+                let path = simulate_path(&m.generator, &m.initial, d, &mut rng);
+                let (_, events) = simulate_events_on_path(&m, &path, &mut rng);
                 if events.is_empty() {
                     counts[path.state_at(d)] += 1;
                 }
@@ -448,37 +456,6 @@ mod tests {
                 assert!((freq - expected).abs() < 5.0 * se, "{start}->{j}: {freq} vs {expected}");
             }
         }
-    }
-
-    /// Thinning on a given regime path (test helper so a path can be shared).
-    fn simulate_from_path<const K: usize>(model: &RegimeHawkes<K>, path: &crate::regime_path_simulator::CtPath, horizon: f64, rng: &mut SplitMix64) -> (Vec<usize>, Vec<f64>, EventWindow) {
-        let mut events = Vec::new();
-        let mut regimes = Vec::new();
-        let mut t = 0.0;
-        let mut g = 0.0;
-        for (seg, &state) in path.states.iter().enumerate() {
-            let seg_end = path.jump_times.get(seg + 1).copied().unwrap_or(f64::INFINITY).min(horizon);
-            loop {
-                let bound = model.baseline[state] + g;
-                let wait = if bound > 0.0 { -(1.0 - rng.next_f64()).ln() / bound } else { f64::INFINITY };
-                if t + wait >= seg_end {
-                    g *= (-model.decay * (seg_end - t)).exp();
-                    t = seg_end;
-                    break;
-                }
-                t += wait;
-                g *= (-model.decay * wait).exp();
-                if rng.next_f64() * bound <= model.baseline[state] + g {
-                    events.push(t);
-                    regimes.push(state);
-                    g += model.branching_ratio * model.decay;
-                }
-            }
-            if t >= horizon {
-                break;
-            }
-        }
-        (regimes, events.clone(), EventWindow { times: events, horizon })
     }
 
     /// With equal background rates the regime is irrelevant: the likelihood is the textbook

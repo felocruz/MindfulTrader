@@ -137,7 +137,7 @@ pub struct FilterResult<const K: usize> {
 }
 
 impl<const D: usize, const K: usize> ContinuousTimeStudentT<D, K> {
-    fn nu(&self, k: usize) -> f64 {
+    pub(crate) fn nu(&self, k: usize) -> f64 {
         self.dof[k].clamp(self.dof_min, self.dof_max)
     }
 
@@ -148,7 +148,7 @@ impl<const D: usize, const K: usize> ContinuousTimeStudentT<D, K> {
     }
 
     /// Emission factors shifted by their maximum: returns (b_k / max_k b_k, ln max_k b_k).
-    fn scaled_emissions(&self, step: &Step<D>) -> ([f64; K], f64) {
+    pub(crate) fn scaled_emissions(&self, step: &Step<D>) -> ([f64; K], f64) {
         let mut log_b = [0.0; K];
         for (k, lb) in log_b.iter_mut().enumerate() {
             *lb = self.log_emission(k, step);
@@ -309,6 +309,78 @@ fn e_step<const D: usize, const K: usize>(
     Ok((gamma, log_likelihood))
 }
 
+/// Emission M-step shared by every model with Student-t observations: Student-t mixture updates
+/// over the observed inputs (latent scale weight u = (nu + D_obs) / (nu + delta_obs)), then, if
+/// `estimate_dof`, each regime's dof maximizing the observed-data likelihood given the new means and
+/// scales (ECME). `pairs` yields (step, regime posterior) and is called once per pass.
+pub(crate) fn update_emissions<'a, const D: usize, const K: usize, I>(
+    model: &ContinuousTimeStudentT<D, K>,
+    pairs: impl Fn() -> I,
+    estimate_dof: bool,
+) -> ([[f64; D]; K], [[f64; D]; K], [f64; K])
+where
+    I: Iterator<Item = (&'a Step<D>, &'a [f64; K])>,
+{
+    let mut means = model.means;
+    let mut covars = model.covars;
+    for k in 0..K {
+        let nu = model.nu(k);
+        let mut sum_gu = [0.0; D];
+        let mut sum_gux = [0.0; D];
+        for (step, g) in pairs() {
+            let (delta, n_obs) = observed_delta(&model.means[k], &model.covars[k], &model.feature_weights, step);
+            if n_obs == 0 {
+                continue;
+            }
+            let u = (nu + n_obs as f64) / (nu + delta);
+            for j in (0..D).filter(|&j| step.present[j]) {
+                sum_gu[j] += g[k] * u;
+                sum_gux[j] += g[k] * u * step.values[j];
+            }
+        }
+        for j in 0..D {
+            if sum_gu[j] > 0.0 {
+                means[k][j] = sum_gux[j] / sum_gu[j];
+            }
+        }
+        let mut sum_g = [0.0; D];
+        let mut sum_gu_dev2 = [0.0; D];
+        for (step, g) in pairs() {
+            let (delta, n_obs) = observed_delta(&model.means[k], &model.covars[k], &model.feature_weights, step);
+            if n_obs == 0 {
+                continue;
+            }
+            let u = (nu + n_obs as f64) / (nu + delta);
+            for j in (0..D).filter(|&j| step.present[j]) {
+                let dev = step.values[j] - means[k][j];
+                sum_g[j] += g[k];
+                sum_gu_dev2[j] += g[k] * u * dev * dev;
+            }
+        }
+        for j in 0..D {
+            if sum_g[j] > 0.0 {
+                covars[k][j] = (sum_gu_dev2[j] / sum_g[j]).max(MIN_COVAR);
+            }
+        }
+    }
+    let mut dof = model.dof;
+    if estimate_dof {
+        for k in 0..K {
+            let cached: Vec<(f64, f64, usize, [bool; D])> = pairs()
+                .filter_map(|(step, g)| {
+                    let (delta, n_obs) = observed_delta(&means[k], &covars[k], &model.feature_weights, step);
+                    (n_obs > 0 && g[k] > 0.0).then_some((g[k], delta, n_obs, step.present))
+                })
+                .collect();
+            let objective = |nu: f64| {
+                cached.iter().map(|&(g, delta, n_obs, present)| g * log_t_density(nu, delta, n_obs, &covars[k], &model.feature_weights, &present)).sum::<f64>()
+            };
+            dof[k] = golden_max(objective, model.dof_min, model.dof_max);
+        }
+    }
+    (means, covars, dof)
+}
+
 /// Fits the model to one or more sequences by EM, starting from `model`. Returns the fitted model
 /// and the log-likelihood path (non-decreasing up to rounding, tested).
 pub fn fit<const D: usize, const K: usize>(
@@ -354,76 +426,9 @@ pub fn fit<const D: usize, const K: usize>(
         }
         let generator = Generator::new(q)?;
 
-        // ---- M-step: emissions (Student-t mixture updates over observed inputs) ----
-        let mut means = model.means;
-        let mut covars = model.covars;
-        for k in 0..K {
-            let nu = model.nu(k);
-            let mut sum_gu = [0.0; D];
-            let mut sum_gux = [0.0; D];
-            for (seq, gamma) in sequences.iter().zip(&gammas) {
-                for (step, g) in seq.iter().zip(gamma) {
-                    let (delta, n_obs) = observed_delta(&model.means[k], &model.covars[k], &model.feature_weights, step);
-                    if n_obs == 0 {
-                        continue;
-                    }
-                    let u = (nu + n_obs as f64) / (nu + delta);
-                    for j in (0..D).filter(|&j| step.present[j]) {
-                        sum_gu[j] += g[k] * u;
-                        sum_gux[j] += g[k] * u * step.values[j];
-                    }
-                }
-            }
-            for j in 0..D {
-                if sum_gu[j] > 0.0 {
-                    means[k][j] = sum_gux[j] / sum_gu[j];
-                }
-            }
-            let mut sum_g = [0.0; D];
-            let mut sum_gu_dev2 = [0.0; D];
-            for (seq, gamma) in sequences.iter().zip(&gammas) {
-                for (step, g) in seq.iter().zip(gamma) {
-                    let (delta, n_obs) = observed_delta(&model.means[k], &model.covars[k], &model.feature_weights, step);
-                    if n_obs == 0 {
-                        continue;
-                    }
-                    let u = (nu + n_obs as f64) / (nu + delta);
-                    for j in (0..D).filter(|&j| step.present[j]) {
-                        let dev = step.values[j] - means[k][j];
-                        sum_g[j] += g[k];
-                        sum_gu_dev2[j] += g[k] * u * dev * dev;
-                    }
-                }
-            }
-            for j in 0..D {
-                if sum_g[j] > 0.0 {
-                    covars[k][j] = (sum_gu_dev2[j] / sum_g[j]).max(MIN_COVAR);
-                }
-            }
-        }
-
-        // ---- ECME: dof maximizing the observed-data likelihood given the new means/scales ----
-        let mut dof = model.dof;
-        if settings.estimate_dof {
-            for k in 0..K {
-                let mut cached = Vec::new();
-                for (seq, gamma) in sequences.iter().zip(&gammas) {
-                    for (step, g) in seq.iter().zip(gamma) {
-                        let (delta, n_obs) = observed_delta(&means[k], &covars[k], &model.feature_weights, step);
-                        if n_obs > 0 && g[k] > 0.0 {
-                            cached.push((g[k], delta, n_obs, step.present));
-                        }
-                    }
-                }
-                let objective = |nu: f64| {
-                    cached
-                        .iter()
-                        .map(|&(g, delta, n_obs, present)| g * log_t_density(nu, delta, n_obs, &covars[k], &model.feature_weights, &present))
-                        .sum::<f64>()
-                };
-                dof[k] = golden_max(objective, model.dof_min, model.dof_max);
-            }
-        }
+        // ---- M-step: emissions; ECME dof ----
+        let (means, covars, dof) =
+            update_emissions(&model, || sequences.iter().zip(&gammas).flat_map(|(seq, gamma)| seq.iter().zip(gamma)), settings.estimate_dof);
 
         let initial = generator.stationary_distribution().ok_or(FitError::NoStationaryDistribution)?;
         model = ContinuousTimeStudentT { generator, initial, means, covars, dof, ..model };
