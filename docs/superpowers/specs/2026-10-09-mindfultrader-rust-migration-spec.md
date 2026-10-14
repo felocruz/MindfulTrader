@@ -2174,6 +2174,36 @@ measurement, not guessed.
      model -- is what the CT-HMM already does (cf. Rubanova, Chen & Duvenaud 2019 NeurIPS; Che et al.
      2018 Sci. Rep. GRU-D, both verified); filling gaps with imputed values before the HMM is rejected
      (fabricated evidence); neural variants may suit the lbrnet Transformer later, out of scope here.
+  3. **OPEN: how the dims update within a bar** (operator, 2026-10-14: the dims themselves, not the
+     raw trades/volume, should reflect intra-bar information). Three options, none ruled:
+     A. **Closed bars only.** A dim updates when its own bar (time bar or activity bar) closes and is
+        missing between closes (marginalized; never counted twice). Fast information comes from dims on
+        the activity clock, whose bars close in seconds in a busy market.
+     B. **Sliding windows.** Each dim is computed over a fixed-length window ending at the current step
+        (e.g. the last 15 minutes, the last 256 activity bars): always complete, no partly formed bar,
+        recomputable every step, identical live and offline. Unresolved: consecutive windows overlap
+        almost entirely, so near-identical readings must not count as independent evidence; how a
+        fat-tailed regime model should treat this needs literature research.
+     C. **Closed past bars plus the forming bar, trained by position in the bar (nowcasting).** The
+        nowcasting literature combines completed periods with a partly observed current period (the
+        "ragged edge"; Giannone, Reichlin & Small 2008, J. Monetary Econ. 55(4) -- verified; daily data
+        for the current quarter, Andreou, Ghysels & Kourtellos 2013, JBES 31 -- verified, its
+        within-period "leads" mechanism not confirmed). Principle: a partly formed period is never
+        treated as complete; the model knows how far into the period it is and is trained on data taken
+        at that same point of earlier periods. Same principle as this repo's own TRAP rule (CLAUDE.md:
+        intra-bar re-inference deferred "pending ECTS-style intra-bar-prefix training to avoid
+        train/live OOD"). Needs no assumption about how a bar's statistics scale with its age (no
+        random-walk square root; works for fat tails and regime-dependent scaling). Unresolved: how the
+        position in the bar enters a Student-t HMM (e.g. position-dependent emissions), its parameter
+        cost, and the same repeated-evidence question as B (successive forming-bar readings overlap).
+     Why the forming bar is excluded as-is (B23 rule 1): a partial bar's statistics grow with its age
+     at a rate that depends on the tails and on the regime (power-law scaling, exponent unknown and
+     regime-dependent -- Mandelbrot 1963; Glattfelder, Dupuis & Olsen), so an uncorrected forming-bar
+     dim mixes "how far into the bar" with "which regime"; it also cannot match live and offline.
+     **Operator direction (2026-10-14): start with what the literature suggests -- C -- not with the
+     easiest option.** A is not ruled out ("Don't rule it out") but is not the starting point; B stays
+     an alternative. Research C's open questions first (Gemini only with working search; 3-failure
+     cutoff), then the operator decides.
 - **D4 companion -- audit of the R package `msm` (2026-10-14), input to the postponed clock decision.**
   Question (operator): is there a continuous-time Student-t HMM? Yes: the two halves of the model are
   independent (how regimes switch over time; what the data looks like inside a regime). `msm`
