@@ -78,3 +78,6 @@ panic = "unwind"              # REQUIRED: catch_unwind at the C-ABI needs unwind
 
 [profile.dev.package."*"]
 opt-level = 2    # golden tests over millions of ticks stay fast in debug
+
+[profile.dev.package.student_t_hmm]
+opt-level = 2    # its known-answer tests fit models to tens of thousands of simulated steps

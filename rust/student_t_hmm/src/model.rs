@@ -326,7 +326,7 @@ impl<const D: usize, const K: usize> StudentTHmm<D, K> {
 /// `[dof_min, dof_max]` clamp range, `D` up to a few dozen -- always comfortably positive, the
 /// reflection branch below exists for completeness/correctness, not because this HMM is expected
 /// to hit it).
-fn ln_gamma(x: f64) -> f64 {
+pub(crate) fn ln_gamma(x: f64) -> f64 {
     const G: f64 = 7.0;
     const COEF: [f64; 9] = [
         0.999_999_999_999_809_9,

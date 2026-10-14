@@ -131,6 +131,137 @@ pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Re
     Ok(p)
 }
 
+/// Largest lambda * d handled in one uniformization pass by `accumulate_step_statistics`; longer
+/// steps are split in half (exactly -- see there).
+const MAX_STATISTICS_LAMBDA_D: f64 = 8.0;
+
+/// Expected time spent in each regime and expected jumps between regimes, summed over the steps
+/// of a sequence -- the sufficient statistics of the switching rates in continuous-time EM
+/// (Liu, Li, Li, Song & Rehg 2015; the endpoint-conditioned expectations of Hobolth & Jensen
+/// 2011, computed here by uniformization so every term is non-negative).
+///
+/// For a step of length d with posterior two-slice weights xi[i][j] = P(regime i at the start,
+/// regime j at the end | all data), the step contributes
+///   occupancy[k] += sum_ij xi_ij * E[time in k | i -> j over d]
+///   jumps[k][l]  += sum_ij xi_ij * E[jumps k -> l | i -> j over d]
+/// with E[time in k | i, j] = I_kk(d)_ij / P_ij(d), E[jumps k -> l | i, j] = q_kl I_kl(d)_ij / P_ij(d),
+/// I_kl(d) = int_0^d e^{Q s} e_k e_l^T e^{Q (d - s)} ds. The caller passes w = xi / P(d) (so the
+/// division by P happens where xi is formed, without a separate pass).
+///
+/// Uniformization (lambda >= every exit rate, R = I + Q / lambda, R stochastic):
+///   I_kl(d) = (1/lambda) sum_n Pois(n + 1; lambda d) sum_{m=0}^{n} R^m e_k e_l^T R^{n-m},
+/// so sum_ij w_ij I_kl(d)_ij = [A]_kl with
+///   A = sum_a (R^a)^T w B_a,   B_a = sum_b c_{a+b} (R^b)^T,   c_n = Pois(n + 1; lambda d) / lambda.
+/// The powers of R depend only on Q, so they are computed once per generator and reused.
+#[derive(Debug, Clone)]
+pub struct StepStatistics<const K: usize> {
+    generator: Generator<K>,
+    lambda: f64,
+    /// (R^n)^T for n = 0, 1, ...
+    powers_t: Vec<[[f64; K]; K]>,
+    pub occupancy: [f64; K],
+    pub jumps: [[f64; K]; K],
+}
+
+fn transpose<const K: usize>(m: &[[f64; K]; K]) -> [[f64; K]; K] {
+    let mut t = [[0.0; K]; K];
+    for (i, row) in m.iter().enumerate() {
+        for (j, &v) in row.iter().enumerate() {
+            t[j][i] = v;
+        }
+    }
+    t
+}
+
+impl<const K: usize> StepStatistics<K> {
+    pub fn new(generator: &Generator<K>) -> Self {
+        let lambda = (0..K).map(|i| generator.exit_rate(i)).fold(0.0, f64::max);
+        Self { generator: generator.clone(), lambda, powers_t: vec![identity()], occupancy: [0.0; K], jumps: [[0.0; K]; K] }
+    }
+
+    fn ensure_powers(&mut self, n: usize) {
+        if self.powers_t.len() > n {
+            return;
+        }
+        let mut r = identity::<K>();
+        for (r_row, q_row) in r.iter_mut().zip(self.generator.matrix()) {
+            for (r_ij, &q_ij) in r_row.iter_mut().zip(q_row) {
+                *r_ij += q_ij / self.lambda;
+            }
+        }
+        let r_t = transpose(&r);
+        while self.powers_t.len() <= n {
+            let last = self.powers_t[self.powers_t.len() - 1];
+            // (R^{n+1})^T = R^T (R^n)^T
+            self.powers_t.push(mat_mul(&r_t, &last));
+        }
+    }
+
+    /// Adds one step of length `d` with weights `w[i][j] = xi_ij / P_ij(d)`.
+    pub fn accumulate(&mut self, d: f64, w: &[[f64; K]; K]) -> Result<(), ElapsedTimeError> {
+        if !(d.is_finite() && d >= 0.0) {
+            return Err(ElapsedTimeError::InvalidElapsedTime(d));
+        }
+        if d == 0.0 {
+            return Ok(());
+        }
+        let x = self.lambda * d;
+        if x > MAX_STATISTICS_LAMBDA_D {
+            // Split exactly: I(d1 + d2) = I(d1) P(d2) + P(d1) I(d2), so
+            // sum_ij w_ij I(d)_ij = [first half with w P(d2)^T] + [second half with P(d1)^T w].
+            let half = 0.5 * d;
+            let p_half = transition_matrix(&self.generator, half)?;
+            let w_first = mat_mul(w, &transpose(&p_half));
+            let w_second = mat_mul(&transpose(&p_half), w);
+            self.accumulate(half, &w_first)?;
+            return self.accumulate(half, &w_second);
+        }
+        // c_n = Pois(n + 1; x) / lambda until the remaining Poisson mass is negligible.
+        let mut c = Vec::new();
+        let mut pois = (-x).exp(); // Pois(0; x)
+        let mut cumulative = pois;
+        let mut n = 0usize;
+        loop {
+            pois *= x / (n + 1) as f64; // Pois(n + 1; x)
+            cumulative += pois;
+            c.push(pois / self.lambda);
+            n += 1;
+            if (1.0 - cumulative) < TAIL_TOL && (n as f64) > x || n >= 256 {
+                break;
+            }
+        }
+        let n_max = c.len() - 1;
+        self.ensure_powers(n_max);
+        let mut a = [[0.0; K]; K];
+        for (ai, power_a) in self.powers_t.iter().take(n_max + 1).enumerate() {
+            // B_a = sum_b c_{a+b} (R^b)^T
+            let mut b_mat = [[0.0; K]; K];
+            for (bi, power_b) in self.powers_t.iter().take(n_max + 1 - ai).enumerate() {
+                let coeff = c[ai + bi];
+                for (b_row, p_row) in b_mat.iter_mut().zip(power_b) {
+                    for (b_v, &p_v) in b_row.iter_mut().zip(p_row) {
+                        *b_v += coeff * p_v;
+                    }
+                }
+            }
+            let term = mat_mul(&mat_mul(power_a, w), &b_mat);
+            for (a_row, t_row) in a.iter_mut().zip(&term) {
+                for (a_v, &t_v) in a_row.iter_mut().zip(t_row) {
+                    *a_v += t_v;
+                }
+            }
+        }
+        let q = *self.generator.matrix();
+        for k in 0..K {
+            self.occupancy[k] += a[k][k];
+            for l in (0..K).filter(|&l| l != k) {
+                self.jumps[k][l] += q[k][l] * a[k][l];
+            }
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -247,5 +378,71 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// I_kl(d)_ij by composite Simpson quadrature of [P(s)]_ik [P(d - s)]_lj -- an independent
+    /// route to the same integral.
+    fn integral_by_quadrature<const K: usize>(g: &Generator<K>, d: f64, i: usize, j: usize, k: usize, l: usize) -> f64 {
+        let n = 2000; // even
+        let h = d / n as f64;
+        (0..=n)
+            .map(|m| {
+                let s = m as f64 * h;
+                let weight = if m == 0 || m == n { 1.0 } else if m % 2 == 1 { 4.0 } else { 2.0 };
+                weight * transition_matrix(g, s).unwrap()[i][k] * transition_matrix(g, d - s).unwrap()[l][j]
+            })
+            .sum::<f64>()
+            * h
+            / 3.0
+    }
+
+    /// Occupancy and jumps for a single endpoint pair (w = e_i e_j^T) match quadrature, and the
+    /// expected occupancies over all regimes add up to the whole step.
+    #[test]
+    fn step_statistics_match_quadrature_and_add_up() {
+        let g = three_state();
+        for d in [0.3, 2.0, 25.0] {
+            let p = transition_matrix(&g, d).unwrap();
+            for (i, j) in [(0, 0), (0, 2), (2, 1)] {
+                let mut w = [[0.0; 3]; 3];
+                w[i][j] = 1.0;
+                let mut stats = StepStatistics::new(&g);
+                stats.accumulate(d, &w).unwrap();
+                for k in 0..3 {
+                    let quad = integral_by_quadrature(&g, d, i, j, k, k);
+                    assert!((stats.occupancy[k] - quad).abs() < 1e-9 * d.max(1.0), "d={d} {i}->{j} occupancy[{k}] {} vs {quad}", stats.occupancy[k]);
+                    for l in (0..3).filter(|&l| l != k) {
+                        let quad = g.matrix()[k][l] * integral_by_quadrature(&g, d, i, j, k, l);
+                        assert!((stats.jumps[k][l] - quad).abs() < 1e-9 * d.max(1.0), "d={d} {i}->{j} jumps[{k}][{l}]");
+                    }
+                }
+                // sum_k E[time in k | i, j] = d, i.e. sum_k I_kk(d)_ij = d P_ij(d).
+                let total: f64 = stats.occupancy.iter().sum();
+                assert!((total - d * p[i][j]).abs() < 1e-11 * d.max(1.0), "d={d}: {total} vs {}", d * p[i][j]);
+            }
+        }
+    }
+
+    /// The exact split for long steps agrees with a direct pass, and weights are linear.
+    #[test]
+    fn long_steps_are_split_exactly() {
+        let g = Generator::new([[-2.0, 1.5, 0.5], [0.2, -0.4, 0.2], [1.0, 1.0, -2.0]]).unwrap();
+        let w = [[0.3, 0.1, 0.0], [0.0, 0.5, 0.2], [0.1, 0.0, 0.4]];
+        let d = 30.0; // lambda d = 60 -> split
+        let mut split = StepStatistics::new(&g);
+        split.accumulate(d, &w).unwrap();
+        // Same step as two halves composed by hand.
+        let half = d / 2.0;
+        let p_half = transition_matrix(&g, half).unwrap();
+        let mut manual = StepStatistics::new(&g);
+        manual.accumulate(half, &mat_mul(&w, &transpose(&p_half))).unwrap();
+        manual.accumulate(half, &mat_mul(&transpose(&p_half), &w)).unwrap();
+        for k in 0..3 {
+            assert!((split.occupancy[k] - manual.occupancy[k]).abs() < 1e-9);
+        }
+        // Total occupancy = d * sum_ij w_ij P_ij(d).
+        let p = transition_matrix(&g, d).unwrap();
+        let expected: f64 = (0..3).flat_map(|i| (0..3).map(move |j| (i, j))).map(|(i, j)| w[i][j] * p[i][j] * d).sum();
+        assert!((split.occupancy.iter().sum::<f64>() - expected).abs() < 1e-9 * expected);
     }
 }
