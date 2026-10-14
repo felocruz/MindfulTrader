@@ -354,7 +354,7 @@ This project is a **local Git repo** (initialized 2026-07-14, `master` branch, n
 
 These are **minutes**, not seconds. The bar period controls aggregation only — it does **not** reduce tick frequency.
 
-**All three screens are equally hot paths.** `AutoLoop=1` means Sierra Chart invokes every study function on every incoming tick/trade, regardless of bar period. TS1 and TS2 receive just as many ticks as TS3.
+**All three screens are equally hot paths.** Sierra Chart calls every study function at each chart update (the Chart Update Interval) when new data has arrived -- not once per trade (Sierra's ACSIL docs: "Your study function is not called at every trade, rather instead at the Chart Update Interval"); all trades since the previous call arrive together, so per-trade data must be read through ACSIL's record functions (rust-migration spec §6.2.8 D2). TS1, TS2 and TS3 are all called at every update, regardless of bar period.
 
 ## Architecture
 

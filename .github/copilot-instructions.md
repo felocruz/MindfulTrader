@@ -105,7 +105,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 - These are **MINUTES**, never seconds. The system is event-driven (intra-bar updates on every tick/trade), but the bar period is 15 minutes for the shortest timeframe.
 
 ## Tick Update Model (CRITICAL — Do Not Get Wrong)
-- **ALL charts across ALL THREE timeframes are called on EVERY tick.** `AutoLoop=1` means Sierra Chart invokes each study function on every incoming tick/trade, regardless of the chart's bar period.
+- **ALL charts across ALL THREE timeframes are called on EVERY chart update.** Sierra Chart calls every study function at each chart update (the Chart Update Interval) when new data has arrived -- not once per trade (Sierra's ACSIL docs: "Your study function is not called at every trade, rather instead at the Chart Update Interval"); all trades since the previous call arrive together, so per-trade data must be read through ACSIL's record functions (rust-migration spec §6.2.8 D2). TS1, TS2 and TS3 are all called at every update, regardless of the chart's bar period.
 - The bar period (240m, 60m, 15m) only controls how bars are aggregated — it does NOT reduce the tick update frequency.
 - **TS1, TS2, and TS3 are equally hot paths.** Do not assume TS1 or TS2 receive fewer ticks or are less performance-critical than TS3.
 - When auditing for performance, treat all three screens with the same urgency.

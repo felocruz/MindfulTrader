@@ -341,7 +341,7 @@ This project is a **local Git repo** (initialized 2026-07-14, `master` branch, n
 - **TS2 (Screen 2)**: 60-minute bars — intermediate momentum
 - **TS3 (Screen 3)**: 15-minute bars — short-term entry timing
 
-These are **minutes**, not seconds. **All three screens are equally hot paths.** `AutoLoop=1` means Sierra Chart invokes every study function on every incoming tick, regardless of bar period.
+These are **minutes**, not seconds. **All three screens are equally hot paths.** Sierra Chart calls every study function at each chart update (the Chart Update Interval) when new data has arrived -- not once per trade (Sierra's ACSIL docs: "Your study function is not called at every trade, rather instead at the Chart Update Interval"); all trades since the previous call arrive together, so per-trade data must be read through ACSIL's record functions (rust-migration spec §6.2.8 D2). TS1, TS2 and TS3 are all called at every update, regardless of bar period.
 
 ## Architecture
 

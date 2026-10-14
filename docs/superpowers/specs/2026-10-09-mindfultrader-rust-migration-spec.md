@@ -1952,7 +1952,7 @@ copies -- they read the frame.
 - V1: with `AutoLoop=1`, does `sc.UpdateStartIndex` stay 0 for every bar of a full recalculation?
   If so, today's `if (sc.UpdateStartIndex == 0)` blocks without an `sc.Index == 0` check (SCS:138
   `ContextManager::Reset`, TS1:803, TS2:514, BackTester:581) run once per historical bar.
-- V2: is time-and-sales available, and complete, during replay (each replay mode)?
+- V2 (revised 2026-10-13, D2 ruling): do the Intraday-file records the study reads per call match, one for one, the records Sierra stores for that session, live and in each replay mode? (Fallback check: time-and-sales completeness by sequence number.)
 - V3: does replay start trigger a full recalculation of every chart in the chartbook?
 - V4: are studies on different charts called on one thread (so a registry needs no lock)?
 - V5: do Sierra's 240/60/15-minute bars start where the engine's session calendar puts them (session
@@ -2021,17 +2021,54 @@ measurement, not guessed.
   equivariant too), "raw" and "fixed-affine-scaled" are the same model -- the transform only conditions
   k-means++ initialization and the absolute variance floor. What caused F1 was that the live scaler is
   ROLLING (150-500 observations, ~8-27 minutes at ~27k observations/day) and NONLINEAR.
-- D2 (proposed): per-trade aggressor records identical to the `.scid` data, live and offline. The
-  2026-08 decision against time-and-sales (`2026-08-12-denali-data-feed-proxy-audit.md`: ~45% of calls
-  saw no new records in replay with hand-rolled sequence bookkeeping) must be re-tested with correct
-  sequence handling before reversing it (V2); fallback = differencing cumulative bar bid/ask volume,
-  with merged trades flagged. Grounding: CME MDP 3.0 tag 5797 AggressorSide (one Trade Summary per match
-  event); Andersen & Bondarenko 2015 (Rev. Finance): on E-mini the tick rule misclassifies 11.6% of
-  trades and aggregation before classification adds error correlated with volume and volatility.
-- D3 (proposed): engine id = symbol, as a study input; feeders register roles; one emitter. Already
-  the repo's rule (`../docs/ROADMAP_CONTEXTMANAGER_REFACTOR.md`: single composer, single writer per
-  field family, studies called sequentially on the main thread); single-writer principle (Thompson
-  2011; Fowler, LMAX).
+- D2 -- **RULED 2026-10-13 (operator: "Agree")**: live trades are read per record from the chart's
+  own Intraday data file (`sc.ReadIntradayFileRecordAtIndex`, only the records after our own stored
+  file index, up to `sc.FileRecordIndexOfLastDataRecordInChart`, lock held for the read and released
+  after the last record) -- the same `.scid` records the training tick file is converted from, so live
+  and offline read identical trades with identical per-record bid/ask volume, across history, replay
+  and restarts. Fallback: `sc.GetTimeAndSales` (trades = `SC_TS_BID`/`SC_TS_ASK` records; resume after
+  the last `Sequence` handled -- ascending, may skip, reset to 1 at replay start/reload; no history,
+  lost on restart, capped by "Number of Stored Time and Sales Records"). Differencing cumulative bar
+  bid/ask volume between study calls is REJECTED (it merges trades exactly when the activity clock
+  matters). Grounding (Sierra docs, read 2026-10-13): "Your study function is not called at every
+  trade, rather instead at the Chart Update Interval"; update triggers only flag a call, "None of the
+  conditions described below, cause an immediate call"; to see every trade between calls Sierra
+  directs studies to the time-and-sales / Intraday-file record functions (ACS_ArraysAndLooping.html,
+  ACSIL_Members_Functions.html). The 2026-08 rejection of time-and-sales
+  (`2026-08-12-denali-data-feed-proxy-audit.md`) used hand-rolled bookkeeping, not the sequence number.
+  Market grounding unchanged: CME MDP 3.0 tag 5797 AggressorSide; Andersen & Bondarenko 2015 (tick-rule
+  and aggregation errors on E-mini). Acceptance (V2, revised): the operator runs one Sierra session in
+  which the records the study reads match, one for one, the records Sierra stores in the file for that
+  session (live and replay).
+- **OPEN (raised 2026-10-13 while ruling D2/D3, set aside by the operator for now): training-data
+  licensing.** Sierra Chart's License Agreement, DATA LICENSE section, says data provided by or
+  accessed with Sierra Chart must not be "used by other programs or software on the same computer",
+  "is to be used 100% within Sierra Chart", must not be accessed "outside of the normal method of
+  access through the Sierra Chart program itself through its standard user interfaces", and "is not
+  permitted to be copied in any way" (backup excepted); its Intraday Data File Format page now reads
+  "permanently removed ... Please refer to the Sierra Chart License Agreement". The feed is Denali
+  (Sierra's own service), so the training pipeline (`tools/scid_processing/scid_to_ticks_parquet.cpp`
+  -> `../lbrnet/data/raw/mes_ticks.parquet` -> Linux tools / lbrnet) appears to rest on a prohibited
+  use. Options: ask Sierra support; or buy historical MES trades licensed for use in our own software
+  (CME historical data, a vendor such as Databento -- exchange aggressor side included), then confirm
+  the vendor's trade records line up with how Denali reports trades live. Live is unaffected: reading
+  records through ACSIL (D2) is the standard interface. A Rust engine reading `.scid` from disk
+  directly was considered and REJECTED for this reason.
+- D3 -- **RULED 2026-10-13 (operator: "Agree")**: one engine per instrument (keyed by symbol), fed
+  ONLY by the 15-minute chart's study, which reads every trade through ACSIL (D2) and hands it to the
+  engine; the engine builds all three timeframes (240/60/15 min) itself with the same
+  `TimeBarBuilder` as offline -- the pattern of `tools/market_data_replay/MarketDataReplayEngine.h`
+  (one owner, one trade stream, all timeframes built inside) and of `OfflineFeeder`. The 240- and
+  60-minute charts keep their Triple Screen studies for display and signals but no longer feed the
+  regime model, so no role registration is needed. Warm-up on chart open: history read through ACSIL
+  a slice per call (never the whole file in one call -- Sierra warns it freezes the UI); the engine
+  reports warming up and emits nothing until each dim's window is full. A second 15-minute study for
+  the same symbol is refused with a message naming it in Sierra's log. Studies run on Sierra's main
+  thread one at a time (ACS_ArraysAndLooping.html), so no locking. Consequence: the live adapter's
+  zero-copy view of Sierra's bar arrays (§6.2.4/§6.2.14 `on_bars` from Sierra) is no longer the
+  observation path, and V5 (does Sierra's bar anchoring match ours) no longer gates the observation --
+  live and offline bars are built by one code path. Not copied from the old tool: forming-bar
+  tracking, made-up neutral warm-up values, forced-zero sentinels.
 - D4 (proposed): approve B1-B11. Note on B8: significance-gated sampling is outcome-dependent
   sampling and biases HMM transition and emission estimates (Aït-Sahalia & Mykland 2003, Econometrica;
   Lin, Scharfstein & Rosenheck 2004, JRSS-B); the 2026-09-08 operator directive's goals (fewer, less
@@ -2040,6 +2077,78 @@ measurement, not guessed.
   gate only downstream -- an operator decision, since it revisits that directive. Regime tenure counts
   steps of the HMM's own clock; if dwell times matter, a hidden semi-Markov model is the principled fix
   (Bulla & Bulla 2006).
+- **D4 -- the HMM's clock: DISCUSSION IN PROGRESS, POSTPONED 2026-10-14 (operator: "We will postpone
+  this until Gemini is able to conduct searches again")** -- Gemini's web search failed (HTTP 500)
+  during BRIEF_167 and BRIEF_169, so its citations there are from memory; resume with a fresh
+  consultation once its search works. Nothing ruled. Record of the discussion (Gemini briefs and
+  replies in full: `../lbrnet/logs/rc_gemini.log` CLAUDE_BRIEF_166-169):
+  1. **Starting proposal and the operator's objections.** Claude proposed one HMM step per 15-minute
+     bar close. Operator: "A lot can happen in 15 minutes (e.g., a sell-off)" -- accepted; Glennie et
+     al. (Methods Ecol. Evol., "Hidden Markov models: pitfalls and opportunities in ecology") give the
+     rule of thumb that the sampling interval should be shorter than the shortest expected dwell
+     time. BRIEF_166 (Gemini) then proposed the activity clock; operator: our activity clock is an
+     IMBALANCE clock and can stay quiet during heavy two-sided trading while the climate changes, and
+     some inputs are calendar-driven -- accepted (Clark 1973 / Ane & Geman 2000 are about volume and
+     trade count, not imbalance). Operator clarification: he never meant training on LARGE changes but
+     on the minimal change that is still significant (a lower threshold), with periodic samples in
+     calm "clear weather"; the original reason for a high threshold (fewer C++->Python ZMQ messages)
+     is gone (the HMM runs in Rust in-process). Operator: his statements are gut feelings to keep the
+     discussion going, not literature assertions.
+  2. **History of the gate (docs).** `docs/MTS_UMM_CPP_ANALYSIS_JAN30.md`: built as a LIVE THROTTLE for
+     Python HMM calls ("Reduces HMM calls 90%+ while capturing regime transitions"), with a 60 s
+     heartbeat forcing an update regardless, an L1 noise floor, chi-square threshold 3.84 (1 dof, on a
+     10-D vector). The heartbeat is absent from all git history (gone before the repo started,
+     2026-07). Training collection first emitted on any change > 1e-5 (plan 2026-09-08 correction);
+     the 2026-09-08 directive (`2026-09-08-context-emission-gate-quality-over-quantity-spec.md`) reused
+     the live gate for training, citing Ryden, Terasvirta & Asbrink 1998 (which supports a slower
+     regular clock, not change-selected samples; the curation doc says it "tempers, not resolves" the
+     trade-off). `docs/Gemini.md` (2026-09-16): Gemini fixed the gate's double normalization (70% ->
+     5% firing, the ~22M-row `.context`); it was asked to repair the gate, never whether an HMM should
+     train on gated samples. `lbrnet/docs/architecture/STUDENT_T_HMM_EVENT_TRANSFORMER_ARCHITECTURE.md`
+     says the gate measures distance from the regime's distribution; the code measures distance from
+     the last emitted observation -- to correct when D4 is ruled.
+  3. **lbrnet findings (verified).** Training treats every row as one equal step (one transition
+     matrix; timestamps only split sequences at gaps > 1 h, `train_student_t_hmm.py`); regime tenure and
+     expected duration 1/(1-A_ss) are in rows; crash rows are DUPLICATED in time order
+     (`_apply_crash_oversampling`, adds artificial self-transitions); live, `lbrnet/inference/
+     live_agent.py` steps the HMM on every indicator event whenever any input changed (not on the gate)
+     -- training and live use different sampling rules; `2026-08-19-predator-fusion-tier2-physics-
+     signal-spec.md` already noted gated rows "fire densely during a fast-moving burst and sparsely
+     during calm periods". The Rust model (`student_t_hmm/src/model.rs` `forward_step`, `ffi`
+     `hmm_step`) has NO elapsed-time input and NO way to leave an input out of a step.
+  4. **Where the discussion stands (Claude and Gemini agree).** The HMM's step rule must not be a
+     threshold on its own input values: selection on the emission biases emission scale, transition
+     persistence and dof unless the observation-time process is modelled jointly (Lange, Hubbard,
+     Inoue & Minin 2015, Biometrics 71(1) -- verified). A lower threshold shrinks but never removes the
+     bias. The model may speed up with market activity measured as an accumulating quantity (trade
+     count, volume, or accumulated price movement -- intrinsic time, Glattfelder, Dupuis & Olsen,
+     Quant. Finance 11(4), verified; Dacorogna et al. 1993 JIMF, verified as a reference). The HMM uses
+     the SAME rule in training and live; decision layers (execution gates, the significance alarm) may
+     use input-value thresholds freely, since they do not learn from the data. Gemini (BRIEF_167):
+     live inference on a different rule from training is "a fatal statistical error".
+  5. **Draft design under review (BRIEF_169).** (a) Step when N trades OR V contracts OR T seconds
+     (calendar floor, e.g. 60 s) have accumulated since the last step, whichever first -- Gemini: an
+     ad-hoc union of stopping times, acceptable as a trigger if step size is modelled. (b) The HMM
+     becomes continuous-time: one generator Q, step length d = d_act + lambda * d_sec (d_act = max(
+     trades/N, volume/V), lambda learned), P = expm(Q d) -- Gemini's correction of Claude's two-generator
+     draft (identifiability); EM per Liu et al. 2015 NeurIPS (unverified this session). (c) An input
+     enters a step only if it has a fresh value from its own schedule (its bar/window closed);
+     otherwise missing and marginalized out (exact under the diagonal Student-t scale); schedule-driven
+     missingness is ignorable (Rubin 1976). (d) Quiet times: a step with no fresh inputs is a pure
+     prediction step -- the posterior diffuses with elapsed time (Gemini: "principled and elegant").
+     N, V, T come from a theoretical rule later, never tuned on today's data.
+  6. **Open disagreement -- slow inputs (240/60-minute features).** Gemini: marginalizing them between
+     closes makes the posterior jump at the close then "decay"; he proposes holding the value forward
+     with its log-likelihood scaled by elapsed fraction, while naming the risk that a held value is
+     scored thousands of times. Claude: the posterior keeps the evidence and it fades only at the true
+     switching rate; the down-weighting is a patch, not a standard method. Alternatives to evaluate: a
+     separate slow regime layer (hierarchical HMM, Adam et al. 2019, Methods Ecol. Evol. 10(9) --
+     verified) or Markov-switching MIDAS (Guerin & Marcellino 2013, JBES 31(1) -- verified). To be its
+     own decision after the clock.
+  7. **Citations Gemini gave that do NOT support the gate**: Astrom & Bernhardsson 2002 (real; event-
+     based sampling for control, not for training a model).
+  8. **Resume with**: a Gemini consultation with working search on (a)-(d) and item 6; then put the
+     clock decision to the operator in plain English.
 - D5 (proposed): risk diagnostics computed in the engine from the same data; document which consumer
   uses which feature (a feature used both inside the regime model and as a separate gate double-counts
   evidence).

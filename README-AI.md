@@ -107,6 +107,7 @@ MindfulTrader is the **C++ producer/execution layer** (ACSIL + low-latency messa
 - Owns indicator processing, event production, and execution-side protocol handling.
 - Produces FlatBuffer payloads consumed by `lbrnet` and `MTS`.
 - Keeps hot paths allocation-light and deterministic.
+- Study call cadence: Sierra Chart calls every study function at each chart update (the Chart Update Interval) when new data has arrived -- not once per trade (Sierra's ACSIL docs: "Your study function is not called at every trade, rather instead at the Chart Update Interval"); all trades since the previous call arrive together, so per-trade data must be read through ACSIL's record functions (rust-migration spec §6.2.8 D2). TS1, TS2 and TS3 are all called at every update, so all three screens are equally hot paths.
 
 ## Boundaries
 - No GUI logic (belongs in `MTS`).
