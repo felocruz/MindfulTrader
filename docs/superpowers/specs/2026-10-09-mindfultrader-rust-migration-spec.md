@@ -2350,6 +2350,38 @@ measurement, not guessed.
   Wood (2017); Dobrow (2016). Relevant, not cited by LaMa: Ryden (1996, EM for MMPPs). Verify the
   ones we build on before relying on them. Not read in full: several vignettes, qREML/penalty code,
   inhomogeneous HSMM bodies.
+- **D4 companion -- Hawkes research and R package survey (2026-10-14).**
+  **Hawkes (self-exciting arrivals; citations verified by search unless marked):** E-mini branching
+  ratio n ~0.7-1 (Filimonov & Sornette 2012, PRE 85:056108; Hardiman, Bercot & Bouchaud 2013, EPJ B:
+  n ~1 throughout 1998-2011, power-law kernel); near-critical Hawkes -> rough / long-memory volatility
+  (Jaisson & Rosenbaum 2015, AAP 25(2)). **Key:** fitting a plain Hawkes model to data whose rate
+  shifts between regimes gives a SPURIOUS n ~1 (Filimonov & Sornette 2015, Quant. Finance 15(8)) --
+  regimes and excitation must be modelled together. Regime + Hawkes literature: Wang, Bebbington &
+  Harte 2012 (AISM 64(3), EM, stepwise decay); Wu, Ward, Curley & Zheng 2022 (AOAS 16(2), MCMC,
+  approximate between events); Fabre & Muni Toke 2025 (arXiv 2502.04027: regime-dependent baseline
+  AND kernel, exact only with a piecewise-constant kernel, hours per day of data); Bonnet & Robin 2025
+  (arXiv 2507.20153). **Model A (to build first):** regime-dependent baseline mu_s, one shared
+  exponential excitation g(t) driven by OBSERVED trades only -> exact forward step
+  alpha_i = alpha_{i-1} expm((Q - diag mu) dt_i) diag(mu + g(t_i-)) e^{-int g}, O(K^3) per event, EM
+  with branching responsibilities (Veen & Schoenberg 2008, JASA). The exactness of Model A inside the
+  CT-HMM is a derivation (checked by Claude), not found published -- accepted only on known-answer
+  tests. Simulation: Dassios & Zhao 2013 (ECP 18(62)) exact for exponential kernels; fit check:
+  time-rescaling (Ogata 1988; Brown et al. 2002). Tests: recover (mu, alpha, beta); regime-only data
+  must give n ~0 (false-criticality guard); recover Q, mu, n jointly; time-rescaling KS; n = 0.9/0.95.
+  Risks: regime-vs-excitation identifiability; near-critical flat likelihood; tied timestamps (no
+  literature at microsecond resolution -- treat a same-timestamp bundle as one marked event); a single
+  exponential cannot reproduce power-law decay (later: sum of exponentials, still exact under Model A).
+  **R survey (licences from CRAN DESCRIPTION; mostly GPL -> methods only, never translated code):**
+  nhm (Titman, GPL>=2: continuous-time HMM with time-varying generator Q(t) by forward equations +
+  phase-type state map + informative observation times); ctmcd (GPL-3: Bladt-Sorensen EM for a
+  generator -- expected jumps / occupancy by the Van Loan block exponential; matrix-log initializers);
+  hmmTMB (GPL-3: forecast pseudo-residuals, per-variable missing-value skipping, cyclic-spline
+  transition covariates); janelange/cthmm (GitHub, no usable licence -- ideas only: CT-HMM EM with
+  eigen/uniformization statistics, informative timing, SQUAREM, Louis SEs); fHMM (GPL-3: hierarchical
+  HMM, slow chain over fast chains); MixtureMissing (multivariate t with missing data); PHSMM
+  (penalized dwell times); MSTest (tests for the number of regimes); MMPPsampler; midasr (GPL-2|MIT).
+  No CRAN package couples Hawkes with hidden regimes. **Operator direction (2026-10-14): implement and
+  test the best methods now rather than more reviews first.**
 - D5 (proposed): risk diagnostics computed in the engine from the same data; document which consumer
   uses which feature (a feature used both inside the regime model and as a separate gate double-counts
   evidence).
