@@ -64,17 +64,19 @@ fn mat_mul<const K: usize>(a: &[[f64; K]; K], b: &[[f64; K]; K]) -> [[f64; K]; K
     c
 }
 
-/// Transition probabilities over elapsed time `d` (>= 0) for generator `generator`.
-pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Result<[[f64; K]; K], ElapsedTimeError> {
-    if !(d.is_finite() && d >= 0.0) {
-        return Err(ElapsedTimeError::InvalidElapsedTime(d));
-    }
+/// e^{A t} for a matrix A with non-negative off-diagonals and non-positive row sums (a generator,
+/// or a generator minus non-negative event rates on the diagonal), by uniformization with scaling
+/// and squaring. R = I + A / lambda is non-negative (lambda = largest -A_ii) with row sums <= 1, so
+/// every term is non-negative and the series truncation error per entry is below the remaining
+/// Poisson mass. `stochastic` (A a generator): rows are rescaled to sum to 1 after each squaring.
+fn uniformized_exponential<const K: usize>(a: &[[f64; K]; K], d: f64, stochastic: bool) -> [[f64; K]; K] {
     if d == 0.0 {
-        return Ok(identity());
+        return identity();
     }
-    let q = generator.matrix();
-    let lambda = (0..K).map(|i| generator.exit_rate(i)).fold(0.0, f64::max);
-
+    let lambda = (0..K).map(|i| -a[i][i]).fold(0.0, f64::max);
+    if lambda <= 0.0 {
+        return identity();
+    }
     // Halve the time until lambda * t <= MAX_DIRECT_LAMBDA_D.
     let mut squarings = 0u32;
     let mut t = d;
@@ -82,15 +84,13 @@ pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Re
         t *= 0.5;
         squarings += 1;
     }
-
-    // U = I + Q / lambda (stochastic).
+    // U = I + A / lambda (non-negative).
     let mut u = identity::<K>();
-    for (u_row, q_row) in u.iter_mut().zip(q) {
-        for (u_ij, &q_ij) in u_row.iter_mut().zip(q_row) {
-            *u_ij += q_ij / lambda;
+    for (u_row, a_row) in u.iter_mut().zip(a) {
+        for (u_ij, &a_ij) in u_row.iter_mut().zip(a_row) {
+            *u_ij += a_ij / lambda;
         }
     }
-
     // sum_n w_n U^n, w_n = e^{-x} x^n / n!, x = lambda t <= 1.
     let x = lambda * t;
     let mut weight = (-x).exp();
@@ -114,21 +114,50 @@ pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Re
             }
         }
     }
-
-    // Each squaring adds rounding error of order K * epsilon to every row sum; over the ~20+
-    // squarings a long time with fast regimes needs, that drift reaches ~1e-11. The exact result
-    // is stochastic, so each row is rescaled to sum to 1 after every squaring -- restoring an
-    // invariant lost only to rounding, without changing the ratios between entries.
+    // For a generator, each squaring adds rounding error of order K * epsilon to every row sum;
+    // over the ~20+ squarings a long time with fast regimes needs, that drift reaches ~1e-11. The
+    // exact result is stochastic, so each row is rescaled to sum to 1 after every squaring --
+    // restoring an invariant lost only to rounding, without changing the ratios between entries.
     for _ in 0..squarings {
         p = mat_mul(&p, &p);
-        for row in &mut p {
-            let sum: f64 = row.iter().sum();
-            for v in row.iter_mut() {
-                *v /= sum;
+        if stochastic {
+            for row in &mut p {
+                let sum: f64 = row.iter().sum();
+                for v in row.iter_mut() {
+                    *v /= sum;
+                }
             }
         }
     }
-    Ok(p)
+    p
+}
+
+/// Transition probabilities over elapsed time `d` (>= 0) for generator `generator`.
+pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Result<[[f64; K]; K], ElapsedTimeError> {
+    if !(d.is_finite() && d >= 0.0) {
+        return Err(ElapsedTimeError::InvalidElapsedTime(d));
+    }
+    Ok(uniformized_exponential(generator.matrix(), d, true))
+}
+
+/// Q minus `event_rates` on the diagonal: the sub-generator of "regimes switch, no event occurs".
+pub fn no_event_generator<const K: usize>(generator: &Generator<K>, event_rates: &[f64; K]) -> [[f64; K]; K] {
+    let mut a = *generator.matrix();
+    for (k, row) in a.iter_mut().enumerate() {
+        row[k] -= event_rates[k].max(0.0);
+    }
+    a
+}
+
+/// N(d)[i][j] = P(regime j after elapsed time d AND no event in (0, d] | regime i now), for events
+/// arriving at rate `event_rates[k]` while in regime k: e^{(Q - diag(rates)) d} (the Markov-
+/// modulated Poisson process "no event" factor; LaMa `tpm_ct(Q, timediff, rates)`). Rows sum to
+/// the probability of no event, < 1.
+pub fn no_event_matrix<const K: usize>(generator: &Generator<K>, event_rates: &[f64; K], d: f64) -> Result<[[f64; K]; K], ElapsedTimeError> {
+    if !(d.is_finite() && d >= 0.0) {
+        return Err(ElapsedTimeError::InvalidElapsedTime(d));
+    }
+    Ok(uniformized_exponential(&no_event_generator(generator, event_rates), d, false))
 }
 
 /// Largest lambda * d handled in one uniformization pass by `accumulate_step_statistics`; longer
@@ -155,7 +184,10 @@ const MAX_STATISTICS_LAMBDA_D: f64 = 8.0;
 /// The powers of R depend only on Q, so they are computed once per generator and reused.
 #[derive(Debug, Clone)]
 pub struct StepStatistics<const K: usize> {
-    generator: Generator<K>,
+    /// The matrix whose exponential governs a step: Q, or Q - diag(event rates).
+    a: [[f64; K]; K],
+    /// True when `a` is a generator (rows sum to 0).
+    stochastic: bool,
     lambda: f64,
     /// (R^n)^T for n = 0, 1, ...
     powers_t: Vec<[[f64; K]; K]>,
@@ -175,8 +207,19 @@ fn transpose<const K: usize>(m: &[[f64; K]; K]) -> [[f64; K]; K] {
 
 impl<const K: usize> StepStatistics<K> {
     pub fn new(generator: &Generator<K>) -> Self {
-        let lambda = (0..K).map(|i| generator.exit_rate(i)).fold(0.0, f64::max);
-        Self { generator: generator.clone(), lambda, powers_t: vec![identity()], occupancy: [0.0; K], jumps: [[0.0; K]; K] }
+        Self::from_matrix(*generator.matrix(), true)
+    }
+
+    /// For steps between events of a Markov-modulated arrival process: the step factor is
+    /// e^{(Q - diag rates) d}; the same formulas hold with A = Q - diag(rates) (R stays
+    /// non-negative), and jumps still use the off-diagonal rates of Q.
+    pub fn with_event_rates(generator: &Generator<K>, event_rates: &[f64; K]) -> Self {
+        Self::from_matrix(no_event_generator(generator, event_rates), false)
+    }
+
+    fn from_matrix(a: [[f64; K]; K], stochastic: bool) -> Self {
+        let lambda = (0..K).map(|i| -a[i][i]).fold(0.0, f64::max);
+        Self { a, stochastic, lambda, powers_t: vec![identity()], occupancy: [0.0; K], jumps: [[0.0; K]; K] }
     }
 
     fn ensure_powers(&mut self, n: usize) {
@@ -184,9 +227,9 @@ impl<const K: usize> StepStatistics<K> {
             return;
         }
         let mut r = identity::<K>();
-        for (r_row, q_row) in r.iter_mut().zip(self.generator.matrix()) {
-            for (r_ij, &q_ij) in r_row.iter_mut().zip(q_row) {
-                *r_ij += q_ij / self.lambda;
+        for (r_row, a_row) in r.iter_mut().zip(&self.a) {
+            for (r_ij, &a_ij) in r_row.iter_mut().zip(a_row) {
+                *r_ij += a_ij / self.lambda;
             }
         }
         let r_t = transpose(&r);
@@ -210,7 +253,7 @@ impl<const K: usize> StepStatistics<K> {
             // Split exactly: I(d1 + d2) = I(d1) P(d2) + P(d1) I(d2), so
             // sum_ij w_ij I(d)_ij = [first half with w P(d2)^T] + [second half with P(d1)^T w].
             let half = 0.5 * d;
-            let p_half = transition_matrix(&self.generator, half)?;
+            let p_half = uniformized_exponential(&self.a, half, self.stochastic);
             let w_first = mat_mul(w, &transpose(&p_half));
             let w_second = mat_mul(&transpose(&p_half), w);
             self.accumulate(half, &w_first)?;
@@ -251,7 +294,7 @@ impl<const K: usize> StepStatistics<K> {
                 }
             }
         }
-        let q = *self.generator.matrix();
+        let q = self.a;
         for k in 0..K {
             self.occupancy[k] += a[k][k];
             for l in (0..K).filter(|&l| l != k) {

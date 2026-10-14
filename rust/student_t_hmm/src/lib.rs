@@ -10,6 +10,7 @@ pub mod bootstrap;
 pub mod calibration;
 pub mod continuous_time_student_t;
 pub mod elapsed_time_transitions;
+pub mod regime_modulated_hawkes;
 pub mod regime_path_simulator;
 pub mod gate_metrics;
 pub mod init;
