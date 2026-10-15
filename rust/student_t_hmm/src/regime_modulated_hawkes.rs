@@ -34,7 +34,7 @@
 //! a size mark at the data stage), power-law decay (a sum of exponentials keeps this form exact),
 //! regime-dependent excitation (no longer exact).
 
-use crate::elapsed_time_transitions::{ElapsedTimeError, StepStatistics, no_event_matrix};
+use crate::elapsed_time_transitions::{ElapsedTimeError, StepStatistics, no_event_matrix_scaled, shifted_rates};
 use crate::init::SplitMix64;
 use crate::regime_path_simulator::{CtPath, Generator, GeneratorError, simulate_path};
 
@@ -149,19 +149,26 @@ impl<const K: usize> RegimeHawkes<K> {
         check_window(window)?;
         let times = &window.times;
         let excitation = excitation_before_events(times, self.branching_ratio, self.decay);
+        // Gap factors with the smallest rate's decay factored out (no underflow on long gaps); the
+        // common log scale goes straight into the likelihood.
         let mut gaps = Vec::with_capacity(times.len() + 1);
+        let mut log_scale = 0.0;
         let mut prev = 0.0;
         for &t in times {
-            gaps.push(no_event_matrix(&self.generator, &self.baseline, t - prev)?);
+            let (m, s) = no_event_matrix_scaled(&self.generator, &self.baseline, t - prev)?;
+            gaps.push(m);
+            log_scale += s;
             prev = t;
         }
-        gaps.push(no_event_matrix(&self.generator, &self.baseline, window.horizon - prev)?);
+        let (m, s) = no_event_matrix_scaled(&self.generator, &self.baseline, window.horizon - prev)?;
+        gaps.push(m);
+        log_scale += s;
         let event_factors: Vec<[f64; K]> = excitation.iter().map(|&g| self.baseline.map(|mu| mu + g)).collect();
 
         let mut alpha = Vec::with_capacity(times.len() + 1);
         alpha.push(self.initial);
         let mut scales = Vec::with_capacity(times.len() + 1);
-        let mut log_likelihood = 0.0;
+        let mut log_likelihood = log_scale;
         for (gap, e) in gaps.iter().zip(&event_factors) {
             let mut u = row_times(&alpha[alpha.len() - 1], gap);
             for (v, &f) in u.iter_mut().zip(e) {
@@ -287,7 +294,7 @@ struct Expectations<const K: usize> {
 }
 
 fn e_step<const K: usize>(model: &RegimeHawkes<K>, windows: &[EventWindow]) -> Result<Expectations<K>, HawkesError> {
-    let mut stats = StepStatistics::with_event_rates(&model.generator, &model.baseline);
+    let mut stats = StepStatistics::with_event_rates(&model.generator, &shifted_rates(&model.baseline));
     let mut ex = Expectations { occupancy: [0.0; K], switches: [[0.0; K]; K], immigrants: [0.0; K], offspring: 0.0, offspring_lag: 0.0, log_likelihood: 0.0 };
     for window in windows {
         let fw = model.forward(window)?;
@@ -407,7 +414,7 @@ pub fn fit<const K: usize>(start: &RegimeHawkes<K>, windows: &[EventWindow], set
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::elapsed_time_transitions::transition_matrix;
+    use crate::elapsed_time_transitions::{no_event_matrix, transition_matrix};
 
     fn two_regimes() -> Generator<2> {
         Generator::new([[-0.01, 0.01], [0.02, -0.02]]).unwrap()

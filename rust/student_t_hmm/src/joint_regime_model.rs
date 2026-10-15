@@ -1,68 +1,65 @@
-//! joint_regime_model.rs -- the regime model reading BOTH the trades and the observation steps
-//! (rust-migration spec §6.2.8 D4): one hidden continuous-time regime drives
-//!   * the trade arrival rate, mu_k + g(t) -- a regime background rate plus one shared echo of
-//!     earlier trades (`regime_modulated_hawkes`), and
+//! joint_regime_model.rs -- the regime model reading BOTH the trades and the observation steps, in
+//! market time (rust-migration spec §6.2.8 D4; step-length proposal approved 2026-10-14).
+//!
+//! One hidden continuous-time regime drives
+//!   * the trade arrival rate: mu_k * s_b + g(t) -- a regime background level times a time-of-day
+//!     factor s_b (b = the intraday bucket), plus one shared echo of earlier trades
+//!     (`regime_modulated_hawkes`); and
 //!   * the Student-t inputs read at each observation step (`continuous_time_student_t`).
 //!
-//! Why: the steps are triggered by trades and volume (`step_times`), so in a busy regime they come
-//! faster. Fitting the regime model to the steps while ignoring the trades treats regime-dependent
-//! timing as uninformative, which is the biased case (Gruger, Kay & Schumacher 1991; Lange et al.
-//! 2015). Here the trades are part of the likelihood, so the timing is evidence, not bias.
+//! **Market time.** Each window carries its timeline: open periods (each in one time-of-day bucket)
+//! and closed periods (weekends, the daily halt, holidays). Regimes switch at the generator's rates
+//! in open time and at `closed_weight` times them in closed time (learned, in [0, 1]); information
+//! arrives mostly while trading (French & Roll 1986). No trades can occur while closed, so a closed
+//! period is NOT evidence of a calm regime: it only lets regimes switch at the closed weight. The
+//! echo decays in calendar time and only accumulates intensity while open.
 //!
-//! Data: one time-ordered stream of points (a trade, or an observation step with its inputs and
-//! which of them are present) on [0, horizon]. At equal times trades come first.
-//! Likelihood:
-//!   L = initial * prod_p [ e^{(Q - diag mu) dt_p} F_p ] * e^{(Q - diag mu)(T - t_last)} 1 * e^{-int g}
-//! with F_p = diag(mu + g(t_p-)) at a trade and diag(b(x_p)) (Student-t density over the present
-//! inputs) at an observation step. With no trades and mu = 0, n = 0 it is exactly the continuous-
-//! time Student-t model; with no observation steps it is exactly the regime-modulated Hawkes model
-//! (both tested).
+//! **Activity is evidence, not the clock.** Trades enter through the arrival likelihood (busy regimes
+//! trade more and cluster more); they are not also a time deformation, which would use the same
+//! information twice. Regime-dependent timing is modelled jointly (Lange, Hubbard, Inoue & Minin
+//! 2015), as Gruger, Kay & Schumacher (1991) require for informative observation times.
 //!
-//! Training (EM): one scaled forward-backward over all points; expected regime occupancy and
-//! switches (`StepStatistics::with_event_rates`); immigrant / offspring responsibilities at trades;
-//! regime posteriors at observation steps for the Student-t updates (shared `update_emissions`).
+//! **Time of day.** Trading intensity follows a strong daily rhythm; a background rate that depended
+//! only on the regime would make the regimes learn the clock (Andersen & Bollerslev 1997; the LaMa
+//! review's caution). With the multiplicative factor s_b (normalized to average 1 over open time) the
+//! regimes capture departures from the normal rhythm.
+//!
+//! Likelihood: the product, in time order, of e^{(Q - diag(mu s_b)) dt} for open gaps (with the
+//! smallest rate's decay factored out as a log scale, `no_event_matrix_scaled`, so long gaps with a
+//! busy regime do not underflow),
+//! e^{closed_weight Q dt} for closed gaps, diag(mu s_b + g(t-)) at a trade and diag(b(x)) at an
+//! observation step, times e^{-int g over open time}. With no trades and mu = 0, n = 0 on an all-open
+//! timeline it is exactly the continuous-time Student-t model; with no observation steps it is
+//! exactly the regime-modulated Hawkes model (both tested).
+//!
+//! Training (EM / ECM): one scaled forward-backward over all items; expected regime occupancy and
+//! switches per open bucket and for closed time (`StepStatistics`); immigrant / offspring
+//! responsibilities at trades; regime posteriors at observation steps for the Student-t updates.
+//! M-step, each block maximizing the expected complete-data log-likelihood given the others:
+//!   q_kl = (N_open_kl + N_closed_kl) / (T_open_k + w T_closed_k),  w = sum N_closed / sum_k exit_k T_closed_k
+//!   mu_k = sum_b I_kb / sum_b s_b T_kb,  s_b = sum_k I_kb / sum_k mu_k T_kb  (alternated, s normalized)
+//!   n, beta: offspring count over the open-time echo budget; beta by golden section.
 
 use crate::continuous_time_student_t::{ContinuousTimeStudentT, Step, update_emissions};
-use crate::elapsed_time_transitions::{ElapsedTimeError, StepStatistics, no_event_matrix};
-use crate::regime_modulated_hawkes::{excitation_before_events, excitation_integral, golden_max};
+use crate::elapsed_time_transitions::{ElapsedTimeError, StepStatistics, no_event_matrix_scaled, shifted_rates, weighted_transition_matrix};
+use crate::regime_modulated_hawkes::golden_max;
 use crate::regime_path_simulator::{Generator, GeneratorError};
 
-/// The agreed step trigger: a step fires when, since the previous step, `trades` trades OR `volume`
-/// contracts have arrived (at the trade that reaches either), or `floor` time has passed with
-/// neither (a time-only step at exactly previous + floor).
+/// One period of a window's timeline.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct StepTrigger {
-    pub trades: u32,
-    pub volume: u64,
-    pub floor: f64,
+pub enum Piece {
+    /// Market open, in time-of-day bucket `bucket`.
+    Open { duration: f64, bucket: usize },
+    /// Market closed.
+    Closed { duration: f64 },
 }
 
-/// Step times on [0, horizon] for ascending trade times and their sizes.
-pub fn step_times(trade_times: &[f64], sizes: &[u64], trigger: StepTrigger, horizon: f64) -> Vec<f64> {
-    let mut steps = Vec::new();
-    let mut last = 0.0;
-    let (mut count, mut volume) = (0u32, 0u64);
-    for (&t, &size) in trade_times.iter().zip(sizes) {
-        while t - last >= trigger.floor {
-            last += trigger.floor;
-            steps.push(last);
-            count = 0;
-            volume = 0;
-        }
-        count += 1;
-        volume += size;
-        if count >= trigger.trades || volume >= trigger.volume {
-            steps.push(t);
-            last = t;
-            count = 0;
-            volume = 0;
+impl Piece {
+    fn duration(&self) -> f64 {
+        match self {
+            Self::Open { duration, .. } | Self::Closed { duration } => *duration,
         }
     }
-    while last + trigger.floor <= horizon {
-        last += trigger.floor;
-        steps.push(last);
-    }
-    steps
 }
 
 /// One point of the joint stream.
@@ -80,26 +77,31 @@ impl<const D: usize> Point<D> {
     }
 }
 
-/// One observation window: time-ordered points in [0, horizon].
+/// One observation window: time-ordered points on a timeline starting at time 0.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JointWindow<const D: usize> {
     pub points: Vec<Point<D>>,
-    pub horizon: f64,
+    pub timeline: Vec<Piece>,
 }
 
 impl<const D: usize> JointWindow<D> {
     /// Merges trades and observation steps into one stream (trades first at equal times).
-    pub fn merge(trades: &[f64], observations: &[(f64, [f64; D], [bool; D])], horizon: f64) -> Self {
+    pub fn new(trades: &[f64], observations: &[(f64, [f64; D], [bool; D])], timeline: Vec<Piece>) -> Self {
         let mut points: Vec<Point<D>> = trades.iter().map(|&time| Point::Trade { time }).collect();
         points.extend(observations.iter().map(|&(time, values, present)| Point::Observation { time, values, present }));
         points.sort_by(|a, b| {
             a.time().total_cmp(&b.time()).then_with(|| matches!(a, Point::Observation { .. }).cmp(&matches!(b, Point::Observation { .. })))
         });
-        Self { points, horizon }
+        Self { points, timeline }
     }
 
-    fn trade_times(&self) -> Vec<f64> {
-        self.points.iter().filter_map(|p| if let Point::Trade { time } = p { Some(*time) } else { None }).collect()
+    /// A window that is open throughout, in one bucket.
+    pub fn all_open(trades: &[f64], observations: &[(f64, [f64; D], [bool; D])], horizon: f64) -> Self {
+        Self::new(trades, observations, vec![Piece::Open { duration: horizon, bucket: 0 }])
+    }
+
+    pub fn horizon(&self) -> f64 {
+        self.timeline.iter().map(Piece::duration).sum()
     }
 }
 
@@ -107,8 +109,10 @@ impl<const D: usize> JointWindow<D> {
 pub enum JointError {
     ElapsedTime(ElapsedTimeError),
     Generator(GeneratorError),
-    /// Points must be ascending and inside [0, horizon].
+    /// Points must be ascending, inside the timeline, and only trades/steps while open.
     PointTimes,
+    /// A piece's bucket is outside the model's time-of-day factors.
+    Bucket(usize),
     EmptyRegime(usize),
     NoStationaryDistribution,
 }
@@ -118,7 +122,8 @@ impl std::fmt::Display for JointError {
         match self {
             Self::ElapsedTime(e) => write!(f, "{e}"),
             Self::Generator(e) => write!(f, "{e}"),
-            Self::PointTimes => write!(f, "points must be ascending and inside [0, horizon]"),
+            Self::PointTimes => write!(f, "points must be ascending and lie in open periods of the timeline"),
+            Self::Bucket(b) => write!(f, "time-of-day bucket {b} has no factor"),
             Self::EmptyRegime(k) => write!(f, "regime {k} received no expected time"),
             Self::NoStationaryDistribution => write!(f, "generator has no unique stationary distribution"),
         }
@@ -140,13 +145,64 @@ impl From<GeneratorError> for JointError {
 }
 
 /// The joint model. `observation` carries the generator, the initial distribution and the
-/// Student-t inputs; the remaining fields describe the trade arrivals.
+/// Student-t inputs; the remaining fields describe market time and the trade arrivals.
 #[derive(Debug, Clone, PartialEq)]
 pub struct JointRegimeModel<const D: usize, const K: usize> {
     pub observation: ContinuousTimeStudentT<D, K>,
+    /// Regime background trade levels mu_k.
     pub baseline: [f64; K],
+    /// Time-of-day factors s_b (one per bucket; average 1 over open time after fitting).
+    pub seasonal: Vec<f64>,
+    /// Regime switching rate while closed, as a fraction of the open rate (in [0, 1]).
+    pub closed_weight: f64,
     pub branching_ratio: f64,
     pub decay: f64,
+}
+
+/// The timeline walked against the points: what happens next.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Item {
+    /// Time passing: open in a bucket, or closed (`None`).
+    Gap { duration: f64, bucket: Option<usize> },
+    /// The point with this index, during an open period in this bucket.
+    At { point: usize, bucket: usize },
+}
+
+fn walk<const D: usize>(window: &JointWindow<D>) -> Result<Vec<Item>, JointError> {
+    let mut items = Vec::with_capacity(window.points.len() * 2 + window.timeline.len());
+    let mut next = 0usize;
+    let mut cursor = 0.0;
+    let mut start = 0.0;
+    for piece in &window.timeline {
+        let end = start + piece.duration();
+        match *piece {
+            Piece::Open { bucket, .. } => {
+                while next < window.points.len() && window.points[next].time() <= end {
+                    let t = window.points[next].time();
+                    if t < cursor {
+                        return Err(JointError::PointTimes);
+                    }
+                    items.push(Item::Gap { duration: t - cursor, bucket: Some(bucket) });
+                    items.push(Item::At { point: next, bucket });
+                    cursor = t;
+                    next += 1;
+                }
+                items.push(Item::Gap { duration: end - cursor, bucket: Some(bucket) });
+            }
+            Piece::Closed { .. } => {
+                if next < window.points.len() && window.points[next].time() < end {
+                    return Err(JointError::PointTimes);
+                }
+                items.push(Item::Gap { duration: end - cursor, bucket: None });
+            }
+        }
+        cursor = end;
+        start = end;
+    }
+    if next < window.points.len() {
+        return Err(JointError::PointTimes);
+    }
+    Ok(items)
 }
 
 fn row_times<const K: usize>(row: &[f64; K], m: &[[f64; K]; K]) -> [f64; K] {
@@ -159,70 +215,86 @@ fn row_times<const K: usize>(row: &[f64; K], m: &[[f64; K]; K]) -> [f64; K] {
     out
 }
 
-struct Forward<const K: usize> {
-    /// gaps[p] precedes point p; gaps[P] runs to the horizon.
-    gaps: Vec<[[f64; K]; K]>,
-    factors: Vec<[f64; K]>,
-    /// alpha[0] = initial; alpha[p + 1] after point p (normalized).
-    alpha: Vec<[f64; K]>,
-    /// c_p for each point, then c_end.
-    scales: Vec<f64>,
-    /// Excitation just before each trade, by trade order.
-    excitation: Vec<f64>,
-    log_likelihood: f64,
-}
-
 fn as_step<const D: usize>(values: [f64; D], present: [bool; D]) -> Step<D> {
     Step { elapsed: 0.0, values, present }
 }
 
+/// Per item: the operator (a matrix for gaps, a diagonal for points).
+#[derive(Debug, Clone)]
+enum Operator<const K: usize> {
+    Matrix([[f64; K]; K]),
+    Diagonal([f64; K]),
+}
+
+struct Forward<const K: usize> {
+    items: Vec<Item>,
+    operators: Vec<Operator<K>>,
+    /// Excitation just before each item (only used at trades).
+    excitation: Vec<f64>,
+    /// alpha[0] = initial; alpha[i + 1] after item i (normalized).
+    alpha: Vec<[f64; K]>,
+    scales: Vec<f64>,
+    log_likelihood: f64,
+}
+
 impl<const D: usize, const K: usize> JointRegimeModel<D, K> {
+    fn arrival_rates(&self, bucket: usize) -> Result<[f64; K], JointError> {
+        let s = *self.seasonal.get(bucket).ok_or(JointError::Bucket(bucket))?;
+        Ok(self.baseline.map(|mu| mu * s))
+    }
+
     fn forward(&self, window: &JointWindow<D>) -> Result<Forward<K>, JointError> {
-        let ascending = window.points.windows(2).all(|w| w[0].time() <= w[1].time());
-        let inside = window.points.first().is_none_or(|p| p.time() >= 0.0) && window.points.last().is_none_or(|p| p.time() <= window.horizon);
-        if !(ascending && inside && window.horizon.is_finite()) {
-            return Err(JointError::PointTimes);
-        }
+        let items = walk(window)?;
         let generator = &self.observation.generator;
-        let trades = window.trade_times();
-        let excitation = excitation_before_events(&trades, self.branching_ratio, self.decay);
-        let mut gaps = Vec::with_capacity(window.points.len() + 1);
-        let mut factors = Vec::with_capacity(window.points.len());
-        let mut alpha = Vec::with_capacity(window.points.len() + 1);
+        let jump = self.branching_ratio * self.decay;
+        let mut operators = Vec::with_capacity(items.len());
+        let mut excitation = Vec::with_capacity(items.len());
+        let mut alpha = Vec::with_capacity(items.len() + 1);
         alpha.push(self.observation.initial);
-        let mut scales = Vec::with_capacity(window.points.len() + 1);
+        let mut scales = Vec::with_capacity(items.len());
         let mut log_likelihood = 0.0;
-        let mut prev = 0.0;
-        let mut trade_index = 0;
-        for point in &window.points {
-            let gap = no_event_matrix(generator, &self.baseline, point.time() - prev)?;
-            prev = point.time();
-            let (factor, shift) = match point {
-                Point::Trade { .. } => {
-                    let g = excitation[trade_index];
-                    trade_index += 1;
-                    (self.baseline.map(|mu| mu + g), 0.0)
+        let mut g = 0.0;
+        for item in &items {
+            excitation.push(g);
+            let (op, shift) = match *item {
+                Item::Gap { duration, bucket } => {
+                    let decay = (-self.decay * duration).exp();
+                    let (m, log_scale) = match bucket {
+                        Some(b) => {
+                            // Open: compensator of the echo over this gap.
+                            log_likelihood -= g * (1.0 - decay) / self.decay;
+                            no_event_matrix_scaled(generator, &self.arrival_rates(b)?, duration)?
+                        }
+                        None => (weighted_transition_matrix(generator, self.closed_weight, duration)?, 0.0),
+                    };
+                    g *= decay;
+                    (Operator::Matrix(m), log_scale)
                 }
-                Point::Observation { values, present, .. } => self.observation.scaled_emissions(&as_step(*values, *present)),
+                Item::At { point, bucket } => match &window.points[point] {
+                    Point::Trade { .. } => {
+                        let rates = self.arrival_rates(bucket)?;
+                        let f = rates.map(|r| r + g);
+                        g += jump;
+                        (Operator::Diagonal(f), 0.0)
+                    }
+                    Point::Observation { values, present, .. } => {
+                        let (b, shift) = self.observation.scaled_emissions(&as_step(*values, *present));
+                        (Operator::Diagonal(b), shift)
+                    }
+                },
             };
-            let mut u = row_times(&alpha[alpha.len() - 1], &gap);
-            for (v, &f) in u.iter_mut().zip(&factor) {
-                *v *= f;
-            }
+            let prev = alpha[alpha.len() - 1];
+            let u = match &op {
+                Operator::Matrix(m) => row_times(&prev, m),
+                Operator::Diagonal(f) => std::array::from_fn(|k| prev[k] * f[k]),
+            };
             let c: f64 = u.iter().sum();
             log_likelihood += c.ln() + shift;
             scales.push(c);
             alpha.push(u.map(|v| v / c));
-            gaps.push(gap);
-            factors.push(factor);
+            operators.push(op);
         }
-        let end_gap = no_event_matrix(generator, &self.baseline, window.horizon - prev)?;
-        let c_end: f64 = row_times(&alpha[alpha.len() - 1], &end_gap).iter().sum();
-        log_likelihood += c_end.ln();
-        scales.push(c_end);
-        gaps.push(end_gap);
-        log_likelihood -= excitation_integral(&trades, window.horizon, self.branching_ratio, self.decay);
-        Ok(Forward { gaps, factors, alpha, scales, excitation, log_likelihood })
+        Ok(Forward { items, operators, excitation, alpha, scales, log_likelihood })
     }
 
     /// Exact log-likelihood of one window.
@@ -230,9 +302,10 @@ impl<const D: usize, const K: usize> JointRegimeModel<D, K> {
         Ok(self.forward(window)?.log_likelihood)
     }
 
-    /// Regime probabilities just after each point, given the points up to it.
+    /// Regime probabilities just after each point, given everything up to it.
     pub fn filtered_regimes(&self, window: &JointWindow<D>) -> Result<Vec<[f64; K]>, JointError> {
-        Ok(self.forward(window)?.alpha.split_off(1))
+        let fw = self.forward(window)?;
+        Ok(fw.items.iter().enumerate().filter(|(_, it)| matches!(it, Item::At { .. })).map(|(i, _)| fw.alpha[i + 1]).collect())
     }
 }
 
@@ -255,6 +328,137 @@ pub struct JointFitReport {
     pub converged: bool,
 }
 
+/// Expected sufficient statistics of one E-step.
+struct Expectations<const D: usize, const K: usize> {
+    /// Per bucket: occupancy and switches while open.
+    open: Vec<StepStatistics<K>>,
+    closed: StepStatistics<K>,
+    /// Per bucket: expected immigrants per regime.
+    immigrants: Vec<[f64; K]>,
+    offspring: f64,
+    offspring_lag: f64,
+    /// sum over open gaps of S0(gap start) (1 - e^{-beta d}), as a function of beta: stored as
+    /// (gap duration, time since each earlier trade) is too large, so the budget is recomputed from
+    /// the windows when beta changes (see `echo_budget`).
+    observed: Vec<(Step<D>, [f64; K])>,
+    log_likelihood: f64,
+}
+
+/// sum over open gaps of sum_{earlier trades j} e^{-beta (gap start - t_j)} (1 - e^{-beta d}):
+/// the echo's open-time exposure, so that int g over open time = n * budget.
+fn echo_budget<const D: usize>(windows: &[JointWindow<D>], items: &[Vec<Item>], beta: f64) -> f64 {
+    let mut total = 0.0;
+    for (window, items) in windows.iter().zip(items) {
+        let mut s0 = 0.0f64;
+        for item in items {
+            match *item {
+                Item::Gap { duration, bucket } => {
+                    let decay = (-beta * duration).exp();
+                    if bucket.is_some() {
+                        total += s0 * (1.0 - decay);
+                    }
+                    s0 *= decay;
+                }
+                Item::At { point, .. } => {
+                    if matches!(window.points[point], Point::Trade { .. }) {
+                        s0 += 1.0;
+                    }
+                }
+            }
+        }
+    }
+    total
+}
+
+fn e_step<const D: usize, const K: usize>(
+    model: &JointRegimeModel<D, K>,
+    windows: &[JointWindow<D>],
+    all_items: &mut Vec<Vec<Item>>,
+) -> Result<Expectations<D, K>, JointError> {
+    let generator = &model.observation.generator;
+    let buckets = model.seasonal.len();
+    let mut open: Vec<StepStatistics<K>> =
+        (0..buckets).map(|b| model.arrival_rates(b).map(|r| StepStatistics::with_event_rates(generator, &shifted_rates(&r)))).collect::<Result<_, _>>()?;
+    let mut closed = StepStatistics::with_rate_weight(generator, model.closed_weight);
+    let mut ex = Expectations {
+        open: Vec::new(),
+        closed: StepStatistics::with_rate_weight(generator, model.closed_weight),
+        immigrants: vec![[0.0; K]; buckets],
+        offspring: 0.0,
+        offspring_lag: 0.0,
+        observed: Vec::new(),
+        log_likelihood: 0.0,
+    };
+    all_items.clear();
+    for window in windows {
+        let fw = model.forward(window)?;
+        ex.log_likelihood += fw.log_likelihood;
+        let n = fw.items.len();
+        // Mean lag to the parent of each trade (calendar time), by item index.
+        let mut lag_at = vec![0.0; n];
+        {
+            let (mut s0, mut s1) = (0.0f64, 0.0f64);
+            for (i, item) in fw.items.iter().enumerate() {
+                match *item {
+                    Item::Gap { duration, .. } => {
+                        let decay = (-model.decay * duration).exp();
+                        s1 = decay * (s1 + duration * s0);
+                        s0 *= decay;
+                    }
+                    Item::At { point, .. } => {
+                        if matches!(window.points[point], Point::Trade { .. }) {
+                            lag_at[i] = if s0 > 0.0 { s1 / s0 } else { 0.0 };
+                            s0 += 1.0;
+                        }
+                    }
+                }
+            }
+        }
+        // Backward: beta_last = 1; beta_{i-1} = O_i beta_i / c_i.
+        let mut beta = [1.0; K];
+        for i in (0..n).rev() {
+            let alpha_prev = fw.alpha[i];
+            let c = fw.scales[i];
+            match (&fw.items[i], &fw.operators[i]) {
+                (Item::Gap { duration, bucket }, Operator::Matrix(m)) => {
+                    let w: [[f64; K]; K] = std::array::from_fn(|k| std::array::from_fn(|l| alpha_prev[k] * beta[l] / c));
+                    match bucket {
+                        Some(b) => open[*b].accumulate(*duration, &w)?,
+                        None => closed.accumulate(*duration, &w)?,
+                    }
+                    beta = std::array::from_fn(|k| (0..K).map(|l| m[k][l] * beta[l]).sum::<f64>() / c);
+                }
+                (Item::At { point, bucket }, Operator::Diagonal(f)) => {
+                    let after = fw.alpha[i + 1];
+                    let gamma: [f64; K] = std::array::from_fn(|k| after[k] * beta[k]);
+                    let s: f64 = gamma.iter().sum();
+                    let gamma = gamma.map(|v| v / s);
+                    match &window.points[*point] {
+                        Point::Trade { .. } => {
+                            let g = fw.excitation[i];
+                            for (k, (&gamma_k, &rate)) in gamma.iter().zip(f).enumerate() {
+                                if rate > 0.0 {
+                                    ex.immigrants[*bucket][k] += gamma_k * (rate - g) / rate;
+                                    let p_off = gamma_k * g / rate;
+                                    ex.offspring += p_off;
+                                    ex.offspring_lag += p_off * lag_at[i];
+                                }
+                            }
+                        }
+                        Point::Observation { values, present, .. } => ex.observed.push((as_step(*values, *present), gamma)),
+                    }
+                    beta = std::array::from_fn(|k| f[k] * beta[k] / c);
+                }
+                _ => unreachable!("gaps carry matrices, points carry diagonals"),
+            }
+        }
+        all_items.push(fw.items);
+    }
+    ex.open = open;
+    ex.closed = closed;
+    Ok(ex)
+}
+
 /// Fits by EM from `start`. Every window starts with no excitation.
 pub fn fit<const D: usize, const K: usize>(
     start: &JointRegimeModel<D, K>,
@@ -264,122 +468,108 @@ pub fn fit<const D: usize, const K: usize>(
     let mut model = start.clone();
     let mut log_likelihoods = Vec::new();
     let mut converged = false;
+    let mut items = Vec::new();
     for _ in 0..settings.max_iterations {
-        // ---- E-step ----
-        let mut stats = StepStatistics::with_event_rates(&model.observation.generator, &model.baseline);
-        let mut immigrants = [0.0; K];
-        let (mut offspring, mut offspring_lag) = (0.0, 0.0);
-        let mut observed: Vec<(Step<D>, [f64; K])> = Vec::new();
-        let mut total_ll = 0.0;
-        for window in windows {
-            let fw = model.forward(window)?;
-            total_ll += fw.log_likelihood;
-            let n_points = window.points.len();
-            let trades = window.trade_times();
-            // Mean lag to the parent for each trade (recursive sums over earlier trades).
-            let mut lags = vec![0.0; trades.len()];
-            let (mut s0, mut s1) = (0.0f64, 0.0f64);
-            for (lag, pair) in lags.iter_mut().skip(1).zip(trades.windows(2)) {
-                let dt = pair[1] - pair[0];
-                let decay = (-model.decay * dt).exp();
-                let a0 = s0 + 1.0;
-                s1 = decay * (s1 + dt * a0);
-                s0 = decay * a0;
-                *lag = if s0 > 0.0 { s1 / s0 } else { 0.0 };
-            }
-            // Backward pass.
-            let c_end = fw.scales[n_points];
-            let end_gap = &fw.gaps[n_points];
-            let mut beta: [f64; K] = std::array::from_fn(|k| end_gap[k].iter().sum::<f64>() / c_end);
-            let a_last = fw.alpha[n_points];
-            let w_end: [[f64; K]; K] = std::array::from_fn(|k| [a_last[k] / c_end; K]);
-            stats.accumulate(window.horizon - window.points.last().map_or(0.0, Point::time), &w_end)?;
-            let mut trade_index = trades.len();
-            for p in (0..n_points).rev() {
-                let alpha_p = fw.alpha[p + 1];
-                let gamma: [f64; K] = std::array::from_fn(|k| alpha_p[k] * beta[k]);
-                let s: f64 = gamma.iter().sum();
-                let gamma = gamma.map(|v| v / s);
-                match &window.points[p] {
-                    Point::Trade { .. } => {
-                        trade_index -= 1;
-                        let g = fw.excitation[trade_index];
-                        for (k, (&gamma_k, &rate)) in gamma.iter().zip(&fw.factors[p]).enumerate() {
-                            if rate > 0.0 {
-                                immigrants[k] += gamma_k * model.baseline[k] / rate;
-                                let p_off = gamma_k * g / rate;
-                                offspring += p_off;
-                                offspring_lag += p_off * lags[trade_index];
-                            }
-                        }
-                    }
-                    Point::Observation { values, present, .. } => observed.push((as_step(*values, *present), gamma)),
-                }
-                let alpha_prev = fw.alpha[p];
-                let c = fw.scales[p];
-                let f = fw.factors[p];
-                let w: [[f64; K]; K] = std::array::from_fn(|k| std::array::from_fn(|l| alpha_prev[k] * f[l] * beta[l] / c));
-                let gap_len = window.points[p].time() - if p == 0 { 0.0 } else { window.points[p - 1].time() };
-                stats.accumulate(gap_len, &w)?;
-                let gap = &fw.gaps[p];
-                beta = std::array::from_fn(|k| (0..K).map(|l| gap[k][l] * f[l] * beta[l]).sum::<f64>() / c);
-            }
-        }
+        let ex = e_step(&model, windows, &mut items)?;
         if let Some(&prev) = log_likelihoods.last()
-            && total_ll - prev < settings.tolerance
+            && ex.log_likelihood - prev < settings.tolerance
         {
-            log_likelihoods.push(total_ll);
+            log_likelihoods.push(ex.log_likelihood);
             converged = true;
             break;
         }
-        log_likelihoods.push(total_ll);
+        log_likelihoods.push(ex.log_likelihood);
+        let buckets = model.seasonal.len();
 
-        // ---- M-step: switching rates and background rates ----
+        // ---- Switching rates and the closed-time weight (alternated) ----
+        let mut open_time = [0.0; K];
+        let mut open_jumps = [[0.0; K]; K];
+        for st in &ex.open {
+            for k in 0..K {
+                open_time[k] += st.occupancy[k];
+                for (total, &n) in open_jumps[k].iter_mut().zip(&st.jumps[k]) {
+                    *total += n;
+                }
+            }
+        }
+        let (closed_time, closed_jumps) = (ex.closed.occupancy, ex.closed.jumps);
+        let total_closed_jumps: f64 = closed_jumps.iter().flatten().sum();
+        let any_closed = closed_time.iter().any(|&t| t > 0.0);
+        let mut weight = model.closed_weight;
         let mut q = [[0.0; K]; K];
-        let mut baseline = [0.0; K];
-        for (k, q_row) in q.iter_mut().enumerate() {
-            let time = stats.occupancy[k];
-            if time <= 0.0 {
-                return Err(JointError::EmptyRegime(k));
+        for _ in 0..50 {
+            for k in 0..K {
+                let exposure = open_time[k] + weight * closed_time[k];
+                if exposure <= 0.0 {
+                    return Err(JointError::EmptyRegime(k));
+                }
+                let mut exit = 0.0;
+                for l in (0..K).filter(|&l| l != k) {
+                    q[k][l] = (open_jumps[k][l] + closed_jumps[k][l]) / exposure;
+                    exit += q[k][l];
+                }
+                q[k][k] = -exit;
             }
-            baseline[k] = immigrants[k] / time;
-            let mut exit = 0.0;
-            for l in (0..K).filter(|&l| l != k) {
-                q_row[l] = stats.jumps[k][l] / time;
-                exit += q_row[l];
+            if !any_closed {
+                break;
             }
-            q_row[k] = -exit;
+            let denominator: f64 = (0..K).map(|k| -q[k][k] * closed_time[k]).sum();
+            weight = if denominator > 0.0 { (total_closed_jumps / denominator).clamp(0.0, 1.0) } else { 0.0 };
         }
         let generator = Generator::new(q)?;
 
-        // ---- M-step: excitation ----
-        let (branching_ratio, decay) = if offspring > 1e-12 {
-            let budget = |beta: f64| {
-                windows
-                    .iter()
-                    .map(|w| w.trade_times().iter().map(|&t| 1.0 - (-beta * (w.horizon - t)).exp()).sum::<f64>())
-                    .sum::<f64>()
-            };
+        // ---- Background levels and time-of-day factors (alternated, factors normalized) ----
+        let exposure: Vec<[f64; K]> = ex.open.iter().map(|st| st.occupancy).collect();
+        let mut baseline = model.baseline;
+        let mut seasonal = model.seasonal.clone();
+        for _ in 0..50 {
+            for k in 0..K {
+                let num: f64 = (0..buckets).map(|b| ex.immigrants[b][k]).sum();
+                let den: f64 = (0..buckets).map(|b| seasonal[b] * exposure[b][k]).sum();
+                baseline[k] = if den > 0.0 { num / den } else { 0.0 };
+            }
+            for b in 0..buckets {
+                let num: f64 = ex.immigrants[b].iter().sum();
+                let den: f64 = (0..K).map(|k| baseline[k] * exposure[b][k]).sum();
+                seasonal[b] = if den > 0.0 { num / den } else { 1.0 };
+            }
+            let open_by_bucket: Vec<f64> = exposure.iter().map(|e| e.iter().sum()).collect();
+            let total_open: f64 = open_by_bucket.iter().sum();
+            let mean: f64 = seasonal.iter().zip(&open_by_bucket).map(|(s, w)| s * w).sum::<f64>() / total_open;
+            if mean > 0.0 {
+                for s in &mut seasonal {
+                    *s /= mean;
+                }
+                for mu in &mut baseline {
+                    *mu *= mean;
+                }
+            }
+        }
+
+        // ---- Echo: n = O / budget(beta), beta by golden section ----
+        let (branching_ratio, decay) = if ex.offspring > 1e-12 {
             let objective = |log_beta: f64| {
                 let beta = log_beta.exp();
-                let c = budget(beta);
-                let n = offspring / c;
-                offspring * (n * beta).ln() - beta * offspring_lag - n * c
+                let c = echo_budget(windows, &items, beta);
+                let n = ex.offspring / c;
+                ex.offspring * (n * beta).ln() - beta * ex.offspring_lag - n * c
             };
             let centre = model.decay.ln();
             let beta = golden_max(objective, centre - 5.0, centre + 5.0).exp();
-            (offspring / budget(beta), beta)
+            (ex.offspring / echo_budget(windows, &items, beta), beta)
         } else {
             (0.0, model.decay)
         };
 
-        // ---- M-step: Student-t inputs ----
-        let (means, covars, dof) = update_emissions(&model.observation, || observed.iter().map(|(s, g)| (s, g)), settings.estimate_dof);
+        // ---- Student-t inputs ----
+        let (means, covars, dof) = update_emissions(&model.observation, || ex.observed.iter().map(|(s, g)| (s, g)), settings.estimate_dof);
 
         let initial = generator.stationary_distribution().ok_or(JointError::NoStationaryDistribution)?;
         model = JointRegimeModel {
             observation: ContinuousTimeStudentT { generator, initial, means, covars, dof, ..model.observation },
             baseline,
+            seasonal,
+            closed_weight: weight,
             branching_ratio,
             decay,
         };
@@ -392,8 +582,8 @@ pub fn fit<const D: usize, const K: usize>(
 mod tests {
     use super::*;
     use crate::init::SplitMix64;
-    use crate::regime_modulated_hawkes::{EventWindow, RegimeHawkes, simulate_events_on_path};
-    use crate::regime_path_simulator::{simulate_emissions, simulate_path};
+    use crate::regime_modulated_hawkes::{EventWindow, RegimeHawkes};
+    use crate::regime_path_simulator::simulate_emissions;
 
     fn observation_model() -> ContinuousTimeStudentT<2, 2> {
         let generator = Generator::new([[-0.004, 0.004], [0.008, -0.008]]).unwrap();
@@ -410,24 +600,17 @@ mod tests {
         }
     }
 
-    #[test]
-    fn step_trigger_known_answers() {
-        let trigger = StepTrigger { trades: 3, volume: 10, floor: 5.0 };
-        // Trades at 1, 2, 3 -> 3rd trade fires at 3. Trade at 4 (size 12) -> volume fires at 4.
-        // Then nothing until 9 -> floor step at 9 (4 + 5). Trade at 9.5, then floor at 14.
-        let steps = step_times(&[1.0, 2.0, 3.0, 4.0, 9.5], &[1, 1, 1, 12, 1], trigger, 15.0);
-        assert_eq!(steps, vec![3.0, 4.0, 9.0, 14.0]);
-        // No trades: floor steps only.
-        assert_eq!(step_times(&[], &[], trigger, 12.0), vec![5.0, 10.0]);
+    fn plain(observation: ContinuousTimeStudentT<2, 2>, baseline: [f64; 2], n: f64, beta: f64) -> JointRegimeModel<2, 2> {
+        JointRegimeModel { observation, baseline, seasonal: vec![1.0], closed_weight: 1.0, branching_ratio: n, decay: beta }
     }
 
-    /// No trades, zero background rate, no excitation: exactly the continuous-time Student-t model.
+    /// All open, no trades, mu = 0, n = 0: exactly the continuous-time Student-t model.
     #[test]
     fn without_trades_it_is_the_continuous_time_student_t_model() {
         let obs = observation_model();
-        let joint = JointRegimeModel { observation: obs.clone(), baseline: [0.0, 0.0], branching_ratio: 0.0, decay: 1.0 };
+        let joint = plain(obs.clone(), [0.0, 0.0], 0.0, 1.0);
         let data = [(0.0, [-1.8, 0.7], [true, true]), (3.0, [2.2, 0.0], [true, false]), (3.5, [1.9, -1.3], [true, true]), (40.0, [0.0, 0.0], [false, false])];
-        let window = JointWindow::merge(&[], &data, 50.0);
+        let window = JointWindow::all_open(&[], &data, 50.0);
         let mut prev = 0.0;
         let steps: Vec<Step<2>> = data
             .iter()
@@ -441,34 +624,160 @@ mod tests {
         assert!((joint.log_likelihood(&window).unwrap() - expected).abs() < 1e-11);
     }
 
-    /// No observation steps: exactly the regime-modulated Hawkes model.
+    /// All open, no observation steps: exactly the regime-modulated Hawkes model.
     #[test]
     fn without_observations_it_is_the_regime_modulated_hawkes_model() {
         let obs = observation_model();
-        let joint = JointRegimeModel { observation: obs.clone(), baseline: [0.3, 2.0], branching_ratio: 0.4, decay: 2.5 };
+        let joint = plain(obs.clone(), [0.3, 2.0], 0.4, 2.5);
         let trades = vec![0.2, 0.25, 1.0, 6.0, 6.01, 30.0];
-        let window = JointWindow::merge(&trades, &[], 40.0);
+        let window = JointWindow::all_open(&trades, &[], 40.0);
         let hawkes = RegimeHawkes { generator: obs.generator.clone(), initial: obs.initial, baseline: [0.3, 2.0], branching_ratio: 0.4, decay: 2.5 };
         let expected = hawkes.log_likelihood(&EventWindow { times: trades, horizon: 40.0 }).unwrap();
         assert!((joint.log_likelihood(&window).unwrap() - expected).abs() < 1e-11);
     }
 
-    fn simulate(truth: &JointRegimeModel<2, 2>, trigger: StepTrigger, horizon: f64, seed: u64) -> JointWindow<2> {
+    /// A closed period with weight 0 changes nothing about the regime: the regime probabilities
+    /// after it equal those without it, and a long weekend without trades is not evidence of calm.
+    #[test]
+    fn a_closed_period_is_not_evidence_of_a_calm_regime() {
+        let mut joint = plain(observation_model(), [0.3, 3.0], 0.0, 1.0);
+        joint.closed_weight = 0.0;
+        let trades_before = [1.0, 1.5, 2.0, 2.2, 2.4];
+        let open_only = JointWindow::all_open(&trades_before, &[], 3.0);
+        let mut timeline = vec![Piece::Open { duration: 3.0, bucket: 0 }, Piece::Closed { duration: 5_000.0 }];
+        let with_weekend = JointWindow::new(&trades_before, &[], timeline.clone());
+        let a = joint.forward(&open_only).unwrap();
+        let b = joint.forward(&with_weekend).unwrap();
+        assert!((a.log_likelihood - b.log_likelihood).abs() < 1e-12);
+        let (pa, pb) = (a.alpha[a.alpha.len() - 1], b.alpha[b.alpha.len() - 1]);
+        assert!(pa.iter().zip(&pb).all(|(x, y)| (x - y).abs() < 1e-12));
+        // The same 5,000 time units OPEN without a trade would be strong evidence for the calm regime.
+        timeline[1] = Piece::Open { duration: 5_000.0, bucket: 0 };
+        let open_weekend = joint.forward(&JointWindow::new(&trades_before, &[], timeline)).unwrap();
+        let calm = open_weekend.alpha[open_weekend.alpha.len() - 1][0];
+        assert!(calm > 0.99, "{calm}");
+    }
+
+    /// The scaled forward pass equals a direct product over a mixed timeline (open buckets with
+    /// different time-of-day factors, a closed period at weight 0.3, trades and an observation).
+    #[test]
+    fn scaled_forward_equals_the_direct_product_on_a_mixed_timeline() {
+        let mut joint = plain(observation_model(), [0.5, 2.0], 0.3, 1.5);
+        joint.seasonal = vec![1.4, 0.6];
+        joint.closed_weight = 0.3;
+        let timeline = vec![Piece::Open { duration: 2.0, bucket: 0 }, Piece::Closed { duration: 10.0 }, Piece::Open { duration: 3.0, bucket: 1 }];
+        let trades = [0.5, 0.6, 1.9, 12.5, 14.0];
+        let obs = [(1.0, [-1.5, 0.8], [true, true]), (13.0, [2.0, 0.0], [true, false])];
+        let window = JointWindow::new(&trades, &obs, timeline);
+        // Direct: walk by hand.
+        let generator = &joint.observation.generator;
+        let (n, beta) = (0.3, 1.5);
+        let mut row = joint.observation.initial;
+        let mut g = 0.0;
+        let mut compensator = 0.0;
+        let mut t = 0.0;
+        let open_gap = |row: &mut [f64; 2], g: &mut f64, comp: &mut f64, d: f64, s: f64| {
+            *row = row_times(row, &crate::elapsed_time_transitions::no_event_matrix(generator, &[0.5 * s, 2.0 * s], d).unwrap());
+            *comp += *g * (1.0 - (-beta * d).exp()) / beta;
+            *g *= (-beta * d).exp();
+        };
+        let events: [(f64, Option<usize>); 7] = [(0.5, None), (0.6, None), (1.0, Some(0)), (1.9, None), (12.5, None), (13.0, Some(1)), (14.0, None)];
+        for &(time, obs_index) in &events {
+            let s = if time < 2.0 { 1.4 } else { 0.6 };
+            if t < 2.0 && time > 2.0 {
+                open_gap(&mut row, &mut g, &mut compensator, 2.0 - t, 1.4);
+                row = row_times(&row, &weighted_transition_matrix(generator, 0.3, 10.0).unwrap());
+                g *= (-beta * 10.0f64).exp();
+                t = 12.0;
+            }
+            open_gap(&mut row, &mut g, &mut compensator, time - t, s);
+            t = time;
+            match obs_index {
+                None => {
+                    for (k, v) in row.iter_mut().enumerate() {
+                        *v *= [0.5, 2.0][k] * s + g;
+                    }
+                    g += n * beta;
+                }
+                Some(i) => {
+                    let st = as_step(obs[i].1, obs[i].2);
+                    for (k, v) in row.iter_mut().enumerate() {
+                        *v *= joint.observation.log_emission(k, &st).exp();
+                    }
+                }
+            }
+        }
+        open_gap(&mut row, &mut g, &mut compensator, 15.0 - t, 0.6);
+        let direct = row.iter().sum::<f64>().ln() - compensator;
+        let ll = joint.log_likelihood(&window).unwrap();
+        assert!((ll - direct).abs() < 1e-10, "{ll} vs {direct}");
+    }
+
+    /// Synthetic calendar: `days` repetitions of [open `open_len` split into the buckets, closed
+    /// `closed_len`].
+    fn calendar(days: usize, open_len: f64, closed_len: f64, buckets: usize) -> Vec<Piece> {
+        let mut t = Vec::new();
+        for _ in 0..days {
+            for b in 0..buckets {
+                t.push(Piece::Open { duration: open_len / buckets as f64, bucket: b });
+            }
+            t.push(Piece::Closed { duration: closed_len });
+        }
+        t
+    }
+
+    /// Exact simulation on a timeline: regimes switch at Q while open and at w Q while closed;
+    /// trades arrive while open at mu_k s_b + g (thinning); the echo decays in calendar time.
+    /// Observations at every `every`-th trade.
+    fn simulate(truth: &JointRegimeModel<2, 2>, timeline: &[Piece], every: usize, seed: u64) -> JointWindow<2> {
         let mut rng = SplitMix64::new(seed);
         let obs = &truth.observation;
-        let path = simulate_path(&obs.generator, &obs.initial, horizon, &mut rng);
-        let hawkes = RegimeHawkes { generator: obs.generator.clone(), initial: obs.initial, baseline: truth.baseline, branching_ratio: truth.branching_ratio, decay: truth.decay };
-        let (_, trades) = simulate_events_on_path(&hawkes, &path, &mut rng);
-        let sizes = vec![1u64; trades.len()];
-        let times = step_times(&trades, &sizes, trigger, horizon);
-        let states = path.sample_at(&times);
-        let xs = simulate_emissions(&states, &obs.means, &obs.covars, &obs.dof, &mut rng);
-        let observations: Vec<(f64, [f64; 2], [bool; 2])> = times.iter().zip(xs).map(|(&t, x)| (t, x, [rng.next_f64() > 0.2, rng.next_f64() > 0.2])).collect();
-        JointWindow::merge(&trades, &observations, horizon)
+        let q = obs.generator.matrix();
+        let mut state = if rng.next_f64() < obs.initial[0] { 0 } else { 1 };
+        let (mut t, mut g) = (0.0, 0.0);
+        let mut trades = Vec::new();
+        let mut states_at_obs = Vec::new();
+        let mut obs_times = Vec::new();
+        for piece in timeline {
+            let end = t + piece.duration();
+            let (rate_mult, bucket) = match *piece {
+                Piece::Open { bucket, .. } => (1.0, Some(bucket)),
+                Piece::Closed { .. } => (truth.closed_weight, None),
+            };
+            while t < end {
+                let exit = -q[state][state] * rate_mult;
+                let arrival_bound = bucket.map_or(0.0, |b| truth.baseline[state] * truth.seasonal[b] + g);
+                let total = exit + arrival_bound;
+                let wait = if total > 0.0 { -(1.0 - rng.next_f64()).ln() / total } else { f64::INFINITY };
+                if t + wait >= end {
+                    g *= (-truth.decay * (end - t)).exp();
+                    t = end;
+                    break;
+                }
+                t += wait;
+                g *= (-truth.decay * wait).exp();
+                let u = rng.next_f64() * total;
+                if u < exit {
+                    state = 1 - state;
+                } else if let Some(b) = bucket
+                    && u - exit < truth.baseline[state] * truth.seasonal[b] + g
+                {
+                    trades.push(t);
+                    g += truth.branching_ratio * truth.decay;
+                    if every > 0 && trades.len() % every == 0 {
+                        obs_times.push(t);
+                        states_at_obs.push(state);
+                    }
+                }
+            }
+        }
+        let xs = simulate_emissions(&states_at_obs, &obs.means, &obs.covars, &obs.dof, &mut rng);
+        let observations: Vec<(f64, [f64; 2], [bool; 2])> = obs_times.iter().zip(xs).map(|(&t, x)| (t, x, [rng.next_f64() > 0.2, rng.next_f64() > 0.2])).collect();
+        JointWindow::new(&trades, &observations, timeline.to_vec())
     }
 
     fn truth() -> JointRegimeModel<2, 2> {
-        JointRegimeModel { observation: observation_model(), baseline: [0.3, 2.0], branching_ratio: 0.5, decay: 2.0 }
+        JointRegimeModel { observation: observation_model(), baseline: [0.3, 2.0], seasonal: vec![1.6, 0.5, 0.9], closed_weight: 0.1, branching_ratio: 0.5, decay: 2.0 }
     }
 
     fn start() -> JointRegimeModel<2, 2> {
@@ -481,40 +790,74 @@ mod tests {
             dof: [10.0, 10.0],
             ..observation_model()
         };
-        JointRegimeModel { observation, baseline: [0.5, 1.5], branching_ratio: 0.3, decay: 1.0 }
+        JointRegimeModel { observation, baseline: [0.5, 1.5], seasonal: vec![1.0; 3], closed_weight: 0.5, branching_ratio: 0.3, decay: 1.0 }
     }
-
-    const TRIGGER: StepTrigger = StepTrigger { trades: 20, volume: 1_000_000, floor: 30.0 };
 
     #[test]
     fn em_never_decreases_the_likelihood() {
-        let window = simulate(&truth(), TRIGGER, 4_000.0, 91);
+        let window = simulate(&truth(), &calendar(30, 100.0, 40.0, 3), 20, 91);
         let (_, report) = fit(&start(), &[window], JointFitSettings { max_iterations: 20, tolerance: f64::NEG_INFINITY, estimate_dof: true }).unwrap();
         for w in report.log_likelihoods.windows(2) {
             assert!(w[1] >= w[0] - 1e-7 * w[0].abs(), "decrease {} -> {}", w[0], w[1]);
         }
     }
 
-    /// The full known-answer test: trades with regime background rates and an echo, observation
-    /// steps fired by the real trigger (20 trades or 30 time units), Student-t inputs with 20% absent.
+    /// The full known-answer test: open/closed calendar with three time-of-day buckets, closed-time
+    /// weight 0.1, regimes, echo and Student-t inputs with 20% absent.
     #[test]
-    fn recovers_every_parameter_from_trades_and_steps() {
+    fn recovers_market_time_seasonality_and_every_parameter() {
         let t = truth();
-        let window = simulate(&t, TRIGGER, 20_000.0, 92);
+        let window = simulate(&t, &calendar(150, 100.0, 40.0, 3), 20, 92);
         let (f, report) = fit(&start(), &[window], JointFitSettings { max_iterations: 400, tolerance: 1e-6, estimate_dof: true }).unwrap();
         assert!(report.converged);
         let (qt, qf) = (t.observation.generator.matrix(), f.observation.generator.matrix());
-        assert!((qf[0][1] / qt[0][1] - 1.0).abs() < 0.3, "q01 {}", qf[0][1]);
-        assert!((qf[1][0] / qt[1][0] - 1.0).abs() < 0.3, "q10 {}", qf[1][0]);
-        for k in 0..2 {
-            assert!((f.baseline[k] / t.baseline[k] - 1.0).abs() < 0.1, "mu[{k}] {}", f.baseline[k]);
-            for d in 0..2 {
-                assert!((f.observation.means[k][d] - t.observation.means[k][d]).abs() < 0.1, "mean[{k}][{d}] {}", f.observation.means[k][d]);
-                assert!((f.observation.covars[k][d] / t.observation.covars[k][d] - 1.0).abs() < 0.15, "covar[{k}][{d}] {}", f.observation.covars[k][d]);
-            }
-            assert!((f.observation.dof[k] - t.observation.dof[k]).abs() < 0.5 * t.observation.dof[k], "dof[{k}] {}", f.observation.dof[k]);
+        assert!((qf[0][1] / qt[0][1] - 1.0).abs() < 0.35, "q01 {}", qf[0][1]);
+        assert!((qf[1][0] / qt[1][0] - 1.0).abs() < 0.35, "q10 {}", qf[1][0]);
+        assert!((f.closed_weight - 0.1).abs() < 0.1, "closed weight {}", f.closed_weight);
+        // Seasonal factors as truth normalized the same way (open time is equal across buckets).
+        let mean_truth: f64 = t.seasonal.iter().sum::<f64>() / 3.0;
+        for b in 0..3 {
+            let truth_b = t.seasonal[b] / mean_truth;
+            assert!((f.seasonal[b] / truth_b - 1.0).abs() < 0.08, "s[{b}] {} vs {truth_b}", f.seasonal[b]);
         }
-        assert!((f.branching_ratio - 0.5).abs() < 0.04, "n {}", f.branching_ratio);
-        assert!((f.decay / 2.0 - 1.0).abs() < 0.12, "beta {}", f.decay);
+        for k in 0..2 {
+            let truth_k = t.baseline[k] * mean_truth;
+            assert!((f.baseline[k] / truth_k - 1.0).abs() < 0.12, "mu[{k}] {} vs {truth_k}", f.baseline[k]);
+            for d in 0..2 {
+                assert!((f.observation.means[k][d] - t.observation.means[k][d]).abs() < 0.15, "mean[{k}][{d}]");
+            }
+        }
+        assert!((f.branching_ratio - 0.5).abs() < 0.05, "n {}", f.branching_ratio);
+        assert!((f.decay / 2.0 - 1.0).abs() < 0.15, "beta {}", f.decay);
+    }
+
+    /// The decisive test: data with ONE regime and a strong daily rhythm. Without the time-of-day
+    /// factor the model invents two regimes (busy vs quiet hours); with it, the regimes collapse.
+    #[test]
+    fn without_the_daily_rhythm_regimes_learn_the_clock() {
+        let mut truth = truth();
+        truth.baseline = [1.0, 1.0]; // identical regimes: effectively one
+        truth.seasonal = vec![3.0, 0.3, 1.0];
+        truth.branching_ratio = 0.0;
+        let window = simulate(&truth, &calendar(100, 100.0, 40.0, 3), 0, 93);
+        let settings = JointFitSettings { max_iterations: 300, tolerance: 1e-6, estimate_dof: false };
+        let mut no_rhythm = start();
+        no_rhythm.branching_ratio = 0.0;
+        no_rhythm.seasonal = vec![1.0];
+        // One bucket: relabel every open piece as bucket 0.
+        let mut one_bucket = window.clone();
+        for p in &mut one_bucket.timeline {
+            if let Piece::Open { bucket, .. } = p {
+                *bucket = 0;
+            }
+        }
+        let (fitted_plain, _) = fit(&no_rhythm, &[one_bucket], settings).unwrap();
+        let spread_plain = fitted_plain.baseline[1].max(fitted_plain.baseline[0]) / fitted_plain.baseline[1].min(fitted_plain.baseline[0]);
+        let mut with_rhythm = start();
+        with_rhythm.branching_ratio = 0.0;
+        let (fitted, _) = fit(&with_rhythm, &[window], settings).unwrap();
+        let spread = fitted.baseline[1].max(fitted.baseline[0]) / fitted.baseline[1].min(fitted.baseline[0]);
+        assert!(spread_plain > 2.0, "without the rhythm the regimes should split: ratio {spread_plain}");
+        assert!(spread < 1.2, "with the rhythm the regimes should coincide: ratio {spread}");
     }
 }

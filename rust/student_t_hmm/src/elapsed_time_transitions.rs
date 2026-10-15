@@ -140,6 +140,41 @@ pub fn transition_matrix<const K: usize>(generator: &Generator<K>, d: f64) -> Re
     Ok(uniformized_exponential(generator.matrix(), d, true))
 }
 
+/// The rates minus their minimum: the event rates to use with `no_event_matrix_scaled` (and in
+/// `StepStatistics::with_event_rates` alongside it, so the statistics match the scaled operators).
+pub fn shifted_rates<const K: usize>(event_rates: &[f64; K]) -> [f64; K] {
+    let m = event_rates.iter().copied().fold(f64::INFINITY, f64::min).max(0.0);
+    event_rates.map(|r| (r - m).max(0.0))
+}
+
+/// `no_event_matrix` with the smallest rate's decay factored out: returns (N', log_scale) where
+/// N(d) = e^{log_scale} N', log_scale = -min_rate * d. Over a long gap with a busy regime (e.g. 50
+/// events per second for 60 s) e^{-rate d} is far below the smallest double; factoring the common
+/// part out keeps N' representable, and the relative probabilities between regimes exact.
+pub fn no_event_matrix_scaled<const K: usize>(generator: &Generator<K>, event_rates: &[f64; K], d: f64) -> Result<([[f64; K]; K], f64), ElapsedTimeError> {
+    if !(d.is_finite() && d >= 0.0) {
+        return Err(ElapsedTimeError::InvalidElapsedTime(d));
+    }
+    let m = event_rates.iter().copied().fold(f64::INFINITY, f64::min).max(0.0);
+    let shifted = shifted_rates(event_rates);
+    Ok((uniformized_exponential(&no_event_generator(generator, &shifted), d, false), -m * d))
+}
+
+/// Transition probabilities over time `d` during which regimes switch at `weight` times the
+/// generator's rates (a closed market at its learned weight); `weight` = 0 gives the identity.
+pub fn weighted_transition_matrix<const K: usize>(generator: &Generator<K>, weight: f64, d: f64) -> Result<[[f64; K]; K], ElapsedTimeError> {
+    if !(d.is_finite() && d >= 0.0) {
+        return Err(ElapsedTimeError::InvalidElapsedTime(d));
+    }
+    let mut a = *generator.matrix();
+    for row in &mut a {
+        for v in row.iter_mut() {
+            *v *= weight.max(0.0);
+        }
+    }
+    Ok(uniformized_exponential(&a, d, true))
+}
+
 /// Q minus `event_rates` on the diagonal: the sub-generator of "regimes switch, no event occurs".
 pub fn no_event_generator<const K: usize>(generator: &Generator<K>, event_rates: &[f64; K]) -> [[f64; K]; K] {
     let mut a = *generator.matrix();
@@ -217,6 +252,18 @@ impl<const K: usize> StepStatistics<K> {
         Self::from_matrix(no_event_generator(generator, event_rates), false)
     }
 
+    /// For time during which regimes switch at `weight` times the generator's rates and no events
+    /// can occur (a closed market): A = weight * Q. `weight` = 0 means no switching at all.
+    pub fn with_rate_weight(generator: &Generator<K>, weight: f64) -> Self {
+        let mut a = *generator.matrix();
+        for row in &mut a {
+            for v in row.iter_mut() {
+                *v *= weight.max(0.0);
+            }
+        }
+        Self::from_matrix(a, true)
+    }
+
     fn from_matrix(a: [[f64; K]; K], stochastic: bool) -> Self {
         let lambda = (0..K).map(|i| -a[i][i]).fold(0.0, f64::max);
         Self { a, stochastic, lambda, powers_t: vec![identity()], occupancy: [0.0; K], jumps: [[0.0; K]; K] }
@@ -246,6 +293,13 @@ impl<const K: usize> StepStatistics<K> {
             return Err(ElapsedTimeError::InvalidElapsedTime(d));
         }
         if d == 0.0 {
+            return Ok(());
+        }
+        if self.lambda <= 0.0 {
+            // A = 0: no switching, no events; the regime stays put for the whole step.
+            for (k, (occupancy, w_row)) in self.occupancy.iter_mut().zip(w).enumerate() {
+                *occupancy += d * w_row[k];
+            }
             return Ok(());
         }
         let x = self.lambda * d;
@@ -487,5 +541,22 @@ mod tests {
         let p = transition_matrix(&g, d).unwrap();
         let expected: f64 = (0..3).flat_map(|i| (0..3).map(move |j| (i, j))).map(|(i, j)| w[i][j] * p[i][j] * d).sum();
         assert!((split.occupancy.iter().sum::<f64>() - expected).abs() < 1e-9 * expected);
+    }
+
+    /// The scaled no-event factor equals the plain one on ordinary gaps, and stays usable where the
+    /// plain one underflows (regimes trading 20 and 60 times per unit time over 60 units: e^{-1200}).
+    #[test]
+    fn scaled_no_event_matrix_matches_and_does_not_underflow() {
+        let g = Generator::new([[-0.4, 0.4], [0.9, -0.9]]).unwrap();
+        let rates = [0.7, 2.5];
+        let plain = no_event_matrix(&g, &rates, 1.3).unwrap();
+        let (scaled, log_scale) = no_event_matrix_scaled(&g, &rates, 1.3).unwrap();
+        assert!(plain.iter().flatten().zip(scaled.iter().flatten()).all(|(p, s)| (p - s * log_scale.exp()).abs() < 1e-14));
+        let busy = [20.0, 60.0];
+        let underflow = no_event_matrix(&g, &busy, 60.0).unwrap();
+        assert!(underflow.iter().flatten().all(|&v| v == 0.0), "the plain factor underflows here");
+        let (scaled, log_scale) = no_event_matrix_scaled(&g, &busy, 60.0).unwrap();
+        assert!((log_scale + 1200.0).abs() < 1e-9);
+        assert!(scaled[0][0] > 0.0 && scaled[1][0] > 0.0, "calm-regime paths remain representable: {scaled:?}");
     }
 }

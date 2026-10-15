@@ -2186,6 +2186,17 @@ measurement, not guessed.
      trades by stream sequence (record position; equal timestamps), and fires the steps (`StepTrigger`,
      `StepEvent` with open/closed elapsed time). Full replay: bar counts unchanged; 60 s floor-only steps
      1,738,606 (calendar) -> 1,188,706 (open time).
+  2b. **RULED (operator, 2026-10-14: "I approve, go ahead with it"): the step length is market time.**
+     Supersedes "d = d_act + lambda d_sec": regimes switch at Q while open and at a learned
+     closed_weight * Q while closed; trading activity is evidence through the regime-modulated arrival
+     likelihood, not part of the clock (using it as both would count it twice; informative timing is
+     modelled jointly -- Lange et al. 2015, Gruger et al. 1991); no trades are expected while closed,
+     so a closed period is not evidence of calm; the arrival rate is mu_k * s_b + g with a learned,
+     normalized time-of-day factor s_b, so regimes do not learn the clock (Andersen & Bollerslev 1997;
+     the LaMa caution). **Built** in `joint_regime_model.rs` (timeline of open/closed pieces with
+     buckets; ECM updates for Q and closed_weight, mu and s, n and beta); recovery and "regimes learn
+     the clock without s" tests pass; a real underflow on long busy gaps was fixed
+     (`no_event_matrix_scaled`, the common decay factored out as a log scale).
   3. **OPEN: how the dims update within a bar** (operator, 2026-10-14: the dims themselves, not the
      raw trades/volume, should reflect intra-bar information). Three options, none ruled:
      A. **Closed bars only.** A dim updates when its own bar (time bar or activity bar) closes and is
