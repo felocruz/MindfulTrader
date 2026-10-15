@@ -1,8 +1,7 @@
-//! The engine's two inputs (spec §6.2.3): trades, and the bars of one timeframe.
-//!
-//! Both arrive as borrowed struct-of-arrays views, so neither feeder copies: offline, the views point
-//! into decoded Arrow buffers; live, into Sierra Chart's own arrays (`c_ArrayWrapper<float>` is a
-//! contiguous `float*`), valid for one call. The engine never keeps a view past the call.
+//! The engine's input (spec §6.2.3, §6.2.8 D2/D3): trades, as borrowed struct-of-arrays views, so
+//! nothing is copied -- offline the views point into decoded Arrow buffers, live into the records the
+//! adapter read from Sierra Chart's intraday file; valid for one call. Bars are built inside the
+//! engine; `BarColumns` is the builder's view of them.
 
 use crate::clock::EventTime;
 
@@ -30,12 +29,18 @@ impl Trade {
 }
 
 /// A batch of trades as borrowed columns (equal lengths, time non-decreasing).
+///
+/// `first_sequence` is the position of the first trade in the record stream it was read from (live:
+/// the Sierra Chart intraday-file record index; offline: the row's position in the tick file as
+/// read). Trade i has sequence `first_sequence + i`. Many trades share a timestamp, so time alone
+/// cannot order them; the sequence is the official order, identical live and offline.
 #[derive(Debug, Clone, Copy)]
 pub struct TradeColumns<'a> {
     pub time_us: &'a [i64],
     pub price: &'a [f64],
     pub buy_volume: &'a [u32],
     pub sell_volume: &'a [u32],
+    pub first_sequence: u64,
 }
 
 impl<'a> TradeColumns<'a> {
@@ -45,7 +50,17 @@ impl<'a> TradeColumns<'a> {
         if price.len() != n || buy_volume.len() != n || sell_volume.len() != n {
             return Err(InputError::ColumnLengths);
         }
-        Ok(Self { time_us, price, buy_volume, sell_volume })
+        Ok(Self { time_us, price, buy_volume, sell_volume, first_sequence: 0 })
+    }
+
+    /// The same columns with their stream position set.
+    pub fn starting_at(self, first_sequence: u64) -> Self {
+        Self { first_sequence, ..self }
+    }
+
+    /// Sequence number of trade `i`.
+    pub fn sequence(&self, i: usize) -> u64 {
+        self.first_sequence + i as u64
     }
 
     pub fn len(&self) -> usize {
@@ -66,6 +81,7 @@ impl<'a> TradeColumns<'a> {
             time_us: &self.time_us[range.clone()],
             price: &self.price[range.clone()],
             buy_volume: &self.buy_volume[range.clone()],
+            first_sequence: self.first_sequence + range.start as u64,
             sell_volume: &self.sell_volume[range],
         }
     }
@@ -75,9 +91,9 @@ impl<'a> TradeColumns<'a> {
     }
 }
 
-/// The bars of one timeframe as borrowed columns, in Sierra Chart's layout: one `f32` array per
-/// field, bar start times in Unix microseconds UTC. Indices `0..live_index` are closed bars; the bar
-/// at `live_index` (if present) is the one still forming.
+/// The bars of one timeframe as borrowed columns: one `f32` array per field, bar start times in Unix
+/// microseconds UTC (the time-bar builder's view; the engine builds every bar from trades, live and
+/// offline -- spec §6.2.8 D3).
 #[derive(Debug, Clone, Copy)]
 pub struct BarColumns<'a> {
     pub time_us: &'a [i64],
@@ -171,8 +187,8 @@ mod tests {
         assert_eq!(cols.len(), 3);
         let x = cols.get(1);
         assert_eq!((x.time, x.buy_volume, x.sell_volume, x.signed_volume(), x.volume()), (EventTime(2), 0, 3, -3, 3));
-        let sub = cols.slice(1..3);
-        assert_eq!(sub.len(), 2);
+        let sub = cols.starting_at(100).slice(1..3);
+        assert_eq!((sub.len(), sub.sequence(0), sub.sequence(1)), (2, 101, 102));
         assert!(std::ptr::eq(sub.price.as_ptr(), p[1..].as_ptr()));
         assert_eq!(TradeColumns::new(&t, &p[..2], &b, &s).err(), Some(InputError::ColumnLengths));
     }

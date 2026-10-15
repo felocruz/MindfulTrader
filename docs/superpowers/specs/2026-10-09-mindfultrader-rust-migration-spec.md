@@ -2174,6 +2174,18 @@ measurement, not guessed.
      model -- is what the CT-HMM already does (cf. Rubanova, Chen & Duvenaud 2019 NeurIPS; Che et al.
      2018 Sci. Rep. GRU-D, both verified); filling gaps with imputed values before the HMM is rejected
      (fabricated evidence); neural variants may suit the lbrnet Transformer later, out of scope here.
+  2a. **RULED (operator, 2026-10-14: "I agree, go ahead with it"): the floor pauses while the market is
+     closed.** The floor counts open market time only (CME Globex: Sunday 18:00 to Friday 17:00 ET, daily
+     17:00-18:00 ET halt; exchange holidays not yet modelled -- they count as open); the first step after
+     a closure covers it; each step reports elapsed open and closed time separately, and closed time gets
+     its own learned weight in the step length (information arrives mostly while trading: French & Roll
+     1986, JFE 17:5-26 -- open-to-close variance > 6x the weekend's though the weekend is 11x longer).
+     Session-dependent switching rates (Andersen & Bollerslev 1997 intraday periodicity) are a later step.
+     **Built:** `observation_engine` now builds every clock from trades (the D3 ruling; the Sierra-bar
+     input path `on_bars` and `OfflineFeeder` are removed), closes a time bar when its span ends, orders
+     trades by stream sequence (record position; equal timestamps), and fires the steps (`StepTrigger`,
+     `StepEvent` with open/closed elapsed time). Full replay: bar counts unchanged; 60 s floor-only steps
+     1,738,606 (calendar) -> 1,188,706 (open time).
   3. **OPEN: how the dims update within a bar** (operator, 2026-10-14: the dims themselves, not the
      raw trades/volume, should reflect intra-bar information). Three options, none ruled:
      A. **Closed bars only.** A dim updates when its own bar (time bar or activity bar) closes and is

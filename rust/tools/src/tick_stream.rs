@@ -40,6 +40,8 @@ pub struct TickChunk {
     /// The chunk's runs, in order. A run continues the previous chunk's last run unless it starts a
     /// new segment (first trade of the stream, a contract change, or time going backwards).
     pub runs: Vec<Run>,
+    /// Position of the chunk's first trade in the stream as read (file order): the engine's sequence.
+    pub first_sequence: u64,
 }
 
 /// A contiguous stretch of one contract's trades within a chunk.
@@ -68,6 +70,7 @@ impl TickChunk {
             price: &self.price.values()[start..end],
             buy_volume: &self.buy_volume[start..end],
             sell_volume: &self.sell_volume[start..end],
+            first_sequence: self.first_sequence + start as u64,
         }
     }
 }
@@ -258,7 +261,7 @@ fn to_chunk(batch: &RecordBatch, options: &StreamOptions, state: &mut SplitState
         }
         state.last_time = Some(tv[k]);
     }
-    Ok(TickChunk { time_us, price, buy_volume, sell_volume, runs })
+    Ok(TickChunk { time_us, price, buy_volume, sell_volume, runs, first_sequence: already as u64 })
 }
 
 #[cfg(test)]

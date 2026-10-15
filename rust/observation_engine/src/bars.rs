@@ -1,9 +1,9 @@
-//! Offline time bars: the trade stream turned into the same `BarColumns` view Sierra Chart lends the
-//! live engine (spec §6.2.3 `TickBarBuilder`), so both feeders hand the engine one shape.
+//! Time bars built from trades -- the same code live and offline (spec §6.2.8 D3: the engine builds
+//! every timeframe itself from the trade records).
 //!
 //! A bar is the session-anchored span of its timeframe (`clock::SessionCalendar::bar_span`). Like
-//! Sierra, a bar exists only if it has a trade, and a bar CLOSES when the first trade outside its span
-//! arrives -- that trade opens the next bar. The builder holds the closed bars not yet handed to the
+//! Sierra, a bar exists only if it has a trade. The bar is complete when time reaches the end of its
+//! span; the engine closes it then, whether the next event is a trade or a time advance. The builder holds the closed bars not yet handed to the
 //! engine plus the forming bar, as columns; `drain_closed` keeps the allocation.
 
 use crate::clock::{BarSpan, EventTime, SessionCalendar, Timeframe};
@@ -52,6 +52,16 @@ impl TimeBarBuilder {
     #[inline]
     pub fn closes_at(&self, t: EventTime) -> bool {
         self.forming.is_some_and(|span| !span.contains(t))
+    }
+
+    /// End of the forming bar's span (the bar is complete once time reaches it), if one is forming.
+    pub fn forming_end(&self) -> Option<EventTime> {
+        self.forming.map(|span| span.end)
+    }
+
+    /// The forming bar, if any.
+    pub fn forming_bar(&self) -> Option<crate::input::Bar> {
+        self.forming.map(|_| self.view().bar(self.time_us.len() - 1))
     }
 
     /// Ends the forming bar (it becomes the newest closed bar). No-op if none is forming.

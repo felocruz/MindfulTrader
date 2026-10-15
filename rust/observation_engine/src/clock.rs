@@ -186,6 +186,76 @@ impl SessionCalendar {
         BarSpan { start: EventTime(start), end: EventTime(end) }
     }
 
+    /// The trading session (by its open's local day `open_day`) exists: CME Globex equity futures
+    /// trade from Sunday 18:00 ET to Friday 17:00 ET, so sessions open Sunday through Thursday;
+    /// none opens Friday or Saturday. Exchange holidays are not modelled (a holiday counts as open).
+    fn session_trades(open_day: i64) -> bool {
+        !matches!(weekday(open_day), 5 | 6)
+    }
+
+    /// The local day on which the session containing (or following) `t` opens, and its span.
+    fn session_on(&self, t: EventTime) -> (i64, BarSpan) {
+        let utc_s = t.0.div_euclid(US_PER_SECOND);
+        let local_s = utc_s + eastern_offset_seconds(utc_s);
+        let local_days = local_s.div_euclid(SECONDS_PER_DAY);
+        let local_minute = local_s.rem_euclid(SECONDS_PER_DAY) / 60;
+        let mut open_day = if local_minute >= self.open_minute { local_days } else { local_days - 1 };
+        if t.0 >= eastern_to_utc_us(open_day + 1, self.close_minute) {
+            open_day += 1;
+        }
+        let span = BarSpan { start: EventTime(eastern_to_utc_us(open_day, self.open_minute)), end: EventTime(eastern_to_utc_us(open_day + 1, self.close_minute)) };
+        (open_day, span)
+    }
+
+    /// The first trading session that ends after `t`: the one containing `t`, or the next to open
+    /// (skipping the daily halt and the weekend).
+    pub fn trading_session_from(&self, t: EventTime) -> BarSpan {
+        let (mut open_day, mut span) = self.session_on(t);
+        while !Self::session_trades(open_day) {
+            open_day += 1;
+            span = BarSpan { start: EventTime(eastern_to_utc_us(open_day, self.open_minute)), end: EventTime(eastern_to_utc_us(open_day + 1, self.close_minute)) };
+        }
+        span
+    }
+
+    /// Is the market open at `t`?
+    pub fn is_open(&self, t: EventTime) -> bool {
+        self.trading_session_from(t).contains(t)
+    }
+
+    /// Open (trading) time in `[a, b)`, microseconds.
+    pub fn open_time_between(&self, a: EventTime, b: EventTime) -> i64 {
+        let mut total = 0;
+        let mut t = a;
+        while t < b {
+            let session = self.trading_session_from(t);
+            if session.start >= b {
+                break;
+            }
+            let from = session.start.max(t);
+            let to = session.end.min(b);
+            total += to.0 - from.0;
+            t = session.end;
+        }
+        total
+    }
+
+    /// The instant at which `duration_us` of open time has elapsed after `from` (closures skipped).
+    pub fn add_open_time(&self, from: EventTime, duration_us: i64) -> EventTime {
+        let mut remaining = duration_us;
+        let mut t = from;
+        loop {
+            let session = self.trading_session_from(t);
+            let start = session.start.max(t);
+            let available = session.end.0 - start.0;
+            if remaining <= available {
+                return EventTime(start.0 + remaining);
+            }
+            remaining -= available;
+            t = session.end;
+        }
+    }
+
     /// The bar of `timeframe` containing `t`: session open + k * period, cut at the session close.
     pub fn bar_span(&self, timeframe: Timeframe, t: EventTime) -> BarSpan {
         let session = self.session(t);
@@ -285,5 +355,27 @@ mod tests {
         assert_eq!(h, BarSpan { start: utc(2024, 7, 15, 14, 0), end: utc(2024, 7, 15, 15, 0) });
         assert!(h.contains(utc(2024, 7, 15, 14, 59)));
         assert!(!h.contains(utc(2024, 7, 15, 15, 0)));
+    }
+
+    #[test]
+    fn weekends_and_the_daily_halt_are_closed() {
+        let cal = SessionCalendar::default();
+        // July 2024 (EDT, UTC-4): Fri 12th, Sat 13th, Sun 14th, Mon 15th.
+        assert!(cal.is_open(utc(2024, 7, 12, 20, 59))); // Fri 16:59 ET
+        assert!(!cal.is_open(utc(2024, 7, 12, 21, 0))); // Fri 17:00 ET: weekly close
+        assert!(!cal.is_open(utc(2024, 7, 13, 23, 0))); // Sat 19:00 ET
+        assert!(!cal.is_open(utc(2024, 7, 14, 21, 59))); // Sun 17:59 ET
+        assert!(cal.is_open(utc(2024, 7, 14, 22, 0))); // Sun 18:00 ET: weekly open
+        assert!(!cal.is_open(utc(2024, 7, 15, 21, 30))); // Mon 17:30 ET: daily halt
+        assert!(cal.is_open(utc(2024, 7, 15, 22, 0))); // Mon 18:00 ET
+        // Friday 16:00 ET to Monday 10:00 ET: 1 h Friday + Sunday 18:00 to Monday 10:00 (16 h).
+        let open = cal.open_time_between(utc(2024, 7, 12, 20, 0), utc(2024, 7, 15, 14, 0));
+        assert_eq!(open, 17 * 3600 * US_PER_SECOND);
+        // 90 open minutes after Friday 16:00 ET: 60 on Friday, then 30 after the Sunday open.
+        assert_eq!(cal.add_open_time(utc(2024, 7, 12, 20, 0), 90 * US_PER_MINUTE), utc(2024, 7, 14, 22, 30));
+        // Through the daily halt: Monday 16:50 ET + 20 open minutes = Monday 18:10 ET.
+        assert_eq!(cal.add_open_time(utc(2024, 7, 15, 20, 50), 20 * US_PER_MINUTE), utc(2024, 7, 15, 22, 10));
+        // A week of open time: 5 sessions x 23 h.
+        assert_eq!(cal.open_time_between(utc(2024, 7, 14, 22, 0), utc(2024, 7, 21, 22, 0)), 5 * 23 * 3600 * US_PER_SECOND);
     }
 }
