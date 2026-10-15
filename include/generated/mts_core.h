@@ -152,9 +152,7 @@ float observation_vector_compute_liquidity_fragility(const float *range_window,
 /// guarded, since a NaN input could still trip an unexpected path.
 float observation_vector_compute_burstiness_index(double rv_recent_rate,
                                                   double rv_older_rate,
-                                                  float last_valid_value,
-                                                  float clamp_low,
-                                                  float clamp_high);
+                                                  float last_valid_value);
 
 /// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).
 float observation_vector_compute_relative_range(float high,

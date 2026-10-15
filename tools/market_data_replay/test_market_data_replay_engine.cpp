@@ -181,8 +181,7 @@ int main() {
         check("ts1_hurst_finite_and_bounded_after_warmup",
               std::isfinite(obs.hurst_exponent()) && obs.hurst_exponent() >= 0.0f &&
               obs.hurst_exponent() <= 1.0f);
-        check("ts1_log_scale_ratio_finite_and_within_clamp_after_warmup",
-              std::isfinite(obs.log_scale_ratio()) && std::fabs(obs.log_scale_ratio()) <= 6.0f);
+        check("ts1_log_scale_ratio_finite_after_warmup", std::isfinite(obs.log_scale_ratio()));
         check("ts1_fisher_info_finite_after_warmup", std::isfinite(obs.fisher_info()));
 
         // Regression guard: the bounds checks above pass trivially even if
@@ -253,9 +252,7 @@ int main() {
         check("ts2_fractal_dim_moved_off_cold_start_default", obs.fractal_dim() != 1.5f);
         check("ts2_fractal_dim_within_valid_contract_range",
               obs.fractal_dim() >= 1.0f && obs.fractal_dim() <= 2.0f);
-        check("ts2_log_scale_expansion_ratio_finite_and_within_clamp",
-              std::isfinite(obs.log_scale_expansion_ratio()) &&
-              obs.log_scale_expansion_ratio() >= -10.0f && obs.log_scale_expansion_ratio() <= 6.0f);
+        check("ts2_log_scale_expansion_ratio_finite", std::isfinite(obs.log_scale_expansion_ratio()));
     }
 
     // Task 4b: bars_since_last_update (regime tenure) -- entirely physics-based
@@ -353,7 +350,7 @@ int main() {
               obs.liq_fragility() >= 0.0f && obs.liq_fragility() <= 1.0f);
         check("ts3_mean_rev_z_moved_off_zero_default_after_warmup", obs.mean_rev_z() != 0.0f);
         check("ts3_mean_rev_z_within_valid_contract_range",
-              obs.mean_rev_z() >= 0.0f && obs.mean_rev_z() <= 5.0f);
+              std::isfinite(obs.mean_rev_z()) && obs.mean_rev_z() >= 0.0f);
     }
 
     // Task 6: Activity-clock dims (skewness_idx, fast_taleb_kurtosis,
@@ -413,7 +410,7 @@ int main() {
         check("activity_clock_fast_hurst_exponent_moved_off_neutral_default",
               obs2.fast_hurst_exponent() != 0.5f);
         check("activity_clock_fast_hurst_exponent_within_valid_contract_range",
-              obs2.fast_hurst_exponent() >= 0.0f && obs2.fast_hurst_exponent() <= 1.5f);
+              obs2.fast_hurst_exponent() >= 0.0f && obs2.fast_hurst_exponent() <= 2.0f);
         check("activity_clock_recurrence_rate_moved_off_zero_default",
               obs2.recurrence_rate() != 0.0f);
         check("activity_clock_recurrence_rate_within_valid_contract_range",

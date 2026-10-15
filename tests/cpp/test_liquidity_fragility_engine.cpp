@@ -67,7 +67,7 @@ int main() {
         check("thin_volume_guard_carries_forward", approx(result, 0.42f));
     }
 
-    // Contract: result always clamped to [0, 1].
+    // Result in [0, 1] by construction (sigmoid blended with a previous reading in [0, 1]).
     {
         float rangeW[lfe::kWindow];
         float volW[lfe::kWindow];

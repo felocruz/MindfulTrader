@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 #include "generated/mts_schema_contract_generated.h"
 #include "RingBuffer.h"
@@ -24,16 +25,35 @@ namespace otg {
 
 constexpr size_t kObservationDim = MTS::Schema::Contract::kObservationDim;
 
-// Per-dim inclusive sanitization clamp bounds -- byte-identical to
-// ContextManager.cpp's kObsLowerBounds/kObsUpperBounds (dim order matches
-// mts_schema_contract_generated.h's kObs* field indices).
+// Per-dim inclusive sanitization bounds (dim order matches
+// mts_schema_contract_generated.h's kObs* field indices). Only each statistic's
+// range BY DEFINITION is kept; statistical caps on unbounded statistics are
+// removed (spec B12, 2026-10-13) -- an unbounded side is +/-infinity. tail_index
+// keeps [0.5, 8] until its own sentinel/censoring rework (spec B14).
+inline constexpr float kUnbounded = std::numeric_limits<float>::infinity();
 inline constexpr std::array<float, kObservationDim> kLowerBounds = {
-    -6.0f, -6.0f, 0.0f, -6.0f, 0.0f, 0.0f, -1.0f, -6.0f,
-    0.0f, 0.5f, -2.5f, 0.0f, 0.0f, 0.5f, 0.0f, 1.0f, 0.0f, 0.0f,
+    -kUnbounded,  //  0 log_scale_ratio            log ratio
+    -kUnbounded,  //  1 burstiness_index
+    0.0f,         //  2 relative_range             range / ATR
+    -kUnbounded,  //  3 log_scale_expansion_ratio  log ratio
+    0.0f,         //  4 lempel_ziv                 normalized complexity (can exceed 1)
+    0.0f,         //  5 hurst_exponent             DFA1 valid range [0, 2]
+    -1.0f,        //  6 micro_asymmetry            (ask - bid) / (ask + bid)
+    -6.0f,        //  7 fisher_info                arctanh(+/-0.99) = +/-2.65
+    0.0f,         //  8 fast_hurst_exponent        DFA1 valid range [0, 2]
+    0.5f,         //  9 tail_index                 unchanged pending B14
+    -2.5f,        // 10 skewness_idx               Bowley, [-1, 1] by definition
+    0.0f,         // 11 amihud_illiquidity
+    0.0f,         // 12 liq_fragility              sigmoid, [0, 1]
+    0.0f,         // 13 fast_taleb_kurtosis        Moors octile kurtosis >= 0
+    0.0f,         // 14 recurrence_rate            a fraction
+    1.0f,         // 15 fractal_dim                Sevcik, [1, 2]
+    0.0f,         // 16 mean_rev_z                 |z| * gate
+    0.0f,         // 17 fast_mean_rev_z
 };
 inline constexpr std::array<float, kObservationDim> kUpperBounds = {
-    6.0f, 6.0f, 25.0f, 6.0f, 1.0f, 1.5f, 1.0f, 6.0f,
-    1.5f, 8.0f, 2.5f, 100.0f, 1.0f, 8.0f, 1.0f, 2.0f, 5.0f, 5.0f,
+    kUnbounded, kUnbounded, kUnbounded, kUnbounded, kUnbounded, 2.0f, 1.0f, 6.0f,
+    2.0f, 8.0f, 2.5f, kUnbounded, 1.0f, kUnbounded, 1.0f, 2.0f, kUnbounded, kUnbounded,
 };
 
 // True for the 5 "energy"/magnitude channels that use a lower Mahalanobis
@@ -51,11 +71,14 @@ inline std::array<float, kObservationDim> SanitizeObservationVector(
     const std::array<float, kObservationDim>& input,
     uint64_t& non_finite_count,
     uint64_t& clamped_count) {
+    // A non-finite value is INVALID: it is counted and left as is, never
+    // replaced by a made-up value. Callers must reject the observation --
+    // live skips the step; the offline training generator throws.
     auto out = input;
     for (size_t i = 0; i < kObservationDim; ++i) {
         if (!std::isfinite(out[i])) {
-            out[i] = 0.0f;
             ++non_finite_count;
+            continue;
         }
         const float clamped = std::clamp(out[i], kLowerBounds[i], kUpperBounds[i]);
         if (clamped != out[i]) {

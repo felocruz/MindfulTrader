@@ -53,6 +53,8 @@ pub enum FitError {
     EmptyRegime(usize),
     /// The generator has no unique stationary distribution.
     NoStationaryDistribution,
+    /// A present input value is not finite: training stops rather than learn from it.
+    InvalidInput { sequence: usize, step: usize, input: usize },
 }
 
 impl std::fmt::Display for FitError {
@@ -62,11 +64,23 @@ impl std::fmt::Display for FitError {
             Self::Generator(e) => write!(f, "{e}"),
             Self::EmptyRegime(k) => write!(f, "regime {k} received no posterior weight"),
             Self::NoStationaryDistribution => write!(f, "generator has no unique stationary distribution"),
+            Self::InvalidInput { sequence, step, input } => {
+                write!(f, "invalid (non-finite) value in sequence {sequence}, step {step}, input {input}; refusing to train")
+            }
         }
     }
 }
 
 impl std::error::Error for FitError {}
+
+/// The first present, non-finite input value, as (sequence, step, input).
+fn first_invalid_input<const D: usize>(sequences: &[Vec<Step<D>>]) -> Option<(usize, usize, usize)> {
+    sequences.iter().enumerate().find_map(|(s, seq)| {
+        seq.iter().enumerate().find_map(|(t, step)| {
+            (0..D).find(|&j| step.present[j] && !step.values[j].is_finite()).map(|j| (s, t, j))
+        })
+    })
+}
 
 impl From<ElapsedTimeError> for FitError {
     fn from(e: ElapsedTimeError) -> Self {
@@ -388,6 +402,9 @@ pub fn fit<const D: usize, const K: usize>(
     sequences: &[Vec<Step<D>>],
     settings: FitSettings,
 ) -> Result<(ContinuousTimeStudentT<D, K>, FitReport), FitError> {
+    if let Some((sequence, step, input)) = first_invalid_input(sequences) {
+        return Err(FitError::InvalidInput { sequence, step, input });
+    }
     let mut model = start.clone();
     let mut log_likelihoods = Vec::new();
     let mut converged = false;
@@ -589,6 +606,24 @@ mod tests {
             covars: [[2.0, 2.0]; 3],
             dof: [10.0; 3],
             ..t.clone()
+        }
+    }
+
+    #[test]
+    fn fit_stops_on_an_invalid_present_input_but_ignores_absent_ones() {
+        let t = truth();
+        let mut data = vec![simulate_dataset(&t, 500.0, 7)];
+        let settings = FitSettings { max_iterations: 2, tolerance: 0.0, estimate_dof: true };
+        // An absent input's value is never read, so a NaN there is fine.
+        data[0][4].present[1] = false;
+        data[0][4].values[1] = f64::NAN;
+        assert!(fit(&perturbed_start(&t), &data, settings).is_ok());
+        // A present one stops training.
+        data[0][9].values[0] = f64::INFINITY;
+        data[0][9].present[0] = true;
+        match fit(&perturbed_start(&t), &data, settings) {
+            Err(FitError::InvalidInput { sequence: 0, step: 9, input: 0 }) => {}
+            other => panic!("expected InvalidInput at (0, 9, 0), got {:?}", other.map(|_| ())),
         }
     }
 

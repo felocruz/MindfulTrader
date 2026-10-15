@@ -938,7 +938,7 @@ private:
             const double longBv = windowBv(kTs1WindowN);
             constexpr double kVarEps = 1e-12;
             const double logRatio = std::log((shortBv + kVarEps) / (longBv + kVarEps));
-            m_obs.mutate_log_scale_ratio(std::clamp(static_cast<float>(logRatio), -6.0f, 6.0f));
+            m_obs.mutate_log_scale_ratio(static_cast<float>(logRatio));  // unbounded, not clamped (spec B12)
         }
 
         // hurst_exponent: DfaHurstExponent over the fixed 100-bar/minScale=8
@@ -1591,7 +1591,7 @@ private:
                 const double bvFullRate = bvFull / kTs2ObsWindowN;
                 const double bvRecentRate = bvRecent / kHalfWindow;
                 const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(
-                    bvRecentRate, bvFullRate, m_lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
+                    bvRecentRate, bvFullRate, m_lastValidLogScaleExpansionRatio);
                 m_lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
                 m_obs.mutate_log_scale_expansion_ratio(logScaleExpansionRatio);
             }
@@ -2566,12 +2566,20 @@ private:
 
         auto rawObs = MTS::Schema::Contract::ToObservationArray(m_obs);
 
+        // An invalid (non-finite) input stops the generation: training data
+        // must never carry a made-up or invalid value (operator, 2026-10-15).
+        for (std::size_t i = 0; i < rawObs.size(); ++i) {
+            if (!std::isfinite(rawObs[i])) {
+                throw std::runtime_error(
+                    std::string("invalid observation input: ") +
+                    MTS::Schema::Contract::kObservationFieldNames[i] + " = " + std::to_string(rawObs[i]) +
+                    " at timestamp_us " + std::to_string(timestampUs));
+            }
+        }
+
         uint64_t nonFiniteCount = 0;
         uint64_t clampedCount = 0;
         rawObs = otg::SanitizeObservationVector(rawObs, nonFiniteCount, clampedCount);
-        for (float v : rawObs) {
-            if (!std::isfinite(v)) return false;
-        }
 
         const auto currentObs = m_featureScaler.UpdateAndNormalize(rawObs);
         if (!m_featureScaler.warmedUp) return false;  // FeatureScaler::RANK_WINDOW=500 samples

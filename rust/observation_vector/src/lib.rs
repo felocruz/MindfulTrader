@@ -61,6 +61,9 @@ pub fn moors_kurtosis(returns: &[f32]) -> f32 {
 /// as the C++ original (see that header's own comment for the one-bar-offset convention this
 /// replicates, not corrects). `prices` must hold `lookback_n + 1` chronological points;
 /// `prices[0]` = oldest, `prices[lookback_n]` = the live/current bar.
+///
+/// D lies in [1, 2] by definition; a value outside it is an estimator failure and returns NaN
+/// (never clamped onto the boundary -- spec B13).
 pub fn sevcik_fractal_dimension(prices: &[f32]) -> f32 {
     let lookback_n = prices.len() as isize - 1;
     if lookback_n < 2 {
@@ -99,7 +102,7 @@ pub fn sevcik_fractal_dimension(prices: &[f32]) -> f32 {
     }
 
     let dim = (1.0 + length.ln() / (2.0 * segments as f64).ln()) as f32;
-    dim.clamp(1.0, 2.0)
+    if (1.0..=2.0).contains(&dim) { dim } else { f32::NAN }
 }
 
 /// Barndorff-Nielsen & Shephard (2004, 2006) bipower variation: a jump-robust estimator of the
@@ -123,11 +126,11 @@ pub fn compute_bipower_variation(returns: &[f64]) -> f64 {
 /// (HAR-RV/Corsi 2009-style multi-horizon volatility clustering). Deliberately takes the two
 /// ALREADY-COMPUTED bipower-variation values (from `compute_bipower_variation`), not raw
 /// log-return windows -- matches `LogScaleRatio.h`'s own division of labor, avoiding a duplicate
-/// BV computation the caller already did. Clamped to `[-6.0, 6.0]`.
+/// BV computation the caller already did. Unbounded statistic: not clamped (spec B12).
 pub fn log_scale_ratio(short_bv: f64, long_bv: f64) -> f32 {
     const VAR_EPS: f64 = 1e-12;
     let log_ratio = ((short_bv + VAR_EPS) / (long_bv + VAR_EPS)).ln();
-    (log_ratio as f32).clamp(-6.0, 6.0)
+    log_ratio as f32
 }
 
 /// Port of `HillTailIndex.h`: the raw (pre-EWMA-smoothing) Hill estimator via the Resnick &
@@ -226,6 +229,12 @@ pub const DFA_MAX_WINDOW: usize = 512;
 ///
 /// Returns NaN for a degenerate/insufficient-data window -- callers own the carry-forward/cold-start
 /// fallback decision (this function holds no persistent state, same as the C++ original).
+///
+/// Valid range [0, 2] (spec B13): values above 1 are genuine for non-stationary series, and
+/// first-order (linear-detrending) DFA saturates at 2 -- the fluctuation slope under a trend is
+/// "the minimum of n+1 and p+1.5" for detrending order n (Kantelhardt, Koscielny-Bunde, Rego,
+/// Havlin & Bunde 2001, Physica A 295:441-454, §5 rule (ii)); a negative slope is not a scaling
+/// exponent. Outside [0, 2] the estimate has failed and NaN is returned, never a clamped value.
 ///
 /// Note on the sub-16-element case: the C++ original does `length = std::clamp(length, 16,
 /// kDfaMaxWindow)`, which, if `length` is requested smaller than 16 against an *already
@@ -344,12 +353,8 @@ pub fn dfa_hurst_exponent(log_returns: &[f32], min_scale: i32) -> f32 {
         return f32::NAN;
     }
 
-    let mut hurst = ((n * sum_xy - sum_x * sum_y) / regression_denom) as f32;
-    hurst = hurst.clamp(0.0, 1.5);
-    if !hurst.is_finite() {
-        return f32::NAN;
-    }
-    hurst
+    let hurst = ((n * sum_xy - sum_x * sum_y) / regression_denom) as f32;
+    if (0.0..=2.0).contains(&hurst) { hurst } else { f32::NAN }
 }
 
 /// Matches `MeanReversionCalculator.h`'s `kMaxLookback` -- the adaptive observation window's upper
@@ -363,7 +368,8 @@ pub const MEAN_REV_MAX_LOOKBACK: usize = 40;
 ///
 /// Degenerate (flat window, MAD collapses below the numerical floor) returns `last_valid_value`
 /// carried forward, matching the C++ original's carry-forward convention -- not a fabricated
-/// exact-zero "no stretch" reading. Contract: result in [0, 5] for the non-degenerate path.
+/// exact-zero "no stretch" reading. Contract: result >= 0 for the non-degenerate path; unbounded
+/// above, not clamped (spec B12).
 ///
 /// The C++ original takes a precondition on its caller ("n in [4, kMaxLookback]") that it does not
 /// enforce itself -- its fixed `std::array<double, kMaxLookback>` scratch buffers would be written
@@ -414,7 +420,7 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     if m < 3 {
         // Too few samples for the autocorrelation term -- genuinely computed, not degenerate, just
         // skips the elasticity gate.
-        return (abs_z_price as f32).clamp(0.0, 5.0);
+        return abs_z_price as f32;
     }
 
     let mut returns = [0.0f64; MEAN_REV_MAX_LOOKBACK];
@@ -442,7 +448,7 @@ pub fn compute_mean_reversion_z(prices: &[f32], last_valid_value: f32) -> f32 {
     let elasticity_gate = (1.0 - rho.max(0.0)).clamp(0.0, 1.0);
     let score = abs_z_price * elasticity_gate;
 
-    (score as f32).clamp(0.0, 5.0)
+    score as f32
 }
 
 /// Window size for the liquidity-fragility microstructure elasticity ratio. Port of
@@ -459,7 +465,8 @@ pub const LIQ_FRAGILITY_WINDOW: usize = 30;
 /// sqrt(volume) respectively (order doesn't matter -- only the median is used). `live_bar_range`/
 /// `live_volume_so_far` describe the still-forming current bar. Degenerate (thin live volume, a
 /// collapsed scale reference, or -- unreachable in practice, see below -- a too-short window)
-/// carries `prev_fragility` forward. Contract: result in [0, 1].
+/// carries `prev_fragility` forward. Result in [0, 1] by construction (a sigmoid blended with a
+/// previous reading in [0, 1]); no clamp on top (spec B12).
 ///
 /// The C++ original takes raw pointers with no length parameter at all -- it unconditionally reads
 /// exactly `kWindow` elements from each, a *stronger* precondition than `mean_rev_z`'s "n in [4,
@@ -479,7 +486,7 @@ pub fn compute_liquidity_fragility(
     const MID: usize = LIQ_FRAGILITY_WINDOW / 2;
 
     if range_window.len() < LIQ_FRAGILITY_WINDOW || sqrt_vol_window.len() < LIQ_FRAGILITY_WINDOW {
-        return prev_fragility.clamp(0.0, 1.0);
+        return prev_fragility;
     }
 
     let mut range_scratch = [0.0f32; LIQ_FRAGILITY_WINDOW];
@@ -494,7 +501,7 @@ pub fn compute_liquidity_fragility(
     let scale_ref = med_range / (med_sqrt_vol + EPS);
 
     if live_volume_so_far < LIVE_BAR_MIN_VOLUME || scale_ref < EPS {
-        return prev_fragility.clamp(0.0, 1.0);
+        return prev_fragility;
     }
 
     let bar_range = if live_bar_range < 0.00001 { 0.00001 } else { live_bar_range };
@@ -505,7 +512,7 @@ pub fn compute_liquidity_fragility(
     let fragility_raw = 1.0 / (1.0 + (-2.0 * log_f).exp());
 
     let alpha = if fragility_raw > prev_fragility { 0.30 } else { 0.15 };
-    (alpha * fragility_raw + (1.0 - alpha) * prev_fragility).clamp(0.0, 1.0)
+    alpha * fragility_raw + (1.0 - alpha) * prev_fragility
 }
 
 /// Port of CarryForwardCalculators.h's `ComputeBurstinessIndex`. Despite the name, this is dim 3's
@@ -513,21 +520,13 @@ pub fn compute_liquidity_fragility(
 /// `eve::CalculateBurstinessIndex`/`calculate_burstiness_index` below, 2026-08-29) -- a historical
 /// artifact of the function name, not a current caller list; see the C++ header's own doc comment.
 /// `rv_older_rate` below the numerical floor (near-flat reference window) carries `last_valid_value`
-/// forward. `clamp_low`/`clamp_high`: the C++ original defaults to (-6.0, 6.0); callers needing that
-/// default must pass it explicitly here (Rust has no default arguments).
-pub fn compute_burstiness_index(
-    rv_recent_rate: f64,
-    rv_older_rate: f64,
-    last_valid_value: f32,
-    clamp_low: f32,
-    clamp_high: f32,
-) -> f32 {
+/// forward. Unbounded log ratio: not clamped (spec B12).
+pub fn compute_burstiness_index(rv_recent_rate: f64, rv_older_rate: f64, last_valid_value: f32) -> f32 {
     const FLOOR: f64 = 1e-12;
     if rv_older_rate < FLOOR {
         return last_valid_value;
     }
-    let ratio = (rv_recent_rate.max(FLOOR) / rv_older_rate).ln() as f32;
-    ratio.clamp(clamp_low, clamp_high)
+    (rv_recent_rate.max(FLOOR) / rv_older_rate).ln() as f32
 }
 
 /// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`):
@@ -723,7 +722,8 @@ pub const RECURRENCE_RATE_MAX_CLOSED_BARS: usize = 256;
 /// across many ticks with the closed-bar window held fixed -- a fresh full-matrix computation is
 /// therefore behaviorally identical to the incremental engine for every real input, not a
 /// simplification that changes the answer (`RecurrenceRateEngine.h`'s own native test proves
-/// exactly this equivalence against a brute-force n*n reference). Result is clamped to [0, 1].
+/// exactly this equivalence against a brute-force n*n reference). Result in [0, 1] by construction
+/// (at most n^2 recurrent pairs out of n^2); no clamp on top (spec B12).
 pub fn recurrence_rate(closed_bars: &[f32], live_price: f32, epsilon: f32) -> f32 {
     let closed_count = closed_bars.len().min(RECURRENCE_RATE_MAX_CLOSED_BARS);
     let closed_bars = &closed_bars[..closed_count];
@@ -747,7 +747,7 @@ pub fn recurrence_rate(closed_bars: &[f32], live_price: f32, epsilon: f32) -> f3
 
     let recur_count = n as i32 + 2 * closed_pair_count + 2 * live_vs_closed; // n = diagonal
     let total_count = (n * n) as f32;
-    (recur_count as f32 / total_count).clamp(0.0, 1.0)
+    recur_count as f32 / total_count
 }
 
 /// Largest window this estimator supports -- matches `InformationEngine::WINDOW_SIZE_LZ`/
@@ -1097,7 +1097,7 @@ mod tests {
             return f64::NAN;
         }
         let hurst = (n * sum_xy - sum_x * sum_y) / denom;
-        hurst.clamp(0.0, 1.5)
+        if (0.0..=2.0).contains(&hurst) { hurst } else { f64::NAN }
     }
 
     #[test]
@@ -1119,7 +1119,7 @@ mod tests {
                 (expected - actual as f64).abs() < 1e-4,
                 "length={length}: expected {expected}, got {actual}"
             );
-            assert!((0.0..=1.5).contains(&actual), "length={length}: out of contract range: {actual}");
+            assert!((0.0..=2.0).contains(&actual), "length={length}: out of valid range: {actual}");
         }
     }
 
@@ -1131,6 +1131,22 @@ mod tests {
         let log_returns = to_log_returns(&walk, 200);
         let hurst = dfa_hurst_exponent(&log_returns, 8);
         assert!(hurst.is_finite() && hurst > 0.2 && hurst < 0.9, "got {hurst}");
+    }
+
+    #[test]
+    fn dfa_hurst_of_a_random_walk_signal_is_near_1_5_and_not_capped() {
+        // Known answer: DFA1 of integrated white noise (a random walk fed in as the signal) has
+        // fluctuation exponent 1.5 (alpha = H + 1 for Brownian motion). Under the old [0, 1.5] clamp
+        // about half of these estimates would have been cut to exactly 1.5.
+        let mut max_alpha = 0.0f32;
+        for seed in 1..=10u32 {
+            let walk = make_walk(500, 1.0, seed);
+            let signal: Vec<f32> = walk.iter().map(|p| p - 100.0).collect();
+            let alpha = dfa_hurst_exponent(&signal, 8);
+            assert!(alpha.is_finite() && alpha > 1.2 && alpha < 1.9, "seed {seed}: got {alpha}");
+            max_alpha = max_alpha.max(alpha);
+        }
+        assert!(max_alpha > 1.5, "no estimate above 1.5 -- looks capped: {max_alpha}");
     }
 
     // --- compute_mean_reversion_z: golden values from tests/cpp/test_mean_reversion_calculator.cpp ---
@@ -1160,10 +1176,12 @@ mod tests {
     }
 
     #[test]
-    fn mean_rev_z_result_stays_within_contract_bounds() {
-        let prices = [100.0f32, 100.0, 100.0, 100.0, 100000.0];
+    fn mean_rev_z_extreme_stretch_is_not_clamped() {
+        // Median ln 101, MAD |ln 100 - ln 101| = 0.00995 (scale 0.014752); centered lag-1 products
+        // are all 0, so rho = 0 and the gate is 1: score = ln(100000/101) / 0.014752 = 467.6.
+        let prices = [100.0f32, 101.0, 100.0, 101.0, 100000.0];
         let result = compute_mean_reversion_z(&prices, 0.0);
-        assert!((0.0..=5.0).contains(&result), "got {result}");
+        assert!((result - 467.6).abs() <= 0.5, "an extreme stretch must pass through unclamped, got {result}");
     }
 
     // --- compute_liquidity_fragility: golden values from tests/cpp/test_liquidity_fragility_engine.cpp ---
@@ -1212,23 +1230,21 @@ mod tests {
 
     #[test]
     fn burstiness_normal_case_matches_log_ratio() {
-        let result = compute_burstiness_index(4.0, 2.0, 0.0, -6.0, 6.0);
+        let result = compute_burstiness_index(4.0, 2.0, 0.0);
         assert!((result - (4.0f64 / 2.0).ln() as f32).abs() <= 1e-4);
     }
 
     #[test]
     fn burstiness_degenerate_older_rate_carries_forward() {
-        assert!((compute_burstiness_index(4.0, 1e-13, 0.42, -6.0, 6.0) - 0.42).abs() <= 1e-4);
+        assert!((compute_burstiness_index(4.0, 1e-13, 0.42) - 0.42).abs() <= 1e-4);
     }
 
     #[test]
-    fn burstiness_clamps_extreme_ratio() {
-        assert!((compute_burstiness_index(1e12, 1e-12, 0.0, -6.0, 6.0) - 6.0).abs() <= 1e-4);
-    }
-
-    #[test]
-    fn burstiness_dim3_custom_bounds_preserve_real_extreme() {
-        assert!((compute_burstiness_index(0.0021062, 1.0, 0.0, -10.0, 6.0) - (-6.16)).abs() <= 0.01);
+    fn burstiness_extreme_ratio_is_not_clamped() {
+        // ln(1e12 / 1e-12) = 55.26: the true log ratio, not a cap at 6.
+        assert!((compute_burstiness_index(1e12, 1e-12, 0.0) - 55.262_04).abs() <= 1e-3);
+        assert!((compute_burstiness_index(1e-12, 1e12, 0.0) + 55.262_04).abs() <= 1e-3);
+        assert!((compute_burstiness_index(0.0021062, 1.0, 0.0) - (-6.16)).abs() <= 0.01);
     }
 
     // --- compute_relative_range: golden values from tests/cpp/test_carry_forward_calculators.cpp ---
@@ -1539,9 +1555,12 @@ mod tests {
     }
 
     #[test]
-    fn log_scale_ratio_extreme_values_clamp_to_bounds() {
-        assert_eq!(log_scale_ratio(1e6, 1e-9), 6.0);
-        assert_eq!(log_scale_ratio(1e-9, 1e6), -6.0);
+    fn log_scale_ratio_extreme_values_are_not_clamped() {
+        // ln((1e6 + 1e-12) / (1e-9 + 1e-12)) = ln(1e15) - ln(1.001) = 34.53778: the true log ratio,
+        // not a cap at 6.
+        let up = log_scale_ratio(1e6, 1e-9);
+        assert!((up - 34.537_78).abs() <= 1e-3, "got {up}");
+        assert!((log_scale_ratio(1e-9, 1e6) + up).abs() <= 1e-3);
     }
 
     fn make_positive_noise(n: usize, scale: f64, seed: u32) -> Vec<f64> {

@@ -115,6 +115,8 @@ pub enum JointError {
     Bucket(usize),
     EmptyRegime(usize),
     NoStationaryDistribution,
+    /// A present input value is not finite: training stops rather than learn from it.
+    InvalidInput { window: usize, point: usize, input: usize },
 }
 
 impl std::fmt::Display for JointError {
@@ -126,6 +128,9 @@ impl std::fmt::Display for JointError {
             Self::Bucket(b) => write!(f, "time-of-day bucket {b} has no factor"),
             Self::EmptyRegime(k) => write!(f, "regime {k} received no expected time"),
             Self::NoStationaryDistribution => write!(f, "generator has no unique stationary distribution"),
+            Self::InvalidInput { window, point, input } => {
+                write!(f, "invalid (non-finite) value in window {window}, point {point}, input {input}; refusing to train")
+            }
         }
     }
 }
@@ -465,6 +470,15 @@ pub fn fit<const D: usize, const K: usize>(
     windows: &[JointWindow<D>],
     settings: JointFitSettings,
 ) -> Result<(JointRegimeModel<D, K>, JointFitReport), JointError> {
+    for (w, window) in windows.iter().enumerate() {
+        for (p, point) in window.points.iter().enumerate() {
+            if let Point::Observation { values, present, .. } = point
+                && let Some(j) = (0..D).find(|&j| present[j] && !values[j].is_finite())
+            {
+                return Err(JointError::InvalidInput { window: w, point: p, input: j });
+            }
+        }
+    }
     let mut model = start.clone();
     let mut log_likelihoods = Vec::new();
     let mut converged = false;
@@ -791,6 +805,21 @@ mod tests {
             ..observation_model()
         };
         JointRegimeModel { observation, baseline: [0.5, 1.5], seasonal: vec![1.0; 3], closed_weight: 0.5, branching_ratio: 0.3, decay: 1.0 }
+    }
+
+    #[test]
+    fn fit_stops_on_an_invalid_present_input() {
+        let mut window = simulate(&truth(), &calendar(30, 100.0, 40.0, 3), 20, 91);
+        let p = window.points.iter().position(|pt| matches!(pt, Point::Observation { .. })).expect("an observation");
+        if let Point::Observation { values, present, .. } = &mut window.points[p] {
+            values[0] = f64::NAN;
+            present[0] = true;
+        }
+        let settings = JointFitSettings { max_iterations: 2, tolerance: f64::NEG_INFINITY, estimate_dof: true };
+        match fit(&start(), &[window], settings) {
+            Err(JointError::InvalidInput { window: 0, point, input: 0 }) => assert_eq!(point, p),
+            other => panic!("expected InvalidInput, got {:?}", other.map(|_| ())),
+        }
     }
 
     #[test]

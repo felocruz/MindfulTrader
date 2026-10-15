@@ -703,6 +703,9 @@ pub struct FitResult {
 /// k-means++ seeding needs a real PRNG with no numpy-`default_rng`-bit-exact Rust equivalent, a
 /// separate open question not silently folded in here -- callers must pass an already-initialized
 /// model, exactly as this file's own golden-parity tests already do.
+///
+/// # Panics
+/// On any non-finite input value: training stops rather than learn from an invalid input.
 #[allow(clippy::too_many_arguments)] // one named field per real EM-loop parameter; matches
 // `StudentTHmm::new`'s own established "a builder would hide which fields are actually required"
 // rationale.
@@ -717,6 +720,14 @@ pub fn fit<const D: usize, const K: usize>(
     min_iter: usize,
     tol: f64,
 ) -> FitResult {
+    // An invalid (non-finite) input stops training: never learn from it (operator, 2026-10-15).
+    for (s, seg) in segments.iter().enumerate() {
+        for (t, row) in seg.iter().enumerate() {
+            if let Some(j) = row.iter().position(|v| !v.is_finite()) {
+                panic!("invalid (non-finite) value in segment {s}, row {t}, input {j}; refusing to train");
+            }
+        }
+    }
     let mut map_ll_history = Vec::with_capacity(n_iter);
     let mut prev_map_ll: Option<f64> = None;
     let mut best: Option<Checkpoint<D, K>> = None;
@@ -924,6 +935,24 @@ mod tests {
             assert_close(&format!("startprob[{k}]"), model.startprob[k], want_startprob[k], EPS);
             assert_close(&format!("dof[{k}]"), model.dof[k], want_dof[k], 1e-6);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "refusing to train")]
+    fn fit_stops_on_an_invalid_input() {
+        let mut model = StudentTHmm::<2, 2>::new_unweighted(
+            [[0.1, 0.2], [3.0, 3.0]],
+            [[0.05, 0.05], [0.05, 0.05]],
+            [[0.9, 0.1], [0.1, 0.9]],
+            [0.5, 0.5],
+            [6.0, 6.0],
+            2.1,
+            100.0,
+        );
+        let mut obs = golden_observations();
+        obs[3][1] = f64::NAN;
+        let priors = EmPriors { min_covar: 1e-6, ..Default::default() };
+        fit(&mut model, &[obs.as_slice()], &[0.0; 2], &[0.0; 2], &priors, true, 5, 1, 1e-9);
     }
 
     #[test]

@@ -947,14 +947,14 @@ MTS::Schema::RiskGateContextT ContextManager::BuildRiskGateContext() const {
 }
 
 bool ContextManager::EmitTrainingContext(
-    const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
+    const std::array<float, OBSERVATION_VECTOR_SIZE>& rawObs,
     const MTS::Schema::AsymmetryContext& asymContext,
     uint64_t now_us) {
     try {
         LBRFileManager& lbr_mgr = LBRFileManager::Instance();
 
         const MTS::Schema::ObservationData obs_data =
-            MTS::Schema::Contract::MakeObservationData(currentObs);
+            MTS::Schema::Contract::MakeObservationData(rawObs);
 
         // Canonical semantics shared with live path: regime tenure in TS2 bars.
         const float bars_since_last_update =
@@ -1016,15 +1016,15 @@ void ContextManager::PushAmihudSample(float rawAmihud, bool isRTH) {
 }
 
 bool ContextManager::EmitLiveContext(
-    const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
+    const std::array<float, OBSERVATION_VECTOR_SIZE>& rawObs,
     uint64_t sequence_id,
     uint64_t now_us) {
     try {
         // Send Dual-Stream Input:
-        // 1. Scaled Physics (16D) -> HMM
+        // 1. Raw observation (the space the HMM was trained in) -> HMM
         // 2. Transformer data handled via SCStudies/EventStream (Port 5555)
         HMMClient::Instance().RequestUpdateAsync(
-            currentObs,
+            rawObs,
             m_hasWaveContext ? static_cast<float>(m_waveContext.regimeTenure) : 0.0f,
             sequence_id,
             now_us
@@ -1350,10 +1350,15 @@ void ContextManager::CheckAndTriggerHMM(uint64_t now_us, bool isDataCollection, 
     m_lastSequenceId++;
     diag.sequence_id = m_lastSequenceId;
 
+    // The HMM is trained on RAW observations (the offline generator writes
+    // m_obs unscaled; student_t_hmm/src/input.rs), so both paths emit the raw
+    // vector. The rolling FeatureScaler output (currentObs) only drives the
+    // significant-change gate above -- it must never reach the model, or live
+    // scores a different space from the one it was trained on (spec F1/D1).
     if (isDataCollection) {
-        diag.hmm_success = EmitTrainingContext(currentObs, asymContext, now_us);
+        diag.hmm_success = EmitTrainingContext(rawObs, asymContext, now_us);
     } else {
-        diag.hmm_success = EmitLiveContext(currentObs, m_lastSequenceId, now_us);
+        diag.hmm_success = EmitLiveContext(rawObs, m_lastSequenceId, now_us);
     }
 
     // ========================================================================

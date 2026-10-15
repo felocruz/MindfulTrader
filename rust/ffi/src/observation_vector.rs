@@ -199,18 +199,8 @@ pub extern "C" fn observation_vector_compute_burstiness_index(
     rv_recent_rate: f64,
     rv_older_rate: f64,
     last_valid_value: f32,
-    clamp_low: f32,
-    clamp_high: f32,
 ) -> f32 {
-    guard_f32(|| {
-        observation_vector::compute_burstiness_index(
-            rv_recent_rate,
-            rv_older_rate,
-            last_valid_value,
-            clamp_low,
-            clamp_high,
-        )
-    })
+    guard_f32(|| observation_vector::compute_burstiness_index(rv_recent_rate, rv_older_rate, last_valid_value))
 }
 
 /// Port of CarryForwardCalculators.h's `ComputeRelativeRange` (dim 2, `relative_range`).

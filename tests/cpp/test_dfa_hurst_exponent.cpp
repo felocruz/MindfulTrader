@@ -102,8 +102,8 @@ double BruteForceHurst(const std::vector<float>& prices, int length, int minScal
     const double denom = n * sumX2 - sumX * sumX;
     if (std::fabs(denom) < 1e-12) return std::nan("");
     double hurst = (n * sumXY - sumX * sumY) / denom;
-    hurst = std::clamp(hurst, 0.0, 1.5);
-    return hurst;
+    // Valid DFA1 range [0, 2]; outside it the estimate has failed (spec B13).
+    return (hurst >= 0.0 && hurst <= 2.0) ? hurst : std::nan("");
 }
 
 // Deterministic pseudo-random walk (no <random>), same LCG convention as
@@ -149,7 +149,7 @@ int main() {
         char label[128];
         std::snprintf(label, sizeof(label), "length=%d: pure extraction matches brute-force original", length);
         check(label, std::fabs(expected - static_cast<double>(actual)) < 1e-4);
-        check("result is within contract [0.0, 1.5]", actual >= 0.0f && actual <= 1.5f);
+        check("result is within the valid range [0.0, 2.0]", actual >= 0.0f && actual <= 2.0f);
     }
 
     {

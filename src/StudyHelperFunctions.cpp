@@ -2581,15 +2581,8 @@ float CalculateLogScaleExpansionRatio(SCStudyInterfaceRef sc, int lookback_n) {
     double bv_recent_rate = bv_recent / half;
 
     float& lastValidLogScaleExpansionRatio = sc.GetPersistentFloat(PersistentVar_AdaptiveCalculators::LOG_SCALE_EXPANSION_RATIO_LAST_VALID_VALUE);
-    // dim3's own asymmetric backstop, not dim1's shared default -- see
-    // ComputeBurstinessIndex's doc comment (CarryForwardCalculators.h) for
-    // the real-data derivation (true range [-6.160,+0.787], already clipping
-    // 3/606,577 real events under the old shared [-6,+6]). That derivation
-    // was against the OLD raw-RV signal's real distribution -- carried
-    // forward as the best available bound, not re-derived, pending a fresh
-    // audit against the new BV-based signal (see FeatureScaler.h's dim3
-    // comment).
-    const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio, -10.0f, 6.0f);
+    // Unbounded log ratio, not clamped (spec B12).
+    const float logScaleExpansionRatio = cfc::ComputeBurstinessIndex(bv_recent_rate, bv_full_rate, lastValidLogScaleExpansionRatio);
 
     lastValidLogScaleExpansionRatio = logScaleExpansionRatio;
     return logScaleExpansionRatio;
@@ -2702,7 +2695,7 @@ float CalculateFractalDimension(SCStudyInterfaceRef sc, int lookback_n, int pers
 }
 
 float CalculateMeanReversionSpeed(SCStudyInterfaceRef sc, int lookback_n) {
-    // Mean-Reversion Elasticity Score (contract: mean_rev_z in [0, 5]).
+    // Mean-Reversion Elasticity Score (contract: mean_rev_z >= 0, unbounded above -- spec B12).
     // 1) Compute price stretch as |z(log-price)| over lookback window, using
     //    median/MAD (Kim & White 2004) in place of mean/std -- log-price and
     //    log-return windows are fat-tailed, and mean/std are the least

@@ -33,7 +33,7 @@ constexpr int kMaxLookback = 40;
 // skipping the autocorrelation term entirely -- degenerate but not invalid).
 // Degenerate (flat window, MAD collapses below the numerical floor) carries
 // lastValidValue forward instead of a fabricated exact-zero "no stretch"
-// reading. Contract: result in [0, 5].
+// reading. Contract: result >= 0, unbounded above (not clamped -- spec B12).
 inline float ComputeMeanReversionZ(const float* prices, int n, float lastValidValue) {
     return mts::observation_vector_compute_mean_reversion_z(prices, n < 0 ? 0 : static_cast<std::size_t>(n), lastValidValue);
 }

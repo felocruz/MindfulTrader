@@ -84,20 +84,26 @@ int main() {
               !otg::IsEnergyObservationDim(MTS::Schema::Contract::kObsHurstExponent));
     }
 
-    // SanitizeObservationVector: non-finite -> 0.0, then clamps.
+    // SanitizeObservationVector: non-finite stays non-finite (invalid, never
+    // replaced); definitional bounds only.
     {
         auto obs = MakeObs(0.0f);
         obs[static_cast<size_t>(MTS::Schema::Contract::kObsHurstExponent)] =
             std::numeric_limits<float>::quiet_NaN();
-        obs[static_cast<size_t>(MTS::Schema::Contract::kObsRelativeRange)] = 999.0f;  // above 25.0 upper bound
+        obs[static_cast<size_t>(MTS::Schema::Contract::kObsRelativeRange)] = 999.0f;  // unbounded above: kept (spec B12)
+        obs[static_cast<size_t>(MTS::Schema::Contract::kObsMicroAsymmetry)] = 1.5f;  // beyond its definitional [-1, 1]
         uint64_t nonFinite = 0, clamped = 0;
         const auto sanitized = otg::SanitizeObservationVector(obs, nonFinite, clamped);
-        check("nan_dim_sanitized_to_zero",
-              sanitized[static_cast<size_t>(MTS::Schema::Contract::kObsHurstExponent)] == 0.0f);
+        check("nan_dim_left_invalid_not_replaced",
+              std::isnan(sanitized[static_cast<size_t>(MTS::Schema::Contract::kObsHurstExponent)]));
         check("nonfinite_counter_incremented", nonFinite == 1);
-        check("out_of_range_dim_clamped_to_upper_bound",
-              sanitized[static_cast<size_t>(MTS::Schema::Contract::kObsRelativeRange)] == 25.0f);
-        check("clamped_counter_incremented_at_least_once", clamped >= 1);
+        check("unbounded_dim_not_clamped",
+              sanitized[static_cast<size_t>(MTS::Schema::Contract::kObsRelativeRange)] == 999.0f);
+        check("definitional_bound_still_enforced",
+              sanitized[static_cast<size_t>(MTS::Schema::Contract::kObsMicroAsymmetry)] == 1.0f);
+        // MakeObs(0.0f) also sits below two definitional lower bounds
+        // (tail_index 0.5, fractal_dim 1.0), so 3 clamps in all.
+        check("clamped_counter_counts_only_definitional_violations", clamped == 3);
     }
 
     // GetAdaptiveNoiseFloor: monotonic decrease with velocity (conservative at

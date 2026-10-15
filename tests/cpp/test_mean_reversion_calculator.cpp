@@ -67,11 +67,13 @@ int main() {
               approx(mrc::ComputeMeanReversionZ(prices, 3, 0.0f), 1.9468539f, 1e-3f));
     }
 
-    // Contract: result is always clamped to [0, 5] even for an extreme jump.
+    // An extreme stretch passes through unclamped (spec B12). Median ln 101,
+    // MAD |ln 100 - ln 101| (scale 0.014752); rho = 0 so the gate is 1:
+    // score = ln(100000/101) / 0.014752 = 467.6.
     {
-        float prices[5] = {100.0f, 100.0f, 100.0f, 100.0f, 100000.0f};
+        float prices[5] = {100.0f, 101.0f, 100.0f, 101.0f, 100000.0f};
         const float result = mrc::ComputeMeanReversionZ(prices, 5, 0.0f);
-        check("result_stays_within_contract_bounds", result >= 0.0f && result <= 5.0f);
+        check("extreme_stretch_not_clamped", approx(result, 467.6f, 0.5f));
     }
 
     std::printf("%s\n", g_failures == 0 ? "ALL PASS" : "FAILURES PRESENT");

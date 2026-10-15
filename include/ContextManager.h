@@ -602,17 +602,19 @@ private:
         const std::array<float, OBSERVATION_VECTOR_SIZE>& rawObs,
         const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs);
 
-    /// Emit training-context payload to .context stream.
+    /// Emit training-context payload to .context stream. `rawObs` is the
+    /// unscaled observation (the HMM is trained on raw values).
     /// Returns true on successful write, false on exception.
     bool EmitTrainingContext(
-        const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
+        const std::array<float, OBSERVATION_VECTOR_SIZE>& rawObs,
         const MTS::Schema::AsymmetryContext& asymContext,
         uint64_t now_us);
 
-    /// Emit live-context payload to HMM client.
+    /// Emit live-context payload to HMM client. `rawObs` is the unscaled
+    /// observation -- the same space the HMM was trained in.
     /// Returns true on successful send, false on exception.
     bool EmitLiveContext(
-        const std::array<float, OBSERVATION_VECTOR_SIZE>& currentObs,
+        const std::array<float, OBSERVATION_VECTOR_SIZE>& rawObs,
         uint64_t sequence_id,
         uint64_t now_us);
 };

@@ -44,12 +44,13 @@ int main() {
         check("both BVs zero: ratio is exactly 0.0 (epsilon cancels)", r == 0.0f);
     }
 
-    // --- Extreme ratio clamps to [-6.0, 6.0] ---
+    // --- Extreme ratios are not clamped (spec B12) ---
     {
+        // ln((1e6 + 1e-12) / (1e-9 + 1e-12)) = ln(1e15) - ln(1.001) = 34.53778
         const float rHigh = LogScaleRatio(1e6, 1e-9);
         const float rLow = LogScaleRatio(1e-9, 1e6);
-        check("extreme high ratio clamps to +6.0", rHigh == 6.0f);
-        check("extreme low ratio clamps to -6.0", rLow == -6.0f);
+        check("extreme high ratio is the true log ratio", std::fabs(rHigh - 34.53778f) < 1e-3f);
+        check("extreme low ratio is its mirror", std::fabs(rLow + rHigh) < 1e-3f);
     }
 
     std::printf("\n%s\n", g_failures == 0 ? "ALL PASS" : "FAILURES PRESENT");

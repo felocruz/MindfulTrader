@@ -11,7 +11,7 @@
 // Deliberately takes the two ALREADY-COMPUTED bipower-variation values, not raw log-return
 // windows -- `CalculateLogScaleRatio` itself already computes `short_bv`/`long_bv` via
 // `ComputeBipowerVariation`, so this header only
-// needs to own the ratio+clamp step; recomputing BV again in here would duplicate work the caller
+// needs to own the ratio step (unbounded, not clamped -- spec B12); recomputing BV again in here would duplicate work the caller
 // already did and already validated.
 #pragma once
 
