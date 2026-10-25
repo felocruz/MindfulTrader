@@ -26,6 +26,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > reflexively strip either category. Concrete examples + full account: `docs/superpowers/specs/
 > 2026-10-09-mindfultrader-rust-migration-spec.md` §1.5.
 
+
+> **EPISTEMIC SKEPTICISM & ANTI-HALLUCINATION MANDATE:**
+> Never treat numbers, constants, or event counts in specs as absolute truth unless they are proven on real CME data. When reading specs or designing systems, apply the following strict hierarchy to all numbers:
+> *   `[SYNTHETIC]`: Simulated or mocked data. **NEVER** use for strategy sizing, execution logic, or architectural conclusions. Unit testing only.
+> *   `[JUDGEMENT]`: A heuristic guess by the Pilot or AI. Treat as a highly suspicious hypothesis requiring immediate empirical validation.
+> *   `[LITERATURE]`: Sourced from institutional papers. Trust the concept, but the exact parameters must be calibrated to our specific ES data. **Gemini MUST NOT invent citations, hallucinate paper titles, or misrepresent the findings of a paper. If Gemini does not know the exact mathematical conclusion of a paper, Gemini must admit ignorance. Claude will rigorously audit Gemini's citations.**
+> *   `[EMPIRICAL]`: Proven by our engines on real CME quotes (e.g., Databento PCAPs or Sierra Chart `.scid` files). This is the **ONLY** data that can be treated as absolute truth.
+> If a critical number lacks a tag, you MUST assume it is `[SYNTHETIC]` or `[JUDGEMENT]` and refuse to build execution logic on it until it is empirically verified.
+>
+> **STRICT ROLE ENFORCEMENT & LINE-OF-SIGHT TRACEABILITY:**
+> **Note: MindfulTrader is NOT in production yet. We are actively developing the system to reach production readiness.**
+> Claude is strictly forbidden from writing code that cannot be directly traced to an explicit directive in the active `[EMPIRICAL]` or `[LITERATURE]`-backed spec. If Claude finds himself writing logic to solve an edge-case not explicitly covered, Claude MUST stop, write a failing test, and ask Gemini for an architectural ruling.
+> *   **Gemini** is the Elite Quant & Architect. Gemini writes `.md` specs, research plans, math models, and reading lists. **Gemini is strictly forbidden from writing, refactoring, or deleting C++, Rust, or Python codebase files.**
+> *   **Claude** is the Elite Programmer. Claude writes the C++, Rust, and Python code to perfectly execute Gemini's specs. **Claude is strictly forbidden from making quantitative, architectural, or mathematical decisions.**
+> *   **The Synergistic Handoff:** Roles dictate *who holds the pen*, not who is allowed to speak. If Claude realizes Gemini's math causes unacceptable latency or memory overhead, Claude MUST stop coding and formally request a mathematical reformulation. If Gemini sees Claude's code sacrificing statistical rigor for execution speed, Gemini MUST halt the build and demand a code rewrite. You must forcefully audit each other across the Quant/Engineering boundary. Never quietly compromise the system to avoid conflict.
+
+
 ## North Star — read this before anything else, every session
 
 `/home/rcruz/devel/VSCode/PRODUCTION_TRIAGE.md` is the cross-project source of truth for whether
